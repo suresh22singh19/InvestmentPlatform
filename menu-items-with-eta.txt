@@ -1,0 +1,194 @@
+Menu Items with ETA Breakdown:
+
+====Settings====
+
+1. Configuration
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+2. Add Member Registration
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+3. Branch IP Network
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+4. Discount Approval
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+5. Refund Approval
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+6. Users
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+7. Groups
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+8. Panel
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+9. Stock/Product
+   - API Implementation: 2 hours
+   - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+   - Total ETA: 4 hours
+
+10. Therapy
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+11. TPA Therapy
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+12. Lab Tests
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+13. Package
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+14. Field Users
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+15. SMS
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+16. Medical Report Category
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+17. Notifications
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+18. Diet Category
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+19. Diet
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+20. Diagnosis
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+21. Sub Diagnosis
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+22. Razarpay Pos Machine
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+23. Module Settings
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+Settings Section Total:
+- Items: 23
+- Total Estimated Time: 92 hours (4 hours × 23 items)
+
+
+====Registration====
+
+1. Registration
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+Registration Section Total:
+- Items: 1
+- Total Estimated Time: 4 hours (4 hours × 1 item)
+
+
+====Roles Master====
+
+1. Roles Master
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+Roles Master Section Total:
+- Items: 1
+- Total Estimated Time: 4 hours (4 hours × 1 item)
+
+
+====Branch Role Master====
+
+1. Branch Role Master
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+Branch Role Master Section Total:
+- Items: 1
+- Total Estimated Time: 4 hours (4 hours × 1 item)
+
+
+====Roles & Permissions====
+
+1. Roles & Permissions
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+Roles & Permissions Section Total:
+- Items: 1
+- Total Estimated Time: 4 hours (4 hours × 1 item)
+
+
+====Gate Module====
+
+1. Login || New Patient || Revisit Patient || Patient Visitor || IPD Visitor || Other
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+2. Reports
+    - API Implementation: 2 hours
+    - Backend Collaboration (APIs, filters, search, sorting, pagination, select, etc.): 2 hours
+    - Total ETA: 4 hours
+
+Gate Module Section Total:
+- Items: 2
+- Total Estimated Time: 8 hours (4 hours × 2 items)
+
+
+====OVERALL TOTALS====
+
+Total Sections: 6
+Total Items: 29
+Total Estimated Time: 116 hours

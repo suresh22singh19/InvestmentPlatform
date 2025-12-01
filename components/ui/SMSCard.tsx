@@ -1,0 +1,113 @@
+"use client";
+
+import Image from "next/image";
+
+type SMSCardProps = {
+  id: number;
+  templateId: string;
+  templateName: string;
+  smsTitle: string;
+  smsHeader: string;
+  smsType: string;
+  createdDate: string;
+  content: string;
+  status: "Active" | "Inactive";
+  onView: () => void;
+  onEdit: () => void;
+};
+
+export const SMSCard = ({
+  id,
+  templateId,
+  templateName,
+  smsTitle,
+  smsHeader,
+  smsType,
+  createdDate,
+  content,
+  status,
+  onView,
+  onEdit,
+}: SMSCardProps) => {
+  return (
+    <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-5 shadow-[0px_1px_8px_rgba(25,33,61,0.06)]">
+      {/* Header Section */}
+      <div className="-mx-5 mb-5 flex items-start justify-between border-b border-[#DFE0E2] px-5 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F8F2] text-sm font-medium text-[#0B8C00]">
+            {id}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold leading-[120%] text-[#434956]">
+              {templateName}
+            </h3>
+            <p className="mt-0.5 text-xs leading-[120%] text-[#525763]">{templateId}</p>
+          </div>
+        </div>
+        <span
+          className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${
+            status === "Active"
+              ? "border-[#0B8C00]/20 bg-[#0B8C000D] text-[#0B8C00]"
+              : "border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]"
+          }`}
+        >
+          {status}
+        </span>
+      </div>
+
+      {/* Details Section - Two Columns */}
+      <div className="mb-5 grid grid-cols-2 gap-6">
+        {/* Left Column */}
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs leading-[120%] text-[#7B8089]">SMS Title</p>
+            <p className="mt-0.5 text-sm font-medium leading-[120%] text-[#262D3B]">{smsTitle}</p>
+          </div>
+          <div>
+            <p className="text-xs leading-[120%] text-[#7B8089]">SMS Type</p>
+            <p className="mt-0.5 text-sm font-medium leading-[120%] text-[#262D3B]">{smsType}</p>
+          </div>
+        </div>
+
+        {/* Right Column */}
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs leading-[120%] text-[#7B8089]">SMS Header</p>
+            <p className="mt-0.5 text-sm font-medium leading-[120%] text-[#262D3B]">{smsHeader}</p>
+          </div>
+          <div>
+            <p className="text-xs leading-[120%] text-[#7B8089]">Created Date</p>
+            <p className="mt-0.5 text-sm font-medium leading-[120%] text-[#262D3B]">{createdDate}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content Section */}
+      <div className="mb-5">
+        <p className="mb-2 text-xs leading-[120%] text-[#7B8089]">Content</p>
+        <p className="text-sm font-medium leading-[120%] text-[#262D3B]">{content}</p>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="-mx-5 flex items-center gap-3 border-t border-[#DFE0E2] px-5 pt-5">
+        <button
+          type="button"
+          onClick={onView}
+          className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
+        >
+          <Image src="/icons/ViewLightIcon.svg" alt="View" width={14} height={14} className="shrink-0" />
+          View
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
+        >
+          <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
+          Edit
+        </button>
+      </div>
+    </div>
+  );
+};
+

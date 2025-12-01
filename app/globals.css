@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  
+  /* Design Tokens from Figma */
+  --primary-green: #1AC00C;
+  --white: #FFFFFF;
+  --text-primary: #434956;
+  --text-secondary: #262D3B;
+  --text-placeholder: #525763;
+  --border-color: #EBECED;
+  --gradient-start: #f5fbf5;
+  --gradient-mid: #fafcfa;
+  --gradient-end: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer utilities {
+  .gradient-bg {
+    /* Layered background: soft yellow glow (left), soft green glow (right), plus base gradient */
+    background:
+      radial-gradient(1500px 1500px at 10% 5%, #ebca5926 0%, rgba(235, 202, 89, 0) 70%),
+      radial-gradient(1600px 1600px at 85% 75%, #1ac00c26 0%, rgba(26, 192, 12, 0) 70%),
+      linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-mid) 50%, var(--gradient-end) 100%);
+    min-height: 100vh;
+  }
+
+  .scrollbar-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
+  .custom-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #c8ccd3 transparent;
+  }
+
+  .custom-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scroll::-webkit-scrollbar-thumb {
+    background-color: #c8ccd3;
+    border-radius: 999px;
+    border: 0 solid transparent;
+  }
+}
