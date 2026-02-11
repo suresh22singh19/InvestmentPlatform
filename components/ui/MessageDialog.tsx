@@ -112,7 +112,7 @@ export const MessageDialog = ({
             className="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
             style={{ backgroundColor: iconBgColor }}
           >
-            <Image src={icon} width={24} height={24} alt="Icon" />
+            <Image src={icon} width={30} height={30} alt="Icon" />
           </div>
 
           {/* Message */}

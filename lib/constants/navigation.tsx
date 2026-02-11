@@ -38,32 +38,31 @@ export const SIDEBAR_NAVIGATION: SidebarNavItem[] = [
     href: "/dashboard",
     icon: withIcon(<path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-6v-6h-4v6H4a1 1 0 0 1-1-1z" />),
   },
-  // hide some Infrastructure items for temparary purpose
-  // {
-  //   key: "hospital-infrastructure",
-  //   label: "Infrastructure",
-  //   icon: withIcon(
-  //     <>
-  //       <path d="M4 21V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13" />
-  //       <path d="M4 21h16" />
-  //       <path d="M9 21v-5h6v5" />
-  //       <path d="M12 16v-3" />
-  //       <path d="M10 10h4" />
-  //     </>
-  //   ),
-  //   children: [
-  //     {
-  //       key: "hospital-infrastructure-builder",
-  //       label: "Builder",
-  //       href: "/hospital-infrastructure",
-  //     },
-  //     {
-  //       key: "hospital-infrastructure-structure-preview",
-  //       label: "Hierarchy Preview",
-  //       href: "/hospital-infrastructure/structure-preview",
-  //     },
-  //   ],
-  // },
+  {
+    key: "hospital-infrastructure",
+    label: "Infrastructure",
+    icon: withIcon(
+      <>
+        <path d="M4 21V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13" />
+        <path d="M4 21h16" />
+        <path d="M9 21v-5h6v5" />
+        <path d="M12 16v-3" />
+        <path d="M10 10h4" />
+      </>
+    ),
+    children: [
+      {
+        key: "hospital-infrastructure-builder",
+        label: "Builder",
+        href: "/hospital-infrastructure",
+      },
+      {
+        key: "hospital-infrastructure-structure-preview",
+        label: "Hierarchy Preview",
+        href: "/hospital-infrastructure/structure-preview",
+      },
+    ],
+  },
   {
     key: "settings",
     label: "Settings",
@@ -75,7 +74,9 @@ export const SIDEBAR_NAVIGATION: SidebarNavItem[] = [
     ),
     children: [
       { key: "configuration", label: "Configuration", href: "/settings/configuration" },
-      { key: "add-member", label: "Add Member Registration", href: "/settings/add-member" },
+      // { key: "add-member", label: "Add Member Registration", href: "/settings/add-member" },
+      { key: "duplicate-number-exceptions", label: "Duplicate Number Exceptions", href: "/settings/duplicate-number-exceptions" },
+      { key: "manage-contact-updates", label: "Manage Contact Updates", href: "/settings/manage-contact-updates" },
       { key: "branch-ip", label: "Branch IP Network", href: "/settings/branch-ip-network" },
       // hide some Settings items for temparary purpose
       // { key: "discount", label: "Discount Approval", href: "/settings/discount-approval" },

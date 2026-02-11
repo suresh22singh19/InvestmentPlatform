@@ -13,6 +13,10 @@ type DialogProps = {
   width?: DialogSize;
   height?: DialogSize;
   children?: ReactNode;
+  customHeader?: ReactNode;
+  contentPadding?: string; // Optional custom padding for content area (e.g., "px-6 py-2")
+  closeOnOutsideClick?: boolean; // Whether to close dialog when clicking outside (default: true)
+  closeOnEscape?: boolean; // Whether to close dialog when pressing Escape key (default: true)
 };
 
 const normalizeSize = (value: DialogSize | undefined) => {
@@ -34,6 +38,10 @@ export const Dialog = ({
   width = 638,
   height,
   children,
+  customHeader,
+  contentPadding = "px-6 py-6",
+  closeOnOutsideClick = true,
+  closeOnEscape = true,
 }: DialogProps) => {
   const [mounted, setMounted] = useState(false);
   const titleId = useId();
@@ -48,7 +56,7 @@ export const Dialog = ({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && closeOnEscape) {
         onClose();
       }
     };
@@ -65,7 +73,7 @@ export const Dialog = ({
       document.body.style.overflow = "";
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [mounted, onClose, open]);
+  }, [mounted, onClose, open, closeOnEscape]);
 
   const dialogStyles = useMemo(() => {
     return {
@@ -80,32 +88,38 @@ export const Dialog = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B1323]/70 px-4"
-      onClick={onClose}
+      className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-[#0B1323]/70 px-4"
+      onClick={closeOnOutsideClick ? onClose : undefined}
     >
       <div
-        className="relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-[12px] bg-white shadow-[0px_32px_80px_rgba(47,72,61,0.18)]"
+        className="dialog-container relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-[12px] bg-white shadow-[0px_32px_80px_rgba(47,72,61,0.18)]"
         style={dialogStyles}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#E9F3E6] px-6 py-4">
-          <h2 id={titleId} className="text-xl font-semibold text-[#262D3B]">
-            {title}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-[#F2F8F2]"
-            aria-label="Close dialog"
-          >
-            <Image src="/icons/CrossIcon.svg" alt="Close dialog" width={24} height={24} />
-          </button>
-        </div>
+        {customHeader ? (
+          <div className="">
+            {customHeader}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between  px-6 pt-4">
+            <h2 id={titleId} className="text-xl font-semibold text-[#262D3B]">
+              {title}
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-[#F2F8F2]"
+              aria-label="Close dialog"
+            >
+              <Image src="/icons/CrossIcon.svg" alt="Close dialog" width={24} height={24} />
+            </button>
+          </div>
+        )}
 
-        <div className="flex flex-1 flex-col overflow-y-auto px-6 py-6">{children}</div>
+        <div className={`flex flex-1 flex-col overflow-y-auto custom-scroll ${contentPadding}`}>{children}</div>
       </div>
     </div>,
     document.body

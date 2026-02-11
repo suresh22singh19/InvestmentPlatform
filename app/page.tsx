@@ -1,27 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
-import { Button } from "@/components/ui/Button";
-import { SegmentedButtonGroup } from "@/components/ui/SegmentedButtonGroup";
+import { MessageDialog } from "@/components/ui";
 import { LoginForm } from "@/components/forms/LoginForm";
 import { useLoginMutation } from "@/store/api/authApi";
 import { useAppDispatch } from "@/store/hooks";
 import { setCredentials } from "@/store/slices/authSlice";
 import { LoginFormValues } from "@/lib/validation/schemas";
 import { LoginType } from "@/types/auth";
+import { encrypt, decrypt } from "@/lib/utils/encryption";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [login, { isLoading }] = useLoginMutation();
   const dispatch = useAppDispatch();
-  const [activeLoginType, setActiveLoginType] = useState<LoginType>("admin");
-  const [doctorRole, setDoctorRole] = useState<LoginType>("doctor");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
-  const [generalError, setGeneralError] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>("");
   
   // Load saved credentials and rememberMe state from localStorage synchronously
   const getSavedCredentials = (): {
@@ -32,13 +29,16 @@ export default function LoginPage() {
     if (typeof window === "undefined") return null;
     
     const savedEmail = localStorage.getItem("rememberedEmail");
-    const savedPassword = localStorage.getItem("rememberedPassword");
+    const savedPasswordEncrypted = localStorage.getItem("rememberedPassword");
     const savedRememberMe = localStorage.getItem("rememberMe") === "true";
     
     // Get last rememberMe checkbox state (even if credentials don't exist)
     const lastRememberMeState = localStorage.getItem("lastRememberMeState") === "true";
 
-    if (savedEmail && savedPassword && savedRememberMe) {
+    if (savedEmail && savedPasswordEncrypted && savedRememberMe) {
+      // Decrypt the password
+      const savedPassword = decrypt(savedPasswordEncrypted);
+      
       return {
         email: savedEmail,
         password: savedPassword,
@@ -63,35 +63,6 @@ export default function LoginPage() {
   } | null>(getSavedCredentials());
   
   const [lastRememberMeState, setLastRememberMeState] = useState<boolean>(getLastRememberMeState());
-  const allowedLoginTypes: LoginType[] = [
-    "admin",
-    "doctor",
-    "nurse",
-    "team",
-    "field-user",
-  ];
-  const searchParamsString = searchParams.toString();
-
-  useEffect(() => {
-    const typeParam = searchParams.get("type");
-    if (!typeParam) {
-      return;
-    }
-
-    if (allowedLoginTypes.includes(typeParam as LoginType)) {
-      const loginType = typeParam as LoginType;
-      setActiveLoginType(loginType);
-      if (loginType === "doctor" || loginType === "nurse") {
-        setDoctorRole(loginType);
-      }
-    }
-
-    router.replace("/", { scroll: false });
-  }, [searchParamsString, router]);
-
-  const isDoctorFlow = activeLoginType === "doctor" || activeLoginType === "nurse";
-  const isTeamFlow = activeLoginType === "team";
-  const isFieldUserFlow = activeLoginType === "field-user";
 
   const clearFieldError = (field: "email" | "password") => {
     setFieldErrors((prev) => {
@@ -105,20 +76,12 @@ export default function LoginPage() {
   const handleLogin = async (values: LoginFormValues) => {
     // Clear previous errors
     setFieldErrors({});
-    setGeneralError(null);
+    setShowErrorDialog(false);
+    setErrorMessage("");
 
     try {
-      const loginTypeToUse = isDoctorFlow
-        ? doctorRole
-        : isTeamFlow
-        ? "team"
-        : isFieldUserFlow
-        ? "field-user"
-        : "admin";
-
       // Call login API
       const result = await login({
-        login_type: loginTypeToUse,
         email: values.email,
         password: values.password,
       }).unwrap();
@@ -128,7 +91,10 @@ export default function LoginPage() {
         dispatch(
           setCredentials({
             user: result.data.user,
-            token: result.data.access_token,
+            login_type: result.data.login_type,
+            access_token: result.data.access_token,
+            token_type: result.data.token_type,
+            expires_in: result.data.expires_in,
           })
         );
 
@@ -139,9 +105,10 @@ export default function LoginPage() {
           setLastRememberMeState(values.rememberMe);
           
           if (values.rememberMe) {
-            // Save email and password to localStorage
+            // Save email and encrypted password to localStorage
             localStorage.setItem("rememberedEmail", values.email);
-            localStorage.setItem("rememberedPassword", values.password);
+            const encryptedPassword = encrypt(values.password);
+            localStorage.setItem("rememberedPassword", encryptedPassword);
             localStorage.setItem("rememberMe", "true");
             setSavedCredentials({
               email: values.email,
@@ -157,53 +124,76 @@ export default function LoginPage() {
           }
         }
 
-        // Redirect to dashboard
-        router.push("/dashboard");
+        // Check login_type and redirect accordingly
+        const loginType = result.data?.login_type?.toLowerCase();
+        
+        if (loginType === "clinic user") {
+          router.push("/registration");
+        } else if (loginType === "hospital user") {
+          router.push("/registration/hospital");
+        } else if (loginType === "nurse") {
+          router.push("/registration/registrationList");
+        } else if (result.data?.user?.groupName === "Gate") {
+          router.push("/gate");
+        } else {
+          router.push("/dashboard");
+        }
       }
     } catch (error: any) {
       console.error("Login error:", error);
 
-      const apiMessage = error?.data?.message || error?.data?.error;
+      // Handle message as either string or array
+      let apiMessage: string | undefined;
+      if (error?.data?.message) {
+        if (Array.isArray(error.data.message)) {
+          // Extract first error message from array
+          apiMessage = error.data.message[0];
+        } else {
+          apiMessage = error.data.message;
+        }
+      }
+      
+      // Fallback to error field if message not available
+      if (!apiMessage) {
+        apiMessage = error?.data?.error;
+      }
+
       if (apiMessage) {
-        const lowerMessage = apiMessage.toLowerCase();
+        const lowerMessage = typeof apiMessage === 'string' ? apiMessage.toLowerCase() : '';
         if (lowerMessage.includes("email")) {
           setFieldErrors({ email: apiMessage });
+          // Show dialog for email errors too
+          setErrorMessage(apiMessage);
+          setShowErrorDialog(true);
         } else if (lowerMessage.includes("password")) {
           setFieldErrors({ password: apiMessage });
+          // Show dialog for password errors too
+          setErrorMessage(apiMessage);
+          setShowErrorDialog(true);
         } else {
-          setGeneralError(apiMessage);
+          setErrorMessage(apiMessage);
+          setShowErrorDialog(true);
         }
-        return;
+        // Throw error so Formik can catch it and reset submitting state
+        throw new Error(apiMessage);
       }
 
       if (error?.status === 503 || error?.status === "FETCH_ERROR") {
-        setGeneralError("Server is unavailable. Please check your connection or try again later.");
+        const errorMsg = "Server is unavailable. Please check your connection or try again later.";
+        setErrorMessage(errorMsg);
+        setShowErrorDialog(true);
+        throw new Error(errorMsg);
       } else {
-        setGeneralError("Login failed. Please check your credentials and try again.");
+        const errorMsg = "Login failed. Please check your credentials and try again.";
+        setErrorMessage(errorMsg);
+        setShowErrorDialog(true);
+        throw new Error(errorMsg);
       }
-    }
-  };
-
-  const handleAlternativeLogin = (type: LoginType) => {
-    switch (type) {
-      case "doctor":
-        setActiveLoginType("doctor");
-        setDoctorRole("doctor");
-        return;
-      case "team":
-        setActiveLoginType("team");
-        return;
-      case "field-user":
-        setActiveLoginType("field-user");
-        return;
-      default:
-        setActiveLoginType("admin");
     }
   };
 
   const handleForgotPassword = () => {
-    const typeForForgot = isDoctorFlow ? doctorRole : activeLoginType;
-    router.push(`/forgot-password?type=${encodeURIComponent(typeForForgot)}`);
+    router.push(`/forgot-password`);
   };
 
   return (
@@ -216,48 +206,16 @@ export default function LoginPage() {
 
         {/* Login Form Container (no background as per design) */}
         <div className="p-0">
-          {/* Title Section */}
+          {/* Title Section - single generic login */}
           <div className="mb-8">
-            <h1 className="text-2xl font-semibold text-[#434956] mb-2">
-              {isDoctorFlow
-                ? "Doctor/Nurse"
-                : isTeamFlow
-                ? "Clinic Team"
-                : isFieldUserFlow
-                ? "Field User/Champion"
-                : "Admin User"}
-            </h1>
+            <h1 className="text-2xl font-semibold text-[#434956] mb-2">Login</h1>
             <p className="text-sm text-[#434956] leading-[120%]">
-              Sign in to your account and join us
+              Login to your account and join us
             </p>
           </div>
 
-          {isDoctorFlow && (
-            <div className="mb-8">
-              <SegmentedButtonGroup<LoginType>
-                options={[
-                  { label: "Doctor", value: "doctor" },
-                  { label: "Nurse", value: "nurse" },
-                ]}
-                value={doctorRole}
-                onChange={(value) => {
-                  setDoctorRole(value);
-                  setActiveLoginType(value);
-                }}
-              />
-            </div>
-          )}
-
-          {/* Error Message */}
-          {generalError && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
-              <p className="text-sm text-red-600 font-medium">{generalError}</p>
-            </div>
-          )}
-
           {/* Login Form */}
           <LoginForm 
-            key={activeLoginType}
             onSubmit={handleLogin} 
             isLoading={isLoading}
             onForgotPassword={handleForgotPassword}
@@ -283,72 +241,24 @@ export default function LoginPage() {
                   }
             }
           />
-
-          {!isDoctorFlow && !isTeamFlow && !isFieldUserFlow && (
-            <>
-              {/* Separator */}
-              <div className="flex items-center my-8">
-                <div className="flex-1 border-t border-[#EBECED]"></div>
-                <span className="px-4 text-xs text-[#434956]">Or Sign in As</span>
-                <div className="flex-1 border-t border-[#EBECED]"></div>
-              </div>
-
-              {/* Alternative Login Buttons */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <Button
-                    variant="outline"
-                    size="large"
-                    fullWidth
-                    onClick={() => handleAlternativeLogin("doctor")}
-                  >
-                    Doctor Login
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="large"
-                    fullWidth
-                    onClick={() => handleAlternativeLogin("team")}
-                  >
-                    Team Login
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="large"
-                  fullWidth
-                  onClick={() => handleAlternativeLogin("field-user")}
-                >
-                  Field User/Champion Login
-                </Button>
-              </div>
-            </>
-          )}
-
-          {(isDoctorFlow || isTeamFlow || isFieldUserFlow) && (
-            <>
-              <div className="flex items-center my-6">
-                <div className="flex-1 border-t border-[#EBECED]"></div>
-                <span className="px-4 text-xs text-[#434956]">Or</span>
-                <div className="flex-1 border-t border-[#EBECED]"></div>
-              </div>
-              <div className="mt-6">
-                <Button
-                  variant="outline"
-                  size="large"
-                  fullWidth
-                  onClick={() => {
-                    setActiveLoginType("admin");
-                    setDoctorRole("doctor");
-                  }}
-                >
-                  Back to Admin Login
-                </Button>
-              </div>
-            </>
-          )}
         </div>
       </div>
+
+      {/* Error Dialog */}
+      <MessageDialog
+        open={showErrorDialog}
+        onClose={() => {
+          setShowErrorDialog(false);
+        }}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={errorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => {
+          setShowErrorDialog(false);
+        }}
+      />
     </div>
   );
 }

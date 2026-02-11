@@ -4,11 +4,12 @@ import Image from "next/image";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Button, Dialog, FormInputField, FormSelectField, Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination } from "@/components/ui";
+import { Button, Dialog, FormInputField, FormSelectField, Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, MessageDialog } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import { useGetBranchIPsQuery, useCreateBranchIPMutation, useUpdateBranchIPMutation, useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useDebounce } from "@/hooks/useDebounce";
+import { validateIPNetwork } from "@/lib/utils/common";
 
 type BranchIP = {
     id: number;
@@ -30,6 +31,11 @@ export default function BranchIPNetworkPage() {
     const debouncedSearchTerm = useDebounce(filters.searchTerm, 500);
     const prevSearchTermRef = useRef(filters.searchTerm);
     
+    // Trim the debounced search term to remove leading and trailing spaces
+    // Only pass to API if trimmed value is not empty (don't hit API for spaces only)
+    const trimmedSearchTerm = debouncedSearchTerm.trim();
+    const searchParam = trimmedSearchTerm || undefined;
+    
     // Reset to first page when search term changes
     useEffect(() => {
         if (prevSearchTermRef.current !== filters.searchTerm) {
@@ -43,7 +49,7 @@ export default function BranchIPNetworkPage() {
         limit: filters.itemsPerPage,
         sort: filters.sortField || undefined,
         order: filters.sortField ? filters.sortOrder : undefined,
-        search: debouncedSearchTerm || undefined,
+        search: searchParam,
     });
     const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery();
     const [createBranchIP, { isLoading: isCreating }] = useCreateBranchIPMutation();
@@ -54,6 +60,13 @@ export default function BranchIPNetworkPage() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
     const [viewingBranchIP, setViewingBranchIP] = useState<BranchIP | null>(null);
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
+    const [apiErrorMessage, setApiErrorMessage] = useState("");
+    const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
+    const [branchError, setBranchError] = useState("");
+    const [ipNetworkError, setIpNetworkError] = useState("");
+    const [ipNetworkTouched, setIpNetworkTouched] = useState(false);
     const [formValues, setFormValues] = useState({
         branchId: "",
         ipNetwork: "",
@@ -95,6 +108,9 @@ export default function BranchIPNetworkPage() {
             ipNetwork: "",
             status: "inactive",
         });
+        setBranchError("");
+        setIpNetworkError("");
+        setIpNetworkTouched(false);
         setIsDialogOpen(true);
     };
 
@@ -108,6 +124,9 @@ export default function BranchIPNetworkPage() {
             ipNetwork: branchIP.ipNetwork,
             status: branchIP.status === "Active" ? "active" : "inactive",
         });
+        setBranchError("");
+        setIpNetworkError("");
+        setIpNetworkTouched(false);
         setIsDialogOpen(true);
     };
 
@@ -119,22 +138,43 @@ export default function BranchIPNetworkPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!formValues.branchId || !formValues.ipNetwork) {
+        // Clear previous errors
+        setBranchError("");
+        setIpNetworkError("");
+
+        // Validate fields
+        let hasError = false;
+
+        if (!formValues.branchId || formValues.branchId.trim() === "") {
+            setBranchError("Branch is required");
+            hasError = true;
+        }
+
+        // Validate IP Network
+        const ipNetworkValidationError = validateIPNetwork(formValues.ipNetwork);
+        if (ipNetworkValidationError) {
+            setIpNetworkError(ipNetworkValidationError);
+            hasError = true;
+        }
+
+        if (hasError) {
             return;
         }
 
         try {
+            let result;
             if (isEditMode && editingId !== null) {
-                await updateBranchIP({
+                result = await updateBranchIP({
                     id: editingId,
                     branchId: parseInt(formValues.branchId),
                     networkips: formValues.ipNetwork,
+                    status: formValues.status,
                 }).unwrap();
                 
                 // Refetch the data after successful update
                 await refetchBranchIPs();
             } else {
-                await createBranchIP({
+                result = await createBranchIP({
                     branchId: parseInt(formValues.branchId),
                     networkips: formValues.ipNetwork,
                     status: formValues.status,
@@ -144,6 +184,8 @@ export default function BranchIPNetworkPage() {
                 await refetchBranchIPs();
             }
 
+            setSuccessMessage(result?.message || (isEditMode ? "Branch IP Network updated successfully" : "Branch IP Network created successfully"));
+            setShowSuccessDialog(true);
             setIsDialogOpen(false);
             setIsEditMode(false);
             setEditingId(null);
@@ -152,9 +194,11 @@ export default function BranchIPNetworkPage() {
                 ipNetwork: "",
                 status: "inactive",
             });
-        } catch (error) {
-            console.error("Error creating branch IP:", error);
-            // You might want to show an error message to the user here
+        } catch (error: any) {
+            console.error("Error creating/updating branch IP:", error);
+            const errorMessage = error?.data?.message || error?.data?.error || (isEditMode ? "Failed to update branch IP network" : "Failed to create branch IP network");
+            setApiErrorMessage(errorMessage);
+            setShowApiErrorDialog(true);
         }
     };
 
@@ -188,20 +232,22 @@ export default function BranchIPNetworkPage() {
         <AppShell>
             <div className="space-y-8">
                 <div className="flex items-start justify-between">
-                    <PageHeading title="Settings" />
+                    <PageHeading title="Branch IP Network" />
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
                     <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
                         <div className="mb-6 flex items-center justify-between">
-                            <h2 className="text-lg font-semibold text-[#434956]">Network List</h2>
+                            <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                             <div className="flex items-center gap-3">
-                                <TableSearchInput
-                                    value={filters.searchTerm}
-                                    onChange={(value) => setFilters((prev) => ({ ...prev, searchTerm: value }))}
-                                    placeholder="Search Here..."
-                                />
+                                <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                    <TableSearchInput
+                                        value={filters.searchTerm}
+                                        onChange={(value) => setFilters((prev) => ({ ...prev, searchTerm: value }))}
+                                        placeholder="Search Here..."
+                                    />
+                                </div>
                                 <button
                                     type="button"
                                     className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
@@ -344,6 +390,9 @@ export default function BranchIPNetworkPage() {
                     setIsDialogOpen(false);
                     setIsEditMode(false);
                     setEditingId(null);
+                    setBranchError("");
+                    setIpNetworkError("");
+                    setIpNetworkTouched(false);
                 }}
                 title={isEditMode ? "Edit Branch IP Network" : "Add Branch IP Network"}
                 width={686}
@@ -352,35 +401,65 @@ export default function BranchIPNetworkPage() {
                     <div className={isEditMode ? "space-y-4" : "flex flex-col gap-4"}>
                         <div className={isEditMode ? "" : "flex-1"}>
                             <FormSelectField
-                                label="Branch"
+                                label="Branch *"
                                 value={formValues.branchId}
-                                onChange={(value) =>
+                                onChange={(value) => {
+                                    // Only update value, validation will happen on submit
+                                    const selectedValue = typeof value === "string" ? value : Array.isArray(value) ? value[0] : "";
                                     setFormValues((prev) => ({
                                         ...prev,
-                                        branchId: typeof value === "string" ? value : Array.isArray(value) ? value[0] : "",
-                                    }))
-                                }
+                                        branchId: selectedValue,
+                                    }));
+                                    // Clear error when valid input is selected
+                                    if (selectedValue && branchError) {
+                                        setBranchError("");
+                                    }
+                                }}
                                 options={branchOptions}
                                 placeholder={isLoadingBranches ? "Loading branches..." : "Select"}
                                 mode="single"
                                 background="white"
                                 disabled={isLoadingBranches || isEditMode}
                             />
+                            {branchError && (
+                                <span className="mt-2 text-xs text-[#F87171]">{branchError}</span>
+                            )}
                         </div>
 
                         <div className={isEditMode ? "" : "flex-1"}>
                             <FormInputField
-                                label="IP Network"
+                                label="IP Network *"
                                 value={formValues.ipNetwork}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                    const value = event.target.value;
                                     setFormValues((prev) => ({
                                         ...prev,
-                                        ipNetwork: event.target.value,
-                                    }))
-                                }
+                                        ipNetwork: value,
+                                    }));
+                                    // If field was previously touched and had an error, validate on change to clear error immediately when corrected
+                                    if (ipNetworkTouched && ipNetworkError) {
+                                        const validationError = validateIPNetwork(value);
+                                        if (validationError) {
+                                            setIpNetworkError(validationError);
+                                        } else {
+                                            setIpNetworkError("");
+                                        }
+                                    }
+                                }}
+                                onBlur={(event) => {
+                                    // Mark field as touched and validate when user moves to next field
+                                    setIpNetworkTouched(true);
+                                    const validationError = validateIPNetwork(event.target.value);
+                                    if (validationError) {
+                                        setIpNetworkError(validationError);
+                                    } else {
+                                        setIpNetworkError("");
+                                    }
+                                }}
                                 height={44}
-                                placeholder="IP Network"
+                                placeholder="IP Network (e.g., 192.168.1.1 or 192.168.1.0/24)"
                                 required
+                                error={ipNetworkError}
                             />
                         </div>
 
@@ -408,8 +487,13 @@ export default function BranchIPNetworkPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                        <Button type="submit" variant="primary" disabled={isCreating || isUpdating}>
-                            {(isCreating || isUpdating) ? "Saving..." : isEditMode ? "Update" : "Save"}
+                        <Button 
+                            type="submit" 
+                            variant="primary" 
+                            isLoading={isCreating || isUpdating}
+                            disabled={isCreating || isUpdating}
+                        >
+                            {isEditMode ? "Update" : "Save"}
                         </Button>
                         <Button
                             type="button"
@@ -418,6 +502,9 @@ export default function BranchIPNetworkPage() {
                                 setIsDialogOpen(false);
                                 setIsEditMode(false);
                                 setEditingId(null);
+                                setBranchError("");
+                                setIpNetworkError("");
+                                setIpNetworkTouched(false);
                             }}
                             disabled={isCreating || isUpdating}
                         >
@@ -453,6 +540,38 @@ export default function BranchIPNetworkPage() {
                     </div>
                 </div>
             </Dialog>
+
+            {/* Success Dialog */}
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => {
+                    setShowSuccessDialog(false);
+                }}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message={successMessage}
+                confirmText="Success"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowSuccessDialog(false);
+                }}
+            />
+
+            {/* API Error Dialog - Only for API errors, not validation errors */}
+            <MessageDialog
+                open={showApiErrorDialog}
+                onClose={() => {
+                    setShowApiErrorDialog(false);
+                }}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={apiErrorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowApiErrorDialog(false);
+                }}
+            />
         </AppShell>
     );
 }

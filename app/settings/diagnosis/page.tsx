@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -9,43 +9,76 @@ import {
     Dialog,
     FormInputField,
     FormSelectField,
-    Table,
-    TableBody,
-    TableData,
-    TableHead,
-    TableHeader,
-    TableRow,
     TableSearchInput,
     Pagination,
+    PanelCard,
+    MessageDialog,
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import { 
+    useGetDiagnosisCategoriesQuery,
+    useCreateDiagnosisCategoryMutation,
+    useUpdateDiagnosisCategoryMutation
+} from "@/store/api/settingsApi";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type Diagnosis = {
     id: number;
     name: string;
-    type: "Doctor" | "Agent";
     status: "Active" | "Inactive";
 };
 
-const diagnosisTypeOptions: SelectOption[] = [
-    { value: "Doctor", label: "Doctor" },
-    { value: "Agent", label: "Agent" },
-];
-
 const statusOptions: SelectOption[] = [
-    { value: "Active", label: "Active" },
-    { value: "Inactive", label: "Inactive" },
+    { value: "active", label: "Active" },
+    { value: "inactive", label: "Inactive" },
 ];
 
-const initialDiagnoses: Diagnosis[] = [
-    { id: 1, name: "Addiction", type: "Doctor", status: "Active" },
-    { id: 2, name: "Addiction", type: "Agent", status: "Active" },
-    { id: 3, name: "Addiction", type: "Doctor", status: "Inactive" },
-    { id: 4, name: "Addiction", type: "Agent", status: "Active" },
-    { id: 5, name: "Addiction", type: "Doctor", status: "Active" },
-    { id: 6, name: "Addiction", type: "Agent", status: "Active" },
-];
+const STORAGE_KEY = "diagnosis-page-state";
+
+type StoredState = {
+    searchTerm: string;
+    currentPage: number;
+    itemsPerPage: number;
+};
+
+const loadState = (): StoredState => {
+    if (typeof window === "undefined") {
+        return {
+            searchTerm: "",
+            currentPage: 1,
+            itemsPerPage: 10,
+        };
+    }
+
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.itemsPerPage < 10) {
+                parsed.itemsPerPage = 10;
+            }
+            return parsed;
+        }
+    } catch (error) {
+        console.error("Failed to load state from localStorage:", error);
+    }
+
+    return {
+        searchTerm: "",
+        currentPage: 1,
+        itemsPerPage: 10,
+    };
+};
+
+const saveState = (state: StoredState) => {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+        console.error("Failed to save state to localStorage:", error);
+    }
+};
 
 const StatusFilterSelect = ({
     value,
@@ -61,7 +94,7 @@ const StatusFilterSelect = ({
           display: none !important;
         }
       `}</style>
-            <div className="diagnosis-filter-select relative w-full md:w-[300px]">
+            <div className="diagnosis-filter-select relative w-[300px]">
                 <FormSelectField
                     label=""
                     options={statusOptions}
@@ -70,7 +103,7 @@ const StatusFilterSelect = ({
                         const finalValue = Array.isArray(nextValue) ? nextValue[0] : nextValue;
                         onChange(finalValue || "");
                     }}
-                    placeholder="Select"
+                    placeholder="Select Status"
                     width="100%"
                     height={44}
                     background="normal"
@@ -84,99 +117,178 @@ const StatusFilterSelect = ({
 };
 
 export default function DiagnosisPage() {
-    const [diagnoses, setDiagnoses] = useState<Diagnosis[]>(initialDiagnoses);
-    const [searchTerm, setSearchTerm] = useState("");
+    const [searchTerm, setSearchTerm] = useState<string>(() => loadState().searchTerm);
+    const [currentPage, setCurrentPage] = useState<number>(() => loadState().currentPage);
+    const [itemsPerPage, setItemsPerPage] = useState<number>(() => loadState().itemsPerPage);
     const [statusFilter, setStatusFilter] = useState<string>("");
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(6);
-    const [addDialogOpen, setAddDialogOpen] = useState(false);
-    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [dialogMode, setDialogMode] = useState<"add" | "edit" | "view" | null>(null);
     const [selectedDiagnosis, setSelectedDiagnosis] = useState<Diagnosis | null>(null);
     const [formValues, setFormValues] = useState({
         name: "",
-        type: "Doctor" as "Doctor" | "Agent",
-        status: "Active" as "Active" | "Inactive",
+        status: "active" as "active" | "inactive",
     });
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
+    const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
+    const [apiErrorMessage, setApiErrorMessage] = useState("");
 
-    const filteredDiagnoses = useMemo(() => {
-        return diagnoses.filter((diagnosis) => {
-            const matchesSearch =
-                diagnosis.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                diagnosis.type.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesStatus = statusFilter ? diagnosis.status === statusFilter : true;
-            return matchesSearch && matchesStatus;
+    // Debounce search to avoid too many API calls
+    const debouncedSearchTerm = useDebounce(searchTerm, 500);
+    
+    // Trim the debounced search term to remove leading and trailing spaces
+    const trimmedSearchTerm = debouncedSearchTerm.trim();
+    const searchParam = trimmedSearchTerm || undefined;
+
+    // Save state to localStorage whenever it changes
+    useEffect(() => {
+        saveState({
+            searchTerm,
+            currentPage,
+            itemsPerPage,
         });
-    }, [diagnoses, searchTerm, statusFilter]);
+    }, [searchTerm, currentPage, itemsPerPage]);
 
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const paginatedDiagnoses = filteredDiagnoses.slice(startIndex, startIndex + itemsPerPage);
+    // Reset to page 1 when status filter changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [statusFilter]);
 
-    const handleAdd = () => {
+    // Fetch diagnosis categories from API
+    const { data: diagnosisData, isLoading: isLoadingDiagnosis, refetch: refetchDiagnosis } = useGetDiagnosisCategoriesQuery({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchParam,
+    });
+
+    // Create diagnosis mutation
+    const [createDiagnosisCategory, { isLoading: isCreating }] = useCreateDiagnosisCategoryMutation();
+    
+    // Update diagnosis mutation
+    const [updateDiagnosisCategory, { isLoading: isUpdating }] = useUpdateDiagnosisCategoryMutation();
+
+    // Map API data to Diagnosis format
+    const diagnoses: Diagnosis[] = diagnosisData?.data?.map((diagnosis) => ({
+        id: diagnosis.id,
+        name: diagnosis.diagnosisCategory,
+        status: diagnosis.status === "active" ? "Active" : "Inactive",
+    })) || [];
+
+    // Store full diagnosis data for edit (to get type field)
+    const fullDiagnosisData = diagnosisData?.data || [];
+
+    // Filter by status if statusFilter is set
+    const filteredDiagnoses = statusFilter
+        ? diagnoses.filter((diagnosis) => 
+            diagnosis.status.toLowerCase() === statusFilter.toLowerCase()
+          )
+        : diagnoses;
+
+    const handleAddNew = () => {
         setFormValues({
             name: "",
-            type: "Doctor",
-            status: "Active",
+            status: "active",
         });
         setFormErrors({});
         setSelectedDiagnosis(null);
-        setAddDialogOpen(true);
+        setDialogMode("add");
     };
 
     const handleEdit = (diagnosis: Diagnosis) => {
         setSelectedDiagnosis(diagnosis);
+        const fullDiagnosis = fullDiagnosisData.find((d) => d.id === diagnosis.id);
         setFormValues({
             name: diagnosis.name,
-            type: diagnosis.type,
-            status: diagnosis.status,
+            status: diagnosis.status === "Active" ? "active" : "inactive",
         });
         setFormErrors({});
-        setEditDialogOpen(true);
+        setDialogMode("edit");
     };
 
-    const validateForm = () => {
+    const handleView = (diagnosis: Diagnosis) => {
+        setSelectedDiagnosis(diagnosis);
+        setFormValues({
+            name: diagnosis.name,
+            status: diagnosis.status === "Active" ? "active" : "inactive",
+        });
+        setDialogMode("view");
+    };
+
+    const validateForm = (): boolean => {
         const errors: Record<string, string> = {};
-        if (!formValues.name.trim()) errors.name = "Name is required";
+
+        if (!formValues.name.trim()) {
+            errors.name = "Name is required";
+        }
+
         setFormErrors(errors);
         return Object.keys(errors).length === 0;
     };
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        if (!validateForm()) return;
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
 
-        if (selectedDiagnosis) {
-            setDiagnoses((prev) =>
-                prev.map((diagnosis) =>
-                    diagnosis.id === selectedDiagnosis.id
-                        ? {
-                            ...diagnosis,
-                            name: formValues.name.trim(),
-                            type: formValues.type,
-                            status: formValues.status,
-                        }
-                        : diagnosis
-                )
-            );
-            setEditDialogOpen(false);
-        } else {
-            const newDiagnosis: Diagnosis = {
-                id: diagnoses.length + 1,
-                name: formValues.name.trim(),
-                type: formValues.type,
-                status: formValues.status,
-            };
-            setDiagnoses((prev) => [...prev, newDiagnosis]);
-            setAddDialogOpen(false);
+        if (!validateForm()) {
+            return;
         }
 
-        setSelectedDiagnosis(null);
-        setFormValues({
-            name: "",
-            type: "Doctor",
-            status: "Active",
-        });
-        setFormErrors({});
+        try {
+            let result;
+            
+            if (dialogMode === "add") {
+                const payload = {
+                    diagnosisCategory: formValues.name.trim(),
+                    status: formValues.status,
+                    type: "doctor", // Default type as per requirement
+                };
+
+                result = await createDiagnosisCategory(payload).unwrap();
+                setSuccessMessage(result?.message || "Diagnosis created successfully");
+            } else if (dialogMode === "edit" && selectedDiagnosis) {
+                const fullDiagnosis = fullDiagnosisData.find((d) => d.id === selectedDiagnosis.id);
+                const payload = {
+                    id: selectedDiagnosis.id,
+                    diagnosisCategory: formValues.name.trim(),
+                    status: formValues.status,
+                    type: fullDiagnosis?.type || "doctor", // Use existing type or default to doctor
+                };
+
+                result = await updateDiagnosisCategory(payload).unwrap();
+                setSuccessMessage(result?.message || "Diagnosis updated successfully");
+            }
+
+            // Show success message
+            setShowSuccessDialog(true);
+
+            // Refetch data after successful creation/update
+            await refetchDiagnosis();
+
+            setDialogMode(null);
+            setFormValues({
+                name: "",
+                status: "active",
+            });
+            setFormErrors({});
+            setSelectedDiagnosis(null);
+        } catch (error: any) {
+            console.error(`Failed to ${dialogMode === "add" ? "create" : "update"} diagnosis:`, error);
+            
+            // Handle error - show error message
+            let errorMsg = `Failed to ${dialogMode === "add" ? "create" : "update"} diagnosis. Please try again.`;
+            
+            if (error?.data?.message) {
+                errorMsg = error.data.message;
+            } else if (error?.data?.error) {
+                errorMsg = error.data.error;
+            } else if (error?.error) {
+                errorMsg = error.error;
+            } else if (error?.message) {
+                errorMsg = error.message;
+            }
+            
+            setApiErrorMessage(errorMsg);
+            setShowApiErrorDialog(true);
+        }
     };
 
     const handlePageChange = (page: number) => {
@@ -188,288 +300,207 @@ export default function DiagnosisPage() {
         setCurrentPage(1);
     };
 
-    const getSortDirection = (column: string): "asc" | "desc" | null => {
-        return null;
-    };
-
-    const getStatusBadgeClass = (status: "Active" | "Inactive") => {
-        switch (status) {
-            case "Active":
-                return "border-[#0B8C00]/20 bg-[#0B8C000D] text-[#0B8C00]";
-            case "Inactive":
-                return "border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]";
-            default:
-                return "";
-        }
-    };
-
     return (
         <AppShell>
             <div className="space-y-8">
                 <div className="flex items-start justify-between">
-                    <PageHeading title="Settings" />
+                    <PageHeading title="Diagnosis" />
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
                     <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-                        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                            <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">Diagnosis</h2>
+                        <div className="mb-6 flex items-center justify-between">
+                            <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
                             <div className="flex items-center gap-3">
-                                <div className="w-full lg:max-w-[300px]">
-                                    <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
-                                </div>
-
-                                <div className="flex-1 min-w-[240px] lg:max-w-[320px]">
+                                <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+                                <div className="w-[300px]">
                                     <TableSearchInput
                                         value={searchTerm}
                                         onChange={setSearchTerm}
                                         placeholder="Search Here..."
                                     />
                                 </div>
-
-                                <div className="w-full lg:w-auto">
-                                    <button
-                                        type="button"
-                                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
-                                        onClick={handleAdd}
-                                    >
-                                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                                        Add Diagnosis
-                                    </button>
-                                </div>
+                                
+                                <button
+                                    type="button"
+                                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                                    onClick={handleAddNew}
+                                >
+                                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                                    Add Diagnosis
+                                </button>
                             </div>
                         </div>
 
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead position="first" className="whitespace-nowrap">
-                                        Sr no.
-                                    </TableHead>
-                                    <TableHead sortable sortDirection={getSortDirection("name")} onSort={() => { }}>
-                                        Name
-                                    </TableHead>
-                                    <TableHead sortable sortDirection={getSortDirection("type")} onSort={() => { }}>
-                                        Type
-                                    </TableHead>
-                                    <TableHead sortable sortDirection={getSortDirection("status")} onSort={() => { }}>
-                                        Status
-                                    </TableHead>
-                                    <TableHead position="last">Action</TableHead>
-                                </TableRow>
-                            </TableHeader>
+                        {isLoadingDiagnosis ? (
+                            <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                                    {filteredDiagnoses.map((diagnosis) => (
+                                        <PanelCard
+                                            key={diagnosis.id}
+                                            id={diagnosis.id}
+                                            name={diagnosis.name}
+                                            status={diagnosis.status}
+                                            onView={() => handleView(diagnosis)}
+                                            onEdit={() => handleEdit(diagnosis)}
+                                        />
+                                    ))}
+                                </div>
 
-                            <TableBody>
-                                {paginatedDiagnoses.length === 0 ? (
-                                    <TableRow>
-                                        <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
-                                            No diagnoses found
-                                        </TableData>
-                                    </TableRow>
-                                ) : (
-                                    paginatedDiagnoses.map((diagnosis, index) => (
-                                        <TableRow key={diagnosis.id}>
-                                            <TableData position="first">{startIndex + index + 1}</TableData>
-                                            <TableData>{diagnosis.name}</TableData>
-                                            <TableData>{diagnosis.type}</TableData>
-                                            <TableData>
-                                                <span
-                                                    className={`inline-flex h-[30px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${getStatusBadgeClass(
-                                                        diagnosis.status
-                                                    )}`}
-                                                >
-                                                    {diagnosis.status}
-                                                </span>
-                                            </TableData>
-                                            <TableData position="last">
-                                                <div className="flex items-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleEdit(diagnosis)}
-                                                        className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                        aria-label="Edit diagnosis"
-                                                    >
-                                                        <Image src="/icons/EditIconBlack.svg" alt="Edit" width={20} height={20} />
-                                                    </button>
-                                                </div>
-                                            </TableData>
-                                        </TableRow>
-                                    ))
+                                {filteredDiagnoses.length === 0 && (
+                                    <div className="py-12 text-center text-sm text-[#9CA3AF]">No diagnoses found</div>
                                 )}
-                            </TableBody>
-                        </Table>
+                            </>
+                        )}
 
-                        {filteredDiagnoses.length > 0 && (
+                        {!isLoadingDiagnosis && (diagnosisData?.total || filteredDiagnoses.length) > 0 && (
                             <Pagination
                                 currentPage={currentPage}
-                                totalItems={filteredDiagnoses.length}
+                                totalItems={diagnosisData?.total || filteredDiagnoses.length}
                                 itemsPerPage={itemsPerPage}
                                 onPageChange={handlePageChange}
                                 onItemsPerPageChange={handleItemsPerPageChange}
-                                itemsPerPageOptions={[6, 10, 20, 50]}
+                                itemsPerPageOptions={[10, 20, 50, 100]}
                             />
                         )}
                     </div>
                 </ListBorder>
             </div>
 
-            {/* Add Diagnosis Dialog */}
+            {/* Add/Edit/View Dialog */}
             <Dialog
-                open={addDialogOpen}
+                open={dialogMode !== null}
                 onClose={() => {
-                    setAddDialogOpen(false);
+                    setDialogMode(null);
                     setFormErrors({});
-                }}
-                title="Add Diagnosis"
-                width={949}
-            >
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    <div>
-                        <FormInputField
-                            label="Name"
-                            value={formValues.name}
-                            onChange={(event) => {
-                                setFormValues((prev) => ({ ...prev, name: event.target.value }));
-                                setFormErrors((prev) => ({ ...prev, name: "" }));
-                            }}
-                            height={44}
-                            placeholder="Name"
-                            required
-                        />
-                        {formErrors.name && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.name}</p>}
-                    </div>
-
-                    <div >
-                        <FormSelectField
-                            label="Type"
-                            value={formValues.type}
-                            onChange={(value) => {
-                                setFormValues((prev) => ({
-                                    ...prev,
-                                    type: ((Array.isArray(value) ? value[0] : value) as "Doctor" | "Agent") || "Doctor",
-                                }));
-                            }}
-                            options={diagnosisTypeOptions}
-                            placeholder="Select Type"
-                            mode="single"
-                            background="white"
-                        />
-
-                    </div>
-                    <div>
-                        <FormSelectField
-                            label="Status"
-                            value={formValues.status}
-                            onChange={(value) => {
-                                setFormValues((prev) => ({
-                                    ...prev,
-                                    status: ((Array.isArray(value) ? value[0] : value) as "Active" | "Inactive") || "Active",
-                                }));
-                            }}
-                            options={statusOptions}
-                            placeholder="Select Status"
-                            mode="single"
-                            background="white"
-                        />
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Button type="submit" variant="primary">
-                            Add Diagnosis
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                                setAddDialogOpen(false);
-                                setFormErrors({});
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                    </div>
-                </form>
-            </Dialog>
-
-            {/* Edit Diagnosis Dialog */}
-            <Dialog
-                open={editDialogOpen}
-                onClose={() => {
-                    setEditDialogOpen(false);
                     setSelectedDiagnosis(null);
-                    setFormErrors({});
                 }}
-                title="Edit Diagnosis"
-                width={949}
+                title={dialogMode === "add" ? "Add Diagnosis" : dialogMode === "edit" ? "Edit Diagnosis" : "View Sub Diagnoses"}
+                width={686}
             >
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    <div>
-                        <FormInputField
-                            label="Name"
-                            value={formValues.name}
-                            onChange={(event) => {
-                                setFormValues((prev) => ({ ...prev, name: event.target.value }));
-                                setFormErrors((prev) => ({ ...prev, name: "" }));
-                            }}
-                            height={44}
-                            placeholder="Name"
-                            required
-                        />
-                        {formErrors.name && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.name}</p>}
+                {dialogMode === "view" ? (
+                    <div className="space-y-4">
+                        {(() => {
+                            const selectedDiagnosisData = fullDiagnosisData.find((d) => d.id === selectedDiagnosis?.id);
+                            const subDiagnoses = selectedDiagnosisData?.subDiagnoses || [];
+                            
+                            if (subDiagnoses.length === 0) {
+                                return (
+                                    <div className="py-8 text-center text-sm text-[#9CA3AF]">
+                                        No Sub-Diagnosis available
+                                    </div>
+                                );
+                            }
+                            
+                            return (
+                                <div className="flex flex-wrap gap-2">
+                                    {subDiagnoses.map((subDiagnosis) => (
+                                        <span
+                                            key={subDiagnosis.id}
+                                            className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-5 text-xs font-semibold leading-[120%] text-[#9A7909]"
+                                        >
+                                            {subDiagnosis.name}
+                                        </span>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="space-y-6">
+                            <div>
+                                <FormInputField
+                                    label="Name *"
+                                    value={formValues.name}
+                                    onChange={(event) => {
+                                        setFormValues((prev) => ({ ...prev, name: event.target.value }));
+                                        setFormErrors((prev) => ({ ...prev, name: "" }));
+                                    }}
+                                    height={44}
+                                    placeholder="Name"
+                                    required
+                                    error={formErrors.name}
+                                />
+                            </div>
 
-                    <div >
-                        <FormSelectField
-                            label="Type"
-                            value={formValues.type}
-                            onChange={(value) => {
-                                setFormValues((prev) => ({
-                                    ...prev,
-                                    type: ((Array.isArray(value) ? value[0] : value) as "Doctor" | "Agent") || "Doctor",
-                                }));
-                            }}
-                            options={diagnosisTypeOptions}
-                            placeholder="Select Type"
-                            mode="single"
-                            background="white"
-                        />
-                    </div>
-                    <div>
-                        <FormSelectField
-                            label="Status"
-                            value={formValues.status}
-                            onChange={(value) => {
-                                setFormValues((prev) => ({
-                                    ...prev,
-                                    status: ((Array.isArray(value) ? value[0] : value) as "Active" | "Inactive") || "Active",
-                                }));
-                            }}
-                            options={statusOptions}
-                            placeholder="Select Status"
-                            mode="single"
-                            background="white"
-                        />
-                    </div>
+                            <div>
+                                <FormSelectField
+                                    label="Status"
+                                    value={formValues.status}
+                                    onChange={(value) => {
+                                        setFormValues((prev) => ({
+                                            ...prev,
+                                            status: (Array.isArray(value) ? value[0] : value || "active") as "active" | "inactive",
+                                        }));
+                                    }}
+                                    options={statusOptions}
+                                    placeholder="Status"
+                                    mode="single"
+                                    background="white"
+                                />
+                            </div>
+                        </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Button type="submit" variant="primary">
-                            Update Diagnosis
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                                setEditDialogOpen(false);
-                                setSelectedDiagnosis(null);
-                                setFormErrors({});
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                    </div>
-                </form>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Button 
+                                type="submit" 
+                                variant="primary"
+                                isLoading={isCreating || isUpdating}
+                                disabled={isCreating || isUpdating}
+                            >
+                                {dialogMode === "add" ? "Save" : "Update"}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                    setDialogMode(null);
+                                    setFormErrors({});
+                                }}
+                                disabled={isCreating || isUpdating}
+                            >
+                                Cancel
+                            </Button>
+                        </div>
+                    </form>
+                )}
             </Dialog>
+
+            {/* Success Dialog */}
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => {
+                    setShowSuccessDialog(false);
+                }}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message={successMessage}
+                confirmText="Success"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowSuccessDialog(false);
+                }}
+            />
+
+            {/* API Error Dialog */}
+            <MessageDialog
+                open={showApiErrorDialog}
+                onClose={() => {
+                    setShowApiErrorDialog(false);
+                }}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={apiErrorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowApiErrorDialog(false);
+                }}
+            />
         </AppShell>
     );
 }

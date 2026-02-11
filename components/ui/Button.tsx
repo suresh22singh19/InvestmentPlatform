@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ThreeDotLoader } from "./ThreeDotLoader";
 
 const baseClasses =
   "inline-flex items-center justify-center rounded-full font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 disabled:cursor-not-allowed disabled:opacity-60";
@@ -30,6 +31,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   asChild?: boolean;
+  isLoading?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -40,18 +42,32 @@ export const Button: React.FC<ButtonProps> = ({
   children,
   leftIcon,
   rightIcon,
+  isLoading = false,
+  disabled,
   ...props
 }) => {
   const widthClass = fullWidth ? "w-full" : "min-w-[132px]";
+  const isDisabled = disabled || isLoading;
+  
+  // Determine loader color: white for primary (green) buttons, green for others
+  const loaderColor = variant === "primary" ? "white" : "green";
+  const loaderSize = size === "small" ? "small" : size === "medium" ? "medium" : "large";
 
   return (
     <button
-      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${widthClass} gap-2 ${className}`}
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${widthClass} gap-2 ${className} cursor-pointer`}
+      disabled={isDisabled}
       {...props}
     >
-      {leftIcon ? <span className="-ml-1 flex items-center">{leftIcon}</span> : null}
-      <span>{children}</span>
-      {rightIcon ? <span className="-mr-1 flex items-center">{rightIcon}</span> : null}
+      {isLoading ? (
+        <ThreeDotLoader color={loaderColor} size={loaderSize} />
+      ) : (
+        <>
+          {leftIcon ? <span className="-ml-1 flex items-center">{leftIcon}</span> : null}
+          <span>{children}</span>
+          {rightIcon ? <span className="-mr-1 flex items-center">{rightIcon}</span> : null}
+        </>
+      )}
     </button>
   );
 };

@@ -80,7 +80,6 @@ export default function ResetPasswordPage() {
               try {
                 const result = await resetPassword({
                   email: decodeURIComponent(email),
-                  login_type: loginType,
                   password: values.password,
                   confirm_password: values.confirmPassword,
                   token: token,

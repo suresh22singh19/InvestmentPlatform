@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import ScrollableContainer from "./ScrollableContainer";
 
 type TableProps = {
   children: React.ReactNode;
@@ -9,9 +10,9 @@ type TableProps = {
 
 export const Table = ({ children, className = "" }: TableProps) => {
   return (
-    <div className={`w-full overflow-x-auto overflow-y-visible rounded-t-[8px] ${className}`}>
+    <ScrollableContainer className={`w-full rounded-t-[8px] ${className}`} maxHeight="none">
       <table className="w-full border-separate border-spacing-0 min-w-max">{children}</table>
-    </div>
+    </ScrollableContainer>
   );
 };
 
@@ -67,7 +68,7 @@ export const TableHead = ({
   onSort,
   position = "middle",
 }: TableHeadProps) => {
-  const baseClasses = "h-[46px] border-t border-b border-[#EDF3EA] px-5 text-xs font-medium text-[#262D3B]";
+  const baseClasses = "h-[46px] border-t border-b border-[#EDF3EA] px-5 pt-0 text-xs font-medium text-[#262D3B]";
   
   const positionClasses = {
     first: "border-l rounded-tl-[8px] rounded-bl-[8px]",
@@ -98,6 +99,7 @@ type TableDataProps = {
   colSpan?: number;
   position?: "first" | "last" | "middle";
   variant?: "default" | "primary";
+  onClick?: () => void;
 };
 
 export const TableData = ({ 
@@ -106,6 +108,7 @@ export const TableData = ({
   colSpan,
   position = "middle",
   variant = "default",
+  onClick,
 }: TableDataProps) => {
   const baseClasses = "h-[46px] border-b border-[#EDF3EA] px-5 text-sm leading-[120%]";
   
@@ -115,7 +118,11 @@ export const TableData = ({
   };
 
   return (
-    <td className={`${baseClasses} ${variantClasses[variant]} ${className}`} colSpan={colSpan}>
+    <td 
+      className={`${baseClasses} ${variantClasses[variant]} ${onClick ? "cursor-pointer" : ""} ${className}`} 
+      colSpan={colSpan}
+      onClick={onClick}
+    >
       {children}
     </td>
   );

@@ -13,7 +13,7 @@ type TableSearchInputProps = {
 export const TableSearchInput = forwardRef<HTMLInputElement, TableSearchInputProps>(
   ({ value, placeholder = "Search Here...", onChange, className = "" }, ref) => {
     return (
-      <label className={`group flex h-11 w-[300px] items-center gap-2 rounded-[32px] border border-[#EBECED] bg-[#0B8C000D] px-4 transition-all duration-200 focus-within:border-[#0B8C00] focus-within:shadow-[0_0_0_2px_rgba(11,140,0,0.12)] ${className}`}>
+      <label className={`group flex h-11 w-full items-center gap-2 rounded-[32px] border border-[#EBECED] bg-[#0B8C000D] px-4 transition-all duration-200 focus-within:border-[#0B8C00] focus-within:shadow-[0_0_0_2px_rgba(11,140,0,0.12)] ${className}`}>
         <Image
           src="/icons/searchdarkIcon.svg"
           alt=""

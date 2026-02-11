@@ -2917,7 +2917,7 @@ export default function HospitalInfrastructurePage() {
         <div className="flex flex-1 flex-col px-8 pb-12">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <PageHeading title="Design Your Infrastructure Flow" />
-            <Button variant="ghost" size="small" onClick={() => setExperienceStep("welcome")}>
+            <Button variant="primary" size="small" onClick={() => setExperienceStep("welcome")}>
               Back
             </Button>
           </div>

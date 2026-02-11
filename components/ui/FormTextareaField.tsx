@@ -39,11 +39,25 @@ export const FormTextareaField = forwardRef<HTMLTextAreaElement, FormTextareaFie
       } as React.CSSProperties;
     }, [height]);
 
+    const renderLabel = useMemo(() => {
+      if (label.includes("*")) {
+        const parts = label.split("*");
+        return (
+          <>
+            {parts[0]}
+            <span className="text-[#F6776E]">*</span>
+            {parts.slice(1).join("*")}
+          </>
+        );
+      }
+      return label;
+    }, [label]);
+
     return (
       <div className="inline-flex w-full flex-col gap-2" style={wrapperStyles}>
         <div className="group relative inline-flex w-full">
           <span className="pointer-events-none absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
-            {label}
+            {renderLabel}
           </span>
 
           <textarea

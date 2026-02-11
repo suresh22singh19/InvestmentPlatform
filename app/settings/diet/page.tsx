@@ -1,13 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
   Button,
   FormInputField,
   FormSelectField,
+  FormTextareaField,
   Table,
   TableBody,
   TableData,
@@ -16,146 +17,149 @@ import {
   TableRow,
   TableSearchInput,
   Pagination,
+  MessageDialog,
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import { 
+  useGetDietCategoriesQuery, 
+  useGetDiagnosisCategoriesMainQuery,
+  useGetDiagnosisDietsQuery,
+  useCreateDiagnosisDietMutation,
+  useUpdateDiagnosisDietMutation,
+  useDeleteDiagnosisDietMutation,
+} from "@/store/api/settingsApi";
+import { useDebounce } from "@/hooks/useDebounce";
 
-type Diet = {
+type DietFood = {
   id: number;
-  name: string;
-  diagnosis: string;
-  dietSchedule: string;
-  selectedCategories: string[];
+  diet: string;
 };
 
-const initialDiets: Diet[] = [
-  {
-    id: 1,
-    name: "Oats with Fruits",
-    diagnosis: "diabetes",
-    dietSchedule: "morning",
-    selectedCategories: ["MILLET DIET", "CARROT", "BEETROOT", "FRUIT SALAD"],
-  },
-  {
-    id: 2,
-    name: "Green Salad",
-    diagnosis: "hypertension",
-    dietSchedule: "afternoon",
-    selectedCategories: ["VEGETABLE SALAD", "CUCUMBER", "BROCCOLI"],
-  },
-  {
-    id: 3,
-    name: "Vegetable Smoothie",
-    diagnosis: "obesity",
-    dietSchedule: "evening",
-    selectedCategories: ["GREEN JUICE", "CARROT", "CELERY"],
-  },
-  {
-    id: 4,
-    name: "Detox Salad",
-    diagnosis: "addiction",
-    dietSchedule: "full-day",
-    selectedCategories: ["DETOX DRINK", "VEGETABLE SALAD"],
-  },
-  {
-    id: 5,
-    name: "Boiled Eggs",
-    diagnosis: "thyroid",
-    dietSchedule: "morning",
-    selectedCategories: ["ALMOND", "WALNUT"],
-  },
-  {
-    id: 6,
-    name: "Fresh Juice",
-    diagnosis: "cardiac",
-    dietSchedule: "evening",
-    selectedCategories: ["RED JUICE", "GREEN JUICE", "FRUIT SALAD"],
-  },
-];
+type DietCategory = {
+  id: number;
+  dietCategory: string;
+  dietFoods: DietFood[];
+};
 
-const diagnosisOptions: SelectOption[] = [
-  { value: "diabetes", label: "Diabetes" },
-  { value: "hypertension", label: "Hypertension" },
-  { value: "obesity", label: "Obesity" },
-  { value: "addiction", label: "Addiction" },
-  { value: "thyroid", label: "Thyroid" },
-  { value: "cardiac", label: "Cardiac" },
-  { value: "cancer", label: "Cancer" },
-];
+type DiagnosisDietItem = {
+  id: number;
+  diagnosisId: number;
+  diagnosisName: string;
+  dietSchedule: string;
+  dietDetail: number[];
+  instructions: string;
+  status: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 const dietScheduleOptions: SelectOption[] = [
-  { value: "early-morning", label: "Early Morning" },
-  { value: "morning", label: "Morning - Low-sugar meal plan" },
-  { value: "afternoon", label: "Afternoon - Low-salt diet" },
-  { value: "evening", label: "Evening - High-fiber plan" },
-  { value: "full-day", label: "Full Day - Detox diet" },
+  { value: "Early Morning", label: "Early Morning(5:45-7:15 Am)" },
+  { value: "Breakfast", label: "Breakfast(8:00-9:30 Am)" },
+  { value: "Morning Snacks", label: "Morning Snacks(11:00-11:20 AM)" },
+  { value: "Lunch", label: "Lunch(01:00 - 2 :00 Pm)" },
+  { value: "Evening Snacks", label: "Evening Snacks(4:00-4:20 Pm)" },
+  { value: "Dinner", label: "Dinner(06:15-7:30 Pm)" },
 ];
 
-const dietCategories = {
-  "PLATE2": ["MILLET DIET"],
-  "PLATE 1": ["CARROT", "BEETROOT", "CUCUMBER", "RAW PAPAYA", "ASHGOURD", "RED BELL PEPPER", "YELLOW BELL PEPPER", "BROCCOLI", "Salad"],
-  "MILLET": ["LITTLE MILLET", "BARNYAD MILLET", "KODO MILLET", "FOXTAIL MILLET", "BROWNTOP MILLET", "SORGHUM MILLET"],
-  "WATER": ["MINERAL WATER", "ALKALINE WATER", "LIVING WATER"],
-  "JUICE": ["RED JUICE", "GREEN JUICE", "YELLOW JUICE", "BLACK JUICE", "MOONG DAL WATER", "MIX JUICE"],
-  "MILK": ["COCONUT MILK", "ALMOND MILK", "CASHEW MILK", "OAT MILK", "PEANUT MILK"],
-  "SALAD": ["SPROUTS SALAD", "FRUIT SALAD", "VEGETABLE SALAD", "NORMAL SALAD", "SALAD SMOOTHIE"],
-  "FRUITS": ["PAPAYA", "APPLE", "PINEAPPLE", "POMEGRANATE", "KIWI", "GUAVA", "STRAWBERRIES", "ORANGE", "MANGO", "GRAPES", "WATER MELON", "MUSKMELON", "PEAR"],
-  "SOAKED DRY FRUITS": ["ALMOND", "WALNUT", "RAISINS"],
-  "SPICES": ["TURMERIC", "CINNAMON", "CLOVES", "CUMIN SEEDS", "CARDAMON GREEN", "CAROM SEEDS", "GINGER", "GARLIC"],
-  "DETOX DRINK": ["COCONUT WATER", "TURMERIC WATER", "LEMON AND GINGER DRINK"],
-  "HERBAL TEA": ["HERBAL TEA 32", "CURRY LEAVES"],
-};
-
 export default function DietPage() {
-  const [diets, setDiets] = useState<Diet[]>(initialDiets);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(6);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortField, setSortField] = useState<string>("id");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [selectedDiet, setSelectedDiet] = useState<Diet | null>(null);
+  const [editingDietId, setEditingDietId] = useState<number | null>(null);
   const [formValues, setFormValues] = useState({
-    name: "",
     diagnosis: "",
+    diagnosisId: 0,
+    diagnosisName: "",
     dietSchedule: "",
-    selectedCategories: [] as string[],
+    selectedFoodIds: [] as number[],
+    instructions: "",
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
+  const [apiErrorMessage, setApiErrorMessage] = useState("");
 
-  const filteredDiets = useMemo(() => {
-    return diets.filter((diet) => {
-      return (
-        diet.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        diet.diagnosis.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        diet.dietSchedule.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    });
-  }, [diets, searchTerm]);
+  // Debounce search to avoid too many API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedDiets = filteredDiets.slice(startIndex, startIndex + itemsPerPage);
+  // Reset to first page when search term or sort changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, sortField, sortOrder]);
+
+  // Fetch diagnosis categories from API
+  const { data: diagnosisData, isLoading: isLoadingDiagnosis } = useGetDiagnosisCategoriesMainQuery();
+  
+  // Fetch diagnosis diets from API for table
+  const { data: diagnosisDietsData, isLoading: isLoadingDiagnosisDiets, refetch: refetchDiagnosisDiets } = useGetDiagnosisDietsQuery({
+    page: currentPage,
+    limit: itemsPerPage,
+    search: debouncedSearchTerm || undefined,
+    sort: sortField,
+    order: sortOrder,
+  });
+  
+  // Fetch diet categories from API with limit 100 for form
+  const { data: dietCategoriesData, isLoading: isLoadingDietCategories } = useGetDietCategoriesQuery({
+    limit: 100,
+  });
+
+  // Create, update, and delete diagnosis diet mutations
+  const [createDiagnosisDiet, { isLoading: isCreating }] = useCreateDiagnosisDietMutation();
+  const [updateDiagnosisDiet, { isLoading: isUpdating }] = useUpdateDiagnosisDietMutation();
+  const [deleteDiagnosisDiet, { isLoading: isDeleting }] = useDeleteDiagnosisDietMutation();
+
+  // Map diagnosis data to SelectOption format
+  const diagnosisOptions: SelectOption[] = useMemo(() => {
+    if (!diagnosisData?.data) return [];
+    return diagnosisData.data.map((item) => ({
+      value: item.id.toString(),
+      label: item.name,
+    }));
+  }, [diagnosisData]);
+
+  // Map diet categories data
+  const dietCategories: DietCategory[] = useMemo(() => {
+    if (!dietCategoriesData?.data) return [];
+    return dietCategoriesData.data.map((category) => ({
+      id: category.id,
+      dietCategory: category.dietCategory,
+      dietFoods: category.dietFoods,
+    }));
+  }, [dietCategoriesData]);
 
   const handleAdd = () => {
-    setSelectedDiet(null);
     setIsEditing(false);
+    setEditingDietId(null);
     setFormValues({
-      name: "",
       diagnosis: "",
+      diagnosisId: 0,
+      diagnosisName: "",
       dietSchedule: "",
-      selectedCategories: [],
+      selectedFoodIds: [],
+      instructions: "",
     });
     setFormErrors({});
     setShowForm(true);
   };
 
-  const handleEdit = (diet: Diet) => {
-    setSelectedDiet(diet);
+  const handleEdit = (diet: DiagnosisDietItem) => {
     setIsEditing(true);
+    setEditingDietId(diet.id);
     setFormValues({
-      name: diet.name,
-      diagnosis: diet.diagnosis,
+      diagnosis: diet.diagnosisId.toString(),
+      diagnosisId: diet.diagnosisId,
+      diagnosisName: diet.diagnosisName,
       dietSchedule: diet.dietSchedule,
-      selectedCategories: [...diet.selectedCategories],
+      selectedFoodIds: diet.dietDetail || [],
+      instructions: diet.instructions || "",
     });
     setFormErrors({});
     setShowForm(true);
@@ -164,68 +168,96 @@ export default function DietPage() {
   const handleCancel = () => {
     setShowForm(false);
     setIsEditing(false);
-    setSelectedDiet(null);
+    setEditingDietId(null);
     setFormValues({
-      name: "",
       diagnosis: "",
+      diagnosisId: 0,
+      diagnosisName: "",
       dietSchedule: "",
-      selectedCategories: [],
+      selectedFoodIds: [],
+      instructions: "",
     });
     setFormErrors({});
   };
 
-  const toggleCategory = (category: string) => {
+  const toggleFood = (foodId: number) => {
     setFormValues((prev) => {
-      const isSelected = prev.selectedCategories.includes(category);
+      const isSelected = prev.selectedFoodIds.includes(foodId);
       return {
         ...prev,
-        selectedCategories: isSelected
-          ? prev.selectedCategories.filter((c) => c !== category)
-          : [...prev.selectedCategories, category],
+        selectedFoodIds: isSelected
+          ? prev.selectedFoodIds.filter((id) => id !== foodId)
+          : [...prev.selectedFoodIds, foodId],
       };
     });
   };
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
-    if (!formValues.name.trim()) errors.name = "Name is required";
     if (!formValues.diagnosis) errors.diagnosis = "Diagnosis is required";
     if (!formValues.dietSchedule) errors.dietSchedule = "Diet Schedule is required";
-    if (formValues.selectedCategories.length === 0) errors.selectedCategories = "At least one diet category is required";
+    if (formValues.selectedFoodIds.length === 0) errors.selectedFoodIds = "At least one diet food is required";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!validateForm()) return;
 
-    if (isEditing && selectedDiet) {
-      setDiets((prev) =>
-        prev.map((diet) =>
-          diet.id === selectedDiet.id
-            ? {
-                ...diet,
-                name: formValues.name.trim(),
-                diagnosis: formValues.diagnosis,
-                dietSchedule: formValues.dietSchedule,
-                selectedCategories: formValues.selectedCategories,
-              }
-            : diet
-        )
-      );
-    } else {
-      const newDiet: Diet = {
-        id: diets.length + 1,
-        name: formValues.name.trim(),
-        diagnosis: formValues.diagnosis,
-        dietSchedule: formValues.dietSchedule,
-        selectedCategories: formValues.selectedCategories,
-      };
-      setDiets((prev) => [...prev, newDiet]);
-    }
+    try {
+      let result;
+      
+      if (isEditing && editingDietId) {
+        // Update existing diagnosis diet
+        const payload = {
+          id: editingDietId,
+          dietDetail: formValues.selectedFoodIds,
+          instructions: formValues.instructions.trim(),
+        };
 
-    handleCancel();
+        result = await updateDiagnosisDiet(payload).unwrap();
+        setSuccessMessage(result?.message || "Diagnosis diet updated successfully");
+      } else {
+        // Create new diagnosis diet
+        const payload = {
+          diagnosisId: formValues.diagnosisId,
+          diagnosisName: formValues.diagnosisName,
+          dietSchedule: formValues.dietSchedule,
+          dietDetail: formValues.selectedFoodIds,
+          instructions: formValues.instructions.trim(),
+          status: "active" as "active" | "inactive",
+        };
+
+        result = await createDiagnosisDiet(payload).unwrap();
+        setSuccessMessage(result?.message || "Diagnosis diet created successfully");
+      }
+
+      setShowSuccessDialog(true);
+
+      // Refetch table data after successful creation/update
+      await refetchDiagnosisDiets();
+
+      // Reset form after success
+      handleCancel();
+    } catch (error: any) {
+      console.error(`Failed to ${isEditing ? "update" : "create"} diagnosis diet:`, error);
+      
+      let errorMsg = `Failed to ${isEditing ? "update" : "create"} diagnosis diet. Please try again.`;
+      
+      if (error?.data?.message) {
+        errorMsg = error.data.message;
+      } else if (error?.data?.error) {
+        errorMsg = error.data.error;
+      } else if (error?.error) {
+        errorMsg = error.error;
+      } else if (error?.message) {
+        errorMsg = error.message;
+      }
+      
+      setApiErrorMessage(errorMsg);
+      setShowApiErrorDialog(true);
+    }
   };
 
   const handlePageChange = (page: number) => {
@@ -237,30 +269,84 @@ export default function DietPage() {
     setCurrentPage(1);
   };
 
-  const getSortDirection = (column: string): "asc" | "desc" | null => {
-    return null;
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      // Toggle order if same field
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      // Set new field with ascending order
+      setSortField(field);
+      setSortOrder("asc");
+    }
   };
 
-  const getDiagnosisLabel = (value: string) => {
-    return diagnosisOptions.find((opt) => opt.value === value)?.label || value;
+  const getSortDirection = (field: string): "asc" | "desc" | null => {
+    if (sortField === field) {
+      return sortOrder;
+    }
+    return null;
   };
 
   const getDietScheduleLabel = (value: string) => {
     return dietScheduleOptions.find((opt) => opt.value === value)?.label || value;
   };
 
+  const totalItems = diagnosisDietsData?.total || 0;
+  const diagnosisDiets = diagnosisDietsData?.data || [];
+
+  const handleDiagnosisChange = (value: string | string[]) => {
+    const diagnosisValue = Array.isArray(value) ? value[0] : value || "";
+    const selectedDiagnosis = diagnosisData?.data?.find(
+      (item) => item.id.toString() === diagnosisValue
+    );
+    
+    setFormValues((prev) => ({
+      ...prev,
+      diagnosis: diagnosisValue,
+      diagnosisId: selectedDiagnosis?.id || 0,
+      diagnosisName: selectedDiagnosis?.name || "",
+    }));
+    setFormErrors((prev) => ({ ...prev, diagnosis: "" }));
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      const result = await deleteDiagnosisDiet({ id }).unwrap();
+      setSuccessMessage(result?.message || "Diagnosis diet deleted successfully");
+      setShowSuccessDialog(true);
+      await refetchDiagnosisDiets();
+    } catch (error: any) {
+      console.error("Failed to delete diagnosis diet:", error);
+      
+      let errorMsg = "Failed to delete diagnosis diet. Please try again.";
+      
+      if (error?.data?.message) {
+        errorMsg = error.data.message;
+      } else if (error?.data?.error) {
+        errorMsg = error.data.error;
+      } else if (error?.error) {
+        errorMsg = error.error;
+      } else if (error?.message) {
+        errorMsg = error.message;
+      }
+      
+      setApiErrorMessage(errorMsg);
+      setShowApiErrorDialog(true);
+    }
+  };
+
   return (
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title="Diagnosis Diet" />
         </div>
 
         {!showForm ? (
           <ListBorder as="section" className="px-4 py-4">
             <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
               <div className="mb-6 flex items-center justify-between">
-                <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">Diet</h2>
+                <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
                 <div className="flex items-center gap-3">
                   <TableSearchInput
@@ -270,7 +356,7 @@ export default function DietPage() {
                   />
                   <button
                     type="button"
-                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
                     onClick={handleAdd}
                   >
                     <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
@@ -285,31 +371,41 @@ export default function DietPage() {
                     <TableHead position="first" className="whitespace-nowrap">
                       Sr no.
                     </TableHead>
-                    <TableHead sortable sortDirection={getSortDirection("name")} onSort={() => {}}>
-                      Diet Name
-                    </TableHead>
-                    <TableHead sortable sortDirection={getSortDirection("diagnosis")} onSort={() => {}}>
+                    <TableHead 
+                      sortable 
+                      sortDirection={getSortDirection("diagnosisName")} 
+                      onSort={() => handleSort("diagnosisName")}
+                    >
                       Diagnosis
                     </TableHead>
-                    <TableHead sortable sortDirection={getSortDirection("dietSchedule")} onSort={() => {}}>
+                    <TableHead 
+                      sortable 
+                      sortDirection={getSortDirection("dietSchedule")} 
+                      onSort={() => handleSort("dietSchedule")}
+                    >
                       Diet Schedule
                     </TableHead>
                     <TableHead position="last">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedDiets.length === 0 ? (
+                  {isLoadingDiagnosisDiets ? (
                     <TableRow>
-                      <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
+                      <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
+                        Loading...
+                      </TableData>
+                    </TableRow>
+                  ) : diagnosisDiets.length === 0 ? (
+                    <TableRow>
+                      <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
                         No diets found
                       </TableData>
                     </TableRow>
                   ) : (
-                    paginatedDiets.map((diet, index) => (
+                    diagnosisDiets.map((diet, index) => (
                       <TableRow key={diet.id}>
-                        <TableData position="first">{startIndex + index + 1}</TableData>
-                        <TableData>{diet.name}</TableData>
-                        <TableData>{getDiagnosisLabel(diet.diagnosis)}</TableData>
+                        <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
+                        <TableData>{diet.diagnosisName}</TableData>
                         <TableData>{getDietScheduleLabel(diet.dietSchedule)}</TableData>
                         <TableData position="last">
                           <div className="flex items-center gap-3">
@@ -317,7 +413,7 @@ export default function DietPage() {
                               type="button"
                               onClick={() => handleEdit(diet)}
                               className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                              aria-label="Edit diet"
+                              aria-label="Edit diagnosis diet"
                             >
                               <Image
                                 src="/icons/EditIconBlack.svg"
@@ -325,6 +421,15 @@ export default function DietPage() {
                                 width={20}
                                 height={20}
                               />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(diet.id)}
+                              className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label="Delete diagnosis diet"
+                              disabled={isDeleting}
+                            >
+                              <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
                             </button>
                           </div>
                         </TableData>
@@ -334,14 +439,14 @@ export default function DietPage() {
                 </TableBody>
               </Table>
 
-              {filteredDiets.length > 0 && (
+              {!isLoadingDiagnosisDiets && totalItems > 0 && (
                 <Pagination
                   currentPage={currentPage}
-                  totalItems={filteredDiets.length}
+                  totalItems={totalItems}
                   itemsPerPage={itemsPerPage}
                   onPageChange={handlePageChange}
                   onItemsPerPageChange={handleItemsPerPageChange}
-                  itemsPerPageOptions={[6, 10, 20, 50]}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
                 />
               )}
             </div>
@@ -351,42 +456,22 @@ export default function DietPage() {
             <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
               <div className="mb-6 flex items-center justify-between">
                 <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">
-                  {isEditing ? "Edit Diet" : "Add Diet"}
+                  {isEditing ? "Edit Diagnosis Diet" : "Add Diagnosis Diet"}
                 </h2>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 gap-6">
                   <div>
-                    <FormInputField
-                      label="Name"
-                      value={formValues.name}
-                      onChange={(event) => {
-                        setFormValues((prev) => ({ ...prev, name: event.target.value }));
-                        setFormErrors((prev) => ({ ...prev, name: "" }));
-                      }}
-                      height={44}
-                      placeholder="Name"
-                      required
-                    />
-                    {formErrors.name && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.name}</p>}
-                  </div>
-
-                  <div>
                     <FormSelectField
                       label="Diagnosis"
                       value={formValues.diagnosis}
-                      onChange={(value) => {
-                        setFormValues((prev) => ({
-                          ...prev,
-                          diagnosis: Array.isArray(value) ? value[0] : value || "",
-                        }));
-                        setFormErrors((prev) => ({ ...prev, diagnosis: "" }));
-                      }}
+                      onChange={handleDiagnosisChange}
                       options={diagnosisOptions}
                       placeholder="Select Diagnosis"
                       mode="single"
                       background="white"
+                      disabled={isLoadingDiagnosis || isCreating || isUpdating || isEditing}
                     />
                     {formErrors.diagnosis && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.diagnosis}</p>}
                   </div>
@@ -406,6 +491,7 @@ export default function DietPage() {
                       placeholder="Select Diet Schedule"
                       mode="single"
                       background="white"
+                      disabled={isCreating || isUpdating || isEditing}
                     />
                     {formErrors.dietSchedule && (
                       <p className="mt-1 text-xs text-[#F6776E]">{formErrors.dietSchedule}</p>
@@ -415,42 +501,70 @@ export default function DietPage() {
 
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Categories</h3>
-                  <div className="space-y-6">
-                    {Object.entries(dietCategories).map(([categoryName, items]) => (
-                      <div key={categoryName} className="space-y-3">
-                        <h4 className="text-xs font-medium text-[#434956]">{categoryName}</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {items.map((item) => {
-                            const isSelected = formValues.selectedCategories.includes(item);
-                            return (
-                              <button
-                                key={item}
-                                type="button"
-                                onClick={() => toggleCategory(item)}
-                                className={`inline-flex h-[30px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold leading-[120%] transition-colors ${
-                                  isSelected
-                                    ? "border-[#0B8C00] bg-[#0B8C00] text-white"
-                                    : "border-[#0B8C00]/20 bg-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/30"
-                                }`}
-                              >
-                                {item}
-                              </button>
-                            );
-                          })}
+                  {isLoadingDietCategories ? (
+                    <div className="py-8 text-center text-sm text-[#9CA3AF]">Loading diet categories...</div>
+                  ) : (
+                    <div className="space-y-6">
+                      {dietCategories.map((category) => (
+                        <div key={category.id} className="space-y-3">
+                          <h4 className="text-xs font-medium text-[#434956]">{category.dietCategory}</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {category.dietFoods.map((food) => {
+                              const isSelected = formValues.selectedFoodIds.includes(food.id);
+                              return (
+                                <button
+                                  key={food.id}
+                                  type="button"
+                                  onClick={() => toggleFood(food.id)}
+                                  disabled={isCreating || isUpdating}
+                                  className={`inline-flex h-[30px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold leading-[120%] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    isSelected
+                                      ? "border-[#0B8C00] bg-[#0B8C00] text-white"
+                                      : "border-[#0B8C00]/20 bg-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/30"
+                                  }`}
+                                >
+                                  {food.diet}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                  {formErrors.selectedCategories && (
-                    <p className="mt-1 text-xs text-[#F6776E]">{formErrors.selectedCategories}</p>
+                      ))}
+                    </div>
+                  )}
+                  {formErrors.selectedFoodIds && (
+                    <p className="mt-1 text-xs text-[#F6776E]">{formErrors.selectedFoodIds}</p>
                   )}
                 </div>
 
+                <div>
+                  <FormTextareaField
+                    label="Special Instructions"
+                    value={formValues.instructions}
+                    onChange={(event) => {
+                      setFormValues((prev) => ({ ...prev, instructions: event.target.value }));
+                    }}
+                    height={73}
+                    placeholder="Special Instructions"
+                    disabled={isCreating || isUpdating}
+                  />
+                </div>
+
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" variant="primary">
+                  <Button 
+                    type="submit" 
+                    variant="primary" 
+                    isLoading={isCreating || isUpdating} 
+                    disabled={isCreating || isUpdating}
+                  >
                     {isEditing ? "Update Diet" : "Add Diet"}
                   </Button>
-                  <Button type="button" variant="outline" onClick={handleCancel}>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={handleCancel} 
+                    disabled={isCreating || isUpdating}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -459,7 +573,38 @@ export default function DietPage() {
           </ListBorder>
         )}
       </div>
+
+      {/* Success Dialog */}
+      <MessageDialog
+        open={showSuccessDialog}
+        onClose={() => {
+          setShowSuccessDialog(false);
+        }}
+        icon="/icons/SuccessCheck.svg"
+        iconBgColor="#E8F5E9"
+        message={successMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => {
+          setShowSuccessDialog(false);
+        }}
+      />
+
+      {/* API Error Dialog */}
+      <MessageDialog
+        open={showApiErrorDialog}
+        onClose={() => {
+          setShowApiErrorDialog(false);
+        }}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={apiErrorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => {
+          setShowApiErrorDialog(false);
+        }}
+      />
     </AppShell>
   );
 }
-

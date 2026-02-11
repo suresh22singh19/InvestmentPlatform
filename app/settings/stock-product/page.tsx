@@ -39,14 +39,14 @@ export default function StockProductPage() {
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title="Stock/Product/Service Update" />
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
-                <h2 className="text-base font-semibold leading-[120%] text-[#262D3B]">Update Stock/Products/Service</h2>
+                <h2 className="text-base font-semibold leading-[120%] text-[#262D3B]"></h2>
               </div>
 
               <div className="space-y-5">

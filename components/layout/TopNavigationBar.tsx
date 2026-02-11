@@ -5,6 +5,24 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { SIDEBAR_NAVIGATION, type SidebarNavItem } from "@/lib/constants/navigation";
+import ScrollableContainer from "@/components/ui/ScrollableContainer";
+import { useAppSelector } from "@/store/hooks";
+import { selectLoginType } from "@/store/slices/authSlice";
+
+// Central icon mapping for top navbar items (using SVGs from /public/icons)
+const NAV_ICON_SRC: Record<string, string> = {
+  dashboard: "/icons/DashboardDarkIcon.svg",
+  settings: "/icons/SettingsDarkIcon.svg",
+  registration: "/icons/RegistrationDarkIcon.svg",
+  "hospital-infrastructure": "/icons/SettingsDarkIcon.svg", // Using Settings icon as fallback, can be replaced with specific icon later
+  "infrastructure-view": "/icons/BranchRoleMasterIcon.svg", // View option for infrastructure page
+  // Use same icon as Registration for Pre Booking
+  "pre-booking": "/icons/RegistrationDarkIcon.svg",
+  doctors: "/icons/DoctorDarkIcon.svg",
+  "roles-master": "/icons/RoleMasterDarkIcon.svg",
+  "branch-role-master": "/icons/BranchRoleMasterIcon.svg",
+  "roles-permissions": "/icons/Roles&PermissionDarkIcon.svg",
+};
 
 type TopNavigationBarProps = {
   onNavigate?: () => void;
@@ -18,7 +36,8 @@ type SettingsItem = {
   key: string;
   label: string;
   href: string;
-  icon: React.ReactNode;
+  iconSrc?: string; // preferred: SVG from /public/icons
+  fallbackIcon?: React.ReactNode; // used when we don't yet have an SVG
 };
 
 const getAllSettingsItems = (): SettingsItem[] => [
@@ -26,178 +45,101 @@ const getAllSettingsItems = (): SettingsItem[] => [
     key: "configuration",
     label: "Configuration",
     href: "/settings/configuration",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </svg>
-    ),
+    iconSrc: "/icons/SettingsDarkIcon.svg",
   },
   {
     key: "branch-ip",
     label: "Branch IP Network",
     href: "/settings/branch-ip-network",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M2 12h20" />
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-      </svg>
-    ),
+    iconSrc: "/icons/BranchIPNetworkDarkIcon.svg",
   },
+  {
+    key: "duplicate-no-exp",
+    label: "Duplicate Number Exceptions",
+    href: "/settings/duplicate-number-exceptions",
+    iconSrc: "/icons/DuplicateNoExpDarkIcon.svg",
+  },
+  {
+    key: "manage-contact-updates",
+    label: "Manage Contact Updates",
+    href: "/settings/manage-contact-updates",
+    iconSrc: "/icons/Contact.svg", // Using same icon for now, can be replaced with specific icon later
+  },
+
+  // hide some Settings items for temparary purpose not remove the code any condition i will uncomment when its needed
+
   {
     key: "discount",
     label: "Discount Approval",
     href: "/settings/discount-approval",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <path d="M14 2v6h6" />
-        <path d="M16 13H8" />
-        <path d="M16 17H8" />
-        <path d="M10 9H8" />
-        <path d="m9 15 2 2 4-4" />
-      </svg>
-    ),
+    iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
   },
   {
     key: "refund",
     label: "Refund Approval",
     href: "/settings/refund-approval",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <path d="M14 2v6h6" />
-        <path d="M16 13H8" />
-        <path d="M16 17H8" />
-        <path d="M10 9H8" />
-        <path d="m9 15 2 2 4-4" />
-      </svg>
-    ),
+    iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
   },
   {
     key: "users",
     label: "Users",
     href: "/settings/users",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
+    iconSrc: "/icons/UsersDarkIcon.svg",
   },
   {
     key: "panel",
     label: "Panel",
     href: "/settings/panel",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <path d="M3 9h18" />
-        <path d="M9 21V9" />
-      </svg>
-    ),
+    iconSrc: "/icons/PannelDarkIcon.svg",
   },
   {
     key: "stock",
     label: "Stock/Product",
     href: "/settings/stock-product",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6 3h12l4 6-10 12L2 9z" />
-        <path d="M6 3l-4 6" />
-        <path d="M18 3l4 6" />
-        <path d="M12 21l-2-3" />
-        <path d="M12 21l2-3" />
-      </svg>
-    ),
+    iconSrc: "/icons/Stock&ProductDarkIcon.svg",
   },
   {
     key: "therapy",
-    label: "Panel Therapy",
+    label: "Therapy",
     href: "/settings/therapy",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M8 12h8" />
-        <path d="M12 8v8" />
-        <path d="M9 9l6 6" />
-        <path d="M15 9l-6 6" />
-      </svg>
-    ),
+    iconSrc: "/icons/PanelTherapy.svg",
   },
-  {
-    key: "tpa",
-    label: "TPA Therapy",
-    href: "/settings/tpa-therapy",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        <circle cx="18" cy="12" r="3" />
-      </svg>
-    ),
-  },
+  // {
+  //   key: "tpa",
+  //   label: "TPA Therapy",
+  //   href: "/settings/tpa-therapy",
+  //   iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  // },
   {
     key: "lab-tests",
     label: "Lab Tests",
     href: "/settings/lab-tests",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 8v8" />
-        <path d="M8 12h8" />
-      </svg>
-    ),
+    iconSrc: "/icons/LabTestsDarkIcon.svg",
   },
   {
     key: "package",
     label: "Package",
     href: "/settings/package",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-        <path d="M3.27 6.96 12 12.01l8.73-5.05" />
-        <path d="M12 22.08V12" />
-      </svg>
-    ),
+    iconSrc: "/icons/PackageDarkIcon.svg",
   },
   {
     key: "field-users",
     label: "Field Users",
     href: "/settings/field-users",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        <path d="M20 8v13" />
-        <path d="M12 8v13" />
-      </svg>
-    ),
+    iconSrc: "/icons/UsersDarkIcon.svg",
   },
   {
     key: "sms",
     label: "SMS",
     href: "/settings/sms",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        <path d="M13 8H3" />
-        <path d="M17 12H3" />
-      </svg>
-    ),
+    iconSrc: "/icons/SmsDarkIcon.svg",
   },
   {
     key: "medical-report",
     label: "Medical Report Category",
     href: "/settings/medical-report-category",
-    icon: (
+    iconSrc: "/icons/DoctorDarkIcon.svg",
+    fallbackIcon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4.19 4.19C2.8 5.58 2 7.55 2 9.77c0 4.71 3.81 8.46 8.56 8.23a9.1 9.1 0 0 0 2.54-.42" />
         <path d="M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
@@ -211,116 +153,131 @@ const getAllSettingsItems = (): SettingsItem[] => [
     key: "notifications",
     label: "Notifications",
     href: "/settings/notifications",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      </svg>
-    ),
+    iconSrc: "/icons/NotificationDarkIcon.svg",
   },
   {
     key: "diet-category",
     label: "Diet Category",
     href: "/settings/diet-category",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="9" cy="12" r="3" />
-        <circle cx="15" cy="12" r="3" />
-        <circle cx="9" cy="12" r="1.5" fill="currentColor" />
-        <circle cx="15" cy="12" r="1.5" fill="currentColor" />
-      </svg>
-    ),
+    iconSrc: "/icons/DietCategoryDarkIcon.svg",
   },
   {
     key: "diet",
     label: "Diagnosis Diet",
     href: "/settings/diet",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <path d="M14 2v6h6" />
-        <path d="M16 13H8" />
-        <path d="M16 17H8" />
-        <path d="M10 9H8" />
-        <path d="m9 15 2 2 4-4" />
-      </svg>
-    ),
+    iconSrc: "/icons/DiagnosisDietDarkIcon.svg",
   },
   {
     key: "diagnosis",
     label: "Diagnosis",
     href: "/settings/diagnosis",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 8v8" />
-        <path d="M8 12h8" />
-      </svg>
-    ),
+    iconSrc: "/icons/DiagnosisDarkIcon.svg",
   },
   {
     key: "sub-diagnosis",
     label: "Sub Diagnosis",
     href: "/settings/sub-diagnosis",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 8v8" />
-        <path d="M8 12h8" />
-      </svg>
-    ),
+    iconSrc: "/icons/DiagnosisDarkIcon.svg",
   },
   {
     key: "razarpay-pos-machine",
     label: "Razarpay Pos Machine",
     href: "/settings/razarpay-pos-machine",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="4" width="20" height="16" rx="2" />
-        <path d="M6 8h12" />
-        <path d="M6 12h8" />
-        <path d="M6 16h4" />
-        <path d="M18 16h2" />
-        <circle cx="16" cy="14" r="1.5" />
-      </svg>
-    ),
+    iconSrc: "/icons/RazarpayPosMachineDarkIcon.svg",
   },
   {
     key: "module-settings",
     label: "Module Settings",
     href: "/settings/module-settings",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </svg>
-    ),
+    iconSrc: "/icons/ModuleSettingsDarkIcon.svg",
+  },
+
+  
+  // {
+  //   key: "groups",
+  //   label: "Groups",
+  //   href: "/settings/groups",
+  //   fallbackIcon: (
+  //     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  //       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+  //       <circle cx="9" cy="7" r="4" />
+  //       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+  //       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  //     </svg>
+  //   ),
+  // },
+];
+
+// Registration items with icons matching the Registration icon
+type RegistrationItem = {
+  key: string;
+  label: string;
+  href: string;
+  iconSrc?: string; // preferred: SVG from /public/icons
+  fallbackIcon?: React.ReactNode; // used when we don't yet have an SVG
+};
+
+const getAllRegistrationItems = (): RegistrationItem[] => [
+  // Temporarily hide registration clinics item 
+  {
+  key: "registration-clinics",
+  label: "Registration Clinics",
+  href: "/registration",
+  iconSrc: "/icons/RegistrationDarkIcon.svg",
   },
   {
-    key: "add-member",
-    label: "Add Member Registration",
-    href: "/settings/add-member",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="8.5" cy="7" r="4" />
-        <path d="M20 8v6" />
-        <path d="M23 11h-6" />
-      </svg>
-    ),
+    key: "registration-hospital",
+    label: "Registration Hospital",
+    href: "/registration/hospital",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
   },
   {
-    key: "groups",
-    label: "Groups",
-    href: "/settings/groups",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
+    key: "ipd-registration-hos",
+    label: "IPD Registration Hospital",
+    href: "/registration/ipd-registration-hos",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "ipd-registration-cli",
+    label: "IPD Registration Clinic",
+    href: "/registration/ipd-registration-cli",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "daycare-registration-cli",
+    label: "Daycare Registration Clinic",
+    href: "/registration/daycare-registration-cli",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "daycare-registration-hos",
+    label: "Daycare Registration Hospital",
+    href: "/registration/daycare-registration-hos",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+];
+
+// Hospital Infrastructure items
+type HospitalInfrastructureItem = {
+  key: string;
+  label: string;
+  href: string;
+  iconSrc?: string;
+  fallbackIcon?: React.ReactNode;
+};
+
+const getAllHospitalInfrastructureItems = (): HospitalInfrastructureItem[] => [
+  {
+    key: "hospital-infrastructure-builder",
+    label: "Builder",
+    href: "/hospital-infrastructure",
+    iconSrc: "/icons/SettingsDarkIcon.svg", // Using Settings icon as fallback, can be replaced with specific icon later
+  },
+  {
+    key: "hospital-infrastructure-structure-preview",
+    label: "Hierarchy Preview",
+    href: "/hospital-infrastructure/structure-preview",
+    iconSrc: "/icons/SettingsDarkIcon.svg", // Using Settings icon as fallback, can be replaced with specific icon later
   },
 ];
 
@@ -330,51 +287,155 @@ type SettingsDropdownGridProps = {
   onNavigate: () => void;
 };
 
-const SettingsDropdownGrid = ({ items, pathname, onNavigate }: SettingsDropdownGridProps) => {
+type DropdownGridProps = {
+  items: (SettingsItem | RegistrationItem | HospitalInfrastructureItem)[];
+  pathname: string | null;
+  onNavigate: () => void;
+  title: string;
+};
+
+const DropdownGrid = ({ items, pathname, onNavigate, title }: DropdownGridProps) => {
+  const ITEMS_PER_COLUMN = 6;
+  const totalItems = items.length;
+  const numberOfColumns = Math.ceil(totalItems / ITEMS_PER_COLUMN);
+
+  // Track window/viewport size so dropdown recalculates on resize and zoom
+  const [viewportWidth, setViewportWidth] = useState(
+    () => (typeof window !== "undefined" ? window.innerWidth : 0)
+  );
+
+  useEffect(() => {
+    const updateWidth = () => setViewportWidth(window.innerWidth);
+    updateWidth();
+
+    window.addEventListener("resize", updateWidth);
+    // Zoom changes often update visualViewport; listen so dropdown updates without refresh
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", updateWidth);
+      vv.addEventListener("scroll", updateWidth);
+    }
+    return () => {
+      window.removeEventListener("resize", updateWidth);
+      if (vv) {
+        vv.removeEventListener("resize", updateWidth);
+        vv.removeEventListener("scroll", updateWidth);
+      }
+    };
+  }, []);
+
+  // Split items into columns
+  const columns: (SettingsItem | RegistrationItem | HospitalInfrastructureItem)[][] = [];
+  for (let i = 0; i < numberOfColumns; i++) {
+    const start = i * ITEMS_PER_COLUMN;
+    const end = start + ITEMS_PER_COLUMN;
+    columns.push(items.slice(start, end));
+  }
+
+  // Calculate width based on number of columns (1/4, 2/4, 3/4, or 4/4 of 1400px) + extra padding on right
+  const baseWidth = 1400;
+  const columnWidth = (numberOfColumns / 4) * baseWidth;
+  const extraPadding = 24; // Add extra width on right side
+  const finalWidth = columnWidth + extraPadding;
+
+  const getLeftValue = () => {
+    const width = viewportWidth;
+    if (width >= 1720) return "-100px";
+    if (width >= 1600) return "-230px";
+    if (width >= 1440) return "-345px";
+    if (width >= 1280) return "-300px";
+    if (width >= 1024) return "-360px";
+    return "0px";
+  };
+
+  const dropdownWidth =
+    viewportWidth <= 1100 ? "1050px" : viewportWidth <= 1300 ? "fit-content" : `${finalWidth}px`;
+
   return (
-    <div className="absolute top-full left-0 mt-5 w-[1300px] bg-white border border-[#ffffff] rounded-[16px] shadow-lg z-50">
+    <div
+      className="absolute top-full left-0 mt-5 bg-white border border-[#ffffff] rounded-[16px] shadow-lg z-50 pointer-events-auto"
+      style={{
+        width: dropdownWidth,
+        ...(numberOfColumns === 4 && { left: getLeftValue() }),
+      }}
+    >
       {/* Opened Heading Section */}
       <div className="px-6">
       <div className="w-full py-5 border-b border-[#E9F3E6]">
-        <h1 className="text-[32px] font-semibold leading-tight text-[#262D3B]">Settings</h1>
+        <h1 className="text-[32px] font-semibold leading-tight text-[#262D3B]">{title}</h1>
       </div>
       </div>
       
-      {/* Settings Grid */}
-      <div className="p-6">
-        <div className="grid grid-cols-4 gap-2">
-          {items.map((item) => {
-            const isActive = pathname ? pathname === item.href || pathname.startsWith(item.href + "/") : false;
-            return (
-              <Link
-                key={item.key}
-                href={item.href}
-                className={classNames(
-                  "flex items-center gap-[15px] w-[300px] h-[60px] px-5 py-3 rounded-[12px] border border-transparent",
-                  isActive
-                    ? "shadow-[0_6px_24px_0_rgba(0,0,0,0.15)]"
-                    : "hover:bg-[#F2F8F2]"
-                )}
-                onClick={onNavigate}
-              >
-                <div className={classNames("w-6 h-6 shrink-0", "text-[#0B8C00]")}>
-                  {item.icon}
-                </div>
-                <span
-                  className={classNames(
-                    "text-[18px] leading-[18px] tracking-[-0.01em] whitespace-nowrap flex-1",
-                    isActive ? "font-semibold text-[#353535]" : "font-medium text-[#434956]"
-                  )}
-                >
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
+      {/* Grid - Column Layout */}
+      <ScrollableContainer 
+        maxHeight="calc(100vh - 300px)" 
+        className="px-6 py-6"
+      >
+        <div className="flex gap-2">
+          {columns.map((columnItems, columnIndex) => (
+            <div key={columnIndex} className="flex flex-col gap-0 flex-1">
+              {columnItems.map((item) => {
+                const isRootRegistrationItem = item.href === "/registration";
+                const isRootInfrastructureItem = item.href === "/hospital-infrastructure";
+                
+                // Determine if this item is active
+                let isActive = false;
+                if (pathname) {
+                  if (isRootRegistrationItem) {
+                    // For registration root, only match exact path
+                    isActive = pathname === item.href;
+                  } else if (isRootInfrastructureItem) {
+                    // For infrastructure root (Builder), match exact path only (not structure-preview)
+                    isActive = pathname === item.href;
+                  } else {
+                    // For other items (including structure-preview), match exact path or paths that start with it
+                    isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                  }
+                }
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    className={classNames(
+                      "flex items-center gap-[15px] w-full h-[60px] px-0 py-3 pl-4 rounded-[12px] border border-transparent cursor-pointer",
+                      isActive
+                        ? "shadow-[0_6px_24px_0_rgba(0,0,0,0.15)]"
+                        : "hover:bg-[#F2F8F2]"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigate();
+                    }}
+                  >
+                    <div className={classNames("w-9 h-9 shrink-0 flex items-center justify-center", "text-[#0B8C00]")}>
+                      {item.iconSrc ? (
+                        <Image src={item.iconSrc} alt={item.label} width={32} height={32} />
+                      ) : (
+                        item.fallbackIcon
+                      )}
+                    </div>
+                    <span
+                      className={classNames(
+                        "text-[18px] leading-[18px] tracking-[-0.01em] whitespace-nowrap flex-1",
+                        isActive ? "font-semibold text-[#353535]" : "font-medium text-[#434956]"
+                      )}
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </div>
-      </div>
+      </ScrollableContainer>
     </div>
   );
+};
+
+// Keep SettingsDropdownGrid for backward compatibility
+const SettingsDropdownGrid = ({ items, pathname, onNavigate }: SettingsDropdownGridProps) => {
+  return <DropdownGrid items={items} pathname={pathname} onNavigate={onNavigate} title="Settings" />;
 };
 
 const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => {
@@ -390,25 +451,54 @@ const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => 
 };
 
 // Define top navigation items based on Figma design
-const TOP_NAV_ITEMS = [
+// Note: Registration will be conditionally added based on login_type
+const BASE_TOP_NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
   { key: "settings", label: "Settings", hasDropdown: true },
-  { key: "registration", label: "Registration", href: "/registration" },
-  { key: "pre-booking", label: "Pre Booking", href: "/pre-booking" },
-  { key: "doctors", label: "Doctor", href: "/dashboard/doctors" },
-  { key: "roles-master", label: "Roles Master", href: "/roles-master" },
-  { key: "branch-role-master", label: "Branch Role Master", href: "/branch-role-master" },
-  { key: "roles-permissions", label: "Roles & Permissions", href: "/roles-permissions" },
+  { key: "hospital-infrastructure", label: "Infrastructure 1", hasDropdown: true },
+  { key: "infrastructure-view", label: "Infrastructure 2", href: "/infrastructure" },
+  // { key: "registration", label: "Registration", href: "/registration/hospital" },
+  // { key: "pre-booking", label: "Pre Booking", href: "/pre-booking" },
+  // { key: "doctors", label: "Doctor", href: "/dashboard/doctors" },
+  // { key: "roles-master", label: "Roles Master", href: "/roles-master" },
+  // { key: "branch-role-master", label: "Branch Role Master", href: "/branch-role-master" },
+  // { key: "roles-permissions", label: "Roles & Permissions", href: "/roles-permissions" },
 ];
 
 export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
   const pathname = usePathname();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const loginType = useAppSelector(selectLoginType);
+  
+  // Check if login_type is "clinic user" or "hospital user"
+  const shouldShowRegistration = loginType?.toLowerCase() === "clinic user" || loginType?.toLowerCase() === "hospital user";
+  
+  // Check if login_type is "nurse" - show only Registration List link
+  const isNurse = loginType?.toLowerCase() === "nurse";
+  
+  // Get the registration href based on login_type
+  const getRegistrationHref = () => {
+    if (loginType?.toLowerCase() === "clinic user") {
+      return "/registration";
+    } else if (loginType?.toLowerCase() === "hospital user") {
+      return "/registration/hospital";
+    }
+    return "/registration";
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // Check if click is outside all dropdown containers
+      let isInsideAnyDropdown = false;
+      dropdownRefs.current.forEach((ref) => {
+        if (ref && ref.contains(target)) {
+          isInsideAnyDropdown = true;
+        }
+      });
+      
+      if (!isInsideAnyDropdown) {
         setExpandedKeys(new Set());
       }
     };
@@ -419,13 +509,12 @@ export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
 
   const toggleDropdown = (key: string) => {
     setExpandedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
+      // If clicking the same dropdown that's already open, close it
+      if (prev.has(key)) {
+        return new Set();
       }
-      return next;
+      // Otherwise, close all others and open only this one
+      return new Set([key]);
     });
   };
 
@@ -433,80 +522,39 @@ export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
     return SIDEBAR_NAVIGATION.find((item) => item.key === key);
   };
 
-  const getIconForItem = (key: string) => {
-    // First try to get from sidebar navigation
-    const sidebarItem = getNavItemFromSidebar(key);
-    if (sidebarItem?.icon) {
-      return sidebarItem.icon;
-    }
+const getIconForItem = (key: string) => {
+  const src = NAV_ICON_SRC[key];
 
-    // Create inline icons for items not in sidebar navigation
-    const iconPaths: Record<string, React.ReactNode> = {
-      "registration": (
-        <>
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <path d="M14 2v6h6" />
-          <path d="M16 13H8" />
-          <path d="M16 17H8" />
-          <path d="M10 9H8" />
-        </>
-      ),
-      "pre-booking": (
-        <>
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-          <path d="M16 2v4" />
-          <path d="M8 2v4" />
-          <path d="M3 10h18" />
-          <path d="M8 14h.01" />
-          <path d="M12 14h.01" />
-          <path d="M16 14h.01" />
-        </>
-      ),
-      "roles-master": (
-        <>
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </>
-      ),
-      "branch-role-master": (
-        <>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 2v20" />
-          <path d="M2 12h20" />
-          <path d="M6 6l12 12" />
-          <path d="M6 18l12-12" />
-        </>
-      ),
-      "roles-permissions": (
-        <>
-          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="8.5" cy="7" r="4" />
-          <path d="M20 8v6" />
-          <path d="M23 11h-6" />
-        </>
-      ),
-    };
+  if (src) {
+    return ({ className }: { className?: string }) => (
+      <Image
+        src={src}
+        alt={`${key} icon`}
+        width={20}
+        height={20}
+        className={classNames("h-5 w-5 shrink-0", className)}
+      />
+    );
+  }
 
-    if (iconPaths[key]) {
-      return ({ className }: { className?: string }) => (
-        <svg
-          className={classNames("h-5 w-5 shrink-0", className)}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          {iconPaths[key]}
-        </svg>
-      );
-    }
+  // Fallback to sidebar icon definition (used for items without dedicated SVG)
+  const sidebarItem = getNavItemFromSidebar(key);
+  return sidebarItem?.icon;
+};
 
-    return undefined;
-  };
+  // Build navigation items array
+  // For nurse users: only show Registration List link
+  // For clinic/hospital users: only show Registration as direct link
+  // For admin users: show all items including Registration with dropdown
+  const TOP_NAV_ITEMS = isNurse
+    ? [{ key: "registration-list", label: "Registration List", href: "/registration/registrationList" }]
+    : shouldShowRegistration
+    ? [{ key: "registration", label: "Registration", href: getRegistrationHref() }]
+    : [
+        ...BASE_TOP_NAV_ITEMS.slice(0, 1), // Dashboard
+        { key: "registration", label: "Registration", hasDropdown: true }, // Registration with dropdown for admin
+        ...BASE_TOP_NAV_ITEMS.slice(1), // Settings and Infrastructure
+      ];
 
   return (
     <nav className="w-full bg-white/25">
@@ -514,18 +562,56 @@ export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
         {TOP_NAV_ITEMS.map((item) => {
           const Icon = getIconForItem(item.key);
           const sidebarItem = getNavItemFromSidebar(item.key);
-          const isActive = sidebarItem && pathname ? shouldItemBeActive(pathname, sidebarItem) : false;
+          // Check if item is active: use sidebar logic or check against registration/settings/hospital-infrastructure routes
+          let isActive = false;
+          if (item.key === "settings" && pathname) {
+            // Check if pathname matches any settings route (all settings pages)
+            isActive = pathname.startsWith("/settings");
+          } else if (item.key === "registration" && pathname) {
+            // Check if pathname matches any registration route
+            isActive = pathname === "/registration" || pathname.startsWith("/registration/");
+          } else if (item.key === "registration-list" && pathname) {
+            // Check if pathname matches registration list route or any of its sub-routes
+            // This includes: /registration/registrationList, /registration/registrationList/[patientId]/view, 
+            // /registration/registrationList/[patientId]/edit, /registration/registrationList/vitals-medical/[patientId]
+            isActive = pathname === "/registration/registrationList" || pathname.startsWith("/registration/registrationList/");
+          } else if (item.key === "hospital-infrastructure" && pathname) {
+            // Check if pathname matches any hospital-infrastructure route (not /infrastructure - that has its own nav item)
+            isActive = pathname === "/hospital-infrastructure" || pathname.startsWith("/hospital-infrastructure/");
+          } else if (item.key === "infrastructure-view" && pathname) {
+            isActive = pathname === "/infrastructure";
+          } else if (sidebarItem && pathname) {
+            isActive = shouldItemBeActive(pathname, sidebarItem);
+          }
           const isExpanded = expandedKeys.has(item.key);
-          const hasDropdown = item.hasDropdown && sidebarItem?.children;
+          // Check if item has dropdown: either has sidebar children OR is settings/registration/hospital-infrastructure with dropdown items
+          // Registration should NOT have dropdown for clinic/hospital users - it's a direct link
+          const hasDropdown = item.hasDropdown && (sidebarItem?.children || item.key === "settings" || item.key === "registration" || item.key === "hospital-infrastructure");
+          
+          // For registration, if it should be shown, it's always active (green) and has no dropdown
+          const isRegistrationActive = item.key === "registration" && shouldShowRegistration;
+          
+          // For registration-list (nurse), it's always active (green) when on that page or any sub-route
+          const isRegistrationListActive = item.key === "registration-list" && isNurse && (pathname === "/registration/registrationList" || pathname?.startsWith("/registration/registrationList/"));
 
           return (
-            <div key={item.key} className="relative flex items-center" ref={hasDropdown ? dropdownRef : null}>
+            <div 
+              key={item.key} 
+              className="relative flex items-center" 
+              ref={(el) => {
+                if (hasDropdown && el) {
+                  dropdownRefs.current.set(item.key, el);
+                } else {
+                  dropdownRefs.current.delete(item.key);
+                }
+              }}
+            >
               {item.href ? (
                 <Link
                   href={item.href}
                   className={classNames(
                     "flex items-center gap-2 h-[44px] px-6 py-3 rounded-[20px] text-sm font-medium transition-all",
-                    isActive
+                    (isActive || isRegistrationActive || isRegistrationListActive)
                       ? "bg-[#0B8C00] text-white border border-[#0B8C00]"
                       : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
                   )}
@@ -535,7 +621,7 @@ export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
                     <Icon
                       className={classNames(
                         "h-5 w-5 shrink-0",
-                        isActive ? "text-white" : "text-[#0B8C00]"
+                        (isActive || isRegistrationActive || isRegistrationListActive) ? "brightness-0 invert" : ""
                       )}
                     />
                   )}
@@ -556,7 +642,7 @@ export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
                     <Icon
                       className={classNames(
                         "h-5 w-5 shrink-0",
-                        isActive ? "text-white" : "text-[#0B8C00]"
+                        isActive ? "brightness-0 invert" : ""
                       )}
                     />
                   )}
@@ -577,21 +663,47 @@ export function TopNavigationBar({ onNavigate }: TopNavigationBarProps) {
                 </button>
               )}
 
-              {hasDropdown && isExpanded && sidebarItem?.children && (
+              {hasDropdown && isExpanded && (
                 <>
                   {/* Tooltip pointer */}
                   <div className="absolute top-[calc(100%+25px-18px)] left-6 z-[51]">
                     {/* White triangle pointer */}
                     <div className="absolute top-0 left-0 w-0 h-0 border-l-[18px] border-r-[18px] border-b-[18px] border-l-transparent border-r-transparent border-b-white"></div>
                   </div>
-                  <SettingsDropdownGrid
-                    items={getAllSettingsItems()}
-                    pathname={pathname}
-                    onNavigate={() => {
-                      setExpandedKeys(new Set());
-                      onNavigate?.();
-                    }}
-                  />
+                  {item.key === "settings" && (
+                    <DropdownGrid
+                      items={getAllSettingsItems()}
+                      pathname={pathname}
+                      onNavigate={() => {
+                        setExpandedKeys(new Set());
+                        onNavigate?.();
+                      }}
+                      title="Settings"
+                    />
+                  )}
+                  {/* Registration dropdown - shown for admin users only */}
+                  {item.key === "registration" && !shouldShowRegistration && (
+                    <DropdownGrid
+                      items={getAllRegistrationItems()}
+                      pathname={pathname}
+                      onNavigate={() => {
+                        setExpandedKeys(new Set());
+                        onNavigate?.();
+                      }}
+                      title="Registration"
+                    />
+                  )}
+                  {item.key === "hospital-infrastructure" && (
+                    <DropdownGrid
+                      items={getAllHospitalInfrastructureItems()}
+                      pathname={pathname}
+                      onNavigate={() => {
+                        setExpandedKeys(new Set());
+                        onNavigate?.();
+                      }}
+                      title="Infrastructure"
+                    />
+                  )}
                 </>
               )}
             </div>

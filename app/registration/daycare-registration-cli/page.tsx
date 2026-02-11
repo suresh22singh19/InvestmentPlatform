@@ -1,0 +1,1563 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useFormik } from "formik";
+import Link from "next/link";
+import Image from "next/image";
+import { AppShell } from "@/components/layout/AppShell";
+import { PageHeading } from "@/components/layout/PageHeading";
+import PreBookingPanel from "@/components/registration/PreBookingPanel";
+import { type PreBookingItem } from "@/store/api/registrationApi";
+import RegistrationSteps from "@/components/registration/RegistrationSteps";
+import JSHealthCardPoints from "@/components/registration/JSHealthCardPoints";
+import PatientOldHistory from "@/components/registration/PatientOldHistory";
+import Vouchers from "@/components/registration/Vouchers";
+import PersonalDetailsReg from "@/components/registration/PersonalDetailsReg";
+import Vitals from "@/components/registration/Vitals";
+import Doctor from "@/components/registration/Doctor";
+import MedicalDetails from "@/components/registration/MedicalDetails";
+import PatientWalletInformation from "@/components/registration/PatientWalletInformation";
+import Therapy from "@/components/registration/Therapy";
+import PatientWalletView from "@/components/registration/PatientWalletView";
+import { registrationPersonalDetailsSchema, type RegistrationPersonalDetailsFormValues } from "@/lib/validation/registrationSchemas";
+import PersonalForm from "../personal";
+import VitalForm from "../vital";
+import MedicalForm from "../medical";
+import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserId, selectUserBranchId } from "@/store/slices/authSlice";
+import { useGetStatesQuery, useGetCitiesQuery, useGetCountriesQuery } from "@/store/api/publicApi";
+import { useGetDoctorsQuery, useCreateClinicPatientMutation, type ClinicPatientRequest } from "@/store/api/registrationApi";
+import { useGetPanelsQuery } from "@/store/api/settingsApi";
+import type { SelectOption } from "@/components/ui/FormSelectField";
+import { registrationApi, useRequestDuplicateNumberPermissionMutation } from "@/store/api/registrationApi";
+import type { ExistingPatient } from "@/store/api/gateApi";
+import { MessageDialog, Tooltip } from "@/components/ui";
+import PatientAlreadyExistsDialog from "@/components/registration/PatientAlreadyExistsDialog";
+import DuplicateNumberExceptionDialog from "@/components/registration/DuplicateNumberExceptionDialog";
+import { useSocket } from "@/hooks/useSocket";
+
+// LocalStorage key for pending registrations
+const PENDING_REGISTRATIONS_KEY = "pendingPatientRegistrations";
+
+// LocalStorage key for duplicate exception patients (Daycare Clinic)
+const DUPLICATE_EXCEPTION_PATIENTS_DAYCARE_KEY = "duplicateExceptionPatientsDaycareClinic";
+
+// Interface for pending registration
+interface PendingRegistration {
+    id: string;
+    patientName: string;
+    formData: RegistrationPersonalDetailsFormValues;
+    currentStep: number;
+    savedAt: string;
+    formType: "clinic" | "hospital" | "ipd" | "ipd-clinic" | "ipd-hospital" | "daycare" | "daycare-clinic" | "daycare-hospital";
+}
+
+// Interface for duplicate exception patient
+interface DuplicateExceptionPatient {
+    id: string;
+    patientName: string;
+    contactNo: string;
+    savedAt: string;
+    status: "pending" | "approved" | "rejected";
+}
+
+export default function DaycareRegistrationPage() {
+    const formType: "daycare-clinic" = "daycare-clinic";
+    const [currentStep, setCurrentStep] = useState(0); // 0 = Personal, 1 = Vitals, 2 = Medical
+    const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
+    const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
+    const [currentPendingRegistrationId, setCurrentPendingRegistrationId] = useState<string | null>(null);
+    const [selectedPreBookingId, setSelectedPreBookingId] = useState<string | number | null>(null);
+    const [selectedPreBooking, setSelectedPreBooking] = useState<PreBookingItem | null>(null);
+    const refetchPreBookingsListRef = useRef<(() => void) | null>(null);
+
+    // Patient exists dialog state
+    const [patientExistsDialogOpen, setPatientExistsDialogOpen] = useState(false);
+    const [existingPatients, setExistingPatients] = useState<ExistingPatient[]>([]);
+    const isClosingDialogRef = useRef(false);
+    const lastCheckedContactNumberRef = useRef<string>("");
+    const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Duplicate number exception dialog state
+    const [duplicateExceptionDialogOpen, setDuplicateExceptionDialogOpen] = useState(false);
+    const [duplicateExceptionPatients, setDuplicateExceptionPatients] = useState<DuplicateExceptionPatient[]>([]);
+    const [selectedApprovedPatientId, setSelectedApprovedPatientId] = useState<string | null>(null);
+    const [isRevisitedPatient, setIsRevisitedPatient] = useState(false);
+
+    // Success and error dialog state
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [showErrorDialog, setShowErrorDialog] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
+    const [errorMessage, setErrorMessage] = useState("");
+
+    // Wallet view state
+    const [showWalletView, setShowWalletView] = useState(false);
+
+    // Get branchId and userId from auth state
+    const branchId = useAppSelector(selectUserBranchId) || 1;
+    const userId = useAppSelector(selectUserId) || 1;
+
+    // Lazy query for checking existing patients
+    const [checkExistingPatientsQuery] = registrationApi.useLazyCheckExistingPatientsByPhoneQuery();
+    
+    // Mutation for requesting duplicate number permission
+    const [requestDuplicateNumberPermission, { isLoading: isCreatingException }] = useRequestDuplicateNumberPermissionMutation();
+
+    // API mutation for clinic patient registration (will be used for daycare too)
+    const [createClinicPatient, { isLoading: isSubmitting }] = useCreateClinicPatientMutation();
+
+    // Container ref for arrow key navigation
+    const formsContainerRef = useRef<HTMLDivElement>(null);
+    const registrationHeadingRef = useRef<HTMLDivElement>(null);
+
+    // Enable arrow key navigation for form fields
+    useArrowKeyNavigation(formsContainerRef, true, (fieldName) => {
+        formik.setFieldTouched(fieldName as keyof RegistrationPersonalDetailsFormValues, true, false);
+        formik.validateField(fieldName);
+    });
+
+    // Get socket hook
+    const { onDuplicateNumberPermissionUpdate } = useSocket();
+
+    // Three steps for Daycare Registration
+    const registrationSteps = [
+        { number: "Step 01", label: "Personal Info" },
+        { number: "Step 02", label: "Vitals" },
+        { number: "Step 03", label: "Medical Info" },
+    ];
+
+    // Source options for Referral component
+    const sourceOptions: SelectOption[] = [
+        { value: "tv", label: "TV" },
+        { value: "newspaper", label: "NewsPaper" },
+        { value: "social-media", label: "Social Media" },
+        { value: "doctor", label: "Doctor" },
+        { value: "other", label: "Referral" },
+    ];
+
+    // TV-specific field options
+    const tvSpecificFieldOptions: SelectOption[] = [
+        { value: "sahara-one", label: "Sahara one" },
+        { value: "zee-tv", label: "Zee TV" },
+        { value: "man-tv", label: "MAN TV" },
+        { value: "9xm", label: "9XM" },
+        { value: "9xm-jalwa", label: "9XM JALWA" },
+        { value: "9x-jhakas", label: "9X JHAKAS" },
+        { value: "9x-tashan", label: "9X TASHAN" },
+        { value: "news-world-india", label: "NEWS WORLD INDIA" },
+        { value: "janta-tv", label: "JANTA TV" },
+        { value: "shubh-tv", label: "SHUBH TV" },
+        { value: "india-news-rajasthan", label: "INDIA NEWS RAJASTHAN" },
+        { value: "kashis-news", label: "KASHIS NEWS" },
+        { value: "lakshya-tv", label: "LAKSHYA TV" },
+        { value: "india-news-mp", label: "INDIA NEWS MP" },
+        { value: "india-news-up", label: "INDIA NEWS UP" },
+        { value: "india-news-hariyan", label: "INDIA NEWS HARIYAN" },
+        { value: "nation-live", label: "NATION LIVE" },
+        { value: "sharthi-tv", label: "SHARTHI TV" },
+        { value: "channel-one", label: "CHANNEL ONE" },
+        { value: "inventary", label: "INVENTARY" },
+        { value: "adhyatam-tv", label: "ADHYATAM TV" },
+        { value: "all-cable", label: "ALL CABLE" },
+        { value: "chardi-kala-time-tv", label: "CHARDI KALA TIME TV" },
+        { value: "sarv-dharam-tv", label: "SARV DHARAM TV" },
+        { value: "sadvidya-tv", label: "SADVIDYA TV" },
+        { value: "sadhna-tv", label: "SADHNA TV" },
+        { value: "ishwar-tv", label: "ISHWAR TV" },
+        { value: "sadhna-mp", label: "SADHNA MP" },
+        { value: "sadhna-plus", label: "SADHNA PLUS" },
+        { value: "darshan-24", label: "DARSHAN 24" },
+        { value: "anjan-tv", label: "ANJAN TV" },
+        { value: "care-world", label: "CARE WORLD" },
+        { value: "chirtpath-marathi", label: "CHIRTPATH MARATHI" },
+        { value: "manoranjan-tv", label: "MANORANJAN TV" },
+        { value: "manoranjan-movie", label: "MANORANJAN MOVIE" },
+        { value: "rt-movies", label: "RT MOVIES" },
+        { value: "vaa-movie", label: "VAA MOVIE" },
+        { value: "enter-10", label: "ENTER 10" },
+        { value: "b-flix", label: "B FLIX" },
+        { value: "dhamal-tv", label: "DHAMAL TV" },
+        { value: "housefull-action", label: "HOUSEFULL ACTION" },
+        { value: "ptc-tv", label: "PTC TV" },
+        { value: "multiplex", label: "MULTIPLEX" },
+        { value: "punjab-plus", label: "PUNJAB PLUS" },
+        { value: "digi-cable", label: "DIGI CABLE" },
+        { value: "india-talkies", label: "INDIA TALKIES" },
+        { value: "garv-punjab", label: "GARV PUNJAB" },
+        { value: "fastway-cable", label: "FASTWAY CABLE" },
+        { value: "sanskrity-tv", label: "SANSKRITY TV" },
+        { value: "dhishoom-tv", label: "DHISHOOM TV" },
+        { value: "zee-salam", label: "ZEE SALAM" },
+    ];
+
+    // Newspaper-specific field options
+    const newspaperSpecificFieldOptions: SelectOption[] = [
+        { value: "hindustan-times", label: "Hindustan Times" },
+        { value: "dainik-jagran", label: "Dainik Jagran" },
+        { value: "dainik-bhaskar", label: "Dainik Bhaskar" },
+        { value: "malayala-manorama", label: "Malayala Manorama" },
+        { value: "daily-thanthi", label: "Daily Thanthi" },
+        { value: "rajasthan-patrika", label: "Rajasthan Patrika" },
+        { value: "amar-ujala", label: "Amar Ujala" },
+        { value: "the-times-of-india", label: "The Times of India" },
+    ];
+
+    // Social Media-specific field options
+    const socialMediaSpecificFieldOptions: SelectOption[] = [
+        { value: "facebook", label: "Facebook" },
+        { value: "instagram", label: "Instagram" },
+        { value: "youtube", label: "Youtube" },
+        { value: "whatsapp", label: "Whtsapp" },
+        { value: "twitter", label: "Twitter" },
+        { value: "linkedin", label: "Linkedin" },
+        { value: "india-mart", label: "INDIA MART" },
+        { value: "just-dial", label: "JUST DIAL" },
+        { value: "website", label: "WEBSITE" },
+    ];
+
+    // LocalStorage functions for pending registrations
+    const getPendingRegistrations = useCallback((): PendingRegistration[] => {
+        if (typeof window === "undefined") return [];
+
+        try {
+            const stored = localStorage.getItem(PENDING_REGISTRATIONS_KEY);
+            if (!stored) return [];
+            const parsed = JSON.parse(stored) as PendingRegistration[];
+            return parsed.map(reg => ({
+                ...reg,
+                formType: (reg.formType || "clinic") as "clinic" | "hospital" | "ipd" | "ipd-clinic" | "ipd-hospital" | "daycare" | "daycare-clinic" | "daycare-hospital"
+            }));
+        } catch (error) {
+            console.error("Failed to load pending registrations:", error);
+            return [];
+        }
+    }, []);
+
+    const savePendingRegistration = useCallback((formData: RegistrationPersonalDetailsFormValues, step: number, existingId?: string | null) => {
+        if (typeof window === "undefined") return;
+
+        try {
+            const patientName = formData.patientName?.trim() || "";
+
+            if (!patientName || patientName.toLowerCase() === "unknown patient") {
+                return;
+            }
+
+            const displayName = patientName;
+            const existing = getPendingRegistrations();
+
+            let updated: PendingRegistration[];
+
+            if (existingId) {
+                updated = existing.map(reg =>
+                    reg.id === existingId
+                        ? {
+                            ...reg,
+                            patientName: displayName,
+                            formData,
+                            currentStep: step,
+                            savedAt: new Date().toISOString(),
+                            formType: formType,
+                        }
+                        : reg
+                );
+            } else {
+                const existingReg = existing.find(reg => reg.patientName === displayName && reg.formType === formType);
+
+                if (existingReg) {
+                    updated = existing.map(reg =>
+                        reg.id === existingReg.id
+                            ? {
+                                ...reg,
+                                patientName: displayName,
+                                formData,
+                                currentStep: step,
+                                savedAt: new Date().toISOString(),
+                                formType: formType,
+                            }
+                            : reg
+                    );
+                } else {
+                    const id = `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+                    const pendingRegistration: PendingRegistration = {
+                        id,
+                        patientName: displayName,
+                        formData,
+                        currentStep: step,
+                        savedAt: new Date().toISOString(),
+                        formType: formType,
+                    };
+
+                    updated = [...existing, pendingRegistration];
+                }
+            }
+
+            localStorage.setItem(PENDING_REGISTRATIONS_KEY, JSON.stringify(updated));
+            const filtered = updated.filter(reg => reg.formType === formType);
+            setPendingRegistrations(filtered);
+        } catch (error) {
+            console.error("Failed to save pending registration:", error);
+        }
+    }, [getPendingRegistrations, formType]);
+
+    const removePendingRegistration = useCallback((id: string) => {
+        if (typeof window === "undefined") return;
+
+        try {
+            const existing = getPendingRegistrations();
+            const updated = existing.filter((reg: PendingRegistration) => reg.id !== id);
+            localStorage.setItem(PENDING_REGISTRATIONS_KEY, JSON.stringify(updated));
+            setPendingRegistrations(updated);
+        } catch (error) {
+            console.error("Failed to remove pending registration:", error);
+        }
+    }, [getPendingRegistrations]);
+
+    // LocalStorage functions for duplicate exception patients (Daycare)
+    const getDuplicateExceptionPatients = useCallback((): DuplicateExceptionPatient[] => {
+        if (typeof window === "undefined") return [];
+
+        try {
+            const stored = localStorage.getItem(DUPLICATE_EXCEPTION_PATIENTS_DAYCARE_KEY);
+            if (!stored) return [];
+            const parsed = JSON.parse(stored) as DuplicateExceptionPatient[];
+            return parsed.map(patient => ({
+                ...patient,
+                status: (patient.status === "approved" || patient.status === "rejected" || patient.status === "pending")
+                    ? patient.status
+                    : "pending" as "pending" | "approved" | "rejected"
+            }));
+        } catch (error) {
+            console.error("Failed to load duplicate exception patients:", error);
+            return [];
+        }
+    }, []);
+
+    const saveDuplicateExceptionPatient = useCallback((patientName: string, contactNo: string) => {
+        if (typeof window === "undefined") return;
+
+        try {
+            const existing = getDuplicateExceptionPatients();
+            const id = `duplicate_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            const duplicatePatient: DuplicateExceptionPatient = {
+                id,
+                patientName: patientName.trim(),
+                contactNo: contactNo.trim(),
+                savedAt: new Date().toISOString(),
+                status: "pending",
+            };
+
+            const updated = [...existing, duplicatePatient];
+            localStorage.setItem(DUPLICATE_EXCEPTION_PATIENTS_DAYCARE_KEY, JSON.stringify(updated));
+            setDuplicateExceptionPatients(updated);
+        } catch (error) {
+            console.error("Failed to save duplicate exception patient:", error);
+        }
+    }, [getDuplicateExceptionPatients]);
+
+    // Update duplicate exception patient status in localStorage (Daycare)
+    const updateDuplicateExceptionPatientStatus = useCallback((contactNo: string, patientName: string, status: "approved" | "rejected") => {
+        if (typeof window === "undefined") return;
+
+        try {
+            const existing = getDuplicateExceptionPatients();
+            console.log(`[Daycare Registration Clinic] Looking for patient: "${patientName}" (${contactNo}) with status: ${status}`);
+            console.log(`[Daycare Registration Clinic] Existing patients in localStorage:`, existing);
+
+            const normalizedContactNo = contactNo.trim();
+            const normalizedPatientName = patientName.trim();
+            const normalizedStatus = status.toLowerCase() as "approved" | "rejected" | "pending";
+
+            const updated = existing.map(patient => {
+                // Match by contact number and patient name (case-insensitive comparison)
+                const patientContactNo = patient.contactNo.trim();
+                const patientNameTrimmed = patient.patientName.trim();
+
+                if (patientContactNo === normalizedContactNo &&
+                    patientNameTrimmed.toLowerCase() === normalizedPatientName.toLowerCase()) {
+                    console.log(`[Daycare Registration Clinic] ✅ Match found! Updating patient status: ${patient.patientName} (${patient.contactNo}) -> ${normalizedStatus}`);
+                    return { ...patient, status: normalizedStatus };
+                }
+                return patient;
+            });
+
+            // Check if any patient was updated
+            const wasUpdated = updated.some((patient, index) => {
+                return patient.status !== existing[index]?.status;
+            });
+
+            if (wasUpdated) {
+                localStorage.setItem(DUPLICATE_EXCEPTION_PATIENTS_DAYCARE_KEY, JSON.stringify(updated));
+                // Force state update by creating a new array reference
+                setDuplicateExceptionPatients([...updated]);
+                console.log(`[Daycare Registration Clinic] ✅ Status updated successfully. New state:`, updated);
+            } else {
+                console.warn(`[Daycare Registration Clinic] ❌ No matching patient found for: "${normalizedPatientName}" (${normalizedContactNo})`);
+                console.log(`[Daycare Registration Clinic] Existing patients for comparison:`, existing.map(p => ({ name: p.patientName, contact: p.contactNo, status: p.status })));
+            }
+        } catch (error) {
+            console.error("[Daycare Registration Clinic] Failed to update duplicate exception patient status:", error);
+        }
+    }, [getDuplicateExceptionPatients]);
+
+    // Initial form values
+    const initialValues: RegistrationPersonalDetailsFormValues = {
+        contactNumber: "",
+        whatsappNo: "",
+        aadharCardNumber: "",
+        patientNameSelect: "",
+        patientName: "",
+        gender: "",
+        age: "",
+        maritalStatus: "",
+        fathersHusbandsNameSelect: "",
+        fathersHusbandsName: "",
+        religion: "",
+        specificReligion: "",
+        occupation: "",
+        emailAddress: "",
+        jsHealthCardNo: "",
+        pinCode: "",
+        country: "6", // India is auto-selected
+        state: "",
+        city: "",
+        address: "",
+        patientType: "",
+        patientSubType: "",
+        panelId: "",
+        benificiaryId: "",
+        insuranceCompany: "",
+        ayushCovered: "",
+        referral: "",
+        source: "",
+        tvSpecificField: "",
+        newspaperSpecificField: "",
+        socialMediaSpecificField: "",
+        doctorSpecificField: "",
+        referralName: "",
+        referralMobile: "",
+        doctor: "",
+        appointmentDate: "",
+        timeSlot: "",
+        consultationCharges: "",
+        paymentMode: "",
+        transactionId: "",
+        gstBilling: false,
+        gstNumber: "",
+        companyName: "",
+        billingAddress: "",
+        billingState: "",
+        billingCity: "",
+        billingPincode: "",
+        heightFeet: "",
+        heightInch: "",
+        weight: "",
+        bloodGroup: "",
+        allergies: "",
+        surgeries: "",
+        dietType: "",
+        bloodPressure: "",
+        sugarLevel: "",
+        temperature: "",
+        pulse: "",
+        spo2: "",
+        diabetes: "",
+        diabetesRemarks: "",
+        htn: "",
+        htnRemarks: "",
+        coronaryArteryDisease: "",
+        coronaryArteryDiseaseRemarks: "",
+        thyroid: "",
+        thyroidRemarks: "",
+        menstrual: "",
+        menstrualRemarks: "",
+        alcohol: false,
+        smoking: false,
+        tobacco: false,
+        drugs: false,
+        addictionOther: false,
+        addictionSpecify: "",
+        diagnosis: "",
+        subDiagnosis: "",
+        symptoms: "",
+    };
+
+    // Formik setup
+    const formik = useFormik<RegistrationPersonalDetailsFormValues>({
+        initialValues,
+        validationSchema: registrationPersonalDetailsSchema,
+        validateOnChange: false,
+        validateOnBlur: true,
+        onSubmit: async (values) => {
+            console.log("Form submitted:", values);
+            // Handle form submission here
+        },
+    });
+
+    // Fetch states and cities data to get names from IDs
+    const { data: statesData } = useGetStatesQuery(
+        formik.values.country
+            ? { countryId: formik.values.country }
+            : undefined,
+        { skip: !formik.values.country }
+    );
+
+    const { data: citiesData } = useGetCitiesQuery(
+        formik.values.state
+            ? { stateId: formik.values.state }
+            : undefined,
+        { skip: !formik.values.state }
+    );
+
+    // Fetch doctors and panels for matching when patient is selected
+    const { data: doctorsData } = useGetDoctorsQuery();
+    const { data: panelsData } = useGetPanelsQuery(
+        formik.values.patientType?.toLowerCase() === "panel" ? { page: 1, limit: 100 } : undefined,
+        { skip: formik.values.patientType?.toLowerCase() !== "panel" }
+    );
+
+    // Fetch countries data
+    const { data: countriesData } = useGetCountriesQuery({});
+
+    // Load pending registrations and duplicate exception patients on mount
+    useEffect(() => {
+        const pending = getPendingRegistrations();
+        const filtered = pending.filter(reg => reg.formType === formType);
+        setPendingRegistrations(filtered);
+
+        const duplicatePatients = getDuplicateExceptionPatients();
+        setDuplicateExceptionPatients(duplicatePatients);
+    }, [getPendingRegistrations, getDuplicateExceptionPatients, formType]);
+
+    // Listen for duplicate number permission updates via socket (Daycare)
+    useEffect(() => {
+        const unsubscribe = onDuplicateNumberPermissionUpdate((socketData: any) => {
+            console.log("[Daycare Registration Clinic] Duplicate number permission update received:", socketData);
+            // Socket data structure: { message: "...", data: { contactNo, patientName, status, ... } }
+            // Extract the nested data object
+            const data = socketData?.data || socketData;
+            console.log("[Daycare Registration Clinic] Extracted data:", data);
+
+            // Check if we have the required fields
+            if (data?.contactNo && data?.patientName && data?.status) {
+                // Convert status to lowercase (socket sends "APPROVED"/"REJECTED", we need "approved"/"rejected")
+                const normalizedStatus = data.status.toLowerCase();
+                console.log("[Daycare Registration Clinic] Normalized status:", normalizedStatus);
+                console.log("[Daycare Registration Clinic] Full socket data:", JSON.stringify(socketData, null, 2));
+
+                if (normalizedStatus === "approved" || normalizedStatus === "rejected") {
+                    console.log("[Daycare Registration Clinic] Updating status for:", data.patientName, data.contactNo, "->", normalizedStatus);
+                    updateDuplicateExceptionPatientStatus(data.contactNo, data.patientName, normalizedStatus as "approved" | "rejected");
+                } else {
+                    console.warn("[Daycare Registration Clinic] Invalid status received:", normalizedStatus);
+                }
+            } else {
+                console.warn("[Daycare Registration Clinic] Missing required fields in socket data:", data);
+                console.log("[Daycare Registration Clinic] Full socket data structure:", JSON.stringify(socketData, null, 2));
+            }
+        });
+        return unsubscribe;
+    }, [onDuplicateNumberPermissionUpdate, updateDuplicateExceptionPatientStatus]);
+
+    // Listen for custom event when localStorage is updated from another page
+    useEffect(() => {
+        const handleStatusUpdate = (event: CustomEvent) => {
+            const { type } = event.detail || {};
+            if (type === "daycare-clinic") {
+                const duplicatePatients = getDuplicateExceptionPatients();
+                setDuplicateExceptionPatients(duplicatePatients);
+            }
+        };
+
+        window.addEventListener('duplicateExceptionPatientStatusUpdated' as any, handleStatusUpdate as EventListener);
+        return () => {
+            window.removeEventListener('duplicateExceptionPatientStatusUpdated' as any, handleStatusUpdate as EventListener);
+        };
+    }, [getDuplicateExceptionPatients]);
+
+    // Listen for visibility change to reload when page becomes visible
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const duplicatePatients = getDuplicateExceptionPatients();
+                setDuplicateExceptionPatients(duplicatePatients);
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [getDuplicateExceptionPatients]);
+
+    // Scroll to registration heading when step changes
+    useEffect(() => {
+        if (currentStep > 0) {
+            setTimeout(() => {
+                registrationHeadingRef.current?.scrollIntoView({ 
+                    behavior: "smooth", 
+                    block: "start" 
+                });
+            }, 100);
+        }
+    }, [currentStep]);
+
+    // Check for existing patients by contact number
+    const checkExistingPatients = useCallback(async (contactNumber: string) => {
+        if (!contactNumber || contactNumber.length !== 10) {
+            lastCheckedContactNumberRef.current = "";
+            return;
+        }
+
+        if (isClosingDialogRef.current) return;
+
+        if (checkTimeoutRef.current) {
+            clearTimeout(checkTimeoutRef.current);
+        }
+
+        if (lastCheckedContactNumberRef.current === contactNumber) {
+            return;
+        }
+
+        lastCheckedContactNumberRef.current = contactNumber;
+
+        checkTimeoutRef.current = setTimeout(async () => {
+            try {
+                const result = await checkExistingPatientsQuery({
+                    branchId: branchId || 1,
+                    phoneNumber: contactNumber,
+                }).unwrap();
+
+                if (isClosingDialogRef.current) {
+                    lastCheckedContactNumberRef.current = "";
+                    return;
+                }
+
+                const registrations = result.data?.registrations || [];
+
+                if (registrations.length > 0) {
+                    const mappedPatients = registrations.map((patient: any) => ({
+                        ...patient,
+                        name: patient.patientName || patient.name,
+                        branchName: patient.branchName || "N/A",
+                    }));
+                    setExistingPatients(mappedPatients);
+                    setPatientExistsDialogOpen(true);
+                } else {
+                    lastCheckedContactNumberRef.current = "";
+                }
+            } catch (error: any) {
+                console.error("Error checking existing patients:", error);
+                lastCheckedContactNumberRef.current = "";
+            }
+        }, 500);
+    }, [checkExistingPatientsQuery, branchId]);
+
+    // Handle contact number change
+    const handleContactNumberChange = useCallback((field: string, value: string) => {
+        if (isClosingDialogRef.current || !value || value.length === 0) {
+            return;
+        }
+
+        if (value.length === 10) {
+            checkExistingPatients(value);
+        }
+    }, [checkExistingPatients]);
+
+    // Handle next step
+    const handleNextStep = useCallback(() => {
+        // Save pending registration when moving to next step
+        const patientName = formik.values.patientName?.trim() || "";
+        if (patientName && patientName.toLowerCase() !== "unknown patient") {
+            savePendingRegistration(formik.values, currentStep, currentPendingRegistrationId);
+        }
+        setCurrentStep(prev => Math.min(prev + 1, 2)); // Max step is 2 (Medical Info)
+    }, [formik.values, currentStep, currentPendingRegistrationId, savePendingRegistration]);
+
+    // Handle back step
+    const handleBackSteps = useCallback(() => {
+        // Save pending registration when going back
+        const patientName = formik.values.patientName?.trim() || "";
+        if (patientName && patientName.toLowerCase() !== "unknown patient") {
+            savePendingRegistration(formik.values, currentStep, currentPendingRegistrationId);
+        }
+        setCurrentStep(prev => Math.max(prev - 1, 0)); // Min step is 0 (Personal Info)
+    }, [formik.values, currentStep, currentPendingRegistrationId, savePendingRegistration]);
+
+    // Function to transform form values to clinic-patient API payload
+    const mapFormikToClinicPatientPayload = (): ClinicPatientRequest => {
+        const values = formik.values;
+
+        // Determine referral source info based on source type
+        let referralSourceInfo = "";
+        if (values.referral?.toLowerCase() === "yes" && values.source) {
+            if (values.source === "tv" && values.tvSpecificField) {
+                referralSourceInfo = values.tvSpecificField;
+            } else if (values.source === "newspaper" && values.newspaperSpecificField) {
+                referralSourceInfo = values.newspaperSpecificField;
+            } else if (values.source === "social-media" && values.socialMediaSpecificField) {
+                referralSourceInfo = values.socialMediaSpecificField;
+            } else if (values.source === "doctor" && values.doctorSpecificField) {
+                referralSourceInfo = values.doctorSpecificField;
+            } else if (values.source === "other" && values.referralName) {
+                referralSourceInfo = values.referralName;
+            }
+        }
+
+        // Build addictionType array from form values
+        const addictionType: string[] = [];
+        if (values.alcohol) addictionType.push("alcohol");
+        if (values.smoking) addictionType.push("smoking");
+        if (values.tobacco) addictionType.push("tobacco");
+        if (values.drugs) addictionType.push("drugs");
+        if (values.addictionOther) addictionType.push("others");
+
+        // Calculate height in inches
+        const heightFeet = parseInt(values.heightFeet || "0", 10);
+        const heightInch = parseInt(values.heightInch || "0", 10);
+        const totalHeightInches = heightFeet * 12 + heightInch;
+        const height = totalHeightInches > 0 ? totalHeightInches.toString() : "";
+
+        // Determine pre-booking ID
+        const preBookingId = selectedPreBooking?.id
+            ? (typeof selectedPreBooking.id === 'number' ? selectedPreBooking.id : parseInt(String(selectedPreBooking.id), 10))
+            : undefined;
+        const isPreBooking = preBookingId !== undefined && preBookingId !== null;
+
+        // Build the API payload
+        const payload: ClinicPatientRequest = {
+            branchId: branchId || 1,
+            patientEntryId: undefined,
+            patientTitle: values.patientNameSelect || "",
+            patientName: values.patientName || "",
+            contactNumber: values.contactNumber || "",
+            whatsappNo: values.whatsappNo || values.contactNumber || "",
+            aadharCardNo: values.aadharCardNumber || undefined,
+            guardianTitle: values.fathersHusbandsNameSelect || "",
+            guardianName: values.fathersHusbandsName || "",
+            gender: values.gender || "",
+            age: values.age || "",
+            religion: values.religion || "",
+            specificRelegion: values.specificReligion || undefined,
+            occupation: values.occupation || "",
+            emailAddress: values.emailAddress || undefined,
+            jsHealthCardNo: values.jsHealthCardNo || undefined,
+            ayushCovered: values.ayushCovered || undefined,
+            benificiaryId: values.benificiaryId || undefined,
+            insuranceCompany: values.insuranceCompany || undefined,
+            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : "no",
+            referralSourceInfo: referralSourceInfo || undefined,
+            referralUserId: values.doctorSpecificField ? parseInt(values.doctorSpecificField, 10) : undefined,
+            referralName: values.referralName || undefined,
+            referralMobile: values.referralMobile || undefined,
+            maritalStatus: values.maritalStatus || "",
+            doctorUserId: values.doctor ? parseInt(values.doctor, 10) : 1,
+            patientType: values.patientType?.toUpperCase() || "PRIVATE",
+            panelId: values.panelId ? parseInt(values.panelId, 10) : undefined,
+            patientSubType: values.patientSubType || null,
+            addictionType: addictionType.length > 0 ? addictionType : undefined,
+            addictionSpecify: values.addictionSpecify || undefined,
+            appointment: {
+                isPreBooked: isPreBooking,
+                appointmentDate: values.appointmentDate || "",
+                timeSlot: values.timeSlot || "",
+                doctorUserId: values.doctor ? parseInt(values.doctor, 10) : 1,
+                bloodPressure: values.bloodPressure || undefined,
+                sugarLevel: values.sugarLevel || undefined,
+                temperature: values.temperature || undefined,
+                spo2: values.spo2 || undefined,
+                pulse: values.pulse || undefined,
+                diagnosisId: values.diagnosis ? parseInt(values.diagnosis, 10) : undefined,
+                subDiagnosisId: values.subDiagnosis ? parseInt(values.subDiagnosis, 10) : undefined,
+                diagnosisSymptoms: values.symptoms || undefined,
+                isPreBooking: isPreBooking,
+                preBookingId: preBookingId,
+            },
+            payment: {
+                doctorFee: 0, // Daycare doesn't have payment step
+                paymentMode: "CASH", // Default
+                transactionId: undefined,
+                gstNumber: undefined,
+                companyName: undefined,
+                billingAddress: undefined,
+                state: undefined,
+                city: undefined,
+                pincode: undefined,
+            },
+            address: {
+                address: values.address || "",
+                city: values.city && citiesData?.data ? (citiesData.data.find((c: any) => c.id.toString() === values.city)?.name || "") : "",
+                state: values.state && statesData?.data ? (statesData.data.find((s: any) => s.id.toString() === values.state)?.name || "") : "",
+                country: values.country && countriesData?.data ? (countriesData.data.find((c: any) => c.id.toString() === values.country)?.name || "") : "",
+                pinCode: values.pinCode || "",
+            },
+        };
+
+        return payload;
+    };
+
+    const handleFinalSubmit = async () => {
+        try {
+            await formik.submitForm();
+
+            // Remove from pending registrations if it was a pending registration
+            const patientName = formik.values.patientName || "";
+
+            if (patientName) {
+                const pending = getPendingRegistrations();
+                const matching = pending.find(reg => reg.patientName === patientName);
+                if (matching) {
+                    removePendingRegistration(matching.id);
+                }
+            }
+
+            // Transform form values to API payload
+            const payload = mapFormikToClinicPatientPayload();
+
+            console.log("Daycare Patient Registration Payload:", JSON.stringify(payload, null, 2));
+
+            // Call the clinic-patient API (same API for daycare)
+            const result = await createClinicPatient(payload).unwrap();
+
+            // Remove approved duplicate exception patient from localStorage if registration was for an approved patient
+            if (selectedApprovedPatientId) {
+                const existing = getDuplicateExceptionPatients();
+                const updated = existing.filter(p => p.id !== selectedApprovedPatientId);
+                localStorage.setItem(DUPLICATE_EXCEPTION_PATIENTS_DAYCARE_KEY, JSON.stringify(updated));
+                setSelectedApprovedPatientId(null);
+            }
+
+            // Refetch pre-bookings list after successful registration
+            if (refetchPreBookingsListRef.current) {
+                refetchPreBookingsListRef.current();
+            }
+
+            if (!result.success) {
+                throw new Error(result.message || "Registration failed. Please try again.");
+            }
+        } catch (error: any) {
+            const errorMessage = error?.data?.message || error?.message || "An error occurred during registration. Please try again.";
+            throw new Error(errorMessage);
+        }
+    };
+
+    // Function to reset form after successful submission
+    const handleResetAfterSuccess = () => {
+        formik.resetForm({ values: initialValues });
+        setCurrentStep(0);
+        setCurrentPendingRegistrationId(null);
+        setSelectedApprovedPatientId(null);
+        setIsRevisitedPatient(false);
+    };
+
+    // Handle pre-booking click
+    const handlePreBookingClick = useCallback((preBooking: PreBookingItem | null) => {
+        if (!preBooking) {
+            formik.resetForm();
+            setSelectedPreBookingId(null);
+            setSelectedPreBooking(null);
+            return;
+        }
+
+        const preBookingId = preBooking.id ? String(preBooking.id) : null;
+
+        if (selectedPreBookingId !== null && String(selectedPreBookingId) === preBookingId) {
+            formik.resetForm();
+            setSelectedPreBookingId(null);
+            setSelectedPreBooking(null);
+            return;
+        }
+
+        formik.resetForm();
+        setSelectedPreBooking(preBooking);
+        setSelectedPreBookingId(preBookingId);
+        setCurrentStep(0);
+    }, [formik, selectedPreBookingId]);
+
+    // Pre-fill form when pre-booking is selected
+    useEffect(() => {
+        if (selectedPreBooking) {
+            const preBooking = selectedPreBooking;
+
+            const formUpdates: Partial<RegistrationPersonalDetailsFormValues> = {
+                contactNumber: (typeof preBooking.contactNumber === 'string') ? preBooking.contactNumber : "",
+                whatsappNo: (typeof preBooking.whatsappNumber === 'string' && preBooking.whatsappNumber) ? preBooking.whatsappNumber : (typeof preBooking.contactNumber === 'string') ? preBooking.contactNumber : "",
+                patientName: (typeof preBooking.patientName === 'string') ? preBooking.patientName : "",
+                age: (typeof preBooking.age === 'string') ? preBooking.age : "",
+                emailAddress: (typeof preBooking.emailAddress === 'string') ? preBooking.emailAddress : "",
+            };
+
+            Object.keys(formUpdates).forEach((key) => {
+                const value = formUpdates[key as keyof typeof formUpdates];
+                if (value !== undefined) {
+                    formik.setFieldValue(key, value, false);
+                }
+            });
+        }
+    }, [selectedPreBooking, formik]);
+
+    // Map doctorUserId from pre-booking to doctor field when doctors are loaded
+    useEffect(() => {
+        if (selectedPreBooking && selectedPreBooking.doctorUserId && doctorsData?.data) {
+            const doctorId = typeof selectedPreBooking.doctorUserId === 'number'
+                ? selectedPreBooking.doctorUserId
+                : parseInt(String(selectedPreBooking.doctorUserId), 10);
+
+            const doctor = doctorsData.data.find((d) => d.id === doctorId);
+            if (doctor) {
+                formik.setFieldValue("doctor", doctorId.toString(), false);
+            }
+        }
+    }, [selectedPreBooking, doctorsData, formik]);
+
+    // Handle load pending registration
+    const handleLoadPendingRegistration = useCallback((registration: PendingRegistration) => {
+        formik.setValues(registration.formData);
+        setCurrentStep(registration.currentStep);
+        setCurrentPendingRegistrationId(registration.id);
+        setSelectedApprovedPatientId(null);
+        setIsRevisitedPatient(false);
+        setSelectedPreBookingId(null);
+        setSelectedPreBooking(null);
+    }, [formik]);
+
+    // Handle load approved patient
+    const handleLoadApprovedPatient = useCallback((patient: DuplicateExceptionPatient) => {
+        formik.setFieldValue("contactNumber", patient.contactNo, false);
+        setSelectedApprovedPatientId(patient.id);
+        setCurrentPendingRegistrationId(null);
+        setIsRevisitedPatient(false);
+        setSelectedPreBookingId(null);
+        setSelectedPreBooking(null);
+    }, [formik]);
+
+    // Handle Add New Patient button click
+    const handleAddNewPatient = useCallback(() => {
+        if (selectedApprovedPatientId) {
+            formik.resetForm({ values: initialValues });
+            setCurrentStep(0);
+            setCurrentPendingRegistrationId(null);
+            setSelectedApprovedPatientId(null);
+            setSelectedPreBookingId(null);
+            setSelectedPreBooking(null);
+            setIsRevisitedPatient(false);
+            return;
+        }
+
+        if (selectedPreBookingId !== null) {
+            formik.resetForm({ values: initialValues });
+            setCurrentStep(0);
+            setCurrentPendingRegistrationId(null);
+            setSelectedApprovedPatientId(null);
+            setSelectedPreBookingId(null);
+            setSelectedPreBooking(null);
+            return;
+        }
+
+        if (isRevisitedPatient) {
+            formik.resetForm({ values: initialValues });
+            setCurrentStep(0);
+            setCurrentPendingRegistrationId(null);
+            setSelectedApprovedPatientId(null);
+            setIsRevisitedPatient(false);
+            setSelectedPreBookingId(null);
+            setSelectedPreBooking(null);
+            return;
+        }
+
+        const hasData = Object.values(formik.values).some(value => {
+            if (typeof value === "string") return value.trim() !== "";
+            if (typeof value === "boolean") return value === true;
+            return false;
+        });
+
+        if (hasData) {
+            const currentPatientName = formik.values.patientName?.trim();
+            const currentContactNumber = formik.values.contactNumber?.trim();
+
+            if (currentPatientName && currentContactNumber) {
+                const existing = getDuplicateExceptionPatients();
+                const alreadyExists = existing.some(
+                    p => p.patientName.trim().toLowerCase() === currentPatientName.toLowerCase() &&
+                        p.contactNo.trim() === currentContactNumber
+                );
+
+                if (alreadyExists) {
+                    formik.resetForm({ values: initialValues });
+                    setCurrentStep(0);
+                    setCurrentPendingRegistrationId(null);
+                    setSelectedApprovedPatientId(null);
+                    setSelectedPreBookingId(null);
+                    setSelectedPreBooking(null);
+                    setIsRevisitedPatient(false);
+                    return;
+                }
+            }
+
+            if (currentPendingRegistrationId) {
+                savePendingRegistration(formik.values, currentStep, currentPendingRegistrationId);
+            } else {
+                savePendingRegistration(formik.values, currentStep);
+            }
+        }
+
+        formik.resetForm({ values: initialValues });
+        setCurrentStep(0);
+        setCurrentPendingRegistrationId(null);
+        setSelectedApprovedPatientId(null);
+        setIsRevisitedPatient(false);
+        setSelectedPreBookingId(null);
+        setSelectedPreBooking(null);
+    }, [formik, selectedApprovedPatientId, selectedPreBookingId, isRevisitedPatient, currentPendingRegistrationId, currentStep, savePendingRegistration, getDuplicateExceptionPatients, initialValues]);
+
+    // Handle revisit from dialog
+    const handleRevisit = useCallback((patient: ExistingPatient) => {
+        setPatientExistsDialogOpen(false);
+        isClosingDialogRef.current = false;
+        lastCheckedContactNumberRef.current = "";
+        setIsRevisitedPatient(true);
+
+        if (patient.patientTitle) {
+            formik.setFieldValue("patientNameSelect", patient.patientTitle, false);
+        }
+        if (patient.patientName || patient.name) {
+            formik.setFieldValue("patientName", patient.patientName || patient.name || "", false);
+        }
+        if (patient.contactNumber) {
+            formik.setFieldValue("contactNumber", patient.contactNumber, false);
+        }
+        if (patient.whatsappNo) {
+            formik.setFieldValue("whatsappNo", patient.whatsappNo, false);
+        }
+        if (patient.aadharCardNo) {
+            formik.setFieldValue("aadharCardNumber", patient.aadharCardNo, false);
+        }
+        if (patient.gender) {
+            formik.setFieldValue("gender", patient.gender.toLowerCase(), false);
+        }
+        if (patient.age) {
+            formik.setFieldValue("age", patient.age, false);
+        }
+        if (patient.maritalStatus) {
+            formik.setFieldValue("maritalStatus", patient.maritalStatus.toLowerCase(), false);
+        }
+        if (patient.guardianTitle) {
+            formik.setFieldValue("fathersHusbandsNameSelect", patient.guardianTitle, false);
+        }
+        if (patient.guardianName) {
+            formik.setFieldValue("fathersHusbandsName", patient.guardianName, false);
+        }
+        if (patient.religion) {
+            formik.setFieldValue("religion", patient.religion.toLowerCase(), false);
+        }
+        if (patient.occupation) {
+            formik.setFieldValue("occupation", patient.occupation, false);
+        }
+        if (patient.emailAddress) {
+            formik.setFieldValue("emailAddress", patient.emailAddress, false);
+        }
+        formik.setFieldValue("jsHealthCardNo", patient.jsHealthCardNo || "", false);
+        if (patient.specificReligion) {
+            formik.setFieldValue("specificReligion", patient.specificReligion, false);
+        }
+        if (patient.patientSubType) {
+            formik.setFieldValue("patientSubType", patient.patientSubType, false);
+        }
+        if (patient.benificiaryId) {
+            formik.setFieldValue("benificiaryId", patient.benificiaryId, false);
+        }
+        if (patient.insuranceCompany) {
+            formik.setFieldValue("insuranceCompany", patient.insuranceCompany, false);
+        }
+        if (patient.ayushCovered) {
+            formik.setFieldValue("ayushCovered", patient.ayushCovered, false);
+        }
+
+        // Fill address fields
+        if (patient.address) {
+            if (patient.address.country && countriesData?.data) {
+                const countryName = String(patient.address.country).toLowerCase();
+                const country = countriesData.data.find(
+                    (c) => c.name.toLowerCase() === countryName || String(c.id) === String(patient.address?.country)
+                );
+                if (country) {
+                    formik.setFieldValue("country", country.id.toString(), false);
+                }
+            }
+
+            if (patient.address.state && statesData?.data && formik.values.country) {
+                const stateName = patient.address.state.toLowerCase();
+                const state = statesData.data.find(
+                    (s) => s.name.toLowerCase() === stateName
+                );
+                if (state) {
+                    formik.setFieldValue("state", state.id.toString(), false);
+                }
+            }
+
+            if (patient.address.city && citiesData?.data && formik.values.state) {
+                const cityName = patient.address.city.toLowerCase();
+                const city = citiesData.data.find(
+                    (c) => c.name.toLowerCase() === cityName
+                );
+                if (city) {
+                    formik.setFieldValue("city", city.id.toString(), false);
+                }
+            }
+
+            if (patient.address.pinCode) {
+                formik.setFieldValue("pinCode", patient.address.pinCode, false);
+            }
+            if (patient.address.address) {
+                formik.setFieldValue("address", patient.address.address, false);
+            }
+        }
+
+        if (patient.patientType) {
+            formik.setFieldValue("patientType", patient.patientType.toUpperCase(), false);
+        } else {
+            formik.setFieldValue("patientType", "", false);
+        }
+
+        if (patient.doctorUserId) {
+            formik.setFieldValue("doctor", String(patient.doctorUserId), false);
+        } else {
+            formik.setFieldValue("doctor", "", false);
+        }
+
+        if (patient.isReferral) {
+            formik.setFieldValue("referral", "yes", false);
+
+            if (patient.referralSourceInfo) {
+                const sourceInfo = patient.referralSourceInfo.toLowerCase();
+
+                if (patient.referralUserId && !isNaN(Number(patient.referralUserId))) {
+                    formik.setFieldValue("source", "doctor", false);
+                    formik.setFieldValue("doctorSpecificField", String(patient.referralUserId), false);
+                } else if (patient.referralName) {
+                    formik.setFieldValue("source", "other", false);
+                    formik.setFieldValue("referralName", patient.referralName, false);
+                } else if (sourceInfo.includes("tv") || sourceInfo.includes("television")) {
+                    formik.setFieldValue("source", "tv", false);
+                    formik.setFieldValue("tvSpecificField", patient.referralSourceInfo, false);
+                } else if (sourceInfo.includes("newspaper") || sourceInfo.includes("paper")) {
+                    formik.setFieldValue("source", "newspaper", false);
+                    formik.setFieldValue("newspaperSpecificField", patient.referralSourceInfo, false);
+                } else if (sourceInfo.includes("social") || sourceInfo.includes("facebook") || sourceInfo.includes("instagram") || sourceInfo.includes("twitter")) {
+                    formik.setFieldValue("source", "social-media", false);
+                    formik.setFieldValue("socialMediaSpecificField", patient.referralSourceInfo, false);
+                } else {
+                    formik.setFieldValue("source", "other", false);
+                    if (patient.referralName) {
+                        formik.setFieldValue("referralName", patient.referralName, false);
+                    }
+                }
+            }
+
+            if (patient.referralName) {
+                formik.setFieldValue("referralName", patient.referralName, false);
+            }
+            if (patient.referralMobile) {
+                formik.setFieldValue("referralMobile", patient.referralMobile, false);
+            }
+        } else {
+            formik.setFieldValue("referral", "", false);
+            formik.setFieldValue("source", "", false);
+        }
+    }, [formik, countriesData, statesData, citiesData]);
+
+    // Handle add new member
+    const handleAddNewMember = useCallback(() => {
+        setPatientExistsDialogOpen(false);
+        setIsRevisitedPatient(false);
+        setDuplicateExceptionDialogOpen(true);
+    }, []);
+
+    // Handle duplicate exception dialog close
+    const handleDuplicateExceptionDialogClose = useCallback(() => {
+        setDuplicateExceptionDialogOpen(false);
+        formik.setFieldValue("contactNumber", "");
+    }, [formik]);
+
+    // Handle duplicate exception dialog submit
+    const handleDuplicateExceptionSubmit = useCallback(async (name: string, relationship: string) => {
+        try {
+            const existing = getDuplicateExceptionPatients();
+            const trimmedName = name.trim();
+            const trimmedContact = formik.values.contactNumber.trim();
+            const alreadyExists = existing.some(
+                p => p.patientName.trim().toLowerCase() === trimmedName.toLowerCase() &&
+                    p.contactNo.trim() === trimmedContact
+            );
+
+            if (alreadyExists) {
+                setErrorMessage("This patient is already in the duplicate exception list.");
+                setShowErrorDialog(true);
+                return;
+            }
+
+            const result = await requestDuplicateNumberPermission({
+                branchId: branchId || 1,
+                contactNo: formik.values.contactNumber,
+                patientName: name,
+                relationship: relationship,
+                requestedBy: userId || 1,
+            }).unwrap();
+
+            saveDuplicateExceptionPatient(name, formik.values.contactNumber);
+
+            setSuccessMessage(result.message || "Permission request submitted successfully!");
+            setShowSuccessDialog(true);
+
+            formik.setFieldValue("contactNumber", "");
+
+            setDuplicateExceptionDialogOpen(false);
+            setPatientExistsDialogOpen(false);
+            isClosingDialogRef.current = false;
+            lastCheckedContactNumberRef.current = "";
+        } catch (error: any) {
+            console.error("Error requesting duplicate number permission:", error);
+
+            let errorMsg = "Failed to submit permission request. Please try again.";
+
+            if (error?.data?.message) {
+                errorMsg = error.data.message;
+            } else if (error?.data?.error) {
+                errorMsg = error.data.error;
+            } else if (error?.error) {
+                errorMsg = error.error;
+            } else if (error?.message) {
+                errorMsg = error.message;
+            }
+
+            setErrorMessage(errorMsg);
+            setShowErrorDialog(true);
+        }
+    }, [requestDuplicateNumberPermission, branchId, userId, formik.values.contactNumber, saveDuplicateExceptionPatient, getDuplicateExceptionPatients]);
+
+    // Handle patient exists dialog close
+    const handlePatientExistsDialogClose = useCallback(() => {
+        if (!patientExistsDialogOpen) return;
+
+        isClosingDialogRef.current = true;
+
+        if (checkTimeoutRef.current) {
+            clearTimeout(checkTimeoutRef.current);
+            checkTimeoutRef.current = null;
+        }
+
+        lastCheckedContactNumberRef.current = "";
+        setExistingPatients([]);
+        setPatientExistsDialogOpen(false);
+        setIsRevisitedPatient(false);
+
+        formik.setFieldValue("contactNumber", "");
+
+        setTimeout(() => {
+            isClosingDialogRef.current = false;
+        }, 500);
+    }, [patientExistsDialogOpen, formik]);
+
+    // Helper function to convert Formik errors to flat structure for components
+    const getFormErrors = (): Record<string, string> => {
+        const errors: Record<string, string> = {};
+        Object.keys(formik.errors).forEach((key) => {
+            const error = formik.errors[key as keyof typeof formik.errors];
+            const touched = formik.touched[key as keyof typeof formik.touched];
+            if (touched && typeof error === "string") {
+                errors[key] = error;
+            }
+        });
+        return errors;
+    };
+
+    // Function to scroll to first error field
+    const scrollToFirstError = () => {
+        const errors = getFormErrors();
+        if (Object.keys(errors).length === 0) return;
+
+        const firstErrorKey = Object.keys(errors)[0];
+        const element = document.querySelector(`[data-field="${firstErrorKey}"]`);
+        if (element instanceof HTMLElement) {
+            setTimeout(() => {
+                element.scrollIntoView({ behavior: "smooth", block: "center" });
+                if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+                    element.focus();
+                } else {
+                    const triggerButton = element.querySelector('button[type="button"]');
+                    if (triggerButton instanceof HTMLElement) {
+                        setTimeout(() => {
+                            triggerButton.focus();
+                        }, 150);
+                    }
+                }
+            }, 100);
+        }
+    };
+
+    // Generate patient buttons from pending registrations
+    const filteredPendingRegistrations = pendingRegistrations.filter(reg => reg.formType === formType);
+    const pendingRegistrationButtons = filteredPendingRegistrations.map(reg => {
+        const isActive = currentPendingRegistrationId === reg.id;
+        return {
+            id: reg.id,
+            name: reg.patientName,
+            type: "pending" as const,
+            iconSrc: "/icons/ProfileDarkIcon.svg",
+            bgColor: isActive ? "bg-[rgba(11,140,0,0.35)]" : "bg-[rgba(11,140,0,0.15)]",
+            borderColor: "border-[#0B8C00]",
+            textColor: "text-[#0B8C00]",
+            isActive: isActive,
+            registration: reg,
+        };
+    });
+
+    // If wallet view is open, show only the wallet view
+    if (showWalletView) {
+        return (
+            <PatientWalletView onClose={() => setShowWalletView(false)} />
+        );
+    }
+
+    return (
+        <AppShell>
+            <div className="flex justify-between items-center">
+                <div ref={registrationHeadingRef} className="prebooking-icon flex items-center gap-3 mb-6">
+                    <Tooltip
+                        content="Patient Information"
+                        position="right"
+                        delay={0}
+                    >
+                        <button 
+                            onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            aria-label="Patient Information"
+                        >
+                            <Image src="/icons/prebookingtoggle.svg" alt="Patient Info Icon" width={32} height={32} />
+                        </button>
+                    </Tooltip>
+
+                    <PageHeading title="Daycare Registration Clinic" />
+                </div>
+                <div>
+                    <div className="pending_registration flex items-center gap-4">
+                        {/* Duplicate exception patient buttons */}
+                        {duplicateExceptionPatients.map((patient) => {
+                            const status = patient.status || "pending";
+                            const isApproved = status === "approved";
+                            const isRejected = status === "rejected";
+                            const isPending = status === "pending";
+
+                            const borderColor = isApproved ? "border-[#0B8C00]" : isRejected ? "border-[#EF4444]" : "border-[#F59E0B]";
+                            const isSelected = selectedApprovedPatientId === patient.id;
+                            const bgColor = isSelected && isApproved ? "bg-[rgba(11,140,0,0.35)]" : isApproved ? "bg-[rgba(11,140,0,0.15)]" : isRejected ? "bg-[rgba(239,68,68,0.15)]" : "bg-[#FFF4D126]";
+                            const textColor = isSelected && isApproved ? "text-[#0B8C00]" : isApproved ? "text-[#0B8C00]" : isRejected ? "text-[#EF4444]" : "text-[#A56A00]";
+                            const dotColor = isApproved ? "bg-[#0B8C00]" : isRejected ? "bg-[#EF4444]" : "bg-[#F4A100]";
+                            const dotShadow = isApproved ? "shadow-[0_0_4px_rgba(11,140,0,0.5)]" : isRejected ? "shadow-[0_0_4px_rgba(239,68,68,0.5)]" : "shadow-[0_0_4px_rgba(244,161,0,0.5)]";
+                            const tooltipText = isApproved ? "Approved" : isRejected ? "Rejected" : "Pending";
+                            const hoverBg = isApproved ? "hover:bg-[rgba(11,140,0,0.2)]" : isRejected ? "hover:bg-[rgba(239,68,68,0.2)]" : "hover:bg-[rgba(245,158,11,0.2)]";
+                            const iconSrc = isApproved ? "/icons/ProfileDarkIcon.svg" : "/icons/ProfileIconBrown.svg";
+                            const buttonClasses = `py-3 px-6 ${borderColor} border-[1px] ${bgColor} rounded-[16px] flex items-center gap-2 h-[48px] cursor-pointer transition-all duration-300 ${hoverBg} hover:opacity-80 relative ${isSelected && isApproved ? "animate-[pulse-border_2s_ease-in-out_infinite]" : ""}`;
+
+                            return (
+                                <button
+                                    key={patient.id}
+                                    onClick={() => {
+                                        if (isApproved) {
+                                            handleLoadApprovedPatient(patient);
+                                        }
+                                    }}
+                                    className={buttonClasses}
+                                >
+                                    <Image src={iconSrc} alt="Patient Icon" width={32} height={32} />
+                                    <span className={`font-[Inter] font-medium text-sm leading-[120%] text-center ${textColor}`}>
+                                        {patient.patientName}
+                                    </span>
+                                    <Tooltip
+                                        content={tooltipText}
+                                        position="top"
+                                        className="absolute top-[-4px] right-3"
+                                        delay={0}
+                                    >
+                                        <div className={`w-2 h-2 ${dotColor} rounded-full ${dotShadow} cursor-pointer`}></div>
+                                    </Tooltip>
+                                </button>
+                            );
+                        })}
+
+                        {/* Pending registration buttons */}
+                        {pendingRegistrationButtons.map((patient) => (
+                            <button
+                                key={patient.id}
+                                onClick={() => handleLoadPendingRegistration(patient.registration)}
+                                className={`py-3 px-6 ${patient.bgColor} ${patient.borderColor} border-[1px] rounded-[16px] flex items-center gap-2 h-[48px] cursor-pointer transition-all duration-300 ${patient.isActive
+                                    ? "hover:bg-[rgba(27, 179, 14, 0.4)] scale-[1.02]"
+                                    : "hover:opacity-80 hover:bg-[rgba(11,140,0,0.2)]"
+                                    }`}
+                                style={patient.isActive ? {
+                                    animation: 'pulse-border 2s ease-in-out infinite'
+                                } : {}}
+                            >
+                                <Image src={patient.iconSrc} alt="Patient Icon" width={32} height={32} />
+                                <span className={`font-[Inter] font-medium text-sm leading-[120%] text-center ${patient.textColor}`}>
+                                    {patient.name}
+                                </span>
+                            </button>
+                        ))}
+                        
+                        {/* Add New Patient button */}
+                        <button
+                            onClick={handleAddNewPatient}
+                            className="flex flex-row justify-center items-center py-3 px-6 gap-1 h-[48px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors"
+                        >
+                            <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00]">Add New Patient</span>
+                        </button>
+                        
+                        {/* View List button */}
+                        <Link
+                            href="/registration/registrationList"
+                            className="flex flex-row justify-center items-center py-3 px-6 gap-2 h-[48px] border border-[#0B8C00] rounded-[16px] cursor-pointer hover:bg-[#F2F8F2] transition-all duration-300"
+                        >
+                            <svg
+                                width="20"
+                                height="20"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="#0B8C00"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="shrink-0"
+                            >
+                                <line x1="8" y1="6" x2="21" y2="6"></line>
+                                <line x1="8" y1="12" x2="21" y2="12"></line>
+                                <line x1="8" y1="18" x2="21" y2="18"></line>
+                                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                            </svg>
+                            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00]">View List</span>
+                        </Link>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex gap-4 h-screen">
+                {/* Left Sidebar - Patient Info Panels */}
+                {isLeftSidebarOpen && (
+                    <div className="w-[20%] transition-all duration-0 ease-in-out flex-shrink-0 space-y-4">
+                        <PreBookingPanel
+                            onPreBookingClick={handlePreBookingClick}
+                            selectedPreBookingId={selectedPreBookingId}
+                            onRefetchReady={(refetch) => {
+                                refetchPreBookingsListRef.current = refetch;
+                            }}
+                        />
+                        <JSHealthCardPoints />
+                        <PatientOldHistory />
+                        <Vouchers />
+                    </div>
+                )}
+
+                {/* Registration Steps and Forms - Dynamic width based on panel visibility */}
+                <div
+                    ref={formsContainerRef}
+                    data-form-container
+                    className={`transition-all duration-0 ease-in-out ${isLeftSidebarOpen ? 'w-[60%]' : 'w-[80%]'}`}
+                >
+                    <RegistrationSteps steps={registrationSteps} currentStep={currentStep} />
+
+                    {/* Conditional rendering based on current step */}
+                    {currentStep === 0 && (
+                        <PersonalForm
+                            formik={formik}
+                            getFormErrors={getFormErrors}
+                            scrollToFirstError={scrollToFirstError}
+                            onNext={handleNextStep}
+                            sourceOptions={sourceOptions}
+                            tvSpecificFieldOptions={tvSpecificFieldOptions}
+                            newspaperSpecificFieldOptions={newspaperSpecificFieldOptions}
+                            socialMediaSpecificFieldOptions={socialMediaSpecificFieldOptions}
+                            onContactNumberChange={handleContactNumberChange}
+                            readOnlyFields={selectedPreBookingId || isRevisitedPatient ? ["patientName", "contactNumber"] : (selectedApprovedPatientId ? ["patientName", "contactNumber"] : [])}
+                        />
+                    )}
+
+                    {currentStep === 1 && (
+                        <VitalForm
+                            formik={formik}
+                            getFormErrors={getFormErrors}
+                            onNext={handleNextStep}
+                            onBack={handleBackSteps}
+                        />
+                    )}
+
+                    {currentStep === 2 && (
+                        <MedicalForm
+                            formik={formik}
+                            getFormErrors={getFormErrors}
+                            onBack={handleBackSteps}
+                            onSubmit={handleFinalSubmit}
+                            onSuccessClose={handleResetAfterSuccess}
+                            isSubmitting={isSubmitting}
+                        />
+                    )}
+                </div>
+
+                <div className="w-[20%]">
+                    <PersonalDetailsReg />
+                    <Vitals />
+                    <Doctor />
+                    <MedicalDetails />
+                    <PatientWalletInformation onViewDetails={() => setShowWalletView(true)} />
+                    <Therapy />
+                </div>
+            </div>
+
+            {/* Patient Already Exists Dialog */}
+            <PatientAlreadyExistsDialog
+                open={patientExistsDialogOpen}
+                onClose={handlePatientExistsDialogClose}
+                existingPatients={existingPatients}
+                onRevisit={handleRevisit}
+                onAddNewMember={handleAddNewMember}
+            />
+
+            {/* Duplicate Number Exception Dialog */}
+            <DuplicateNumberExceptionDialog
+                open={duplicateExceptionDialogOpen}
+                onClose={handleDuplicateExceptionDialogClose}
+                onSubmit={handleDuplicateExceptionSubmit}
+                isLoading={isCreatingException}
+            />
+
+            {/* Success Dialog */}
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => setShowSuccessDialog(false)}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message={successMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowSuccessDialog(false)}
+            />
+
+            {/* Error Dialog */}
+            <MessageDialog
+                open={showErrorDialog}
+                onClose={() => setShowErrorDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={errorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowErrorDialog(false)}
+            />
+        </AppShell>
+    );
+}

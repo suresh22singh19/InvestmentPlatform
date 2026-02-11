@@ -105,7 +105,7 @@ export default function PackagePage() {
   const [packages, setPackages] = useState<Package[]>(initialPackages);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(6);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | "view" | null>(null);
   const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
   const [formValues, setFormValues] = useState({
@@ -256,13 +256,13 @@ export default function PackagePage() {
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title="Package" />
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">Package</h2>
+              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
               <div className="flex items-center gap-3">
                 <TableSearchInput
@@ -272,7 +272,7 @@ export default function PackagePage() {
                 />
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
@@ -370,7 +370,7 @@ export default function PackagePage() {
                 itemsPerPage={itemsPerPage}
                 onPageChange={handlePageChange}
                 onItemsPerPageChange={handleItemsPerPageChange}
-                itemsPerPageOptions={[6, 10, 20, 50]}
+                itemsPerPageOptions={[10, 20, 50, 100]}
               />
             )}
           </div>

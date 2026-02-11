@@ -398,22 +398,27 @@ export default function UsersPage() {
     setCurrentPage(1);
   };
 
-  const handleExport = () => {
-    // Export functionality
-    console.log("Exporting users...");
+  const handleExportPDF = () => {
+    // Export to PDF functionality
+    console.log("Exporting users to PDF...");
+  };
+
+  const handleExportCSV = () => {
+    // Export to CSV functionality
+    console.log("Exporting users to CSV...");
   };
 
   return (
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title="Users" />
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">Users</h2>
+              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
               <div className="flex items-center gap-3">
                 <FormSelectField
@@ -431,10 +436,10 @@ export default function UsersPage() {
                   onChange={setSearchTerm}
                   placeholder="Search Here..."
                 />
-                <ExportButton onClick={handleExport} />
+                <ExportButton onExportPDF={handleExportPDF} onExportCSV={handleExportCSV} />
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />

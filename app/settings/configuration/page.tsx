@@ -22,12 +22,13 @@ export default function SettingsConfigurationPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [apiErrorMessage, setApiErrorMessage] = useState("");
+  const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
+  const [invoiceLockedDaysError, setInvoiceLockedDaysError] = useState("");
   const [formValues, setFormValues] = useState({
     id: 0,
     invoiceLockedDays: "",
     smsChannel: "off",
-    oldSaleCron: "",
-    newSaleCron: "",
     branchId: 1,
   });
 
@@ -39,8 +40,6 @@ export default function SettingsConfigurationPage() {
         id: data.id,
         invoiceLockedDays: String(data.invoiceLockedDays),
         smsChannel: data.sms.toLowerCase(),
-        oldSaleCron: String(data.regCrone),
-        newSaleCron: String(data.saleCron),
         branchId: data.branchId,
       });
     }
@@ -56,13 +55,6 @@ export default function SettingsConfigurationPage() {
           channelLabel: "SMS / WhatsApp",
           channelValue: formatSmsValue(configurationData.data.sms),
         },
-        {
-          id: 2,
-          label: "Old Sale Cron Count",
-          value: String(configurationData.data.regCrone),
-          channelLabel: "New Sale Cron Count",
-          channelValue: String(configurationData.data.saleCron),
-        },
       ]
     : [];
 
@@ -71,19 +63,54 @@ export default function SettingsConfigurationPage() {
     { value: "on", label: "On" },
   ];
 
+  const handleInvoiceDaysChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    
+    // Only allow numeric input (0-9)
+    if (value === "" || /^\d+$/.test(value)) {
+      // Limit to 3 digits
+      if (value.length <= 3) {
+        setFormValues((prev) => ({
+          ...prev,
+          invoiceLockedDays: value,
+        }));
+        // Clear error when valid input is entered
+        if (invoiceLockedDaysError) {
+          setInvoiceLockedDaysError("");
+        }
+      }
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     
-    // Basic validation
-    if (!formValues.invoiceLockedDays || !formValues.oldSaleCron || !formValues.newSaleCron) {
-      setSuccessMessage("Please fill in all required fields");
-      setShowSuccessDialog(true);
+    // Clear previous errors
+    setInvoiceLockedDaysError("");
+    
+    // Validate invoice locked days field
+    if (!formValues.invoiceLockedDays.trim()) {
+      setInvoiceLockedDaysError("Invoice locked days is required");
+      return;
+    }
+
+    const daysValue = Number(formValues.invoiceLockedDays);
+    
+    // Validate it's a valid number
+    if (isNaN(daysValue)) {
+      setInvoiceLockedDaysError("Please enter a valid number");
+      return;
+    }
+
+    // Validate range (0-999)
+    if (daysValue < 0 || daysValue > 999) {
+      setInvoiceLockedDaysError("Please enter a number between 0 and 999");
       return;
     }
 
     if (formValues.id === 0) {
-      setSuccessMessage("Configuration data not loaded. Please refresh the page.");
-      setShowSuccessDialog(true);
+      setApiErrorMessage("Configuration data not loaded. Please refresh the page.");
+      setShowApiErrorDialog(true);
       return;
     }
     
@@ -92,8 +119,8 @@ export default function SettingsConfigurationPage() {
         id: formValues.id,
         invoiceLockedDays: Number(formValues.invoiceLockedDays),
         sms: formValues.smsChannel,
-        regCrone: Number(formValues.oldSaleCron),
-        saleCron: Number(formValues.newSaleCron),
+        regCrone: configurationData?.data?.regCrone ?? 0,
+        saleCron: configurationData?.data?.saleCron ?? 0,
         branchId: formValues.branchId,
       }).unwrap();
 
@@ -106,8 +133,8 @@ export default function SettingsConfigurationPage() {
     } catch (error: any) {
       console.error("Update configuration error:", error);
       const errorMessage = error?.data?.message || error?.data?.error || "Failed to update configuration";
-      setSuccessMessage(errorMessage);
-      setShowSuccessDialog(true);
+      setApiErrorMessage(errorMessage);
+      setShowApiErrorDialog(true);
     }
   };
 
@@ -115,7 +142,7 @@ export default function SettingsConfigurationPage() {
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title="HIIMS Configuration" />
           <button
             type="button"
             className="flex h-11 items-center gap-2 rounded-full border border-[#0B8C00] px-5 text-sm font-semibold text-[#0B8C00] shadow-[0px_20px_40px_rgba(34,56,43,0.08)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -130,7 +157,7 @@ export default function SettingsConfigurationPage() {
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="border-b border-[#E9F3E6] py-4">
-              <h2 className="text-base font-semibold text-[#262D3B]">HIIMS Configuration</h2>
+              <h2 className="text-base font-semibold text-[#262D3B]"></h2>
             </div>
 
             <div className="divide-y divide-[#EDF3EA] border-b border-[#E9F3E6]">
@@ -166,22 +193,27 @@ export default function SettingsConfigurationPage() {
 
       <Dialog
         open={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
+        onClose={() => {
+          setIsDialogOpen(false);
+          setInvoiceLockedDaysError("");
+        }}
         title="Edit Configuration"
         width={686}
       >
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4">
             <FormInputField
-              label="Invoice locked After days"
+              label="Invoice locked After days *"
+              type="number"
+              min="0"
+              max="999"
+              maxLength={3}
+              required
               value={formValues.invoiceLockedDays}
-              onChange={(event) =>
-                setFormValues((prev) => ({
-                  ...prev,
-                  invoiceLockedDays: event.target.value,
-                }))
-              }
+              onChange={handleInvoiceDaysChange}
               height={44}
+              disabled={isUpdating}
+              error={invoiceLockedDaysError}
             />
 
             <FormSelectField
@@ -197,30 +229,7 @@ export default function SettingsConfigurationPage() {
                 }
               }}
               background="white"
-            />
-
-            <FormInputField
-              label="Old Sale Cron Count"
-              value={formValues.oldSaleCron}
-              onChange={(event) =>
-                setFormValues((prev) => ({
-                  ...prev,
-                  oldSaleCron: event.target.value,
-                }))
-              }
-              height={44}
-            />
-
-            <FormInputField
-              label="New Sale Cron Count"
-              value={formValues.newSaleCron}
-              onChange={(event) =>
-                setFormValues((prev) => ({
-                  ...prev,
-                  newSaleCron: event.target.value,
-                }))
-              }
-              height={44}
+              disabled={isUpdating}
             />
           </div>
 
@@ -241,16 +250,30 @@ export default function SettingsConfigurationPage() {
           /> */}
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" variant="primary" disabled={isUpdating}>
-              {isUpdating ? "Updating..." : "Update"}
+            <Button 
+              type="submit" 
+              variant="primary" 
+              isLoading={isUpdating}
+              disabled={isUpdating}
+            >
+              Update
             </Button>
-            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setIsDialogOpen(false);
+                setInvoiceLockedDaysError("");
+              }}
+              disabled={isUpdating}
+            >
               Cancel
             </Button>
           </div>
         </form>
       </Dialog>
 
+      {/* Success Dialog */}
       <MessageDialog
         open={showSuccessDialog}
         onClose={() => {
@@ -259,10 +282,26 @@ export default function SettingsConfigurationPage() {
         icon="/icons/SuccessCheck.svg"
         iconBgColor="#E8F5E9"
         message={successMessage}
-        confirmText="OK"
+        confirmText="Success"
         showCancel={false}
         onConfirm={() => {
           setShowSuccessDialog(false);
+        }}
+      />
+
+      {/* API Error Dialog - Only for API errors, not validation errors */}
+      <MessageDialog
+        open={showApiErrorDialog}
+        onClose={() => {
+          setShowApiErrorDialog(false);
+        }}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={apiErrorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => {
+          setShowApiErrorDialog(false);
         }}
       />
     </AppShell>

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Formik, Form } from "formik";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +32,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   onClearFieldError,
   onRememberMeChange,
 }) => {
+  const [isNavigating, setIsNavigating] = useState(false);
+  
   const defaultInitialValues: LoginFormValues = {
     email: "",
     password: "",
@@ -47,8 +49,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       onSubmit={async (values, { setSubmitting }) => {
         try {
           await onSubmit(values);
-        } finally {
+          // If onSubmit completes without error, we're navigating
+          // Keep button disabled until navigation completes
+          setIsNavigating(true);
+          // Don't reset setSubmitting on success - let navigation happen
+          // The component will unmount when navigation completes
+        } catch (error) {
+          // Reset submitting state and navigation state on error so user can try again
           setSubmitting(false);
+          setIsNavigating(false);
+          // Re-throw to let Formik handle the error
+          throw error;
         }
       }}
     >
@@ -124,9 +135,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             size="large"
             fullWidth
             className="mt-4"
-            disabled={isSubmitting || isLoading}
+            disabled={isSubmitting || isLoading || isNavigating}
+            isLoading={isSubmitting || isLoading || isNavigating}
           >
-            {isSubmitting || isLoading ? "Signing In..." : "Sign In"}
+            Sign In
           </Button>
         </Form>
       )}

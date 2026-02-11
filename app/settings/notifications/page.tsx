@@ -119,7 +119,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(6);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewRoleDialogOpen, setViewRoleDialogOpen] = useState(false);
   const [viewMessageDialogOpen, setViewMessageDialogOpen] = useState(false);
@@ -266,13 +266,13 @@ export default function NotificationsPage() {
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title="Notifications" />
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">Notifications</h2>
+              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
               <div className="flex items-center gap-3">
                 <TableSearchInput
@@ -385,7 +385,7 @@ export default function NotificationsPage() {
                 itemsPerPage={itemsPerPage}
                 onPageChange={handlePageChange}
                 onItemsPerPageChange={handleItemsPerPageChange}
-                itemsPerPageOptions={[6, 10, 20, 50]}
+                itemsPerPageOptions={[10, 20, 50, 100]}
               />
             )}
           </div>

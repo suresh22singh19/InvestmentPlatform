@@ -6,6 +6,7 @@ type PanelCardProps = {
   id: number;
   name: string;
   status: "Active" | "Inactive";
+  isDefaultPanel?: boolean;
   onView: () => void;
   onEdit: () => void;
 };
@@ -14,11 +15,12 @@ export const PanelCard = ({
   id,
   name,
   status,
+  isDefaultPanel = false,
   onView,
   onEdit,
 }: PanelCardProps) => {
   return (
-    <div className="relative flex w-full flex-col overflow-hidden rounded-[12px] border border-[#DFE0E2] bg-white pt-4 pb-6 px-4 shadow-[0px_6px_40px_rgba(0,0,0,0.02)]">
+    <div className={`relative flex w-full flex-col overflow-hidden rounded-[12px] border border-[#DFE0E2] bg-white pt-4 pb-6 px-4 shadow-[0px_6px_40px_rgba(0,0,0,0.02)] ${isDefaultPanel ? 'cursor-not-allowed' : ''}`}>
       <div className="mb-6 flex items-start justify-between">
         {status === "Active" ? (
           <span
@@ -55,8 +57,13 @@ export const PanelCard = ({
         </button>
         <button
           type="button"
-          onClick={onEdit}
-          className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
+          onClick={isDefaultPanel ? undefined : onEdit}
+          disabled={isDefaultPanel}
+          className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors ${
+            isDefaultPanel
+              ? 'cursor-not-allowed'
+              : 'hover:bg-[#0A7F00] cursor-pointer'
+          }`}
         >
           <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
           Edit

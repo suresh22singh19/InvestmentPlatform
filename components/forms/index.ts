@@ -1,1 +1,17 @@
 export { LoginForm } from "./LoginForm";
+export { default as AddressDetails } from "./AddressDetails";
+export type { AddressFormData } from "./AddressDetails";
+export { default as PersonalDetails } from "./PersonalDetails";
+export type { PersonalFormData } from "./PersonalDetails";
+export { default as PatientDetails } from "./PatientDetails";
+export type { PatientDetailsFormData } from "./PatientDetails";
+export { default as VisitorsDetails } from "./VisitorsDetails";
+export type { Visitor, VisitorsFormData } from "./VisitorsDetails";
+export { default as PhotoCapture } from "./PhotoCapture";
+export type { PhotoCaptureFormData, PhotoCaptureRef } from "./PhotoCapture";
+export { default as PatientVisitorDetails } from "./PatientVisitorDetails";
+export type { PatientVisitorFormData } from "./PatientVisitorDetails";
+export { default as IPDAdditionalDetails } from "./IPDAdditionalDetails";
+export type { IPDAdditionalDetailsFormData } from "./IPDAdditionalDetails";
+export { default as OtherVisitorDetails } from "./OtherVisitorDetails";
+export type { OtherVisitorFormData } from "./OtherVisitorDetails";

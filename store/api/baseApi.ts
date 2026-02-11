@@ -15,7 +15,7 @@ export const baseApi = createApi({
       // Get token from Redux state or localStorage
       const state = getState() as RootState;
       const token =
-        state.auth?.token ||
+        state.auth?.loginData?.access_token ||
         (typeof window !== "undefined"
           ? localStorage.getItem("authToken") || sessionStorage.getItem("authToken")
           : null);
@@ -24,11 +24,13 @@ export const baseApi = createApi({
         headers.set("authorization", `Bearer ${token}`);
       }
 
-      headers.set("Content-Type", "application/json");
+      if (!headers.get("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
       return headers;
     },
   }),
-  tagTypes: ["Auth", "Settings"],
+  tagTypes: ["Auth", "Settings", "Gate", "Notifications"],
   endpoints: () => ({}),
 });
 

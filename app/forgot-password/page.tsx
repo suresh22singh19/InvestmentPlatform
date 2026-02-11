@@ -13,7 +13,8 @@ export default function ForgotPasswordPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [forgotPassword, { isLoading }] = useForgotPasswordMutation();
@@ -34,17 +35,18 @@ export default function ForgotPasswordPage() {
     event.preventDefault();
 
     if (!email.trim()) {
-      setError("Email is required");
+      setErrorMessage("Email is required");
+      setShowErrorDialog(true);
       return;
     }
 
     // Clear previous errors
-    setError(null);
+    setShowErrorDialog(false);
+    setErrorMessage("");
     setSuccessMessage(null);
     
     try {
       const response = await forgotPassword({
-        login_type: returnType ?? "admin",
         email: email.trim(),
       }).unwrap();
       
@@ -59,11 +61,14 @@ export default function ForgotPasswordPage() {
       const apiMessage = apiError?.data?.message || apiError?.data?.error;
       
       if (apiMessage) {
-        setError(apiMessage); // This will show below the email input
+        setErrorMessage(apiMessage);
+        setShowErrorDialog(true);
       } else if (apiError?.status === 503 || apiError?.status === "FETCH_ERROR") {
-        setError("Server is unavailable. Please try again later.");
+        setErrorMessage("Server is unavailable. Please try again later.");
+        setShowErrorDialog(true);
       } else {
-        setError("Unable to process request. Please try again.");
+        setErrorMessage("Unable to process request. Please try again.");
+        setShowErrorDialog(true);
       }
     }
   };
@@ -106,10 +111,12 @@ export default function ForgotPasswordPage() {
             value={email}
             onChange={(event) => {
               setEmail(event.target.value);
-              if (error) setError(null);
+              if (showErrorDialog) {
+                setShowErrorDialog(false);
+                setErrorMessage("");
+              }
             }}
             placeholder="Enter Your Email..."
-            error={error ?? undefined}
           />
 
           <Button
@@ -117,9 +124,10 @@ export default function ForgotPasswordPage() {
             variant="primary"
             size="large"
             fullWidth
+            isLoading={isLoading}
             disabled={isLoading}
           >
-            {isLoading ? "Submitting..." : "Submit"}
+            Submit
           </Button>
         </form>
 
@@ -139,6 +147,7 @@ export default function ForgotPasswordPage() {
         </Button>
       </div>
 
+      {/* Success Dialog */}
       <MessageDialog
         open={showSuccessModal}
         onClose={() => {
@@ -153,6 +162,22 @@ export default function ForgotPasswordPage() {
         onConfirm={() => {
           setShowSuccessModal(false);
           navigateToLogin();
+        }}
+      />
+
+      {/* Error Dialog */}
+      <MessageDialog
+        open={showErrorDialog}
+        onClose={() => {
+          setShowErrorDialog(false);
+        }}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={errorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => {
+          setShowErrorDialog(false);
         }}
       />
     </div>

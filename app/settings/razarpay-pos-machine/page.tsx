@@ -259,7 +259,7 @@ export default function RazarpayPosMachinePage() {
   const [machines, setMachines] = useState<RazarPayPosMachine[]>(initialRazarPayMachines);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(6);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [showPaymentLogTable, setShowPaymentLogTable] = useState(false);
@@ -462,14 +462,14 @@ export default function RazarpayPosMachinePage() {
     <AppShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between">
-          <PageHeading title="Settings" />
+          <PageHeading title={showPaymentLogTable ? "Payment History" : "Razarpay Pos Machine"} />
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">
-                {showPaymentLogTable ? "Payment History" : "Razarpay Pos Machine"}
+                
               </h2>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -512,7 +512,7 @@ export default function RazarpayPosMachinePage() {
                     <div className="w-full lg:w-auto">
                       <button
                         type="button"
-                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
                         onClick={handleBackToCards}
                       >
                         Back
@@ -543,7 +543,7 @@ export default function RazarpayPosMachinePage() {
                     <div className="w-full lg:w-auto">
                       <button
                         type="button"
-                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
                         onClick={handleAdd}
                       >
                         <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
@@ -554,7 +554,7 @@ export default function RazarpayPosMachinePage() {
                     <div className="w-full lg:w-auto">
                       <button
                         type="button"
-                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
                         onClick={handlePaymentLogHistory}
                       >
                         Payment Log History
@@ -645,7 +645,7 @@ export default function RazarpayPosMachinePage() {
                       setPaymentLogItemsPerPage(items);
                       setPaymentLogCurrentPage(1);
                     }}
-                    itemsPerPageOptions={[6, 10, 20, 50]}
+                    itemsPerPageOptions={[10, 20, 50, 100]}
                   />
                 )}
               </>
@@ -684,7 +684,7 @@ export default function RazarpayPosMachinePage() {
                       setItemsPerPage(items);
                       setCurrentPage(1);
                     }}
-                    itemsPerPageOptions={[6, 10, 20, 50]}
+                    itemsPerPageOptions={[10, 20, 50, 100]}
                   />
                 )}
               </>
