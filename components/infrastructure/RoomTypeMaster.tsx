@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button, Dialog, FormInputField } from "@/components/ui";
+import { Button, Dialog, FormInputField, ConfigurationSummaryPanel } from "@/components/ui";
 
 type RoomType = {
   id: string;
@@ -62,6 +62,7 @@ export const RoomTypeMaster = ({ facilityName, onBack }: RoomTypeMasterProps) =>
   const [roomTypeLabel, setRoomTypeLabel] = useState("");
   const [roomTypeCode, setRoomTypeCode] = useState("");
   const [roomTypePrefix, setRoomTypePrefix] = useState("");
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
 
   const handleAddClick = () => {
     setRoomTypeLabel("");
@@ -137,36 +138,57 @@ export const RoomTypeMaster = ({ facilityName, onBack }: RoomTypeMasterProps) =>
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Room Type Master</h1>
-            <p className="text-sm text-gray-500">{facilityName}</p>
+    <div className="flex gap-6 h-full">
+      {/* Main Content */}
+      <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+            >
+              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Room Type Master</h1>
+              <p className="text-sm text-gray-500">{facilityName}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="small"
+              onClick={handleAddClick}
+              leftIcon={
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              }
+            >
+              Add Room Type
+            </Button>
+            {/* Toggle Panel Button - Always visible when panel is closed */}
+            {!isPanelOpen && (
+              <button
+                onClick={() => setIsPanelOpen(true)}
+                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                aria-label="Open Configuration Summary"
+              >
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
-        <Button variant="primary" size="small" onClick={handleAddClick} leftIcon={
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        }>
-          Add Room Type
-        </Button>
-      </div>
 
       {/* Information Banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-semibold text-blue-900 mb-1">About Room Types</h3>
-        <p className="text-sm text-blue-700">
+      <div className="rounded-[12px] border border-gray-200 bg-white p-4  mb-6">
+        <h3 className="text-sm font-medium text-gray-900 mb-1">About Room Types</h3>
+        <p className="text-sm font-medium text-gray-900">
           Room types help you categorize and organize different kinds of rooms in your hospital. Define custom types like 'OT Theatre', 'ICU Bed', 'Lab Room' etc. Each type includes a prefix used for auto-generating room numbers.
         </p>
       </div>
@@ -174,8 +196,8 @@ export const RoomTypeMaster = ({ facilityName, onBack }: RoomTypeMasterProps) =>
       {/* Room Types Section */}
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Room Types</h2>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+          <h2 className="text-lg font-semibold text-green-900">Room Types</h2>
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
             {roomTypes.length}
           </span>
         </div>
@@ -189,8 +211,8 @@ export const RoomTypeMaster = ({ facilityName, onBack }: RoomTypeMasterProps) =>
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                    <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                    <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                     </svg>
                   </div>
@@ -356,6 +378,22 @@ export const RoomTypeMaster = ({ facilityName, onBack }: RoomTypeMasterProps) =>
           </div>
         </div>
       </Dialog>
+      </div>
+
+      {/* Configuration Summary Panel */}
+      <ConfigurationSummaryPanel
+        facilityName={facilityName}
+        completionPercentage={35}
+        isOpen={isPanelOpen}
+        onClose={() => setIsPanelOpen(false)}
+        buildings={2}
+        blocks={0}
+        floors={3}
+        departments={1}
+        totalRooms={2}
+        configuredRooms={1}
+        incompleteRooms={1}
+      />
     </div>
   );
 };

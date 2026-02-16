@@ -14,11 +14,11 @@ export const ConfigurationProgress = ({
   className = "",
 }: ConfigurationProgressProps) => {
   return (
-    <div className={`rounded-lg border border-gray-200 bg-white p-4 ${className}`}>
+    <div className={`rounded-[12px] border border-gray-200 bg-white p-4 ${className}`}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <svg
-            className="h-5 w-5 text-blue-600"
+            className="h-5 w-5 text-green-700"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -43,9 +43,9 @@ export const ConfigurationProgress = ({
         </span>
       </div>
       {/* Progress Bar */}
-      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+      <div className="h-2 w-full overflow-hidden rounded-full bg-green-100">
         <div
-          className="h-full bg-gray-900 transition-all duration-300"
+          className="h-full bg-green-600 transition-all duration-300"
           style={{ width: `${completionPercentage}%` }}
         />
       </div>

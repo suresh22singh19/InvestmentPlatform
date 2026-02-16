@@ -24,6 +24,7 @@ interface PersonalFormProps {
     socialMediaSpecificFieldOptions: SelectOption[];
     onContactNumberChange?: (field: string, value: string) => void;
     onAadharCardNumberChange?: (value: string) => void;
+    onReferralMobileChange?: (value: string) => void;
     readOnlyFields?: string[]; // Array of field names that should be read-only
     submitButtonText?: string; // Optional custom text for submit button
 }
@@ -40,6 +41,7 @@ export default function PersonalForm({
     socialMediaSpecificFieldOptions,
     onContactNumberChange,
     onAadharCardNumberChange,
+    onReferralMobileChange,
     readOnlyFields = [],
     submitButtonText = "Save & Next",
 }: PersonalFormProps) {
@@ -208,7 +210,8 @@ export default function PersonalForm({
                         step1Errors.doctorSpecificField = 'Doctor Specific field is required';
                         formik.setFieldTouched('doctorSpecificField', true, false);
                     }
-                    if (formik.values.source === 'other') {
+                    // Require referral name and mobile when source is "patient" (Referral) or "other"
+                    if (formik.values.source?.toLowerCase() === 'patient' || formik.values.source === 'other') {
                         if (!formik.values.referralName) {
                             step1Errors.referralName = 'Referral Name is required';
                             formik.setFieldTouched('referralName', true, false);
@@ -562,6 +565,25 @@ export default function PersonalForm({
                         }, 10);
                     }
 
+                    // When source changes, clear validation errors for referralName and referralMobile if source is not "other" or "patient" (Referral)
+                    if (field === "source") {
+                        const sourceLower = value?.toLowerCase();
+                        if (sourceLower !== "other" && sourceLower !== "patient") {
+                            // Clear errors and touched state for referral fields when source is not "other" or "patient" (Referral)
+                            setTimeout(() => {
+                                if (formik.errors.referralName) {
+                                    formik.setFieldError("referralName", undefined);
+                                }
+                                if (formik.errors.referralMobile) {
+                                    formik.setFieldError("referralMobile", undefined);
+                                }
+                                // Clear touched state so errors don't reappear
+                                formik.setFieldTouched("referralName", false, false);
+                                formik.setFieldTouched("referralMobile", false, false);
+                            }, 0);
+                        }
+                    }
+
                     // For button group fields (referral), validate immediately
                     const buttonFields = ["referral"];
                     if (buttonFields.includes(field)) {
@@ -570,18 +592,38 @@ export default function PersonalForm({
                             formik.validateField(field);
                         }, 10);
                     }
+                    
+                    // When referral changes to "no", clear validation errors for referral fields
+                    if (field === "referral" && value?.toLowerCase() === "no") {
+                        setTimeout(() => {
+                            if (formik.errors.referralName) {
+                                formik.setFieldError("referralName", undefined);
+                            }
+                            if (formik.errors.referralMobile) {
+                                formik.setFieldError("referralMobile", undefined);
+                            }
+                            formik.setFieldTouched("referralName", false, false);
+                            formik.setFieldTouched("referralMobile", false, false);
+                        }, 0);
+                    }
 
-                    // For input fields: if field was previously invalid, validate on change
+                    // For input fields: only validate on change if field was previously touched and had an error
                     const inputFields = ["referralName", "referralMobile"];
                     if (inputFields.includes(field)) {
                         const isTouched = formik.touched[field as keyof typeof formik.touched];
                         const hasError = formik.errors[field as keyof typeof formik.errors];
 
+                        // Only validate if field was already touched and had an error (to clear error when user fixes it)
                         if (isTouched && hasError) {
                             setTimeout(() => {
                                 formik.validateField(field);
                             }, 0);
                         }
+                    }
+
+                    // Call onReferralMobileChange when referralMobile changes
+                    if (field === "referralMobile" && onReferralMobileChange) {
+                        onReferralMobileChange(value);
                     }
                 }}
                 onBlur={(field) => {
@@ -604,6 +646,7 @@ export default function PersonalForm({
                     referralMobile: referralMobileRef,
                 }}
                 errors={getFormErrors()}
+                readOnlyFields={readOnlyFields}
             />
 
             {/* Appointment Information Component */}

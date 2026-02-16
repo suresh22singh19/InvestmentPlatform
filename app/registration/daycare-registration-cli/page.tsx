@@ -691,19 +691,37 @@ export default function DaycareRegistrationPage() {
     const mapFormikToClinicPatientPayload = (): ClinicPatientRequest => {
         const values = formik.values;
 
-        // Determine referral source info based on source type
-        let referralSourceInfo = "";
+        // Build referral object for clinic-patient: only required fields per source
+        // - Doctor: referralSourceType + doctorUserId only
+        // - Referral (patient/other): referralSourceType "patient" + referralRegistrationId + referralName + referralMobile only
+        // - TV / NewsPaper / Social Media: referralSourceType + doctorUserId: null + referralSourceInfo only
+        let referralObject: ClinicPatientRequest["referral"] = undefined;
         if (values.referral?.toLowerCase() === "yes" && values.source) {
-            if (values.source === "tv" && values.tvSpecificField) {
-                referralSourceInfo = values.tvSpecificField;
-            } else if (values.source === "newspaper" && values.newspaperSpecificField) {
-                referralSourceInfo = values.newspaperSpecificField;
-            } else if (values.source === "social-media" && values.socialMediaSpecificField) {
-                referralSourceInfo = values.socialMediaSpecificField;
-            } else if (values.source === "doctor" && values.doctorSpecificField) {
-                referralSourceInfo = values.doctorSpecificField;
-            } else if (values.source === "other" && values.referralName) {
-                referralSourceInfo = values.referralName;
+            const sourceLower = values.source?.toLowerCase();
+            if (values.source === "doctor" && values.doctorSpecificField) {
+                const doctorId = typeof values.doctorSpecificField === 'string' ? parseInt(values.doctorSpecificField, 10) : values.doctorSpecificField;
+                referralObject = {
+                    referralSourceType: "doctor",
+                    doctorUserId: doctorId,
+                };
+            } else if (sourceLower === "patient" || values.source === "other") {
+                referralObject = {
+                    referralSourceType: "patient",
+                    referralRegistrationId: undefined, // Daycare doesn't have referral patient selection yet
+                    referralName: values.referralName || undefined,
+                    referralMobile: values.referralMobile || undefined,
+                };
+            } else {
+                // tv | newspaper | social-media
+                let referralSourceInfo = "";
+                if (values.source === "tv" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
+                else if (values.source === "newspaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
+                else if (values.source === "social-media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
+                referralObject = {
+                    referralSourceType: values.source,
+                    doctorUserId: null,
+                    referralSourceInfo: referralSourceInfo || undefined,
+                };
             }
         }
 
@@ -748,12 +766,9 @@ export default function DaycareRegistrationPage() {
             ayushCovered: values.ayushCovered || undefined,
             benificiaryId: values.benificiaryId || undefined,
             insuranceCompany: values.insuranceCompany || undefined,
-            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : "no",
-            referralSourceInfo: referralSourceInfo || undefined,
-            referralUserId: values.doctorSpecificField ? parseInt(values.doctorSpecificField, 10) : undefined,
-            referralName: values.referralName || undefined,
-            referralMobile: values.referralMobile || undefined,
             maritalStatus: values.maritalStatus || "",
+            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : "no",
+            referral: referralObject,
             doctorUserId: values.doctor ? parseInt(values.doctor, 10) : 1,
             patientType: values.patientType?.toUpperCase() || "PRIVATE",
             panelId: values.panelId ? parseInt(values.panelId, 10) : undefined,

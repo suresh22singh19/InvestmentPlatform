@@ -11,6 +11,7 @@ type FacilityCardProps = {
   setupDate: string;
   completionPercentage: number;
   buildings: number;
+  blocks?: number;
   floors: number;
   departments: number;
   roomsConfigured: number;
@@ -26,6 +27,7 @@ export const FacilityCard = ({
   setupDate,
   completionPercentage,
   buildings,
+  blocks,
   floors,
   departments,
   roomsConfigured,
@@ -47,9 +49,9 @@ export const FacilityCard = ({
           <div className="flex-shrink-0">
             {/* Hospital Icon */}
 
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gray-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-100">
               <svg
-                className="h-6 w-6 text-gray-700"
+                className="h-6 w-6 text-green-700"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -66,7 +68,7 @@ export const FacilityCard = ({
           <div>
             <div className="mb-1 flex items-center gap-2">
               <h3 className="text-lg font-semibold text-gray-900">{name}</h3>
-              <span className="rounded-full bg-black px-2.5 py-0.5 text-xs font-medium text-white">
+              <span className="rounded-full bg-green-600 px-2.5 py-0.5 text-xs font-medium text-white">
                 {type}
               </span>
             </div>
@@ -80,7 +82,7 @@ export const FacilityCard = ({
           <div className="mb-2 flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
               <svg
-                className="h-4 w-4 text-gray-700"
+                className="h-4 w-4 text-green-700"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -107,22 +109,30 @@ export const FacilityCard = ({
             </span>
           </div>
           {/* Progress Bar */}
-          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-green-100">
             <div
-              className="h-full bg-gray-900 transition-all duration-300"
+              className="h-full bg-green-600 transition-all duration-300"
               style={{ width: `${completionPercentage}%` }}
             />
           </div>
         </div>
 
         {/* Statistics */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className={`grid gap-4 ${blocks !== undefined && blocks > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
           <div>
             <p className="text-xs text-gray-500">Buildings</p>
             <p className="mt-0.5 text-base font-semibold text-gray-900">
               {buildings}
             </p>
           </div>
+          {type === "Hospital" && blocks !== undefined && blocks > 0 && (
+            <div>
+              <p className="text-xs text-gray-500">Blocks</p>
+              <p className="mt-0.5 text-base font-semibold text-gray-900">
+                {blocks}
+              </p>
+            </div>
+          )}
           <div>
             <p className="text-xs text-gray-500">Floors</p>
             <p className="mt-0.5 text-base font-semibold text-gray-900">
@@ -148,7 +158,7 @@ export const FacilityCard = ({
       {/* Arrow Icon */}
       <div className="flex-shrink-0">
         <svg
-          className="h-5 w-5 text-gray-400"
+          className="h-5 w-5 text-green-600"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"

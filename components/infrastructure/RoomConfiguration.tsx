@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button, FormInputField, FormSelectField } from "@/components/ui";
-import type { RoomInventoryItem } from "./RoomInventory";
+import { Button, FormInputField, FormSelectField, ConfigurationSummaryPanel } from "@/components/ui";
+import type { RoomInventoryItem, OccupancyStatus } from "./RoomInventory";
 
 const STEPS = [
   { id: "basic", label: "Basic Info" },
@@ -24,7 +24,10 @@ const ROOM_TYPES = [
 
 const STATUS_OPTIONS = [
   { value: "Vacant", label: "Vacant" },
-  { value: "Occupied", label: "Occupied" },
+  { value: "Fully Occupied", label: "Fully Occupied" },
+  { value: "Partially Occupied", label: "Partially Occupied" },
+  { value: "Reserved", label: "Reserved" },
+  { value: "Under Maintenance", label: "Under Maintenance" },
 ];
 
 const HARDWARE_OPTIONS = [
@@ -42,6 +45,7 @@ const HARDWARE_OPTIONS = [
 ];
 
 const FACILITIES_OPTIONS = [
+  "Air Conditioning",
   "Oxygen Supply",
   "Attached Washroom",
   "Attendant Couch",
@@ -70,35 +74,41 @@ export const RoomConfiguration = ({
   const [stepIndex, setStepIndex] = useState(0);
   const [roomNumber, setRoomNumber] = useState(initialRoom.roomNumber);
   const [capacity, setCapacity] = useState(String(initialRoom.capacity));
-  const [currentStatus, setCurrentStatus] = useState(initialRoom.occupancyStatus);
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
+  const [currentStatus, setCurrentStatus] = useState<OccupancyStatus>(() => {
+    const s = initialRoom.occupancyStatus;
+    if ((s as string) === "Occupied") return "Fully Occupied";
+    return s as OccupancyStatus;
+  });
   const [roomType, setRoomType] = useState(initialRoom.roomType);
   const [genderUsage, setGenderUsage] = useState<"Male" | "Female" | "Mixed">(initialRoom.genderUsage);
-  const [hasAC, setHasAC] = useState(initialRoom.hasAC);
   const [hardware, setHardware] = useState<{ name: string; qty: number }[]>(
-    initialRoom.hardwareCount > 0
-      ? [
-          { name: "Examination Bed", qty: 1 },
-          { name: "BP Monitor", qty: 1 },
-        ]
-      : []
+    initialRoom.hardwareItems?.length
+      ? initialRoom.hardwareItems
+      : initialRoom.hardwareCount > 0
+        ? [{ name: "Examination Bed", qty: 1 }, { name: "BP Monitor", qty: 1 }]
+        : []
   );
-  const [facilities, setFacilities] = useState<string[]>(
-    initialRoom.facilitiesCount >= 2 ? ["Oxygen Supply", "Attached Washroom"] : []
-  );
+  const [facilities, setFacilities] = useState<string[]>(() => {
+    if (initialRoom.facilityNames?.length) return initialRoom.facilityNames;
+    const base = initialRoom.facilitiesCount >= 2 ? ["Oxygen Supply", "Attached Washroom"] : [];
+    if (initialRoom.hasAC && !base.includes("Air Conditioning")) base.push("Air Conditioning");
+    return base;
+  });
   const [newHardwareSelect, setNewHardwareSelect] = useState("");
 
   const locationPath = `${initialRoom.building} / ${initialRoom.block} / ${initialRoom.floor}`;
   const currentStepId = STEPS[stepIndex].id;
 
-  const handleAddHardware = () => {
-    if (!newHardwareSelect) return;
-    const existing = hardware.find((h) => h.name === newHardwareSelect);
+  const handleAddHardware = (hardwareName: string) => {
+    if (!hardwareName) return;
+    const existing = hardware.find((h) => h.name === hardwareName);
     if (existing) {
       setHardware((prev) =>
-        prev.map((h) => (h.name === newHardwareSelect ? { ...h, qty: h.qty + 1 } : h))
+        prev.map((h) => (h.name === hardwareName ? { ...h, qty: h.qty + 1 } : h))
       );
     } else {
-      setHardware((prev) => [...prev, { name: newHardwareSelect, qty: 1 }]);
+      setHardware((prev) => [...prev, { name: hardwareName, qty: 1 }]);
     }
     setNewHardwareSelect("");
   };
@@ -124,37 +134,56 @@ export const RoomConfiguration = ({
   };
 
   const handleSave = () => {
+    const hasACFromFacilities = facilities.includes("Air Conditioning");
     const updated: RoomInventoryItem = {
       ...initialRoom,
       roomNumber,
       capacity: parseInt(capacity, 10) || 1,
-      occupancyStatus: currentStatus as "Vacant" | "Occupied",
+      occupancyStatus: currentStatus,
       roomType,
       genderUsage,
-      hasAC,
+      hasAC: hasACFromFacilities,
       hardwareCount: hardware.reduce((s, h) => s + h.qty, 0),
       facilitiesCount: facilities.length,
       status: "configured",
+      hardwareItems: hardware.length ? hardware : undefined,
+      facilityNames: facilities.length ? [...facilities] : undefined,
     };
     onSave(updated);
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 mb-4">
-        <button
-          onClick={onBack}
-          className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100"
-        >
-          <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Room Configuration</h1>
-          <p className="text-sm text-gray-500">Editing {initialRoom.roomNumber}</p>
+    <div className="flex gap-6 h-full">
+      {/* Main Content */}
+      <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100"
+            >
+              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Room Configuration</h1>
+              <p className="text-sm text-gray-500">Editing {initialRoom.roomNumber}</p>
+            </div>
+          </div>
+          {/* Toggle Panel Button - Always visible when panel is closed */}
+          {!isPanelOpen && (
+            <button
+              onClick={() => setIsPanelOpen(true)}
+              className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+              aria-label="Open Configuration Summary"
+            >
+              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </div>
-      </div>
 
       <div className="flex items-center gap-2 text-sm text-gray-600 mb-6 px-1">
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,7 +249,7 @@ export const RoomConfiguration = ({
               label="Current Status"
               options={STATUS_OPTIONS}
               value={currentStatus}
-              onChange={(v) => setCurrentStatus((typeof v === "string" ? v : v[0]) as "Vacant" | "Occupied")}
+              onChange={(v) => setCurrentStatus((typeof v === "string" ? v : v[0]) as OccupancyStatus)}
             />
           </div>
         )}
@@ -281,43 +310,29 @@ export const RoomConfiguration = ({
                 ))}
               </div>
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Air Conditioning (AC)</h3>
-              <p className="text-xs text-gray-500 mb-2">Room has climate control</p>
-              <button
-                type="button"
-                onClick={() => setHasAC(!hasAC)}
-                className={`relative inline-flex h-8 w-12 flex-shrink-0 rounded-full border-2 transition-colors ${
-                  hasAC ? "border-gray-900 bg-gray-900" : "border-gray-200 bg-gray-100"
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition ${
-                    hasAC ? "translate-x-4" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
+            <p className="text-sm text-gray-500">Air Conditioning is configured in the Facilities step.</p>
           </div>
         )}
 
         {currentStepId === "hardware" && (
           <div className="space-y-6 max-w-xl">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Add Hardware Equipment</h3>
-              <div className="flex gap-2">
-                <select
-                  value={newHardwareSelect}
-                  onChange={(e) => setNewHardwareSelect(e.target.value)}
-                  className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm"
-                >
-                  <option value="">Select equipment to add...</option>
-                  {HARDWARE_OPTIONS.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-                <Button variant="primary" size="small" onClick={handleAddHardware}>Add</Button>
-              </div>
+              <FormSelectField
+                label="Add Hardware Equipment"
+                options={HARDWARE_OPTIONS.filter((name) => !hardware.some((h) => h.name === name)).map((name) => ({
+                  label: name,
+                  value: name,
+                }))}
+                value={newHardwareSelect || null}
+                onChange={(value) => {
+                  const selectedValue = typeof value === "string" ? value : value[0];
+                  if (selectedValue) {
+                    handleAddHardware(selectedValue);
+                  }
+                }}
+                placeholder="Select equipment to add..."
+                mode="single"
+              />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Installed Hardware</h3>
@@ -424,7 +439,7 @@ export const RoomConfiguration = ({
               </div>
               <div>
                 <p className="text-xs text-gray-500">AC</p>
-                <p className="font-semibold text-gray-900">{hasAC ? "Yes" : "No"}</p>
+                <p className="font-semibold text-gray-900">{facilities.includes("Air Conditioning") ? "Yes" : "No"}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Status</p>
@@ -471,6 +486,22 @@ export const RoomConfiguration = ({
           </Button>
         )}
       </div>
+      </div>
+
+      {/* Configuration Summary Panel */}
+      <ConfigurationSummaryPanel
+        facilityName={facilityName}
+        completionPercentage={35}
+        isOpen={isPanelOpen}
+        onClose={() => setIsPanelOpen(false)}
+        buildings={2}
+        blocks={0}
+        floors={3}
+        departments={1}
+        totalRooms={2}
+        configuredRooms={1}
+        incompleteRooms={1}
+      />
     </div>
   );
 };

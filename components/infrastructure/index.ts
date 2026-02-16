@@ -1,4 +1,4 @@
-export { RoomInventory, type RoomInventoryItem } from './RoomInventory';
+export { RoomInventory, type RoomInventoryItem, type OccupancyStatus } from './RoomInventory';
 export { RoomTypeMaster } from './RoomTypeMaster';
 export { StructureBuilder } from './StructureBuilder';
 export { RoomConfiguration } from './RoomConfiguration';

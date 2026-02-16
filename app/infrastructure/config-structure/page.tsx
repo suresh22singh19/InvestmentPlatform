@@ -3,7 +3,8 @@
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeading } from '@/components/layout/PageHeading'
 import { ActionCard, Breadcrumb, ConfigurationProgress, ConfigurationProgressCard, ConfigurationSummaryPanel, MasterDataCard } from '@/components/ui'
-import { RoomInventory, RoomTypeMaster, StructureBuilder, HardwareMaster, FacilitiesMaster, CompleteHierarchyTree } from '@/components/infrastructure'
+import { RoomInventory, RoomTypeMaster, StructureBuilder, HardwareMaster, FacilitiesMaster, CompleteHierarchyTree, RoomConfiguration } from '@/components/infrastructure'
+import type { RoomInventoryItem } from '@/components/infrastructure'
 import { useSearchParams } from 'next/navigation'
 import React, { useState } from 'react'
 
@@ -18,7 +19,7 @@ const configurationProgressCards = [
     status: "Complete" as const,
     icon: (
       <svg
-        className="h-5 w-5 text-blue-600"
+        className="h-5 w-5 text-green-700"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -31,7 +32,7 @@ const configurationProgressCards = [
         />
       </svg>
     ),
-    iconBgColor: "bg-blue-100",
+    iconBgColor: "bg-green-100",
   },
   {
     id: 2,
@@ -41,7 +42,7 @@ const configurationProgressCards = [
     status: "Complete" as const,
     icon: (
       <svg
-        className="h-5 w-5 text-purple-600"
+        className="h-5 w-5 text-green-700"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -54,7 +55,7 @@ const configurationProgressCards = [
         />
       </svg>
     ),
-    iconBgColor: "bg-purple-100",
+    iconBgColor: "bg-green-100",
   },
   {
     id: 3,
@@ -64,7 +65,7 @@ const configurationProgressCards = [
     status: "Complete" as const,
     icon: (
       <svg
-        className="h-5 w-5 text-green-600"
+        className="h-5 w-5 text-green-700"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -87,7 +88,7 @@ const configurationProgressCards = [
     status: "Complete" as const,
     icon: (
       <svg
-        className="h-5 w-5 text-orange-600"
+        className="h-5 w-5 text-green-700"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -100,7 +101,7 @@ const configurationProgressCards = [
         />
       </svg>
     ),
-    iconBgColor: "bg-orange-100",
+    iconBgColor: "bg-green-100",
   },
   {
     id: 5,
@@ -110,7 +111,7 @@ const configurationProgressCards = [
     status: "In Progress" as const,
     icon: (
       <svg
-        className="h-5 w-5 text-pink-600"
+        className="h-5 w-5 text-green-700"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -123,7 +124,7 @@ const configurationProgressCards = [
         />
       </svg>
     ),
-    iconBgColor: "bg-pink-100",
+    iconBgColor: "bg-green-100",
   },
 ];
 
@@ -133,8 +134,38 @@ const page = () => {
   const facilityType = searchParams.get('type') || 'Hospital';
   const facilityAddress = searchParams.get('address') || '123 Healthcare Blvd, Medical District';
   const completionPercentage = parseInt(searchParams.get('completion') || '35');
+  const buildings = parseInt(searchParams.get('buildings') || '2');
+  const blocks = parseInt(searchParams.get('blocks') || '1');
+  const floors = parseInt(searchParams.get('floors') || '3');
+  const departments = parseInt(searchParams.get('departments') || '1');
+  const totalRooms = parseInt(searchParams.get('totalRooms') || '2');
+  const configuredRooms = parseInt(searchParams.get('configuredRooms') || '1');
+  const incompleteRooms = parseInt(searchParams.get('incompleteRooms') || '1');
   const [isPanelOpen, setIsPanelOpen] = useState(true);
-  const [activeView, setActiveView] = useState<'structure' | 'inventory' | 'roomType' | 'hardware' | 'facilities' | 'hierarchyTree' | null>(null);
+  const [activeView, setActiveView] = useState<'structure' | 'inventory' | 'roomType' | 'hardware' | 'facilities' | 'hierarchyTree' | 'roomConfigFromStructure' | null>(null);
+  const [roomToEditFromStructure, setRoomToEditFromStructure] = useState<RoomInventoryItem | null>(null);
+
+  /** Build RoomInventoryItem from Structure Builder tree room + context so we can open Room Configuration */
+  const handleEditRoomFromStructure = (room: { id: string; name: string; roomNumber?: string; roomType?: string }, context: { building: string; block: string; floor: string }) => {
+    const roomItem: RoomInventoryItem = {
+      id: room.id,
+      roomNumber: room.roomNumber ?? room.name,
+      roomType: room.roomType ?? 'Consultation Room',
+      building: context.building,
+      block: context.block,
+      floor: context.floor,
+      status: 'incomplete',
+      occupancyStatus: 'Vacant',
+      capacity: 1,
+      genderUsage: 'Mixed',
+      hasAC: false,
+      hardwareCount: 0,
+      facilitiesCount: 0,
+    };
+    setRoomToEditFromStructure(roomItem);
+    setActiveView('roomConfigFromStructure');
+    setIsPanelOpen(false);
+  };
 
   const masterDataCards = [
     {
@@ -143,7 +174,7 @@ const page = () => {
       subtitle: "6 types defined",
       icon: (
         <svg
-          className="h-6 w-6 text-purple-600"
+          className="h-6 w-6 text-green-700"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -156,18 +187,19 @@ const page = () => {
           />
         </svg>
       ),
-      iconBgColor: "bg-gray-100",
+      iconBgColor: "bg-green-100",
       onClick: () => {
         setActiveView('roomType');
+        setIsPanelOpen(false);
       },
     },
     {
       id: 2,
       title: "Hardware",
-      subtitle: "10 items available",
+      subtitle: "10 items available — click to view list",
       icon: (
         <svg
-          className="h-6 w-6 text-orange-600"
+          className="h-6 w-6 text-green-700"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -186,18 +218,19 @@ const page = () => {
           />
         </svg>
       ),
-      iconBgColor: "bg-gray-100",
+      iconBgColor: "bg-green-100",
       onClick: () => {
         setActiveView('hardware');
+        setIsPanelOpen(false);
       },
     },
     {
       id: 3,
       title: "Facilities",
-      subtitle: "10 items available",
+      subtitle: "10 items available — click to view list",
       icon: (
         <svg
-          className="h-6 w-6 text-teal-600"
+          className="h-6 w-6 text-green-700"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -210,9 +243,10 @@ const page = () => {
           />
         </svg>
       ),
-      iconBgColor: "bg-gray-100",
+      iconBgColor: "bg-green-100",
       onClick: () => {
         setActiveView('facilities');
+        setIsPanelOpen(false);
       },
     },
   ];
@@ -224,7 +258,7 @@ const page = () => {
       description: "Buildings, blocks, floors & departments",
       icon: (
         <svg
-          className="h-6 w-6 text-blue-600"
+          className="h-6 w-6 text-green-700"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -238,9 +272,10 @@ const page = () => {
         </svg>
       ),
       buttonLabel: "Configure",
-      iconBgColor: "bg-blue-100",
+      iconBgColor: "bg-green-100",
       onClick: () => {
         setActiveView('structure');
+        setIsPanelOpen(false);
       },
     },
     {
@@ -249,7 +284,7 @@ const page = () => {
       description: "View and configure all rooms",
       icon: (
         <svg
-          className="h-6 w-6 text-green-600"
+          className="h-6 w-6 text-green-700"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -266,6 +301,7 @@ const page = () => {
       iconBgColor: "bg-green-100",
       onClick: () => {
         setActiveView('inventory');
+        setIsPanelOpen(false);
       },
     },
     {
@@ -274,7 +310,7 @@ const page = () => {
       description: "Manage custom room types",
       icon: (
         <svg
-          className="h-6 w-6 text-purple-600"
+          className="h-6 w-6 text-green-700"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -288,9 +324,10 @@ const page = () => {
         </svg>
       ),
       buttonLabel: "Manage",
-      iconBgColor: "bg-purple-100",
+      iconBgColor: "bg-green-100",
       onClick: () => {
         setActiveView('roomType');
+        setIsPanelOpen(false);
       },
     },
   ];
@@ -328,7 +365,19 @@ const page = () => {
         {/* Main Content - 80% when panel open, 100% when closed */}
         <div className={`transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
           {activeView === 'structure' ? (
-            <StructureBuilder facilityName={facilityName} onBack={() => setActiveView(null)} />
+            <StructureBuilder
+              facilityName={facilityName}
+              facilityType={facilityType as "Hospital" | "Clinic"}
+              onBack={() => setActiveView(null)}
+              onEditRoom={handleEditRoomFromStructure}
+            />
+          ) : activeView === 'roomConfigFromStructure' && roomToEditFromStructure ? (
+            <RoomConfiguration
+              facilityName={facilityName}
+              room={roomToEditFromStructure}
+              onBack={() => { setActiveView('structure'); setRoomToEditFromStructure(null); }}
+              onSave={() => { setActiveView('structure'); setRoomToEditFromStructure(null); }}
+            />
           ) : activeView === 'inventory' ? (
             <RoomInventory facilityName={facilityName} onBack={() => setActiveView(null)} />
           ) : activeView === 'roomType' ? (
@@ -338,7 +387,7 @@ const page = () => {
           ) : activeView === 'facilities' ? (
             <FacilitiesMaster facilityName={facilityName} onBack={() => setActiveView(null)} />
           ) : activeView === 'hierarchyTree' ? (
-            <CompleteHierarchyTree facilityName={facilityName} onBack={() => setActiveView(null)} />
+            <CompleteHierarchyTree facilityName={facilityName} facilityType={facilityType as "Hospital" | "Clinic"} onBack={() => setActiveView(null)} />
           ) : (
             <>
               <div className="space-y-6 border-b border-gray-200 pb-4">
@@ -350,7 +399,7 @@ const page = () => {
                   <div className="space-y-2 flex-1">
                     <div className="flex items-center gap-3">
                       <p className="text-xl font-semibold text-gray-900">{facilityName}</p>
-                      <p className="rounded-full bg-black px-3 py-1 text-xs font-medium text-white">
+                      <p className="rounded-full bg-green-600 px-3 py-1 text-xs font-medium text-white">
                         {facilityType}
                       </p>
                     </div>
@@ -361,7 +410,7 @@ const page = () => {
                   {!isPanelOpen && (
                     <button
                       onClick={() => setIsPanelOpen(true)}
-                      className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 shadow-lg transition-all hover:bg-gray-800"
+                      className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
                       aria-label="Open panel"
                     >
                       <svg
@@ -412,6 +461,7 @@ const page = () => {
                       icon={card.icon}
                       iconBgColor={card.iconBgColor}
                       onButtonClick={card.onClick}
+                      buttonLabel={card.id === 2 || card.id === 3 ? "View list" : undefined}
                     />
                   ))}
                 </div>
@@ -437,12 +487,12 @@ const page = () => {
 
               {/* Complete Hierarchy Tree Card */}
               <div className="mt-4">
-                <div className="rounded-[12px] border-2 border-purple-200 bg-purple-50 p-6 shadow-sm">
+                <div className="rounded-[12px] border border-gray-200 bg-white p-4 ">
                   <div className="flex items-center justify-between gap-4">
                     {/* Icon */}
-                    <div className="flex-shrink-0 h-14 w-14 flex items-center justify-center rounded-lg bg-purple-100">
+                    <div className="flex-shrink-0 h-14 w-14 flex items-center justify-center rounded-lg bg-green-100">
                       <svg
-                        className="h-7 w-7 text-purple-700"
+                        className="h-7 w-7 text-green-700"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -472,8 +522,9 @@ const page = () => {
                       <button
                         onClick={() => {
                           setActiveView('hierarchyTree');
+                          setIsPanelOpen(false);
                         }}
-                        className="rounded-[12px] bg-gray-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 whitespace-nowrap"
+                        className="rounded-[12px] bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-700 whitespace-nowrap"
                       >
                         View Tree
                       </button>
@@ -484,12 +535,12 @@ const page = () => {
 
               {/* What's Next Section */}
               <div className="mt-4">
-                <div className="rounded-[12px] border border-blue-200 bg-blue-50 p-6 shadow-sm">
+                <div className="rounded-[12px] border border-gray-200 bg-white p-4 ">
                   <h2 className="text-lg font-semibold text-gray-900 mb-4">What's Next?</h2>
 
                   <div className="flex items-start gap-4">
                     {/* Step Number Icon */}
-                    <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-blue-600">
+                    <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-green-600">
                       <span className="text-white font-semibold text-base">4</span>
                     </div>
 
@@ -510,9 +561,17 @@ const page = () => {
         {/* Right Side Panel - 20% - Always visible when panel is open */}
         <ConfigurationSummaryPanel
           facilityName={facilityName}
+          facilityType={facilityType as "Hospital" | "Clinic"}
           completionPercentage={completionPercentage}
           isOpen={isPanelOpen}
           onClose={() => setIsPanelOpen(false)}
+          buildings={buildings}
+          blocks={blocks}
+          floors={floors}
+          departments={departments}
+          totalRooms={totalRooms}
+          configuredRooms={configuredRooms}
+          incompleteRooms={incompleteRooms}
         />
 
       </div>

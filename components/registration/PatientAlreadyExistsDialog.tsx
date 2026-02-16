@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Dialog, Table, TableHeader, TableBody, TableRow, TableHead, TableData } from "@/components/ui";
+import { Dialog, Table, TableHeader, TableBody, TableRow, TableHead, TableData, Tooltip } from "@/components/ui";
 import type { ExistingPatient } from "@/store/api/gateApi";
 
 interface PatientAlreadyExistsDialogProps {
@@ -11,6 +11,8 @@ interface PatientAlreadyExistsDialogProps {
     onRevisit: (patient: ExistingPatient) => void;
     onAddNewMember: () => void;
     isUserLeadData?: boolean; // Flag to show "User Lead Data" instead of "Patient Already Exists"
+    disableRevisit?: boolean; // Flag to disable the Revisit button
+    revisitTooltipText?: string; // Tooltip text to show when Revisit button is disabled
 }
 
 export default function PatientAlreadyExistsDialog({
@@ -20,6 +22,8 @@ export default function PatientAlreadyExistsDialog({
     onRevisit,
     onAddNewMember,
     isUserLeadData = false,
+    disableRevisit = false,
+    revisitTooltipText = "",
 }: PatientAlreadyExistsDialogProps) {
     return (
         <Dialog
@@ -87,13 +91,31 @@ export default function PatientAlreadyExistsDialog({
                                         ) : (
                                             // For existing patients, show both buttons
                                             <div className="flex items-center gap-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onRevisit(patient)}
-                                                    className="flex h-7 items-center justify-center rounded-[32px] border border-[#0B8C00] bg-white px-4 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
-                                                >
-                                                    Revisit
-                                                </button>
+                                                {disableRevisit ? (
+                                                    // Disabled Revisit button with tooltip
+                                                    <Tooltip
+                                                        content={revisitTooltipText}
+                                                        position="top"
+                                                        maxWidth={800}
+                                                        contentClassName="whitespace-normal"
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="flex h-7 items-center justify-center rounded-[32px] border border-[#0B8C00]/30 bg-white px-4 text-sm font-medium text-[#0B8C00]/50 transition-colors cursor-not-allowed"
+                                                        >
+                                                            Revisit
+                                                        </button>
+                                                    </Tooltip>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onRevisit(patient)}
+                                                        className="flex h-7 items-center justify-center rounded-[32px] border border-[#0B8C00] bg-white px-4 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                                                    >
+                                                        Revisit
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     onClick={onAddNewMember}

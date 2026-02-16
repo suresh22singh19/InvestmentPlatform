@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button, Dialog, FormInputField } from "@/components/ui";
+import { Button, Dialog, FormInputField, ConfigurationSummaryPanel } from "@/components/ui";
 
 type Facility = {
   id: string;
@@ -14,16 +14,17 @@ type FacilitiesMasterProps = {
 };
 
 const DEFAULT_FACILITIES: Facility[] = [
-  { id: "1", name: "Oxygen Supply" },
-  { id: "2", name: "Suction Facility" },
-  { id: "3", name: "Attached Washroom" },
-  { id: "4", name: "Television" },
-  { id: "5", name: "Attendant Couch" },
-  { id: "6", name: "Refrigerator" },
-  { id: "7", name: "Cupboard/Storage" },
-  { id: "8", name: "Intercom" },
-  { id: "9", name: "WiFi" },
-  { id: "10", name: "Hand Wash Station" },
+  { id: "1", name: "Air Conditioning" },
+  { id: "2", name: "Oxygen Supply" },
+  { id: "3", name: "Suction Facility" },
+  { id: "4", name: "Attached Washroom" },
+  { id: "5", name: "Television" },
+  { id: "6", name: "Attendant Couch" },
+  { id: "7", name: "Refrigerator" },
+  { id: "8", name: "Cupboard/Storage" },
+  { id: "9", name: "Intercom" },
+  { id: "10", name: "WiFi" },
+  { id: "11", name: "Hand Wash Station" },
 ];
 
 export const FacilitiesMaster = ({ facilityName, onBack }: FacilitiesMasterProps) => {
@@ -32,6 +33,7 @@ export const FacilitiesMaster = ({ facilityName, onBack }: FacilitiesMasterProps
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null);
   const [facilityNameInput, setFacilityNameInput] = useState("");
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
 
   const handleAddClick = () => {
     setFacilityNameInput("");
@@ -91,36 +93,57 @@ export const FacilitiesMaster = ({ facilityName, onBack }: FacilitiesMasterProps
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Facilities Master</h1>
-            <p className="text-sm text-gray-500">{facilityName}</p>
+    <div className="flex gap-6 h-full">
+      {/* Main Content */}
+      <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+            >
+              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Facilities Master</h1>
+              <p className="text-sm text-gray-500">{facilityName}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="small"
+              onClick={handleAddClick}
+              leftIcon={
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              }
+            >
+              Add Facility
+            </Button>
+            {/* Toggle Panel Button - Always visible when panel is closed */}
+            {!isPanelOpen && (
+              <button
+                onClick={() => setIsPanelOpen(true)}
+                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                aria-label="Open Configuration Summary"
+              >
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
-        <Button variant="primary" size="small" onClick={handleAddClick} leftIcon={
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        }>
-          Add Facility
-        </Button>
-      </div>
 
       {/* Information Banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-semibold text-blue-900 mb-1">About Facilities Master</h3>
-        <p className="text-sm text-blue-700">
+      <div className="rounded-[12px] border border-gray-200 bg-white p-4  mb-6">
+        <h3 className="text-sm font-medium text-gray-900 mb-1">About Facilities Master</h3>
+        <p className="text-sm font-medium text-gray-900">
           Define all types of facilities and amenities available in your hospital. These will appear as options when configuring rooms.
         </p>
       </div>
@@ -128,11 +151,11 @@ export const FacilitiesMaster = ({ facilityName, onBack }: FacilitiesMasterProps
       {/* Facility Items Section */}
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-4">
-          <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
           </svg>
-          <h2 className="text-lg font-semibold text-gray-900">Facility Items</h2>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+          <h2 className="text-lg font-semibold text-green-900">Facility Items</h2>
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
             {facilities.length}
           </span>
         </div>
@@ -146,8 +169,8 @@ export const FacilitiesMaster = ({ facilityName, onBack }: FacilitiesMasterProps
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-teal-100 flex items-center justify-center">
-                    <svg className="h-5 w-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                    <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                     </svg>
                   </div>
@@ -264,6 +287,22 @@ export const FacilitiesMaster = ({ facilityName, onBack }: FacilitiesMasterProps
           </div>
         </div>
       </Dialog>
+      </div>
+
+      {/* Configuration Summary Panel */}
+      <ConfigurationSummaryPanel
+        facilityName={facilityName}
+        completionPercentage={35}
+        isOpen={isPanelOpen}
+        onClose={() => setIsPanelOpen(false)}
+        buildings={2}
+        blocks={0}
+        floors={3}
+        departments={1}
+        totalRooms={2}
+        configuredRooms={1}
+        incompleteRooms={1}
+      />
     </div>
   );
 };

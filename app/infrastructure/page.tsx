@@ -6,7 +6,6 @@ import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { ListBorder } from "@/components/ui/ListBorder";
 import { FacilityCard, StatCard, Table, TableBody, TableData, TableHead, TableHeader, TableRow, TableSearchInput, Tabs, Dialog, FormInputField, Button } from "@/components/ui";
-import Image from "next/image";
 import Link from "next/link";
 
 
@@ -19,11 +18,12 @@ type Facility = {
   setupDate: string;
   completionPercentage: number;
   buildings: number;
+  blocks?: number;
   floors: number;
   departments: number;
   roomsConfigured: number;
   totalRooms: number;
-};
+};``
 
 const initialFacilities: Facility[] = [
   {
@@ -34,23 +34,25 @@ const initialFacilities: Facility[] = [
     setupDate: "Feb 5, 2026",
     completionPercentage: 35,
     buildings: 2,
+    blocks: 2,
     floors: 3,
-    departments: 1,
+    departments: 6,
     roomsConfigured: 1,
     totalRooms: 2,
   },
   {
-    name: "Apollo Hospital",
+    name: "Apollo Clinic",
     type: "Clinic" as const,
     address: "123 Apollo Clinic, Medical District",
     setupStatus: "Active Setup",
     setupDate: "Feb 10, 2026",
     completionPercentage: 100,
     buildings: 1,
-    floors: 1,
-    departments: 0,
-    roomsConfigured: 0,
-    totalRooms: 0,
+    blocks: 0,
+    floors: 2,
+    departments: 2,
+    roomsConfigured: 5,
+    totalRooms: 6,
   },
 ];
 
@@ -109,6 +111,7 @@ const page = () => {
         setupDate: formattedDate,
         completionPercentage: 0,
         buildings: 0,
+        blocks: 0,
         floors: 0,
         departments: 0,
         roomsConfigured: 0,
@@ -142,12 +145,19 @@ const page = () => {
     },
   ], [facilities]);
 
-  const handleFacilityClick = (facility: { name: string; type: "Hospital" | "Clinic"; address: string; completionPercentage: number }) => {
+  const handleFacilityClick = (facility: Facility) => {
     const params = new URLSearchParams({
       facility: facility.name,
       type: facility.type,
       address: facility.address,
       completion: facility.completionPercentage.toString(),
+      buildings: facility.buildings.toString(),
+      blocks: (facility.blocks || 0).toString(),
+      floors: facility.floors.toString(),
+      departments: facility.departments.toString(),
+      totalRooms: facility.totalRooms.toString(),
+      configuredRooms: facility.roomsConfigured.toString(),
+      incompleteRooms: (facility.totalRooms - facility.roomsConfigured).toString(),
     });
     router.push(`/infrastructure/config-structure?${params.toString()}`);
   };
@@ -161,21 +171,25 @@ const page = () => {
             <PageHeading title="Hospital Management System" />
             <p className="text-gray-400 mt-0">Configure and manage hospitals, clinics, and their infrastructure</p>
           </div>
-          <button
-            type="button"
-            className="flex h-11 items-center gap-2 rounded-[12px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+          <Button
+            variant="primary"
+            size="medium"
             onClick={handleAddNew}
+            leftIcon={
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            }
           >
-            <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
             Add Hospital/Clinic
-          </button>
+          </Button>
         </div>
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {infrastructureStats.map((stat) => (
             <StatCard key={stat.title} title={stat.title} value={stat.value} />
           ))}
         </div>
-        <div className="mt-6">
+        <div className="mt-6 mb-10">
           <h2 className="mb-4 text-xl font-semibold text-gray-900">All Hospitals & Clinics</h2>
           <div className="space-y-4">
             {facilities.map((facility, index) => (
@@ -188,6 +202,7 @@ const page = () => {
                 setupDate={facility.setupDate}
                 completionPercentage={facility.completionPercentage}
                 buildings={facility.buildings}
+                blocks={facility.blocks}
                 floors={facility.floors}
                 departments={facility.departments}
                 roomsConfigured={facility.roomsConfigured}
@@ -222,13 +237,13 @@ const page = () => {
                 onClick={() => setFacilityType("Hospital")}
                 className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
                   facilityType === "Hospital"
-                    ? "border-black bg-white"
+                    ? "border-green-600 bg-white"
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div className="flex items-center gap-2 w-full">
                   <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                    facilityType === "Hospital" ? "bg-black" : "bg-gray-300"
+                    facilityType === "Hospital" ? "bg-green-600" : "bg-gray-300"
                   }`} />
                   <svg
                     width="24"
@@ -236,7 +251,7 @@ const page = () => {
                     viewBox="0 0 24 24"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
-                    className={facilityType === "Hospital" ? "text-blue-600" : "text-gray-400"}
+                    className={facilityType === "Hospital" ? "text-green-700" : "text-gray-400"}
                   >
                     <path
                       d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v0M9 13v0M9 17v0M15 13v0M15 17v0"
@@ -259,13 +274,13 @@ const page = () => {
                 onClick={() => setFacilityType("Clinic")}
                 className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
                   facilityType === "Clinic"
-                    ? "border-black bg-white"
+                    ? "border-green-600 bg-white"
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div className="flex items-center gap-2 w-full">
                   <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                    facilityType === "Clinic" ? "bg-black" : "bg-gray-300"
+                    facilityType === "Clinic" ? "bg-green-600" : "bg-gray-300"
                   }`} />
                   <svg
                     width="24"
@@ -273,7 +288,7 @@ const page = () => {
                     viewBox="0 0 24 24"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
-                    className={facilityType === "Clinic" ? "text-green-600" : "text-gray-400"}
+                    className={facilityType === "Clinic" ? "text-green-700" : "text-gray-400"}
                   >
                     <path
                       d="M9 5h6M9 5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2M9 5v14M15 5v14M12 11v2M8 19h8"

@@ -131,9 +131,9 @@ export default function HospitalInfrastructureStructurePreviewPage() {
               .connector { display: flex; justify-content: center; align-items: flex-start; }
             `}</style>
 
-            {/* Apollo Hospital */}
+            {/* Apollo Clinic */}
             <div className="flex flex-col items-center">
-              <div className="node hospital">Apollo Hospital</div>
+              <div className="node hospital">Apollo Clinic</div>
               <div className="line" />
 
               {/* Buildings Row */}

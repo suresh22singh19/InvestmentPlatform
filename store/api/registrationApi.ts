@@ -156,12 +156,16 @@ export interface HospitalPatientRequest {
   ayushCovered?: string;
   benificiaryId?: string;
   insuranceCompany?: string;
-  isReferral?: string;
-  referralSourceInfo?: string;
-  referralUserId?: string;
-  referralName?: string;
-  referralMobile?: string;
   maritalStatus: string;
+  isReferral?: string; // "yes" | "no"
+  referral?: {
+    referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other (from sourceOptions)
+    doctorUserId?: number | string | null;
+    referralRegistrationId?: number;
+    referralSourceInfo?: string; // Specific value: tvSpecificField, newspaperSpecificField, etc. or referralName for "other"
+    referralName?: string;
+    referralMobile?: string;
+  };
   patientType?: string; // Patient Type: PRIVATE, PANEL, TPA
   panelId?: number | string;
   patientSubType?: string | null; // Patient Sub Type (e.g., "in-service")
@@ -231,12 +235,16 @@ export interface ClinicPatientRequest {
   ayushCovered?: string;
   benificiaryId?: string; // Note: API uses "benificiaryId" (typo in API)
   insuranceCompany?: string;
-  isReferral?: string;
-  referralSourceInfo?: string;
-  referralUserId?: number | string;
-  referralName?: string;
-  referralMobile?: string;
+  isReferral?: string; // "yes" | "no"
   maritalStatus: string;
+  referral?: {
+    referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other
+    doctorUserId?: number | string | null;
+    referralRegistrationId?: number;
+    referralSourceInfo?: string;
+    referralName?: string;
+    referralMobile?: string;
+  };
   doctorUserId: number | string;
   patientType: string;
   panelId?: number | string;
@@ -319,7 +327,21 @@ export interface CreateAppointmentAndUpdateRegistrationRequest {
   registrationId: number; // Registration ID (e.g., 157)
   uhid: string;
   facilityType: "hospital" | "clinic";
+  // referral object - not used for this API; only hospital-patient (line ~959) uses nested referral
+  // referral?: {
+  //   referralSourceType: string;
+  //   doctorUserId?: number | string | null;
+  //   referralRegistrationId?: number;
+  //   referralSourceInfo?: string;
+  //   referralName?: string;
+  //   referralMobile?: string;
+  // };
   registration: {
+    isReferral?: string;
+    referralSourceInfo?: string;
+    referralUserId?: number;
+    referralName?: string;
+    referralMobile?: string;
     patientTitle: string;
     patientName: string;
     contactNumber: string;
@@ -337,11 +359,6 @@ export interface CreateAppointmentAndUpdateRegistrationRequest {
     ayushCovered?: string;
     benificiaryId?: string;
     insuranceCompany?: string;
-    isReferral?: string;
-    referralSourceInfo?: string;
-    referralUserId?: number;
-    referralName?: string;
-    referralMobile?: string;
     maritalStatus: string;
     doctorUserId: number;
     patientType: string;
@@ -1417,7 +1434,8 @@ export const registrationApi = baseApi.injectEndpoints({
       },
     }),
     /**
-     * Create Appointment And Update Registration (for existing patients with UHID)
+     * Create Appointment And Update Registration (for existing patients with UHID).
+     * Referral: old way - isReferral, referralSourceInfo, referralUserId, referralName, referralMobile in registration object (no root referral object).
      */
     createAppointmentAndUpdateRegistration: builder.mutation<
       CreateAppointmentAndUpdateRegistrationResponse,
@@ -1428,6 +1446,37 @@ export const registrationApi = baseApi.injectEndpoints({
         method: "POST",
         body: data,
       }),
+    }),
+    /**
+     * Get all registrations for referral by phone number
+     */
+    getAllRegistrationForReferralByPhone: builder.query<
+      {
+        success: boolean;
+        data: Array<{
+          id: number;
+          sUhid?: string | null;
+          uhid: string;
+          patientName: string;
+          emailAddress?: string | null;
+          createdAt: string;
+        }>;
+        message: string;
+        timestamp: string;
+        statusCode: number;
+      },
+      { phoneNumber: string }
+    >({
+      query: (params) => {
+        const { phoneNumber } = params;
+        const queryParams = new URLSearchParams({
+          phoneNumber: phoneNumber,
+        });
+        return {
+          url: `/admin/registration/GetAllRegistrationForReferralByPhone?${queryParams.toString()}`,
+          method: "GET",
+        };
+      },
     }),
   }),
 });
@@ -1465,7 +1514,9 @@ export const {
   useCreateRazorpayPosPaymentInitiationMutation,
   useLazyGetRazorpayPosPaymentStatusPollingQuery,
   useCancelRazorpayPosPaymentMutation,
-  useCreateAppointmentAndUpdateRegistrationMutation
+  useCreateAppointmentAndUpdateRegistrationMutation,
+  useGetAllRegistrationForReferralByPhoneQuery,
+  useLazyGetAllRegistrationForReferralByPhoneQuery
 } = registrationApi;
 
 

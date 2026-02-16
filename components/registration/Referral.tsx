@@ -36,6 +36,7 @@ interface ReferralProps {
         referralMobile?: React.RefObject<HTMLInputElement | null>;
     };
     errors?: Record<string, string>;
+    readOnlyFields?: string[]; // Array of field names that should be read-only
 }
 
 export default function Referral({
@@ -49,13 +50,19 @@ export default function Referral({
     doctorSpecificFieldOptions = [],
     fieldRefs,
     errors,
+    readOnlyFields = [],
 }: ReferralProps) {
+    const isFieldReadOnly = (fieldName: string) => {
+        return readOnlyFields.includes(fieldName);
+    };
     const referralOptions = ["Yes", "No"];
     const showSourceFields = formData.referral?.toLowerCase() === "yes";
-    const showReferralNameMobile = showSourceFields && formData.source?.toLowerCase() === "other";
+    const sourceLower = formData.source?.toLowerCase();
+    // Show referral name and mobile fields when source is "patient" (Referral) or "other"
+    const showReferralNameMobile = showSourceFields && (sourceLower === "patient" || sourceLower === "other");
     const showSpecificField = showSourceFields && 
-        (formData.source?.toLowerCase() === "tv" || formData.source?.toLowerCase() === "newspaper" || 
-         formData.source?.toLowerCase() === "social-media" || formData.source?.toLowerCase() === "doctor");
+        (sourceLower === "tv" || sourceLower === "newspaper" || 
+         sourceLower === "social-media" || sourceLower === "doctor");
 
     const getSpecificFieldOptions = () => {
         switch (formData.source) {
@@ -159,7 +166,8 @@ export default function Referral({
         onChange("newspaperSpecificField" as keyof ReferralFormData, "");
         onChange("socialMediaSpecificField" as keyof ReferralFormData, "");
         onChange("doctorSpecificField" as keyof ReferralFormData, "");
-        if (selectedValue === "other") {
+        // Clear referral name and mobile when switching to "other" or "patient" (Referral) (they will be filled fresh)
+        if (selectedValue === "other" || selectedValue?.toLowerCase() === "patient") {
             onChange("referralName", "");
             onChange("referralMobile", "");
         }
@@ -276,40 +284,48 @@ export default function Referral({
                         </div>
                     )}
 
-                    {/* Referral Name and Mobile when "Other" is selected in Source */}
+                    {/* Referral Mobile and Name when "Other" is selected in Source */}
                     {showReferralNameMobile && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div data-field="referralName" className="scroll-mt-4">
-                                <FormInputField
-                                    ref={fieldRefs?.referralName}
-                                    label="Referral Name"
-                                    value={formData.referralName}
-                                    onChange={(e) => {
-                                        // Only allow letters and spaces, remove numbers and special characters
-                                        const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
-                                        onChange("referralName", value);
-                                    }}
-                                    onBlur={() => onBlur?.("referralName")}
-                                    placeholder="Referral Name"
-                                    type="text"
-                                    error={errors?.referralName}
-                                />
-                            </div>
-
                             <div data-field="referralMobile" className="scroll-mt-4">
                                 <FormInputField
                                     ref={fieldRefs?.referralMobile}
                                     label="Referral Mobile"
                                     value={formData.referralMobile}
                                     onChange={(e) => {
-                                        const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                        onChange("referralMobile", value);
+                                        if (!isFieldReadOnly("referralMobile")) {
+                                            const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                            onChange("referralMobile", value);
+                                        }
                                     }}
                                     onBlur={() => onBlur?.("referralMobile")}
                                     placeholder="Referral Mobile"
                                     type="tel"
                                     maxLength={10}
                                     error={errors?.referralMobile}
+                                    disabled={isFieldReadOnly("referralMobile")}
+                                    readOnly={isFieldReadOnly("referralMobile")}
+                                />
+                            </div>
+
+                            <div data-field="referralName" className="scroll-mt-4">
+                                <FormInputField
+                                    ref={fieldRefs?.referralName}
+                                    label="Referral Name"
+                                    value={formData.referralName}
+                                    onChange={(e) => {
+                                        if (!isFieldReadOnly("referralName")) {
+                                            // Only allow letters and spaces, remove numbers and special characters
+                                            const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                            onChange("referralName", value);
+                                        }
+                                    }}
+                                    onBlur={() => onBlur?.("referralName")}
+                                    placeholder="Referral Name"
+                                    type="text"
+                                    error={errors?.referralName}
+                                    disabled={isFieldReadOnly("referralName")}
+                                    readOnly={isFieldReadOnly("referralName")}
                                 />
                             </div>
                         </div>

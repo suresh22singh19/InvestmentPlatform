@@ -30,6 +30,8 @@ import { selectUserBranchId, selectUserId } from "@/store/slices/authSlice";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import PatientAlreadyExistsDialog from "@/components/registration/PatientAlreadyExistsDialog";
 import DuplicateNumberExceptionDialog from "@/components/registration/DuplicateNumberExceptionDialog";
+import ReferralPatientsDialog from "@/components/registration/ReferralPatientsDialog";
+import type { ReferralPatient } from "@/components/registration/ReferralPatientsDialog";
 import { useSocket } from "@/hooks/useSocket";
 
 // LocalStorage key for pending registrations
@@ -119,12 +121,23 @@ export default function HospitalRegistrationPage() {
     // Store the selected patient data from API response for pending registration
     const [selectedRevisitedPatientData, setSelectedRevisitedPatientData] = useState<ExistingPatient | null>(null);
 
+    // Referral patients dialog state
+    const [referralPatientsDialogOpen, setReferralPatientsDialogOpen] = useState(false);
+    const [referralPatients, setReferralPatients] = useState<ReferralPatient[]>([]);
+    const [selectedReferralPhoneNumber, setSelectedReferralPhoneNumber] = useState<string>("");
+    const [selectedReferralPatient, setSelectedReferralPatient] = useState<ReferralPatient | null>(null);
+    const lastCheckedReferralMobileRef = useRef<string>("");
+    const referralPatientSelectedRef = useRef<boolean>(false);
+
     // Get branchId and userId from auth state
     const branchId = useAppSelector(selectUserBranchId) || 1;
     const userId = useAppSelector(selectUserId) || 1;
 
     // Lazy query for checking existing patients
     const [checkExistingPatientsQuery] = registrationApi.useLazyCheckExistingPatientsByPhoneQuery();
+    
+    // Lazy query for checking referral patients by phone
+    const [checkReferralPatientsQuery] = registrationApi.useLazyGetAllRegistrationForReferralByPhoneQuery();
 
     // Mutation for requesting duplicate number permission
     const [requestDuplicateNumberPermission, { isLoading: isCreatingException }] = useRequestDuplicateNumberPermissionMutation();
@@ -626,6 +639,14 @@ export default function HospitalRegistrationPage() {
         formik.setFieldTouched(fieldName as keyof RegistrationPersonalDetailsFormValues, true, false);
         formik.validateField(fieldName);
     });
+
+    // Clear selected referral patient when referral is set to "no"
+    useEffect(() => {
+        if (formik.values.referral?.toLowerCase() === "no") {
+            setSelectedReferralPatient(null);
+            referralPatientSelectedRef.current = false;
+        }
+    }, [formik.values.referral]);
 
     // Handle token click - pre-fill form with entry data (after formik is initialized)
     const handleTokenClick = useCallback((entry: PatientEntry) => {
@@ -1631,6 +1652,80 @@ export default function HospitalRegistrationPage() {
         }
     }, [checkExistingPatients, checkExistingAadharCard, formik.values.aadharCardNumber]);
 
+    // Check referral patients by phone number
+    const checkReferralPatients = useCallback(async (phoneNumber: string) => {
+        // Don't check if already checked this number
+        if (lastCheckedReferralMobileRef.current === phoneNumber) {
+            return;
+        }
+
+        try {
+            lastCheckedReferralMobileRef.current = phoneNumber;
+            referralPatientSelectedRef.current = false; // Reset selection flag when opening dialog
+            const result = await checkReferralPatientsQuery({ phoneNumber }).unwrap();
+            
+            // Show dialog if there are any patients (1 or more)
+            if (result.data && result.data.length > 0) {
+                setReferralPatients(result.data);
+                setSelectedReferralPhoneNumber(phoneNumber);
+                setReferralPatientsDialogOpen(true);
+            }
+        } catch (error: any) {
+            console.error("Error checking referral patients:", error);
+            // Clear the ref on error so we can retry if needed
+            lastCheckedReferralMobileRef.current = "";
+        }
+    }, [checkReferralPatientsQuery]);
+
+    // Handle referral mobile change - check when it reaches 10 digits
+    const handleReferralMobileChange = useCallback((value: string) => {
+        // Don't check if dialog is being closed or if value is empty
+        if (!value || value.length === 0) {
+            lastCheckedReferralMobileRef.current = "";
+            return;
+        }
+
+        // Check when referral mobile reaches 10 digits
+        if (value.length === 10) {
+            checkReferralPatients(value);
+        } else {
+            // Clear the ref if incomplete
+            lastCheckedReferralMobileRef.current = "";
+        }
+    }, [checkReferralPatients]);
+
+    // Handle select button click from referral patients dialog
+    const handleReferralPatientSelect = useCallback((patient: ReferralPatient) => {
+        // Only allow selection if patient has UHID
+        if (!patient.uhid || patient.uhid.trim() === "") {
+            return;
+        }
+
+        setReferralPatientsDialogOpen(false);
+        lastCheckedReferralMobileRef.current = "";
+        referralPatientSelectedRef.current = true; // Mark that a patient was selected
+        
+        // Store selected patient to keep fields non-editable
+        setSelectedReferralPatient(patient);
+        
+        // Auto-fill referral name from selected patient - always set it
+        // The phone number is already set and both fields remain non-editable
+        formik.setFieldValue("referralName", patient.patientName || "", false);
+    }, [formik]);
+
+    // Handle close referral patients dialog
+    const handleCloseReferralPatientsDialog = useCallback(() => {
+        setReferralPatientsDialogOpen(false);
+        lastCheckedReferralMobileRef.current = "";
+        
+        // If dialog is closed without selecting a patient, clear referral mobile field
+        if (!referralPatientSelectedRef.current) {
+            formik.setFieldValue("referralMobile", "", false);
+            setSelectedReferralPhoneNumber("");
+            setSelectedReferralPatient(null);
+        }
+    }, [formik]);
+
     // Handle revisit button click from dialog
     const handleRevisit = useCallback((patient: ExistingPatient) => {
         setPatientExistsDialogOpen(false);
@@ -2332,6 +2427,7 @@ export default function HospitalRegistrationPage() {
                             socialMediaSpecificFieldOptions={socialMediaSpecificFieldOptions}
                             onContactNumberChange={handleContactNumberChange}
                             onAadharCardNumberChange={(value) => checkExistingAadharCard(value)}
+                            onReferralMobileChange={handleReferralMobileChange}
                             readOnlyFields={
                                 // For userLead data, make contactNumber and patientName read-only
                                 isUserLeadData
@@ -2345,6 +2441,12 @@ export default function HospitalRegistrationPage() {
                                         : (selectedApprovedPatientId 
                                             ? ["patientName", "contactNumber", "patientNameSelect"] 
                                             : []))
+                                    .concat(
+                                        // Always disable referralName when a patient is selected
+                                        selectedReferralPatient 
+                                            ? ["referralName", "referralMobile"] 
+                                            : (referralPatientsDialogOpen ? ["referralMobile"] : [])
+                                    )
                             } />
                     )}
 
@@ -2361,6 +2463,7 @@ export default function HospitalRegistrationPage() {
                             patientUhid={patientUhid}
                             patientRegistrationId={patientRegistrationId}
                             userLeadId={userLeadId}
+                            selectedReferralPatientId={selectedReferralPatient?.id || null}
                         />
                     )}
                 </div>
@@ -2398,6 +2501,8 @@ export default function HospitalRegistrationPage() {
                 onRevisit={handleRevisit}
                 onAddNewMember={handleAddNewMember}
                 isUserLeadData={isUserLeadData}
+                disableRevisit={true}
+                revisitTooltipText="Please complete the gate entry process first. Direct patient registration requires a token assignment from the gate entry system."
             />
 
             {/* Duplicate Number Exception Dialog */}
@@ -2406,6 +2511,15 @@ export default function HospitalRegistrationPage() {
                 onClose={handleDuplicateExceptionDialogClose}
                 onSubmit={handleDuplicateExceptionSubmit}
                 isLoading={isCreatingException}
+            />
+
+            {/* Referral Patients Dialog */}
+            <ReferralPatientsDialog
+                open={referralPatientsDialogOpen}
+                onClose={handleCloseReferralPatientsDialog}
+                referralPatients={referralPatients}
+                onSelect={handleReferralPatientSelect}
+                phoneNumber={selectedReferralPhoneNumber}
             />
 
             {/* Success Dialog for Duplicate Permission */}

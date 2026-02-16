@@ -248,7 +248,7 @@ const DEPARTMENT_TYPES: DepartmentType[] = ["Clinical", "Administrative", "Suppo
 const INITIAL_DATA: Hospital[] = [
   {
     id: "hospital-1",
-    name: "Apollo Hospital",
+    name: "Apollo Clinic",
     location: "New Delhi, India",
     buildings: [
       {

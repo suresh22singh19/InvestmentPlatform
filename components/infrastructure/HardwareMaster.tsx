@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button, Dialog, FormInputField } from "@/components/ui";
+import { Button, Dialog, FormInputField, ConfigurationSummaryPanel } from "@/components/ui";
 
 type Hardware = {
   id: string;
@@ -32,6 +32,7 @@ export const HardwareMaster = ({ facilityName, onBack }: HardwareMasterProps) =>
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingHardware, setEditingHardware] = useState<Hardware | null>(null);
   const [hardwareName, setHardwareName] = useState("");
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
 
   const handleAddClick = () => {
     setHardwareName("");
@@ -91,36 +92,57 @@ export const HardwareMaster = ({ facilityName, onBack }: HardwareMasterProps) =>
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Hardware Master</h1>
-            <p className="text-sm text-gray-500">{facilityName}</p>
+    <div className="flex gap-6 h-full">
+      {/* Main Content */}
+      <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+            >
+              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Hardware Master</h1>
+              <p className="text-sm text-gray-500">{facilityName}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="small"
+              onClick={handleAddClick}
+              leftIcon={
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              }
+            >
+              Add Hardware
+            </Button>
+            {/* Toggle Panel Button - Always visible when panel is closed */}
+            {!isPanelOpen && (
+              <button
+                onClick={() => setIsPanelOpen(true)}
+                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                aria-label="Open Configuration Summary"
+              >
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
-        <Button variant="primary" size="small" onClick={handleAddClick} leftIcon={
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        }>
-          Add Hardware
-        </Button>
-      </div>
 
       {/* Information Banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-semibold text-blue-900 mb-1">About Hardware Master</h3>
-        <p className="text-sm text-blue-700">
+      <div className="rounded-[12px] border border-gray-200 bg-white p-4  mb-6">
+        <h3 className="text-sm font-medium text-gray-900 mb-1">About Hardware Master</h3>
+        <p className="text-sm font-medium text-gray-900">
           Define all types of hardware equipment available in your hospital. These will appear as options when configuring rooms.
         </p>
       </div>
@@ -128,12 +150,12 @@ export const HardwareMaster = ({ facilityName, onBack }: HardwareMasterProps) =>
       {/* Hardware Items Section */}
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-4">
-          <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          <h2 className="text-lg font-semibold text-gray-900">Hardware Items</h2>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+          <h2 className="text-lg font-semibold text-green-900">Hardware Items</h2>
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
             {hardwareItems.length}
           </span>
         </div>
@@ -147,8 +169,8 @@ export const HardwareMaster = ({ facilityName, onBack }: HardwareMasterProps) =>
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                    <svg className="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                    <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
@@ -267,6 +289,22 @@ export const HardwareMaster = ({ facilityName, onBack }: HardwareMasterProps) =>
           </div>
         </div>
       </Dialog>
+      </div>
+
+      {/* Configuration Summary Panel */}
+      <ConfigurationSummaryPanel
+        facilityName={facilityName}
+        completionPercentage={35}
+        isOpen={isPanelOpen}
+        onClose={() => setIsPanelOpen(false)}
+        buildings={2}
+        blocks={0}
+        floors={3}
+        departments={1}
+        totalRooms={2}
+        configuredRooms={1}
+        incompleteRooms={1}
+      />
     </div>
   );
 };

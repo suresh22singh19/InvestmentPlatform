@@ -233,7 +233,7 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
     .matches(/^[a-zA-Z\s]*$/, "Referral Name must contain only letters and spaces")
     .when(["referral", "source"], {
       is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "other",
-      then: (schema) => schema.required("Referral Name is required"),
+      then: (schema) => schema.required("Referral Name is required").min(1, "Referral Name is required"),
       otherwise: (schema) => schema.optional(),
     }),
   

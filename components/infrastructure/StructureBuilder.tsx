@@ -1,30 +1,100 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Button, Dialog, FormInputField, FormSelectField } from "@/components/ui";
+import { Button, Dialog, FormInputField, FormSelectField, ConfigurationSummaryPanel } from "@/components/ui";
 
 type TreeNode = {
   id: string;
   name: string;
-  type: "building" | "block" | "floor" | "department" | "room";
+  type: "building" | "block" | "floor" | "department" | "room" | "bed";
   children?: TreeNode[];
   rooms?: number;
   roomType?: string;
   roomNumber?: string;
+  bedNumber?: string;
 };
+
+export type FloorRoomEditContext = { building: string; block: string; floor: string };
 
 type StructureBuilderProps = {
   facilityName: string;
+  facilityType?: "Hospital" | "Clinic";
   onBack: () => void;
+  /** When user clicks Edit/Configure on a room in the floor list, open Room Configuration for that room */
+  onEditRoom?: (room: TreeNode, context: FloorRoomEditContext) => void;
 };
 
-export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps) => {
+/** Find path from root to node with given id (e.g. [building, block, floor]) */
+function findPathToNode(nodes: TreeNode[], targetId: string, path: TreeNode[] = []): TreeNode[] | null {
+  for (const node of nodes) {
+    if (node.id === targetId) return [...path, node];
+    if (node.children?.length) {
+      const found = findPathToNode(node.children, targetId, [...path, node]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+export const StructureBuilder = ({ facilityName, facilityType = "Hospital", onBack, onEditRoom }: StructureBuilderProps) => {
+  // Get initial expanded nodes based on facility type
+  const getInitialExpandedNodes = (): Set<string> => {
+    if (facilityType === "Clinic") {
+      return new Set([
+        "building-1", 
+        "floor-1", 
+        "floor-2", 
+        "dept-1", 
+        "dept-2", 
+        "dept-3",
+        "room-1", // C-001
+        "room-2", // C-002
+        "room-3", // C-003
+        "room-4", // LAB-001
+        "room-5", // PH-001
+        "room-6", // PH-002
+      ]);
+    } else {
+      return new Set([
+        "building-1", 
+        "block-1", 
+        "floor-1", 
+        "floor-2",
+        "dept-1", // Emergency
+        "dept-2", // Cardiology
+        "dept-3", // Radiology
+        "dept-4", // Orthopedics
+        "dept-5", // Surgery
+        "room-1", // G-A-001
+        "room-2", // G-A-002
+        "room-3", // G-A-003
+        "room-4", // 101-1
+        "room-5", // ER-001
+        "room-6", // CARD-001
+        "room-7", // CARD-002
+        "room-8", // RAD-001
+        "room-9", // ORTH-001
+        "room-10", // ORTH-002
+        "room-11", // SURG-001
+        "room-12", // SURG-002
+        "building-2",
+        "block-2",
+        "floor-3",
+        "dept-6", // General OPD
+        "room-13", // OPD-001
+        "room-14", // OPD-002
+        "room-15", // OPD-003
+      ]);
+    }
+  };
+
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["building-1", "block-1", "floor-1", "dept-1"]));
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(getInitialExpandedNodes());
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addDialogType, setAddDialogType] = useState<"building" | "block" | "floor" | "department" | null>(null);
   const [addDialogParent, setAddDialogParent] = useState<TreeNode | null>(null);
   const [newItemName, setNewItemName] = useState("");
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
   
   // Add Rooms Dialog State
   const [showAddRoomsDialog, setShowAddRoomsDialog] = useState(false);
@@ -34,17 +104,15 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
   const [startingNumber, setStartingNumber] = useState("1");
   const [selectedRoomType, setSelectedRoomType] = useState<string | null>(null);
 
-  // Sample tree data
-  const [treeData, setTreeData] = useState<TreeNode[]>([
-    {
-      id: "building-1",
-      name: "Main Building",
-      type: "building",
-      children: [
+  // Sample tree data - different for Hospital vs Clinic
+  const getInitialTreeData = (): TreeNode[] => {
+    if (facilityType === "Clinic") {
+      // Clinic structure: Building -> Floor -> Department -> Room (no blocks)
+      return [
         {
-          id: "block-1",
-          name: "Block A",
-          type: "block",
+          id: "building-1",
+          name: "Main Building",
+          type: "building",
           children: [
             {
               id: "floor-1",
@@ -53,44 +121,101 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
               children: [
                 {
                   id: "dept-1",
-                  name: "Emergency",
+                  name: "General Practice",
                   type: "department",
                   children: [
-                    {
-                      id: "room-1",
-                      name: "G-A-001",
-                      type: "room",
-                      roomNumber: "G-A-001",
-                      roomType: "Consultation Room",
-                    },
-                    {
-                      id: "room-2",
-                      name: "G-A-002",
-                      type: "room",
-                      roomNumber: "G-A-002",
-                      roomType: "Consultation Room",
-                    },
-                    {
-                      id: "room-3",
-                      name: "G-A-003",
-                      type: "room",
-                      roomNumber: "G-A-003",
-                      roomType: "Consultation Room",
-                    },
-                    {
-                      id: "room-4",
-                      name: "101-1",
-                      type: "room",
-                      roomNumber: "101-1",
-                      roomType: "Ward",
-                    },
+                  {
+                    id: "room-1",
+                    name: "C-001",
+                    type: "room",
+                    roomNumber: "C-001",
+                    roomType: "Consultation Room",
+                    children: [
+                      {
+                        id: "bed-1",
+                        name: "Bed 1",
+                        type: "bed",
+                        bedNumber: "1",
+                      },
+                      {
+                        id: "bed-2",
+                        name: "Bed 2",
+                        type: "bed",
+                        bedNumber: "2",
+                      },
+                    ],
+                  },
+                  {
+                    id: "room-2",
+                    name: "C-002",
+                    type: "room",
+                    roomNumber: "C-002",
+                    roomType: "Consultation Room",
+                    children: [
+                      {
+                        id: "bed-3",
+                        name: "Bed 1",
+                        type: "bed",
+                        bedNumber: "1",
+                      },
+                      {
+                        id: "bed-4",
+                        name: "Bed 2",
+                        type: "bed",
+                        bedNumber: "2",
+                      },
+                      {
+                        id: "bed-5",
+                        name: "Bed 3",
+                        type: "bed",
+                        bedNumber: "3",
+                      },
+                    ],
+                  },
+                  {
+                    id: "room-3",
+                    name: "C-003",
+                    type: "room",
+                    roomNumber: "C-003",
+                    roomType: "Consultation Room",
+                    children: [
+                      {
+                        id: "bed-4",
+                        name: "Bed 1",
+                        type: "bed",
+                        bedNumber: "1",
+                      },
+                    ],
+                  },
                   ],
                 },
                 {
                   id: "dept-2",
-                  name: "AJ Department",
+                  name: "Laboratory",
                   type: "department",
-                  children: [],
+                  children: [
+                    {
+                      id: "room-4",
+                      name: "LAB-001",
+                      type: "room",
+                      roomNumber: "LAB-001",
+                      roomType: "Laboratory",
+                      children: [
+                        {
+                          id: "bed-8",
+                          name: "Bed 1",
+                          type: "bed",
+                          bedNumber: "1",
+                        },
+                        {
+                          id: "bed-9",
+                          name: "Bed 2",
+                          type: "bed",
+                          bedNumber: "2",
+                        },
+                      ],
+                    },
+                  ],
                 },
               ],
             },
@@ -98,19 +223,487 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
               id: "floor-2",
               name: "First Floor",
               type: "floor",
-              children: [],
+              children: [
+                {
+                  id: "dept-3",
+                  name: "Pharmacy",
+                  type: "department",
+                  children: [
+                    {
+                      id: "room-5",
+                      name: "PH-001",
+                      type: "room",
+                      roomNumber: "PH-001",
+                      roomType: "Pharmacy",
+                      children: [
+                        {
+                          id: "bed-10",
+                          name: "Bed 1",
+                          type: "bed",
+                          bedNumber: "1",
+                        },
+                        {
+                          id: "bed-11",
+                          name: "Bed 2",
+                          type: "bed",
+                          bedNumber: "2",
+                        },
+                      ],
+                    },
+                    {
+                      id: "room-6",
+                      name: "PH-002",
+                      type: "room",
+                      roomNumber: "PH-002",
+                      roomType: "Storage",
+                      children: [
+                        {
+                          id: "bed-12",
+                          name: "Bed 1",
+                          type: "bed",
+                          bedNumber: "1",
+                        },
+                        {
+                          id: "bed-13",
+                          name: "Bed 2",
+                          type: "bed",
+                          bedNumber: "2",
+                        },
+                        {
+                          id: "bed-14",
+                          name: "Bed 3",
+                          type: "bed",
+                          bedNumber: "3",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
             },
           ],
         },
-      ],
-    },
-    {
-      id: "building-2",
-      name: "OPD Building",
-      type: "building",
-      children: [],
-    },
-  ]);
+      ];
+    } else {
+      // Hospital structure: Building -> Block -> Floor -> Department -> Room
+      return [
+        {
+          id: "building-1",
+          name: "Main Building",
+          type: "building",
+          children: [
+            {
+              id: "block-1",
+              name: "Block A",
+              type: "block",
+              children: [
+                {
+                  id: "floor-1",
+                  name: "Ground Floor",
+                  type: "floor",
+                  children: [
+                    {
+                      id: "dept-1",
+                      name: "Emergency",
+                      type: "department",
+                      children: [
+                        {
+                          id: "room-1",
+                          name: "G-A-001",
+                          type: "room",
+                          roomNumber: "G-A-001",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-1",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-2",
+                          name: "G-A-002",
+                          type: "room",
+                          roomNumber: "G-A-002",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-2",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-3",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-3",
+                          name: "G-A-003",
+                          type: "room",
+                          roomNumber: "G-A-003",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-4",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-5",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-4",
+                          name: "101-1",
+                          type: "room",
+                          roomNumber: "101-1",
+                          roomType: "Ward",
+                          children: [
+                            {
+                              id: "bed-6",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-7",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                            {
+                              id: "bed-8",
+                              name: "Bed 3",
+                              type: "bed",
+                              bedNumber: "3",
+                            },
+                            {
+                              id: "bed-9",
+                              name: "Bed 4",
+                              type: "bed",
+                              bedNumber: "4",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-5",
+                          name: "ER-001",
+                          type: "room",
+                          roomNumber: "ER-001",
+                          roomType: "Emergency Room",
+                          children: [
+                            {
+                              id: "bed-10",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-11",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      id: "dept-2",
+                      name: "Cardiology",
+                      type: "department",
+                      children: [
+                        {
+                          id: "room-6",
+                          name: "CARD-001",
+                          type: "room",
+                          roomNumber: "CARD-001",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-12",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-13",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-7",
+                          name: "CARD-002",
+                          type: "room",
+                          roomNumber: "CARD-002",
+                          roomType: "ICU",
+                          children: [
+                            {
+                              id: "bed-14",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-15",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                            {
+                              id: "bed-16",
+                              name: "Bed 3",
+                              type: "bed",
+                              bedNumber: "3",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      id: "dept-3",
+                      name: "Radiology",
+                      type: "department",
+                      children: [
+                        {
+                          id: "room-8",
+                          name: "RAD-001",
+                          type: "room",
+                          roomNumber: "RAD-001",
+                          roomType: "Laboratory",
+                          children: [
+                            {
+                              id: "bed-17",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  id: "floor-2",
+                  name: "First Floor",
+                  type: "floor",
+                  children: [
+                    {
+                      id: "dept-4",
+                      name: "Orthopedics",
+                      type: "department",
+                      children: [
+                        {
+                          id: "room-9",
+                          name: "ORTH-001",
+                          type: "room",
+                          roomNumber: "ORTH-001",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-18",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-19",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-10",
+                          name: "ORTH-002",
+                          type: "room",
+                          roomNumber: "ORTH-002",
+                          roomType: "Ward",
+                          children: [
+                            {
+                              id: "bed-20",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-21",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                            {
+                              id: "bed-22",
+                              name: "Bed 3",
+                              type: "bed",
+                              bedNumber: "3",
+                            },
+                            {
+                              id: "bed-23",
+                              name: "Bed 4",
+                              type: "bed",
+                              bedNumber: "4",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      id: "dept-5",
+                      name: "Surgery",
+                      type: "department",
+                      children: [
+                        {
+                          id: "room-11",
+                          name: "SURG-001",
+                          type: "room",
+                          roomNumber: "SURG-001",
+                          roomType: "Operation Theater",
+                          children: [
+                            {
+                              id: "bed-24",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-12",
+                          name: "SURG-002",
+                          type: "room",
+                          roomNumber: "SURG-002",
+                          roomType: "IPD - Private Room",
+                          children: [
+                            {
+                              id: "bed-25",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-26",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "building-2",
+          name: "OPD Building",
+          type: "building",
+          children: [
+            {
+              id: "block-2",
+              name: "Block B",
+              type: "block",
+              children: [
+                {
+                  id: "floor-3",
+                  name: "Ground Floor",
+                  type: "floor",
+                  children: [
+                    {
+                      id: "dept-6",
+                      name: "General OPD",
+                      type: "department",
+                      children: [
+                        {
+                          id: "room-13",
+                          name: "OPD-001",
+                          type: "room",
+                          roomNumber: "OPD-001",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-27",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-28",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-14",
+                          name: "OPD-002",
+                          type: "room",
+                          roomNumber: "OPD-002",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-29",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                          ],
+                        },
+                        {
+                          id: "room-15",
+                          name: "OPD-003",
+                          type: "room",
+                          roomNumber: "OPD-003",
+                          roomType: "Consultation Room",
+                          children: [
+                            {
+                              id: "bed-30",
+                              name: "Bed 1",
+                              type: "bed",
+                              bedNumber: "1",
+                            },
+                            {
+                              id: "bed-31",
+                              name: "Bed 2",
+                              type: "bed",
+                              bedNumber: "2",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ];
+    }
+  };
+
+  const [treeData, setTreeData] = useState<TreeNode[]>(getInitialTreeData());
 
   const roomTypes = [
     { value: "Consultation Room", label: "Consultation Room" },
@@ -252,7 +845,7 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
   const renderTreeNode = (node: TreeNode, level: number = 0): React.ReactNode => {
     const isExpanded = expandedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
-    const canExpand = hasChildren && (node.type !== "room");
+    const canExpand = hasChildren && (node.type !== "room" && node.type !== "bed");
 
     return (
       <div key={node.id} className="select-none">
@@ -290,7 +883,9 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
         </div>
         {isExpanded && hasChildren && (
           <div className="ml-4">
-            {node.children!.map((child) => renderTreeNode(child, level + 1))}
+            {node.children!
+              .filter((child) => facilityType === "Hospital" || child.type !== "block")
+              .map((child) => renderTreeNode(child, level + 1))}
           </div>
         )}
       </div>
@@ -298,34 +893,35 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
   };
 
   const getIcon = (type: string) => {
+    const iconClass = "h-5 w-5 text-green-700";
     switch (type) {
       case "building":
         return (
-          <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
           </svg>
         );
       case "block":
         return (
-          <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
           </svg>
         );
       case "floor":
         return (
-          <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         );
       case "department":
         return (
-          <svg className="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
           </svg>
         );
       case "room":
         return (
-          <svg className="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
         );
@@ -341,23 +937,25 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
       case "building":
         return (
           <>
-            <Button
-              variant="primary"
-              size="small"
-              onClick={() => {
-                setAddDialogType("block");
-                setAddDialogParent(selectedNode);
-                setNewItemName("");
-                setShowAddDialog(true);
-              }}
-              leftIcon={
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              }
-            >
-              Add Block (optional)
-            </Button>
+            {facilityType === "Hospital" && (
+              <Button
+                variant="primary"
+                size="small"
+                onClick={() => {
+                  setAddDialogType("block");
+                  setAddDialogParent(selectedNode);
+                  setNewItemName("");
+                  setShowAddDialog(true);
+                }}
+                leftIcon={
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                }
+              >
+                Add Block (optional)
+              </Button>
+            )}
             <Button
               variant="primary"
               size="small"
@@ -421,7 +1019,9 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
         );
       case "department":
         return (
-          <button
+          <Button
+            variant="primary"
+            size="small"
             onClick={() => {
               setAddRoomsParent(selectedNode);
               setNumberOfRooms("");
@@ -430,13 +1030,72 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
               setSelectedRoomType(null);
               setShowAddRoomsDialog(true);
             }}
-            className="flex items-center gap-2 w-full px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+            leftIcon={
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            }
           >
-            <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span className="text-sm font-medium text-gray-700">Add Rooms to Department</span>
-          </button>
+            Add Rooms to Department
+          </Button>
+        );
+      case "room":
+        return (
+          <Button
+            variant="primary"
+            size="small"
+            onClick={() => {
+              setTreeData((prev) => {
+                // Find the current node in the tree to get the latest bed count
+                const findNode = (nodes: TreeNode[]): TreeNode | null => {
+                  for (const node of nodes) {
+                    if (node.id === selectedNode.id) {
+                      return node;
+                    }
+                    if (node.children) {
+                      const found = findNode(node.children);
+                      if (found) return found;
+                    }
+                  }
+                  return null;
+                };
+
+                const currentNode = findNode(prev);
+                const existingBeds = currentNode?.children?.filter((child) => child.type === "bed") || [];
+                const nextBedNumber = existingBeds.length + 1;
+                
+                const newBed: TreeNode = {
+                  id: `bed-${Date.now()}-${Math.random()}`,
+                  name: `Bed ${nextBedNumber}`,
+                  type: "bed",
+                  bedNumber: String(nextBedNumber),
+                };
+
+                const updateNode = (nodes: TreeNode[]): TreeNode[] => {
+                  return nodes.map((node) => {
+                    if (node.id === selectedNode.id) {
+                      return {
+                        ...node,
+                        children: [...(node.children || []), newBed],
+                      };
+                    }
+                    if (node.children) {
+                      return { ...node, children: updateNode(node.children) };
+                    }
+                    return node;
+                  });
+                };
+                return updateNode(prev);
+              });
+            }}
+            leftIcon={
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            }
+          >
+            Add Bed
+          </Button>
         );
       default:
         return null;
@@ -453,37 +1112,56 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
         return "Floor";
       case "department":
         return "Department";
+      case "room":
+        return "Room";
+      case "bed":
+        return "Bed";
       default:
         return "";
     }
   };
 
   const getTypeIcon = (type: string) => {
+    const iconClass = "h-6 w-6 text-green-700";
     switch (type) {
       case "building":
         return (
-          <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
           </svg>
         );
       case "block":
         return (
-          <svg className="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
           </svg>
         );
       case "floor":
         return (
-          <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         );
       case "department":
         return (
-          <svg className="h-6 w-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
           </svg>
         );
+      case "room":
+        return (
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+        );
+      case "bed":
+        return (
+          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+          </svg>
+        );
+      default:
+        return null;
     }
   };
 
@@ -508,26 +1186,64 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
     return preview;
   }, [numberOfRooms, startingNumber, roomPrefix]);
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={onBack}
-          className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-        >
-          <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Structure Builder</h1>
-          <p className="text-sm text-gray-500">{facilityName}</p>
-        </div>
-      </div>
+  // Calculate statistics from treeData
+  const stats = useMemo(() => {
+    const countNodes = (nodes: TreeNode[], type: TreeNode["type"]): number => {
+      let count = 0;
+      for (const node of nodes) {
+        if (node.type === type) count++;
+        if (node.children) {
+          count += countNodes(node.children, type);
+        }
+      }
+      return count;
+    };
 
-      {/* Main Content Area */}
-      <div className="flex gap-6 flex-1">
+    return {
+      buildings: countNodes(treeData, "building"),
+      blocks: countNodes(treeData, "block"),
+      floors: countNodes(treeData, "floor"),
+      departments: countNodes(treeData, "department"),
+      totalRooms: countNodes(treeData, "room"),
+    };
+  }, [treeData]);
+
+  return (
+    <div className="flex gap-6 h-full">
+      {/* Main Content */}
+      <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+            >
+              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Structure Builder</h1>
+              <p className="text-sm text-gray-500">{facilityName}</p>
+            </div>
+          </div>
+          {/* Toggle Panel Button - Always visible when panel is closed */}
+          {!isPanelOpen && (
+            <button
+              onClick={() => setIsPanelOpen(true)}
+              className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+              aria-label="Open Configuration Summary"
+            >
+              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex gap-6 flex-1">
         {/* Main Content */}
         <div className="flex gap-6 flex-1 w-full">
           {/* Left Panel: Hierarchy Tree */}
@@ -549,38 +1265,52 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
             </div>
 
             <div className="space-y-1">
-              {treeData.map((node) => renderTreeNode(node))}
+              {treeData
+                .filter((node) => facilityType === "Hospital" || node.type !== "block")
+                .map((node) => {
+                  // Filter blocks from children for clinics
+                  if (facilityType === "Clinic" && node.children) {
+                    return {
+                      ...node,
+                      children: node.children.filter((child) => child.type !== "block"),
+                    };
+                  }
+                  return node;
+                })
+                .map((node) => renderTreeNode(node))}
             </div>
 
-            {/* Legend */}
+            {/* Legend - same icons and green as Structure Overview panel */}
             <div className="mt-6 pt-4 border-t border-gray-200">
               <div className="flex flex-wrap gap-4 text-xs text-gray-600">
                 <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                   </svg>
                   <span>Building</span>
                 </div>
+                {facilityType === "Hospital" && (
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                    </svg>
+                    <span>Block (Optional)</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                  <span>Block (Optional)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                   <span>Floor</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
                   <span>Department</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
                   <span>Room</span>
@@ -609,7 +1339,7 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
                 {/* Available Actions */}
                 <div>
                   <h4 className="text-sm font-semibold text-gray-900 mb-3">Available Actions</h4>
-                  <div className="space-y-2">{getAvailableActions()}</div>
+                  <div className="flex flex-wrap gap-3">{getAvailableActions()}</div>
                 </div>
 
                 {/* Statistics - Enhanced for Floor */}
@@ -661,9 +1391,13 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
                       return null;
                     })()}
 
-                    {/* Floor Rooms List */}
+                    {/* Floor Rooms List - Edit opens Room Configuration (Room Inventory specific room edit) */}
                     {(() => {
                       const rooms = getRoomsUnderNode(selectedNode);
+                      const path = findPathToNode(treeData, selectedNode.id);
+                      const context: FloorRoomEditContext | null = path && path.length >= 3
+                        ? { building: path[0].name, block: path[1].name, floor: path[2].name }
+                        : null;
                       if (rooms.length > 0) {
                         return (
                           <div>
@@ -708,8 +1442,7 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
                                       variant={isConfigured ? "outline" : "primary"}
                                       size="small"
                                       onClick={() => {
-                                        // TODO: Handle edit/configure room
-                                        console.log("Edit/Configure room:", room);
+                                        if (onEditRoom && context) onEditRoom(room, context);
                                       }}
                                     >
                                       {isConfigured ? "Edit" : "Configure"}
@@ -927,6 +1660,23 @@ export const StructureBuilder = ({ facilityName, onBack }: StructureBuilderProps
           </div>
         </div>
       </Dialog>
+      </div>
+
+      {/* Configuration Summary Panel */}
+      <ConfigurationSummaryPanel
+        facilityName={facilityName}
+        facilityType={facilityType}
+        completionPercentage={35}
+        isOpen={isPanelOpen}
+        onClose={() => setIsPanelOpen(false)}
+        buildings={stats.buildings}
+        blocks={facilityType === "Hospital" ? stats.blocks : undefined}
+        floors={stats.floors}
+        departments={stats.departments}
+        totalRooms={stats.totalRooms}
+        configuredRooms={1}
+        incompleteRooms={1}
+      />
     </div>
   );
 };

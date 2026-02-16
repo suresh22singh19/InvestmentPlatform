@@ -26,6 +26,7 @@ interface PaymentFormProps {
     patientUhid?: string; // Patient UHID from existing patient (if available)
     patientRegistrationId?: number | null; // Registration ID from existing patient (if available)
     userLeadId?: number | null; // userLead ID when both registrations and preBookings are empty
+    selectedReferralPatientId?: number | null; // Referral patient ID when a patient is selected from referral dialog
 }
 
 export default function PaymentForm({
@@ -40,6 +41,7 @@ export default function PaymentForm({
     patientUhid = "",
     patientRegistrationId = null,
     userLeadId = null,
+    selectedReferralPatientId = null,
 }: PaymentFormProps) {
     const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
@@ -350,19 +352,36 @@ export default function PaymentForm({
             }
         }
         
-        // Determine referral source info based on source type
-        let referralSourceInfo = "";
+        // Build referral object for hospital-patient: only required fields per source
+        // - Doctor: referralSourceType + doctorUserId only
+        // - Referral (other): referralSourceType "patient" + referralRegistrationId + referralName + referralMobile only
+        // - TV / NewsPaper / Social Media: referralSourceType + doctorUserId: null + referralSourceInfo only
+        let referralObject: HospitalPatientRequest["referral"] = undefined;
         if (values.referral?.toLowerCase() === "yes" && values.source) {
-            if (values.source === "tv" && values.tvSpecificField) {
-                referralSourceInfo = values.tvSpecificField;
-            } else if (values.source === "newspaper" && values.newspaperSpecificField) {
-                referralSourceInfo = values.newspaperSpecificField;
-            } else if (values.source === "social-media" && values.socialMediaSpecificField) {
-                referralSourceInfo = values.socialMediaSpecificField;
-            } else if (values.source === "doctor" && values.doctorSpecificField) {
-                referralSourceInfo = values.doctorSpecificField;
-            } else if (values.source === "other" && values.referralName) {
-                referralSourceInfo = values.referralName;
+            if (values.source === "doctor" && values.doctorSpecificField) {
+                const doctorId = typeof values.doctorSpecificField === 'string' ? parseInt(values.doctorSpecificField, 10) : values.doctorSpecificField;
+                referralObject = {
+                    referralSourceType: "doctor",
+                    doctorUserId: doctorId,
+                };
+            } else if (values.source === "other") {
+                referralObject = {
+                    referralSourceType: "patient",
+                    referralRegistrationId: selectedReferralPatientId ? (typeof selectedReferralPatientId === 'number' ? selectedReferralPatientId : parseInt(String(selectedReferralPatientId), 10)) : undefined,
+                    referralName: values.referralName || undefined,
+                    referralMobile: values.referralMobile || undefined,
+                };
+            } else {
+                // tv | newspaper | social-media
+                let referralSourceInfo = "";
+                if (values.source === "tv" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
+                else if (values.source === "newspaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
+                else if (values.source === "social-media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
+                referralObject = {
+                    referralSourceType: values.source,
+                    doctorUserId: null,
+                    referralSourceInfo: referralSourceInfo || undefined,
+                };
             }
         }
         
@@ -394,14 +413,11 @@ export default function PaymentForm({
             patientSubType: values.patientSubType ? values.patientSubType : null,
             benificiaryId: values.benificiaryId || undefined,
             insuranceCompany: values.insuranceCompany || undefined,
-            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : undefined,
-            referralSourceInfo: referralSourceInfo || undefined,
-            referralUserId: values.doctorSpecificField || undefined,
-            referralName: values.referralName || undefined,
-            referralMobile: values.referralMobile || undefined,
             maritalStatus: values.maritalStatus || "",
+            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : "no",
             patientType: values.patientType ? values.patientType.toUpperCase() : undefined,
             doctorUserId: doctorUserId,
+            referral: referralObject,
             // Add userLeadId if provided (when both registrations and preBookings are empty)
             ...(userLeadId !== null && userLeadId !== undefined ? { userLeadId: userLeadId } : {}),
             address: {
@@ -484,30 +500,28 @@ export default function PaymentForm({
             }
         }
         
-        // Determine referral source info based on source type
-        let referralSourceInfo = "";
+        // CreateAppointmentAndUpdateRegistration: old way - referral fields inside registration object
+        let referralSourceInfoCreateApp = "";
         if (values.referral?.toLowerCase() === "yes" && values.source) {
             if (values.source === "tv" && values.tvSpecificField) {
-                referralSourceInfo = values.tvSpecificField;
+                referralSourceInfoCreateApp = values.tvSpecificField;
             } else if (values.source === "newspaper" && values.newspaperSpecificField) {
-                referralSourceInfo = values.newspaperSpecificField;
+                referralSourceInfoCreateApp = values.newspaperSpecificField;
             } else if (values.source === "social-media" && values.socialMediaSpecificField) {
-                referralSourceInfo = values.socialMediaSpecificField;
+                referralSourceInfoCreateApp = values.socialMediaSpecificField;
             } else if (values.source === "doctor" && values.doctorSpecificField) {
-                referralSourceInfo = values.doctorSpecificField;
+                referralSourceInfoCreateApp = values.doctorSpecificField;
             } else if (values.source === "other" && values.referralName) {
-                referralSourceInfo = values.referralName;
+                referralSourceInfoCreateApp = values.referralName;
             }
         }
         
         // Convert doctor ID to number
         const doctorUserId = values.doctor ? (typeof values.doctor === 'string' ? parseInt(values.doctor, 10) : values.doctor) : 0;
         
-        // Build the API payload for CreateAppointmentAndUpdateRegistration
+        // Build the API payload for CreateAppointmentAndUpdateRegistration (old way - no root referral object)
         const payload: CreateAppointmentAndUpdateRegistrationRequest = {
             branchId: branchId || 1,
-            // Only send patientEntryId when we have it (token selection).
-            // For "Already Exist Patient" dialog (revisit), patientEntryId will be null and this field will be omitted.
             patientEntryId: patientEntryId ? (typeof patientEntryId === 'number' ? patientEntryId : parseInt(String(patientEntryId), 10)) : undefined,
             registrationId: patientRegistrationId || 0,
             uhid: patientUhid || "",
@@ -531,7 +545,7 @@ export default function PaymentForm({
                 benificiaryId: values.benificiaryId || undefined,
                 insuranceCompany: values.insuranceCompany || undefined,
                 isReferral: values.referral?.toLowerCase() === "yes" ? values.referral : undefined,
-                referralSourceInfo: referralSourceInfo || undefined,
+                referralSourceInfo: referralSourceInfoCreateApp || undefined,
                 referralUserId: values.doctorSpecificField ? parseInt(values.doctorSpecificField, 10) : undefined,
                 referralName: values.referralName || undefined,
                 referralMobile: values.referralMobile || undefined,

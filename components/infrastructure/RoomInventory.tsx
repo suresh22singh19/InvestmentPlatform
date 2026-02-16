@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Button, FormSelectField } from "@/components/ui";
+import { Button, Dialog, FormSelectField, ConfigurationSummaryPanel } from "@/components/ui";
 import { RoomConfiguration } from "./RoomConfiguration";
 import { BedManagement } from "./BedManagement";
+
+export type OccupancyStatus = "Vacant" | "Fully Occupied" | "Partially Occupied" | "Reserved" | "Under Maintenance";
 
 export type RoomInventoryItem = {
   id: string;
@@ -13,13 +15,16 @@ export type RoomInventoryItem = {
   block: string;
   floor: string;
   status: "configured" | "incomplete";
-  occupancyStatus: "Vacant" | "Occupied";
+  occupancyStatus: OccupancyStatus;
   capacity: number;
   genderUsage: "Male" | "Female" | "Mixed";
   hasAC: boolean;
   hardwareCount: number;
   facilitiesCount: number;
   bedCount?: number;
+  /** Stored for View summary */
+  hardwareItems?: { name: string; qty: number }[];
+  facilityNames?: string[];
 };
 
 type RoomInventoryProps = {
@@ -46,8 +51,19 @@ const TYPE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: "all", label: "All Status" },
   { value: "Vacant", label: "Vacant" },
-  { value: "Occupied", label: "Occupied" },
+  { value: "Fully Occupied", label: "Fully Occupied" },
+  { value: "Partially Occupied", label: "Partially Occupied" },
+  { value: "Reserved", label: "Reserved" },
+  { value: "Under Maintenance", label: "Under Maintenance" },
 ];
+
+const OCCUPANCY_COLORS: Record<OccupancyStatus, string> = {
+  Vacant: "bg-green-100 text-green-800 border-green-200",
+  "Fully Occupied": "bg-red-100 text-red-800 border-red-200",
+  "Partially Occupied": "bg-yellow-100 text-yellow-800 border-yellow-200",
+  Reserved: "bg-blue-100 text-blue-800 border-blue-200",
+  "Under Maintenance": "bg-gray-100 text-gray-800 border-gray-200",
+};
 
 const DEFAULT_ROOMS: RoomInventoryItem[] = [
   {
@@ -63,8 +79,10 @@ const DEFAULT_ROOMS: RoomInventoryItem[] = [
     genderUsage: "Mixed",
     hasAC: true,
     hardwareCount: 2,
-    facilitiesCount: 2,
+    facilitiesCount: 3,
     bedCount: 1,
+    hardwareItems: [{ name: "Examination Bed", qty: 1 }, { name: "BP Monitor", qty: 1 }],
+    facilityNames: ["Oxygen Supply", "Attached Washroom", "Air Conditioning"],
   },
   {
     id: "room-2",
@@ -74,8 +92,8 @@ const DEFAULT_ROOMS: RoomInventoryItem[] = [
     block: "Block A",
     floor: "Ground Floor",
     status: "incomplete",
-    occupancyStatus: "Vacant",
-    capacity: 1,
+    occupancyStatus: "Partially Occupied",
+    capacity: 3,
     genderUsage: "Mixed",
     hasAC: true,
     hardwareCount: 0,
@@ -151,6 +169,8 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [view, setView] = useState<"list" | "config" | "beds">("list");
   const [selectedRoom, setSelectedRoom] = useState<RoomInventoryItem | null>(null);
+  const [viewRoom, setViewRoom] = useState<RoomInventoryItem | null>(null);
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
 
   const stats = useMemo(() => {
     const total = rooms.length;
@@ -159,6 +179,8 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
     const vacant = rooms.filter((r) => r.occupancyStatus === "Vacant").length;
     return { total, configured, incomplete, vacant };
   }, [rooms]);
+
+  const getOccupancyBadgeClass = (s: OccupancyStatus) => OCCUPANCY_COLORS[s] ?? "bg-gray-100 text-gray-800";
 
   const filteredRooms = useMemo(
     () =>
@@ -220,21 +242,37 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={onBack}
-          className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-        >
-          <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Room Inventory</h1>
-          <p className="text-sm text-gray-500">{facilityName}</p>
+    <div className="flex gap-6 h-full">
+      {/* Main Content */}
+      <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+            >
+              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Room Inventory</h1>
+              <p className="text-sm text-gray-500">{facilityName}</p>
+            </div>
+          </div>
+          {/* Toggle Panel Button - Always visible when panel is closed */}
+          {!isPanelOpen && (
+            <button
+              onClick={() => setIsPanelOpen(true)}
+              className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+              aria-label="Open Configuration Summary"
+            >
+              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </div>
-      </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
@@ -312,7 +350,7 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
         {filteredRooms.map((room) => (
           <div
             key={room.id}
-            className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow relative"
+            className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden"
           >
             <div className="absolute top-4 right-4">
               {room.status === "configured" ? (
@@ -331,8 +369,8 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
             </div>
 
             <div className="flex items-start gap-3 mb-3">
-              <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                <svg className="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
               </div>
@@ -366,26 +404,33 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
             </div>
 
             <div className="flex items-center gap-2 mb-4">
-              <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-800 text-white">
+              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getOccupancyBadgeClass(room.occupancyStatus)}`}>
                 {room.occupancyStatus}
               </span>
             </div>
 
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="small"
+            <div className="flex gap-2 items-center">
+              <button
+                type="button"
+                onClick={() => setViewRoom(room)}
+                className="inline-flex items-center justify-center h-9 px-8 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
+              >
+                View
+              </button>
+              <button
+                type="button"
                 onClick={() => handleBeds(room)}
+                className="inline-flex items-center justify-center h-9 px-8 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
               >
                 Beds
-              </Button>
-              <Button
-                variant="outline"
-                size="small"
+              </button>
+              <button
+                type="button"
                 onClick={() => handleEdit(room)}
+                className="inline-flex items-center justify-center h-9 px-8 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
               >
                 Edit
-              </Button>
+              </button>
             </div>
 
             {room.status === "configured" && (
@@ -413,6 +458,98 @@ export const RoomInventory = ({ facilityName, onBack }: RoomInventoryProps) => {
           <p className="text-sm text-gray-500">No rooms match your filters</p>
         </div>
       )}
+
+      {/* View room details dialog - Room Configuration Summary style */}
+      <Dialog
+        open={!!viewRoom}
+        onClose={() => setViewRoom(null)}
+        title="Room details"
+        width={560}
+      >
+        {viewRoom && (
+          <div className="space-y-6">
+            <h3 className="text-base font-semibold text-gray-900">Room Configuration Summary</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-gray-500">Room Number</p>
+                <p className="font-semibold text-gray-900">{viewRoom.roomNumber}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Room Type</p>
+                <p className="font-semibold text-gray-900">{viewRoom.roomType}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Capacity</p>
+                <p className="font-semibold text-gray-900">{viewRoom.capacity} bed(s)</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Gender</p>
+                <p className="font-semibold text-gray-900">{viewRoom.genderUsage}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">AC</p>
+                <p className="font-semibold text-gray-900">{viewRoom.hasAC ? "Yes" : "No"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Status</p>
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getOccupancyBadgeClass(viewRoom.occupancyStatus)}`}>
+                  {viewRoom.occupancyStatus}
+                </span>
+              </div>
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Hardware ({viewRoom.hardwareItems?.length ? viewRoom.hardwareItems.reduce((s, h) => s + h.qty, 0) : viewRoom.hardwareCount})</h4>
+              {viewRoom.hardwareItems && viewRoom.hardwareItems.length > 0 ? (
+                <ul className="text-sm text-gray-700 space-y-1">
+                  {viewRoom.hardwareItems.map((h) => (
+                    <li key={h.name}>{h.name}: Qty: {h.qty}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">{viewRoom.hardwareCount} item(s) configured</p>
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Facilities ({viewRoom.facilityNames?.length ?? viewRoom.facilitiesCount})</h4>
+              {viewRoom.facilityNames && viewRoom.facilityNames.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {viewRoom.facilityNames.map((f) => (
+                    <span key={f} className="px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-800 border border-gray-200">
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">{viewRoom.facilitiesCount} facility(ies) configured</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setViewRoom(null)}>
+                Close
+              </Button>
+              <Button variant="primary" onClick={() => { handleEdit(viewRoom); setViewRoom(null); }}>
+                Edit room
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+      </div>
+
+      {/* Configuration Summary Panel */}
+      <ConfigurationSummaryPanel
+        facilityName={facilityName}
+        completionPercentage={35}
+        isOpen={isPanelOpen}
+        onClose={() => setIsPanelOpen(false)}
+        buildings={2}
+        blocks={0}
+        floors={3}
+        departments={1}
+        totalRooms={2}
+        configuredRooms={1}
+        incompleteRooms={1}
+      />
     </div>
   );
 };

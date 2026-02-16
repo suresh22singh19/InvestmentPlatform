@@ -4,10 +4,12 @@ import React from "react";
 
 type ConfigurationSummaryPanelProps = {
   facilityName: string;
+  facilityType?: "Hospital" | "Clinic";
   completionPercentage: number;
   isOpen: boolean;
   onClose: () => void;
   buildings?: number;
+  blocks?: number;
   floors?: number;
   departments?: number;
   totalRooms?: number;
@@ -18,10 +20,12 @@ type ConfigurationSummaryPanelProps = {
 
 export const ConfigurationSummaryPanel = ({
   facilityName,
+  facilityType = "Hospital",
   completionPercentage,
   isOpen,
   onClose,
   buildings = 2,
+  blocks,
   floors = 3,
   departments = 1,
   totalRooms = 2,
@@ -65,9 +69,9 @@ export const ConfigurationSummaryPanel = ({
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Overall Progress</h3>
           <div className="mb-2">
-            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-2 bg-green-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-600 rounded-full transition-all"
+                className="h-full bg-green-600 rounded-full transition-all"
                 style={{ width: `${completionPercentage}%` }}
               />
             </div>
@@ -90,14 +94,14 @@ export const ConfigurationSummaryPanel = ({
           </div>
         </div>
 
-        {/* Structure Overview */}
+        {/* Structure Overview - same icons and green as Hierarchy Tree */}
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Structure Overview</h3>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded bg-blue-100">
+              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded-lg bg-green-100">
                 <svg
-                  className="h-5 w-5 text-blue-600"
+                  className="h-5 w-5 text-green-700"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -113,10 +117,31 @@ export const ConfigurationSummaryPanel = ({
               <span className="text-sm text-gray-600 flex-1">Buildings</span>
               <span className="text-sm font-semibold text-gray-900">{buildings}</span>
             </div>
+            {facilityType === "Hospital" && blocks !== undefined && blocks > 0 && (
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded-lg bg-green-100">
+                  <svg
+                    className="h-5 w-5 text-green-700"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                    />
+                  </svg>
+                </div>
+                <span className="text-sm text-gray-600 flex-1">Blocks</span>
+                <span className="text-sm font-semibold text-gray-900">{blocks}</span>
+              </div>
+            )}
             <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded bg-purple-100">
+              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded-lg bg-green-100">
                 <svg
-                  className="h-5 w-5 text-purple-600"
+                  className="h-5 w-5 text-green-700"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -133,9 +158,9 @@ export const ConfigurationSummaryPanel = ({
               <span className="text-sm font-semibold text-gray-900">{floors}</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded bg-green-100">
+              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded-lg bg-green-100">
                 <svg
-                  className="h-5 w-5 text-green-600"
+                  className="h-5 w-5 text-green-700"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -152,9 +177,9 @@ export const ConfigurationSummaryPanel = ({
               <span className="text-sm font-semibold text-gray-900">{departments}</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded bg-orange-100">
+              <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center rounded-lg bg-green-100">
                 <svg
-                  className="h-5 w-5 text-orange-600"
+                  className="h-5 w-5 text-green-700"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
