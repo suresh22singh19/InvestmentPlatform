@@ -18,7 +18,7 @@ import PaymentForm from "../payment";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
 import { useGetPatientEntryByIdQuery } from "@/store/api/registrationApi";
 import { useGetCountriesQuery, useGetStatesQuery, useGetCitiesQuery, useLazyGetTehsilsQuery, useLazyGetAreasQuery } from "@/store/api/publicApi";
-import { useGetDoctorsQuery } from "@/store/api/registrationApi";
+import { useGetDoctorsQuery, useLazyGetPatientEntriesQuery } from "@/store/api/registrationApi";
 import { useGetPanelsQuery } from "@/store/api/settingsApi";
 import type { PatientEntry } from "@/store/api/registrationApi";
 import { usePathname } from "next/navigation";
@@ -89,6 +89,21 @@ export default function HospitalRegistrationPage() {
     const refetchTokenListRef = useRef<(() => void) | null>(null); // Refetch function for token list using ref to avoid re-renders
     const [selectedPreBookingId, setSelectedPreBookingId] = useState<number | string | null>(null); // Store pre-booking ID when pre-booking is selected
 
+    // Gate entry required state — when API returns empty for contact number
+    const [gateEntryRequired, setGateEntryRequired] = useState(false);
+
+    // Token panel pre-filled search value (set from contact number when patient-entries has data)
+    const [tokenPanelSearch, setTokenPanelSearch] = useState("");
+
+    // When token panel opens from patient-entries flow, force user to pick a token before proceeding
+    const [isAwaitingTokenSelection, setIsAwaitingTokenSelection] = useState(false);
+
+    // Loading state for contact number API check
+    const [isContactLoading, setIsContactLoading] = useState(false);
+
+    // Loading state for referral mobile API check
+    const [isReferralMobileLoading, setIsReferralMobileLoading] = useState(false);
+
     // Patient exists dialog state
     const [patientExistsDialogOpen, setPatientExistsDialogOpen] = useState(false);
     const [existingPatients, setExistingPatients] = useState<ExistingPatient[]>([]);
@@ -135,7 +150,10 @@ export default function HospitalRegistrationPage() {
 
     // Lazy query for checking existing patients
     const [checkExistingPatientsQuery] = registrationApi.useLazyCheckExistingPatientsByPhoneQuery();
-    
+
+    // Lazy query for patient-entries (used before registrations-and-pre-bookings check)
+    const [getPatientEntriesLazy] = useLazyGetPatientEntriesQuery();
+
     // Lazy query for checking referral patients by phone
     const [checkReferralPatientsQuery] = registrationApi.useLazyGetAllRegistrationForReferralByPhoneQuery();
 
@@ -650,6 +668,16 @@ export default function HospitalRegistrationPage() {
 
     // Handle token click - pre-fill form with entry data (after formik is initialized)
     const handleTokenClick = useCallback((entry: PatientEntry) => {
+        // Clear gate entry error when a token is selected
+        if (gateEntryRequired) {
+            setGateEntryRequired(false);
+        }
+
+        // Clear awaiting-token-selection block so Save & Next becomes enabled
+        if (isAwaitingTokenSelection) {
+            setIsAwaitingTokenSelection(false);
+        }
+
         const entryId = entry.id ? String(entry.id) : null;
 
         // If clicking the same token again, clear the form
@@ -718,7 +746,7 @@ export default function HospitalRegistrationPage() {
         // Set selected token ID for highlighting
         setSelectedTokenId(entryId);
         setCurrentStep(0); // Reset to first step
-    }, [formik, selectedTokenId]);
+    }, [formik, selectedTokenId, gateEntryRequired, isAwaitingTokenSelection]);
 
     // Pre-fill form when patient entry is selected (after formik is initialized)
     useEffect(() => {
@@ -1073,6 +1101,7 @@ export default function HospitalRegistrationPage() {
         setSelectedRevisitedPatientData(null); // Clear selected patient data
         setSelectedTokenId(null); // Clear selected token
         setSelectedPreBookingId(null); // Clear selected pre-booking
+        setGateEntryRequired(false); // Clear gate entry error
     };
 
     // Handle "Add New Patient" button click
@@ -1328,6 +1357,7 @@ export default function HospitalRegistrationPage() {
         // Update the last checked contact number (for tracking, but don't prevent API calls)
         lastCheckedContactNumberRef.current = contactNumber;
 
+        setIsContactLoading(true);
         try {
             const result = await checkExistingPatientsQuery({
                 branchId: branchId,
@@ -1531,10 +1561,11 @@ export default function HospitalRegistrationPage() {
                 }
                 setPatientExistsDialogOpen(true);
             } else {
-                // Clear the ref if no patients found
+                // No registrations, no preBookings, no userLead — gate entry required
                 lastCheckedContactNumberRef.current = "";
                 setIsUserLeadData(false);
                 setUserLeadId(null);
+                setGateEntryRequired(true);
             }
         } catch (error: any) {
             // Handle different error types properly
@@ -1543,6 +1574,8 @@ export default function HospitalRegistrationPage() {
             // Clear the ref on error so we can retry if needed
             lastCheckedContactNumberRef.current = "";
             // If API fails, don't show dialog
+        } finally {
+            setIsContactLoading(false);
         }
     }, [checkExistingPatientsQuery, branchId]);
 
@@ -1625,8 +1658,54 @@ export default function HospitalRegistrationPage() {
         }
     }, [checkExistingPatientsQuery, branchId, formik]);
 
+    // Check patient-entries first; if data found → open token panel with pre-filled search.
+    // If empty → fall through to registrations-and-pre-bookings (checkExistingPatients).
+    const checkPatientEntriesFirst = useCallback(async (contactNumber: string) => {
+        if (!contactNumber || contactNumber.length !== 10) return;
+
+        setIsContactLoading(true);
+        try {
+            const result = await getPatientEntriesLazy({
+                branchId: branchId,
+                search: contactNumber,
+                page: 1,
+                limit: 100,
+            }).unwrap();
+
+            const entries = Array.isArray(result) ? result : (result as any)?.data || [];
+
+            if (entries.length > 0) {
+                // Patient-entries has data → open token panel, pre-fill search, and require selection
+                setIsPreBookingOpen(true);
+                setTokenPanelSearch(contactNumber);
+                setIsAwaitingTokenSelection(true);
+            } else {
+                // No entries → fall back to registrations-and-pre-bookings flow
+                await checkExistingPatients(contactNumber);
+            }
+        } catch {
+            // On error, fall back to registrations-and-pre-bookings flow
+            await checkExistingPatients(contactNumber);
+        } finally {
+            setIsContactLoading(false);
+        }
+    }, [getPatientEntriesLazy, branchId, checkExistingPatients]);
+
     // Handle contact number change - check when it reaches 10 digits
     const handleContactNumberChange = useCallback((field: string, value: string) => {
+        // Clear gate entry error when user modifies contact number
+        if (gateEntryRequired) {
+            setGateEntryRequired(false);
+        }
+
+        // Clear token panel search and awaiting state when contact number changes
+        if (tokenPanelSearch) {
+            setTokenPanelSearch("");
+        }
+        if (isAwaitingTokenSelection) {
+            setIsAwaitingTokenSelection(false);
+        }
+
         // Don't check if dialog is being closed or if value is empty
         if (isClosingDialogRef.current || !value || value.length === 0) {
             return;
@@ -1634,8 +1713,8 @@ export default function HospitalRegistrationPage() {
 
         // Check when contact number reaches 10 digits
         if (value.length === 10) {
-            checkExistingPatients(value);
-            
+            checkPatientEntriesFirst(value);
+
             // Re-check Aadhar Card if it's already entered (to verify if contact number matches)
             const aadharValue = formik.values.aadharCardNumber?.trim() || "";
             if (aadharValue.length === 12) {
@@ -1650,7 +1729,7 @@ export default function HospitalRegistrationPage() {
                 checkExistingAadharCard(aadharValue, value);
             }
         }
-    }, [checkExistingPatients, checkExistingAadharCard, formik.values.aadharCardNumber]);
+    }, [checkPatientEntriesFirst, checkExistingAadharCard, formik.values.aadharCardNumber, gateEntryRequired, tokenPanelSearch, isAwaitingTokenSelection]);
 
     // Check referral patients by phone number
     const checkReferralPatients = useCallback(async (phoneNumber: string) => {
@@ -1659,6 +1738,7 @@ export default function HospitalRegistrationPage() {
             return;
         }
 
+        setIsReferralMobileLoading(true);
         try {
             lastCheckedReferralMobileRef.current = phoneNumber;
             referralPatientSelectedRef.current = false; // Reset selection flag when opening dialog
@@ -1674,6 +1754,8 @@ export default function HospitalRegistrationPage() {
             console.error("Error checking referral patients:", error);
             // Clear the ref on error so we can retry if needed
             lastCheckedReferralMobileRef.current = "";
+        } finally {
+            setIsReferralMobileLoading(false);
         }
     }, [checkReferralPatientsQuery]);
 
@@ -2221,6 +2303,10 @@ export default function HospitalRegistrationPage() {
                 errors[key] = error;
             }
         });
+        // Persist gate entry error regardless of Formik validation state
+        if (gateEntryRequired) {
+            errors["contactNumber"] = "Please complete the gate entry process first. Direct patient registration requires a token assignment from the gate entry system.";
+        }
         return errors;
     };
 
@@ -2402,6 +2488,7 @@ export default function HospitalRegistrationPage() {
                             onRefetchReady={(refetch) => {
                                 refetchTokenListRef.current = refetch;
                             }}
+                            tokenSearchValue={tokenPanelSearch}
                         />
                     </div>
                 )}
@@ -2447,7 +2534,11 @@ export default function HospitalRegistrationPage() {
                                             ? ["referralName", "referralMobile"] 
                                             : (referralPatientsDialogOpen ? ["referralMobile"] : [])
                                     )
-                            } />
+                            }
+                            isNextDisabled={gateEntryRequired || isAwaitingTokenSelection}
+                            hideReferral={!!patientUhid && patientUhid.trim() !== ""}
+                            isContactLoading={isContactLoading}
+                            isReferralMobileLoading={isReferralMobileLoading} />
                     )}
 
                     {currentStep === 1 && (

@@ -92,6 +92,9 @@ export default function GatePatientMedicineTypePage() {
   const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const uhidSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null); // For debouncing UHID search
   
+  // Loading state for mobile number API check
+  const [isMobileNumberLoading, setIsMobileNumberLoading] = useState(false);
+  
   // Lazy query for checking existing patients
   const [checkExistingPatientsQuery] = useLazyCheckExistingPatientsByPhoneQuery();
 
@@ -652,6 +655,7 @@ export default function GatePatientMedicineTypePage() {
     // Set the last checked values
     if (mobileNumber) {
       lastCheckedContactNumberRef.current = mobileNumber;
+      setIsMobileNumberLoading(true);
     }
     if (uhid) {
       lastCheckedUHIDRef.current = uhid.trim();
@@ -690,6 +694,11 @@ export default function GatePatientMedicineTypePage() {
       console.error("Error checking existing patients:", error);
       lastCheckedContactNumberRef.current = "";
       lastCheckedUHIDRef.current = "";
+    } finally {
+      // Clear loading state only if it was a mobile number search
+      if (mobileNumber) {
+        setIsMobileNumberLoading(false);
+      }
     }
   };
 
@@ -1271,6 +1280,7 @@ export default function GatePatientMedicineTypePage() {
             }}
             errors={getFormErrors()}
             readOnly={isReadOnly}
+            isMobileNumberLoading={isMobileNumberLoading}
           />
 
           {/* Conditionally render sections based on whoVisited */}

@@ -100,6 +100,12 @@ export default function RegistrationPage() {
     const lastCheckedReferralMobileRef = useRef<string>("");
     const referralPatientSelectedRef = useRef<boolean>(false);
 
+    // Loading state for contact number API check
+    const [isContactLoading, setIsContactLoading] = useState(false);
+
+    // Loading state for referral mobile API check
+    const [isReferralMobileLoading, setIsReferralMobileLoading] = useState(false);
+
     // Duplicate number exception dialog state
     const [duplicateExceptionDialogOpen, setDuplicateExceptionDialogOpen] = useState(false);
 
@@ -1538,6 +1544,7 @@ export default function RegistrationPage() {
         // Update the last checked contact number (for tracking, but don't prevent API calls)
         lastCheckedContactNumberRef.current = contactNumber;
 
+        setIsContactLoading(true);
         try {
             const result = await checkExistingPatientsQuery({
                 branchId: branchId,
@@ -1687,6 +1694,8 @@ export default function RegistrationPage() {
             // Clear the ref on error so we can retry if needed
             lastCheckedContactNumberRef.current = "";
             // If API fails, don't show dialog
+        } finally {
+            setIsContactLoading(false);
         }
     }, [checkExistingPatientsQuery, branchId]);
 
@@ -1776,6 +1785,7 @@ export default function RegistrationPage() {
             return;
         }
 
+        setIsReferralMobileLoading(true);
         try {
             lastCheckedReferralMobileRef.current = phoneNumber;
             referralPatientSelectedRef.current = false; // Reset selection flag when opening dialog
@@ -1791,6 +1801,8 @@ export default function RegistrationPage() {
             console.error("Error checking referral patients:", error);
             // Clear the ref on error so we can retry if needed
             lastCheckedReferralMobileRef.current = "";
+        } finally {
+            setIsReferralMobileLoading(false);
         }
     }, [checkReferralPatientsQuery]);
 
@@ -2763,6 +2775,9 @@ export default function RegistrationPage() {
                                 
                                 return [...baseFields, ...referralFields];
                             })()}
+                            hideReferral={!!patientUhid && patientUhid.trim() !== ""}
+                            isContactLoading={isContactLoading}
+                            isReferralMobileLoading={isReferralMobileLoading}
                         />
                     )}
 

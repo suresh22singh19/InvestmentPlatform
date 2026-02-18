@@ -27,6 +27,12 @@ export default function GateRevisitPatientPage() {
   const uhidSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null); // For debouncing UHID search
   const isClosingDialogRef = useRef(false); // Track if dialog is being closed to prevent re-triggering
 
+  // Loading states for each input field
+  const [isContactNumberLoading, setIsContactNumberLoading] = useState(false);
+  const [isUhidLoading, setIsUhidLoading] = useState(false);
+  const [isAadharCardNumberLoading, setIsAadharCardNumberLoading] = useState(false);
+  const [isPreBookingLoading, setIsPreBookingLoading] = useState(false);
+
   // Lazy query for checking existing patients (supports both phoneNumber and uhid)
   const [checkExistingPatientsQuery] = useLazyCheckExistingPatientsByPhoneQuery();
   // Lazy query for getting pre-booking by ID
@@ -121,6 +127,15 @@ export default function GateRevisitPatientPage() {
       return;
     }
 
+    // Set loading state based on which parameter is provided
+    if (contactNumber) {
+      setIsContactNumberLoading(true);
+    } else if (uhid) {
+      setIsUhidLoading(true);
+    } else if (aadharCardNo) {
+      setIsAadharCardNumberLoading(true);
+    }
+
     try {
       const result = await checkExistingPatientsQuery({
         branchId: branchId,
@@ -166,6 +181,15 @@ export default function GateRevisitPatientPage() {
     } catch (error) {
       console.error("Error checking existing patients:", error);
       // If API fails, don't show dialog
+    } finally {
+      // Clear loading states based on which parameter was provided
+      if (contactNumber) {
+        setIsContactNumberLoading(false);
+      } else if (uhid) {
+        setIsUhidLoading(false);
+      } else if (aadharCardNo) {
+        setIsAadharCardNumberLoading(false);
+      }
     }
   };
 
@@ -236,6 +260,7 @@ export default function GateRevisitPatientPage() {
       return;
     }
 
+    setIsPreBookingLoading(true);
     try {
       const result = await getPreBookingByIdQuery({
         branchId: branchId,
@@ -269,6 +294,8 @@ export default function GateRevisitPatientPage() {
         setNotFoundMessage(message);
         setShowNotFoundDialog(true);
       }
+    } finally {
+      setIsPreBookingLoading(false);
     }
   };
 
@@ -485,178 +512,238 @@ export default function GateRevisitPatientPage() {
             )}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <FormInputField
-                ref={contactNumberRef}
-                label="Contact Number"
-                value={formik.values.contactNumber}
-                onChange={(e) => {
-                  if (!isReadOnly) {
-                    const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                    formik.setFieldValue("contactNumber", value, false);
-                    // Clear error if field was previously invalid
-                    if (formik.touched.contactNumber && formik.errors.contactNumber) {
-                      setTimeout(() => {
-                        formik.validateField("contactNumber");
-                      }, 0);
-                    }
-                    // Check when contact number reaches 10 digits
-                    if (value.length === 10) {
-                      handleContactNumberChange(value);
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  if (!isReadOnly) {
-                    formik.setFieldTouched("contactNumber", true, false);
-                    formik.validateField("contactNumber");
-                    const value = e.target.value.trim();
-                    if (value && value.length === 10) {
-                      handleContactNumberChange(value);
-                    }
-                  }
-                }}
-                placeholder="Contact Number"
-                type="tel"
-                maxLength={10}
-                error={getFormErrors().contactNumber}
-                disabled={isReadOnly}
-                readOnly={isReadOnly}
-              />
-
-              <FormInputField
-                ref={uhidRef}
-                label="UHID"
-                value={formik.values.uhid}
-                onChange={(e) => {
-                  if (!isReadOnly) {
-                    // Remove spaces, allow alphanumeric characters, limit to 15 characters
-                    const value = e.target.value.replace(/\s/g, "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 15).toUpperCase();
-                    formik.setFieldValue("uhid", value, false);
-                    // Clear error if field was previously invalid
-                    if (formik.touched.uhid && formik.errors.uhid) {
-                      setTimeout(() => {
-                        formik.validateField("uhid");
-                      }, 0);
-                    }
-                    // Check for existing patients when UHID is entered (debounced)
-                    if (value.length >= 10) {
-                      handleUHIDChange(value);
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  if (!isReadOnly) {
-                    formik.setFieldTouched("uhid", true, false);
-                    formik.validateField("uhid");
-                    const value = e.target.value.trim();
-                    if (value && value.length >= 10) {
-                      // Clear any pending timeout
-                      if (uhidSearchTimeoutRef.current) {
-                        clearTimeout(uhidSearchTimeoutRef.current);
-                        uhidSearchTimeoutRef.current = null;
+              <div className="relative">
+                <FormInputField
+                  ref={contactNumberRef}
+                  label="Contact Number"
+                  value={formik.values.contactNumber}
+                  onChange={(e) => {
+                    if (!isReadOnly) {
+                      const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      formik.setFieldValue("contactNumber", value, false);
+                      // Clear error if field was previously invalid
+                      if (formik.touched.contactNumber && formik.errors.contactNumber) {
+                        setTimeout(() => {
+                          formik.validateField("contactNumber");
+                        }, 0);
                       }
-                      checkExistingPatients(undefined, value, undefined);
+                      // Check when contact number reaches 10 digits
+                      if (value.length === 10) {
+                        handleContactNumberChange(value);
+                      }
                     }
-                  }
-                }}
-                placeholder="Enter UHID"
-                type="text"
-                maxLength={15}
-                error={getFormErrors().uhid}
-                disabled={isReadOnly}
-                readOnly={isReadOnly}
-              />
+                  }}
+                  onBlur={(e) => {
+                    if (!isReadOnly) {
+                      formik.setFieldTouched("contactNumber", true, false);
+                      formik.validateField("contactNumber");
+                      const value = e.target.value.trim();
+                      if (value && value.length === 10) {
+                        handleContactNumberChange(value);
+                      }
+                    }
+                  }}
+                  placeholder="Contact Number"
+                  type="tel"
+                  maxLength={10}
+                  error={getFormErrors().contactNumber}
+                  disabled={isReadOnly}
+                  readOnly={isReadOnly}
+                />
+                {isContactNumberLoading && (
+                  <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                    <svg
+                      className="h-5 w-5 animate-spin text-[#0B8C00]"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                <FormInputField
+                  ref={uhidRef}
+                  label="UHID"
+                  value={formik.values.uhid}
+                  onChange={(e) => {
+                    if (!isReadOnly) {
+                      // Remove spaces, allow alphanumeric characters, limit to 15 characters
+                      const value = e.target.value.replace(/\s/g, "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 15).toUpperCase();
+                      formik.setFieldValue("uhid", value, false);
+                      // Clear error if field was previously invalid
+                      if (formik.touched.uhid && formik.errors.uhid) {
+                        setTimeout(() => {
+                          formik.validateField("uhid");
+                        }, 0);
+                      }
+                      // Check for existing patients when UHID is entered (debounced)
+                      if (value.length >= 10) {
+                        handleUHIDChange(value);
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (!isReadOnly) {
+                      formik.setFieldTouched("uhid", true, false);
+                      formik.validateField("uhid");
+                      const value = e.target.value.trim();
+                      if (value && value.length >= 10) {
+                        // Clear any pending timeout
+                        if (uhidSearchTimeoutRef.current) {
+                          clearTimeout(uhidSearchTimeoutRef.current);
+                          uhidSearchTimeoutRef.current = null;
+                        }
+                        checkExistingPatients(undefined, value, undefined);
+                      }
+                    }
+                  }}
+                  placeholder="Enter UHID"
+                  type="text"
+                  maxLength={15}
+                  error={getFormErrors().uhid}
+                  disabled={isReadOnly}
+                  readOnly={isReadOnly}
+                />
+                {isUhidLoading && (
+                  <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                    <svg
+                      className="h-5 w-5 animate-spin text-[#0B8C00]"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
 
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
 
-              <FormInputField
-                ref={aadharCardNumberRef}
-                label="Aadhar Card Number"
-                value={formik.values.aadharCardNumber}
-                onChange={(e) => {
-                  if (!isReadOnly) {
-                    // Only allow digits, limit to 12 characters
-                    const value = e.target.value.replace(/\D/g, "").slice(0, 12);
-                    formik.setFieldValue("aadharCardNumber", value, false);
-                    // Clear error if field was previously invalid
-                    if (formik.touched.aadharCardNumber && formik.errors.aadharCardNumber) {
-                      setTimeout(() => {
-                        formik.validateField("aadharCardNumber");
-                      }, 0);
-                    }
-                    // Check for existing patients when Aadhar Card Number is entered (debounced)
-                    if (value.length === 12) {
-                      handleAadharCardNumberChange(value);
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  if (!isReadOnly) {
-                    formik.setFieldTouched("aadharCardNumber", true, false);
-                    formik.validateField("aadharCardNumber");
-                    const value = e.target.value.trim();
-                    if (value && value.length === 12) {
-                      // Clear any pending timeout
-                      if (uhidSearchTimeoutRef.current) {
-                        clearTimeout(uhidSearchTimeoutRef.current);
-                        uhidSearchTimeoutRef.current = null;
+              <div className="relative">
+                <FormInputField
+                  ref={aadharCardNumberRef}
+                  label="Aadhar Card Number"
+                  value={formik.values.aadharCardNumber}
+                  onChange={(e) => {
+                    if (!isReadOnly) {
+                      // Only allow digits, limit to 12 characters
+                      const value = e.target.value.replace(/\D/g, "").slice(0, 12);
+                      formik.setFieldValue("aadharCardNumber", value, false);
+                      // Clear error if field was previously invalid
+                      if (formik.touched.aadharCardNumber && formik.errors.aadharCardNumber) {
+                        setTimeout(() => {
+                          formik.validateField("aadharCardNumber");
+                        }, 0);
                       }
-                      checkExistingPatients(undefined, undefined, value);
+                      // Check for existing patients when Aadhar Card Number is entered (debounced)
+                      if (value.length === 12) {
+                        handleAadharCardNumberChange(value);
+                      }
                     }
-                  }
-                }}
-                placeholder="Enter Aadhar Card Number"
-                type="tel"
-                maxLength={12}
-                error={getFormErrors().aadharCardNumber}
-                disabled={isReadOnly}
-                readOnly={isReadOnly}
-              />
+                  }}
+                  onBlur={(e) => {
+                    if (!isReadOnly) {
+                      formik.setFieldTouched("aadharCardNumber", true, false);
+                      formik.validateField("aadharCardNumber");
+                      const value = e.target.value.trim();
+                      if (value && value.length === 12) {
+                        // Clear any pending timeout
+                        if (uhidSearchTimeoutRef.current) {
+                          clearTimeout(uhidSearchTimeoutRef.current);
+                          uhidSearchTimeoutRef.current = null;
+                        }
+                        checkExistingPatients(undefined, undefined, value);
+                      }
+                    }
+                  }}
+                  placeholder="Enter Aadhar Card Number"
+                  type="tel"
+                  maxLength={12}
+                  error={getFormErrors().aadharCardNumber}
+                  disabled={isReadOnly}
+                  readOnly={isReadOnly}
+                />
+                {isAadharCardNumberLoading && (
+                  <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                    <svg
+                      className="h-5 w-5 animate-spin text-[#0B8C00]"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
 
-              <FormInputField
-                ref={preBookingRef}
-                label="Pre Booking"
-                value={formik.values.preBooking}
-                onChange={(e) => {
-                  if (!isReadOnly) {
-                    // Only allow digits, limit to 10 characters
-                    const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                    formik.setFieldValue("preBooking", value, false);
-                    // Clear error if field was previously invalid
-                    if (formik.touched.preBooking && formik.errors.preBooking) {
-                      setTimeout(() => {
-                        formik.validateField("preBooking");
-                      }, 0);
-                    }
-                    // Check for existing patients when Pre Booking is entered (debounced)
-                    if (value.length >= 1) {
-                      handlePreBookingChange(value);
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  if (!isReadOnly) {
-                    formik.setFieldTouched("preBooking", true, false);
-                    formik.validateField("preBooking");
-                    const value = e.target.value.trim();
-                    if (value && value.length >= 1) {
-                      // Clear any pending timeout
-                      if (uhidSearchTimeoutRef.current) {
-                        clearTimeout(uhidSearchTimeoutRef.current);
-                        uhidSearchTimeoutRef.current = null;
+              <div className="relative">
+                <FormInputField
+                  ref={preBookingRef}
+                  label="Pre Booking"
+                  value={formik.values.preBooking}
+                  onChange={(e) => {
+                    if (!isReadOnly) {
+                      // Only allow digits, limit to 10 characters
+                      const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      formik.setFieldValue("preBooking", value, false);
+                      // Clear error if field was previously invalid
+                      if (formik.touched.preBooking && formik.errors.preBooking) {
+                        setTimeout(() => {
+                          formik.validateField("preBooking");
+                        }, 0);
                       }
-                      checkPreBooking(value);
+                      // Check for existing patients when Pre Booking is entered (debounced)
+                      if (value.length >= 1) {
+                        handlePreBookingChange(value);
+                      }
                     }
-                  }
-                }}
-                placeholder="Enter Pre Booking ID"
-                type="tel"
-                maxLength={10}
-                error={getFormErrors().preBooking}
-                disabled={isReadOnly}
-                readOnly={isReadOnly}
-              />
+                  }}
+                  onBlur={(e) => {
+                    if (!isReadOnly) {
+                      formik.setFieldTouched("preBooking", true, false);
+                      formik.validateField("preBooking");
+                      const value = e.target.value.trim();
+                      if (value && value.length >= 1) {
+                        // Clear any pending timeout
+                        if (uhidSearchTimeoutRef.current) {
+                          clearTimeout(uhidSearchTimeoutRef.current);
+                          uhidSearchTimeoutRef.current = null;
+                        }
+                        checkPreBooking(value);
+                      }
+                    }
+                  }}
+                  placeholder="Enter Pre Booking ID"
+                  type="tel"
+                  maxLength={10}
+                  error={getFormErrors().preBooking}
+                  disabled={isReadOnly}
+                  readOnly={isReadOnly}
+                />
+                {isPreBookingLoading && (
+                  <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                    <svg
+                      className="h-5 w-5 animate-spin text-[#0B8C00]"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           {/* Action Buttons */}

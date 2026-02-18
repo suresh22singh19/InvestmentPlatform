@@ -27,6 +27,10 @@ interface PersonalFormProps {
     onReferralMobileChange?: (value: string) => void;
     readOnlyFields?: string[]; // Array of field names that should be read-only
     submitButtonText?: string; // Optional custom text for submit button
+    isNextDisabled?: boolean; // Disable the Save & Next button (e.g. gate entry required)
+    hideReferral?: boolean; // Hide the Referral section (e.g. for existing patients with UHID)
+    isContactLoading?: boolean; // Show loading spinner on contact number field
+    isReferralMobileLoading?: boolean; // Show loading spinner on referral mobile field
 }
 
 export default function PersonalForm({
@@ -44,6 +48,10 @@ export default function PersonalForm({
     onReferralMobileChange,
     readOnlyFields = [],
     submitButtonText = "Save & Next",
+    isNextDisabled = false,
+    hideReferral = false,
+    isContactLoading = false,
+    isReferralMobileLoading = false,
 }: PersonalFormProps) {
     const formRef = useRef<HTMLFormElement>(null);
 
@@ -188,7 +196,7 @@ export default function PersonalForm({
                 }
                 
                 
-                if (formik.values.referral?.toLowerCase() === 'yes') {
+                if (!hideReferral && formik.values.referral?.toLowerCase() === 'yes') {
                     if (!formik.values.source) {
                         step1Errors.source = 'Source is required';
                         formik.setFieldTouched('source', true, false);
@@ -350,15 +358,10 @@ export default function PersonalForm({
                     }
                 }}
                 onContactNumberChange={(value) => {
-                    // Don't check if dialog is being closed or if value is empty
-                    if (!value || value.length === 0) {
-                        return;
-                    }
-                    
-                    // Check when contact number reaches 10 digits
-                    if (value.length === 10 && onContactNumberChange) {
-                        onContactNumberChange("contactNumber", value);
-                    }
+                    if (!onContactNumberChange) return;
+
+                    // Always notify parent on every change so it can clear gate entry error
+                    onContactNumberChange("contactNumber", value || "");
                 }}
                 onBlur={(field) => {
                     formik.setFieldTouched(field, true, false);
@@ -397,6 +400,7 @@ export default function PersonalForm({
                 }}
                 errors={getFormErrors()}
                 readOnlyFields={readOnlyFields}
+                isContactLoading={isContactLoading}
             />
 
             {/* Address Details Component */}
@@ -533,8 +537,8 @@ export default function PersonalForm({
                 errors={getFormErrors()}
             />
 
-            {/* Referral Component */}
-            <Referral
+            {/* Referral Component — hidden for existing patients with UHID */}
+            {!hideReferral && <Referral
                 formData={{
                     referral: formik.values.referral || "",
                     source: formik.values.source || "",
@@ -647,7 +651,8 @@ export default function PersonalForm({
                 }}
                 errors={getFormErrors()}
                 readOnlyFields={readOnlyFields}
-            />
+                isReferralMobileLoading={isReferralMobileLoading}
+            />}
 
             {/* Appointment Information Component */}
             <AppointmentInformation
@@ -700,7 +705,12 @@ export default function PersonalForm({
             <div className="flex justify-end mt-4">
                 <button
                     type="submit"
-                    className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 bg-[#0B8C00] rounded-[32px] font-inter font-medium text-sm leading-[120%] text-center text-white hover:bg-[#0A7A00] transition-colors"
+                    disabled={isNextDisabled}
+                    className={`flex flex-row justify-center items-center px-6 py-3 gap-2 rounded-[32px] font-inter font-medium text-sm leading-[120%] text-center text-white transition-colors ${
+                        isNextDisabled
+                            ? "bg-gray-400 cursor-not-allowed opacity-50"
+                            : "bg-[#0B8C00] cursor-pointer hover:bg-[#0A7A00]"
+                    }`}
                 >
                     {submitButtonText}
                 </button>

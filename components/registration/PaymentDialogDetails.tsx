@@ -139,6 +139,11 @@ export default function PaymentDialogDetails({
                 .no-print {
                     display: none !important;
                 }
+                /* Remove top gap in print */
+                .invoice-content {
+                    gap: 0 !important;
+                    padding-top: 0 !important;
+                }
             }
         `;
         document.head.appendChild(style);
@@ -157,32 +162,13 @@ export default function PaymentDialogDetails({
         return `₹${amount.toLocaleString('en-IN')}`;
     };
 
-    // Custom header with logo on left and Invoice centered
+    // Custom header with only close button
     const customHeader = (
-        <div className="relative flex items-start px-6 pt-4 pb-4">
-            {/* Logo on the left */}
-            <div className="flex-shrink-0">
-                <Image 
-                    src="/images/logo.png" 
-                    alt="Jeena Sikho Lifecare Limited Logo" 
-                    width={120} 
-                    height={40}
-                    className="object-contain"
-                />
-            </div>
-            
-            {/* Invoice text centered at top */}
-            <div className="absolute left-1/2 transform -translate-x-1/2 top-4">
-                <h2 className="text-2xl font-semibold text-[#262D3B]">
-                    Invoice
-                </h2>
-            </div>
-            
-            {/* Close button on the right */}
+        <div className="no-print flex items-center justify-end px-6 pt-4 pb-0">
             <button
                 type="button"
                 onClick={onClose}
-                className="no-print flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-[#F2F8F2] ml-auto"
+                className="no-print flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-[#F2F8F2]"
                 aria-label="Close dialog"
             >
                 <Image src="/icons/CrossIcon.svg" alt="Close dialog" width={24} height={24} />
@@ -192,224 +178,193 @@ export default function PaymentDialogDetails({
 
     return (
         <Dialog open={open} onClose={onClose} title="" width="50%" customHeader={customHeader}>
-            <div className="w-full bg-white">
-                {/* Company Info - Centered */}
-                <div className="text-center mb-6">
-                    <h1 className="font-inter not-italic font-medium text-[22px] leading-[120%] text-center text-[#434956] mb-2">
-                        Jeena Sikho Lifecare Limited
-                    </h1>
-                    <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-center text-[#434956]">
-                        Pind Devinagar, Hadbast No. 18, Chandigarh Delhi Highway, Tehsil Derabassi,<br />
-                        Distt Mohali Punjab, DERABASSI, PUNJAB 140507, Devinagar BO, derabassi,<br />
-                        Mohali (Ajitgarh), PUNJAB(140507)
-                    </p>
-                </div>
-
-                <div className="mb-6">
-                    {/* Title */}
-                    <h2 className="font-inter not-italic font-semibold text-[24px] leading-[130%] text-center text-[#434956] mb-4">
-                        Payment Receipt
-                    </h2>
-
-                    {/* Two Row Layout */}
-                    <div className="grid grid-cols-2 gap-6 mb-4 text-sm">
-                        {/* Row 1: Bill Date and Patient UHID */}
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Bill Date</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">{billDate}</p>
-                        </div>
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Patient UHID</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                {uhid || 'N/A'}
-                            </p>
-                        </div>
-                        
-                        {/* Row 2: Payment Methode and Transaction ID (if exists) */}
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Payment Methode</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                {paymentMode
-                                    ? (paymentMode.toLowerCase() === 'razorpay' || paymentMode.toLowerCase() === 'credit'
-                                        ? 'Credit'
-                                        : 'Cash')
-                                    : 'N/A'}
-                            </p>
-                        </div>
-                        {showTransactionId ? (
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Transaction ID</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {transactionId}
-                                </p>
-                            </div>
-                        ) : (
-                            <div>
-                                {/* Empty div to maintain grid layout when Transaction ID doesn't exist */}
-                            </div>
-                        )}
+            <div className="w-full bg-white flex flex-col gap-[16px] invoice-content mt-[-20px]">
+              {/* Outer border wrapping entire invoice content */}
+              <div className="border border-[#C0C3C8] rounded-[1px] overflow-hidden flex flex-col">
+                {/* Header: Logo + Company Info + Payment Receipt */}
+                <div className="flex items-center py-[11px] px-[24px]">
+                    <div className="flex-shrink-0">
+                        <Image
+                            src="/images/logo.png"
+                            alt="Jeena Sikho Lifecare Limited Logo"
+                            width={120}
+                            height={80}
+                            className="object-contain"
+                        />
+                    </div>
+                    <div className="flex flex-col items-center flex-1">
+                        <h1 className="font-inter not-italic font-semibold text-[20px] leading-[130%] text-center text-[#434956] mb-1">
+                            Jeena Sikho Lifecare Limited
+                        </h1>
+                        <p className="font-inter not-italic font-normal text-[12px] leading-[140%] text-center text-[#434956]">
+                            Pind Devinagar, Hadbast No. 18, Chandigarh Delhi Highway,Tehsil Derabassi,<br />
+                            Distt Mohali Punjab, DERABASSI, PUNJAB 140507, Devinagar BO, derabassi,<br />
+                            Mohali (Ajitgarh), PUNJAB(140507)
+                        </p>
+                        <h2 className="font-inter not-italic font-semibold text-[20px] leading-[130%] text-center text-[#434956] mt-3">
+                            Payment Receipt
+                        </h2>
                     </div>
                 </div>
-                <div className="mb-6">
-                    {/* Customer Details */}
-                    <h3 className="font-inter not-italic font-semibold text-[24px] leading-[130%] text-start text-[#434956] mb-4">
+
+                {/* Bill Date & Patient UHID rows */}
+                <div className="flex flex-col w-full">
+                    {/* Bill Date Row */}
+                    <div className="flex items-center gap-[8px] w-full h-[55px] border-t border-[#C0C3C8] py-[11px] px-[24px]">
+                        <span className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956]">Bill Date:</span>
+                        <span className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">{billDate}</span>
+                    </div>
+                    {/* Patient UHID Row */}
+                    <div className="flex items-center gap-[8px] w-full h-[55px] border-t border-[#C0C3C8] py-[11px] px-[24px]">
+                        <span className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956]">Patient UHID:</span>
+                        <span className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
+                            {uhid || 'N/A'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Customer Details Section */}
+                <div className="flex flex-col w-full border-t border-[#C0C3C8]">
+                    <h3 className="font-inter not-italic font-extrabold text-[19px] leading-[130%] text-[#434956] py-[11px] px-[24px] pb-0">
                         Customer Details
                     </h3>
-
-                    <div className="grid grid-cols-2 gap-6 text-sm mb-6">
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Name</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">{patientName}</p>
-                        </div>
+                    <div className="flex flex-col gap-[8px] py-[11px] px-[24px]">
+                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">Name:</span>{' '}
+                            <span className="font-medium">{patientName}</span>
+                        </p>
                         {(!countryName || countryName === "India") ? (
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Address</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {address || "N/A"}
-                                </p>
-                            </div>
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Address:</span>{' '}
+                                <span className="font-medium">{address || "N/A"}</span>
+                            </p>
                         ) : (
                             <>
-                                <div>
-                                    <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Address Line 1</p>
-                                    <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                        {addressLine1?.trim() || "N/A"}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Address Line 2</p>
-                                    <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                        {addressLine2?.trim() || "N/A"}
-                                    </p>
-                                </div>
+                                <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                    <span className="font-extrabold">Address Line 1:</span>{' '}
+                                    <span className="font-medium">{addressLine1?.trim() || "N/A"}</span>
+                                </p>
+                                <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                    <span className="font-extrabold">Address Line 2:</span>{' '}
+                                    <span className="font-medium">{addressLine2?.trim() || "N/A"}</span>
+                                </p>
                             </>
                         )}
-
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">City</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                {cityName}
-                            </p>
-                        </div>
-
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">State</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                {stateName}
-                            </p>
-                        </div>
-
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Country</p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                {countryName || "N/A"}
-                            </p>
-                        </div>
-
-                        <div>
-                            <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">
-                                {(!countryName || countryName === "India") ? "Pin Code" : "ZIP/Postal Code"}
-                            </p>
-                            <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                {pinCode?.trim() || "N/A"}
-                            </p>
-                        </div>
+                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">City:</span>{' '}
+                            <span className="font-medium">{cityName}</span>
+                        </p>
+                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">State:</span>{' '}
+                            <span className="font-medium">{stateName}</span>
+                        </p>
                     </div>
-
                 </div>
 
-                {/* GST Billing Section - Only show when gstBilling is true */}
+                {/* GST Billing Section */}
                 {gstBilling && (
-                    <div className="mb-6">
-                        <h3 className="font-inter not-italic font-semibold text-[24px] leading-[130%] text-start text-[#434956] mb-4">
+                    <div className="flex flex-col w-full border-t border-[#C0C3C8]">
+                        <h3 className="font-inter not-italic font-semibold text-[24px] leading-[130%] text-[#434956] py-[11px] px-[24px]">
                             GST Billing
                         </h3>
-
-                        <div className="grid grid-cols-2 gap-6 text-sm mb-6">
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">GST Number</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {gstNumber || 'N/A'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Company Name</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {companyName || 'N/A'}
-                                </p>
-                            </div>
-
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Billing Address</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {billingAddress || 'N/A'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">State</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {billingStateName || 'N/A'}
-                                </p>
-                            </div>
-
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">City</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {billingCityName || 'N/A'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="font-inter not-italic font-medium text-[12px] leading-[120%] text-[#434956] mb-2">Pin Code</p>
-                                <p className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                                    {billingPincode || 'N/A'}
-                                </p>
-                            </div>
+                        <div className="flex flex-col gap-[8px] py-[11px] px-[24px]">
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">GST Number:</span>{' '}
+                                <span className="font-medium">{gstNumber || 'N/A'}</span>
+                            </p>
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Company Name:</span>{' '}
+                                <span className="font-medium">{companyName || 'N/A'}</span>
+                            </p>
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Billing Address:</span>{' '}
+                                <span className="font-medium">{billingAddress || 'N/A'}</span>
+                            </p>
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">State:</span>{' '}
+                                <span className="font-medium">{billingStateName || 'N/A'}</span>
+                            </p>
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">City:</span>{' '}
+                                <span className="font-medium">{billingCityName || 'N/A'}</span>
+                            </p>
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Pin Code:</span>{' '}
+                                <span className="font-medium">{billingPincode || 'N/A'}</span>
+                            </p>
                         </div>
                     </div>
                 )}
 
-                {/* Table */}
-                <div className="overflow-hidden mb-6">
-                    <div className="flex justify-between bg-[#F7F8FA] py-4 px-5 text-sm font-medium text-[#262D3B]">
-                        <span className="font-inter text-[12px] font-semibold text-[#434956]">Item Name</span>
-                        <span className="font-inter text-[12px] font-semibold text-[#434956] text-right">Amount</span>
-                    </div>
+                {/* Items Table */}
+                <table className="w-full border-collapse">
+                    {/* Header Row */}
+                    <thead>
+                        <tr>
+                            <th className="text-left font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[14px] px-[24px]">
+                                Item Name
+                            </th>
+                            <th className="text-left font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[14px] px-[24px] w-[160px]">
+                                Amount
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {/* Consultation Fee Row */}
+                        <tr>
+                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
+                                Consultation Fee
+                            </td>
+                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
+                                {formatCurrency(consultationCharges)}
+                            </td>
+                        </tr>
+                        {/* Subtotal Row */}
+                        <tr>
+                            <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px] text-right">
+                                Subtotal
+                            </td>
+                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
+                                {formatCurrency(subtotal)}
+                            </td>
+                        </tr>
+                        {/* Tax Row */}
+                        <tr>
+                            <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px] text-right">
+                                Tax
+                            </td>
+                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
+                                {formatCurrency(tax)}
+                            </td>
+                        </tr>
+                        {/* Total Amount Row */}
+                        <tr>
+                            <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px] text-right">
+                                Total Amount:
+                            </td>
+                            <td className="font-inter not-italic font-semibold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
+                                {formatCurrency(totalAmount)}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+              </div>
 
-                    <div className="flex justify-between border-b border-[#EBECED] py-4 px-5 text-sm">
-                        <span className="font-inter text-[14px] font-medium text-[#434956]">Consultation Fee</span>
-                        <span className="font-inter text-[14px] font-normal text-[#434956] text-right">{formatCurrency(consultationCharges)}</span>
-                    </div>
-
-                    <div className="flex justify-end border-b border-[#EBECED] py-4 px-5 text-sm">
-                        <span className="font-inter text-[14px] font-normal text-[#434956] mr-2 w-[120px]">Subtotal</span>
-                        <span className="font-inter text-[14px] font-normal text-[#434956] w-[120px] text-right">{formatCurrency(subtotal)}</span>
-                    </div>
-
-                    <div className="flex justify-end border-b border-[#EBECED] py-4 px-5 text-sm">
-                        <span className="font-inter text-[14px] font-normal text-[#434956] mr-2 w-[120px]">Tax</span>
-                        <span className="font-inter text-[14px] font-normal text-[#434956] w-[120px] text-right">{formatCurrency(tax)}</span>
-                    </div>
-
-                    <div className="flex justify-end border-b border-[#EBECED] py-4 px-5 text-sm">
-                        <span className="font-inter text-[14px] font-semibold text-[#434956] mr-2 w-[120px]">Total Amount</span>
-                        <span className="font-inter text-[14px] font-semibold text-[#434956] w-[120px] text-right">{formatCurrency(totalAmount)}</span>
-                    </div>
-                </div>
-
-                <div className="no-print flex justify-end items-center gap-1">
-                    <button 
+                {/* Action Buttons */}
+                <div className="no-print flex justify-end items-center gap-2">
+                    <button
                         onClick={onPrint}
-                        className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#0B8C00] rounded-[32px] font-inter  text-[14px] leading-[120%] text-center text-[#0B8C00] hover:bg-[#0B8C00]/10 transition-colors"
+                        className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#0B8C00] hover:bg-[#0B8C00]/10 transition-colors"
                     >
                         <Image src="/icons/Printer.svg" alt="Print invoice" width={20} height={20} />
                         Print Invoice
                     </button>
-                    <button 
+                    <button
                         onClick={onSaveAndNext}
                         disabled={isSubmitting}
                         className={`flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border bg-[#0B8C00] border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#ffffff] transition-colors ${
-                            isSubmitting 
-                                ? "opacity-50 cursor-not-allowed" 
+                            isSubmitting
+                                ? "opacity-50 cursor-not-allowed"
                                 : "cursor-pointer hover:bg-[#0A7A00]"
                         }`}
                     >
@@ -422,9 +377,9 @@ export default function PaymentDialogDetails({
                             </>
                         )}
                     </button>
-                    {/* <button 
+                    {/* <button
                         onClick={onDownload}
-                        className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#9A7909] rounded-[32px] font-inter  text-[14px] leading-[120%] text-center text-[#9A7909] hover:bg-[#9A7909]/10 transition-colors"
+                        className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#9A7909] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#9A7909] hover:bg-[#9A7909]/10 transition-colors"
                     >
                         <Image src="/icons/Download.svg" alt="Download invoice" width={20} height={20} /> Download Now
                     </button> */}

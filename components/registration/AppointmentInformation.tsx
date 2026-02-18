@@ -79,6 +79,13 @@ export default function AppointmentInformation({
     fieldRefs,
     errors,
 }: AppointmentInformationProps) {
+    // Auto-set today's date whenever appointmentDate is empty
+    useEffect(() => {
+        if (!formData.appointmentDate) {
+            onChange("appointmentDate", getTodayDate());
+        }
+    }, [formData.appointmentDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Filter time slots based on current time if appointment date is today
     const availableTimeSlots = useMemo(() => {
         if (!formData.appointmentDate) {
@@ -169,7 +176,7 @@ export default function AppointmentInformation({
                         required
                         width="100%"
                         minDate={getTodayDate()}
-                        // maxDate={getTodayDate()}
+                        maxDate={getTodayDate()}
                     />
                     {errors?.appointmentDate && (
                         <p className="mt-1 text-xs text-[#F6776E]">{errors.appointmentDate}</p>

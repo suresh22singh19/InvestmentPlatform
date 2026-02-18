@@ -20,9 +20,10 @@ interface TokenPanelProps {
     onTokenClick?: (entry: PatientEntry) => void;
     selectedTokenId?: string | number | null; // ID of currently selected token
     onRefetchReady?: (refetch: () => void) => void; // Callback to expose refetch function to parent
+    tokenSearchValue?: string; // Pre-fill search from parent (e.g. contact number auto-fill)
 }
 
-export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchReady }: TokenPanelProps = {}) {
+export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchReady, tokenSearchValue }: TokenPanelProps = {}) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [itemsToShow, setItemsToShow] = useState(4);
     const [searchTerm, setSearchTerm] = useState("");
@@ -37,6 +38,15 @@ export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchRea
             prevSelectedTokenIdRef.current = selectedTokenId;
         }
     }, [selectedTokenId]);
+
+    // When parent pushes a tokenSearchValue (e.g. contact number), pre-fill the search input
+    useEffect(() => {
+        if (tokenSearchValue && tokenSearchValue.trim() !== "") {
+            setSearchTerm(tokenSearchValue.trim());
+            setIsExpanded(true);
+            setItemsToShow(4);
+        }
+    }, [tokenSearchValue]);
 
     const handleToggleExpand = () => {
         setIsExpanded(!isExpanded);

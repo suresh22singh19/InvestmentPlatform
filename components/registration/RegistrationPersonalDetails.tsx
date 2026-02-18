@@ -54,6 +54,7 @@ interface RegistrationPersonalDetailsProps {
     readOnlyFields?: string[]; // Array of field names that should be read-only
     registrationId?: number | string; // Registration ID for updating contact number
     onContactNumberUpdate?: (newContactNumber: string) => void; // Callback when contact number is updated
+    isContactLoading?: boolean; // Show loading spinner on contact number field
 }
 
 export default function RegistrationPersonalDetails({
@@ -93,6 +94,7 @@ export default function RegistrationPersonalDetails({
     readOnlyFields = [],
     registrationId,
     onContactNumberUpdate,
+    isContactLoading = false,
 }: RegistrationPersonalDetailsProps) {
     const isFieldReadOnly = (fieldName: string) => readOnlyFields.includes(fieldName);
     const [isWhatsappSameAsContact, setIsWhatsappSameAsContact] = useState(false);
@@ -104,7 +106,7 @@ export default function RegistrationPersonalDetails({
                 <Image src="/icons/patientinfo.svg" alt="Patient info" width={20} height={20} /> Personal Details
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-start">
                 <div data-field="contactNumber" className="scroll-mt-4 relative">
                     <FormInputField
                         ref={fieldRefs?.contactNumber}
@@ -131,27 +133,41 @@ export default function RegistrationPersonalDetails({
                         readOnly={isFieldReadOnly("contactNumber")}
                         className="!pr-12"
                     />
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setIsUpdateContactDialogOpen(true);
-                        }}
-                        className="cursor-pointer absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center rounded transition-colors pointer-events-auto"
-                        aria-label="Update Contact Number"
-                    >
-                        <Image
-                            src="/icons/EditIconBlack.svg"
-                            alt="Edit"
-                            width={20}
-                            height={20}
-                            className="shrink-0"
-                        />
-                    </button>
+                    {isContactLoading ? (
+                        <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                            <svg
+                                className="h-5 w-5 animate-spin text-[#0B8C00]"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setIsUpdateContactDialogOpen(true);
+                            }}
+                            className="cursor-pointer absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center rounded transition-colors pointer-events-auto"
+                            aria-label="Update Contact Number"
+                        >
+                            <Image
+                                src="/icons/EditIconBlack.svg"
+                                alt="Edit"
+                                width={20}
+                                height={20}
+                                className="shrink-0"
+                            />
+                        </button>
+                    )}
                 </div>
 
-                <div data-field="whatsappNo" className="scroll-mt-4 flex flex-col justify-end">
+                <div data-field="whatsappNo" className="scroll-mt-4">
                     <FormInputField
                         ref={fieldRefs?.whatsappNo}
                         label="Whatsapp No"

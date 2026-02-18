@@ -61,6 +61,9 @@ export default function GateNewPatientPage() {
   const [photoCaptureErrors, setPhotoCaptureErrors] = useState<{ vehiclePhoto?: string; aadharPhoto?: string }>({});
   const photoCaptureRef = useRef<PhotoCaptureRef>(null);
 
+  // Loading state for contact number API check
+  const [isContactLoading, setIsContactLoading] = useState(false);
+
   // Form ref for arrow key navigation
   const formRef = useRef<HTMLFormElement>(null);
   
@@ -1422,6 +1425,7 @@ export default function GateNewPatientPage() {
     // Set the last checked contact number immediately to prevent duplicate calls
     lastCheckedContactNumberRef.current = contactNumber;
 
+    setIsContactLoading(true);
     try {
       const result = await checkExistingPatientsQuery({
         branchId: branchId,
@@ -1546,6 +1550,8 @@ export default function GateNewPatientPage() {
       // Clear the ref on error so we can retry if needed
       lastCheckedContactNumberRef.current = "";
       // If API fails, don't show dialog
+    } finally {
+      setIsContactLoading(false);
     }
   };
 
@@ -2351,6 +2357,7 @@ export default function GateNewPatientPage() {
               panel: panelRef,
             }}
             errors={getFormErrors()}
+            isContactLoading={isContactLoading}
           />
 
           {/* Address Details Section */}

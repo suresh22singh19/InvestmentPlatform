@@ -275,17 +275,13 @@ export default function PaymentForm({
         setIsInvoiceDialogOpen(true);
     };
 
-    // Format date and time
+    // Format date as DD-MM-YYYY
     const formatDateTime = () => {
         const now = new Date();
         const day = String(now.getDate()).padStart(2, '0');
-        const month = now.toLocaleString('en-US', { month: 'short' });
+        const month = String(now.getMonth() + 1).padStart(2, '0');
         const year = now.getFullYear();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
-        const displayHours = now.getHours() % 12 || 12;
-        return `${day}-${month}-${year} ${displayHours}:${minutes} ${ampm}`;
+        return `${day}-${month}-${year}`;
     };
 
     // Get patient name with title

@@ -14,6 +14,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useAppSelector } from "@/store/hooks";
 import { selectLoginType } from "@/store/slices/authSlice";
+import { generatePatientReportPDF } from "@/lib/utils/generatePatientReportPDF";
 
 type PatientRegistration = {
     id: number;
@@ -545,6 +546,45 @@ export default function RegistrationListPage() {
         router.push(`/registration/registrationList/${patient.registrationId}/edit`);
     };
 
+    const handleDownloadPDF = (patient: PatientRegistration) => {
+        // Find the raw appointment data from the API response
+        const appointment = appointmentsData?.data?.find(
+            (apt: AppointmentRegistration) => Number(apt.id) === patient.id
+        );
+
+        const now = new Date();
+        const day = String(now.getDate()).padStart(2, "0");
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const year = now.getFullYear();
+        const hours = String(now.getHours()).padStart(2, "0");
+        const minutes = String(now.getMinutes()).padStart(2, "0");
+        const seconds = String(now.getSeconds()).padStart(2, "0");
+        const dateStr = `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
+
+        generatePatientReportPDF({
+            patientName: patient.patientName || "",
+            guardianLabel: "W/o,D/o,S/o",
+            guardianName: "",
+            chiefComplaint: "",
+            history: "",
+            menstrualHistory: "",
+            diagnosis: patient.diagnosis || "",
+            doctorName: patient.doctorName || "",
+            doctorQualification: "BAMS",
+            doctorRegNo: "",
+            uhid: patient.uhid || "",
+            opdNo: String(appointment?.id || patient.id || ""),
+            age: appointment?.registration?.age || "",
+            gender: patient.gender || appointment?.registration?.gender || "",
+            date: dateStr,
+            bloodPressure: appointment?.bloodPressure ? String(appointment.bloodPressure) : "",
+            sugarLevel: appointment?.sugarLevel ? String(appointment.sugarLevel) : "",
+            weight: "",
+            height: "",
+            rbs: "",
+        });
+    };
+
     return (
         <AppShell>
             <div className="space-y-8">
@@ -801,6 +841,19 @@ export default function RegistrationListPage() {
                                                             </button>
                                                         </>
                                                     )}
+                                                    <button
+                                                        onClick={() => handleDownloadPDF(patient)}
+                                                        className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-[8px] hover:bg-[#F2F8F2] transition-colors"
+                                                        aria-label="Download PDF"
+                                                        title="Download PDF"
+                                                    >
+                                                        <Image
+                                                            src="/icons/DownloadExport.svg"
+                                                            alt="Download PDF"
+                                                            width={20}
+                                                            height={20}
+                                                        />
+                                                    </button>
                                                 </div>
                                             </TableData>
                                         </TableRow>
