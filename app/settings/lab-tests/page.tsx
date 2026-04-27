@@ -19,12 +19,15 @@ import {
   TableSearchInput,
   Pagination,
   Tabs,
+  Tooltip,
 } from "@/components/ui";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useGetBranchesQuery, useGetLabTestsQuery, useGetLabTestsByBranchQuery, useGetLabTestQuery, useGetLabTestGroupsQuery, useGetLabTestCategoriesQuery, useUpdateLabTestMutation, useUpdateLabTestByBranchMutation } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
 type LabTestStatus = "Active" | "Inactive" | "Pending";
 
@@ -34,7 +37,10 @@ type LabTest = {
   description: string;
   price: string;
   status: LabTestStatus;
-  createdAt: string;
+  updatedAt: string;
+  privateUpdatedAt?: string;
+  panelUpdatedAt?: string;
+  tpaUpdatedAt?: string;
   groupId?: number;
   groupName?: string;
   categoryName?: string;
@@ -65,17 +71,14 @@ function capitalizeStatus(s: string): LabTestStatus {
   return (s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()) as LabTestStatus;
 }
 
-function formatCreatedAt(iso: string): string {
+function formatDateOnly(iso: string): string {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleString("en-GB", {
+    return d.toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
     });
   } catch {
     return iso;
@@ -83,6 +86,11 @@ function formatCreatedAt(iso: string): string {
 }
 
 export default function LabTestsPage() {
+  const labTestsPermission = usePermission("settings", { subModule: "lab-tests" });
+  const canView = labTestsPermission.canView;
+  const canAdd = labTestsPermission.canAdd;
+  const canEdit = labTestsPermission.canEdit;
+
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 400);
   const [currentPage, setCurrentPage] = useState(1);
@@ -96,7 +104,15 @@ export default function LabTestsPage() {
     status: "Active" as LabTestStatus,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [selectedBranch, setSelectedBranch] = useState<string>("");
+  const {
+    selectedBranchFilter: selectedBranch,
+    setSelectedBranchFilter: setSelectedBranch,
+    branchFilterOptions: hookBranchFilterOptions,
+    isLoadingBranches: isLoadingBranchFilter,
+    isBranchFilterDisabled,
+    filterBranchId: hookFilterBranchId,
+    isSuperAdmin: isBranchFilterSuperAdmin,
+  } = useBranchFilter();
   const [selectedTestName, setSelectedTestName] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
@@ -117,12 +133,40 @@ export default function LabTestsPage() {
     setActiveTab(value);
   };
 
-  const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery();
-  const { data: groupsData, isLoading: isLoadingGroups } = useGetLabTestGroupsQuery();
-  const { data: categoriesData, isLoading: isLoadingCategories } = useGetLabTestCategoriesQuery();
+  const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
+    skip: !canView && !canAdd && !canEdit,
+  });
 
-  const selectedBranchId = selectedBranch ? parseInt(selectedBranch, 10) : null;
-  const isBranchIdValid = selectedBranchId != null && !isNaN(selectedBranchId);
+  /** Super admin: hide "All Branches"; list only real branches (first is default). */
+  const branchFilterDisplayOptions = useMemo((): SelectOption[] => {
+    if (!isBranchFilterSuperAdmin) return hookBranchFilterOptions;
+    return hookBranchFilterOptions.filter((o) => o.value !== "");
+  }, [hookBranchFilterOptions, isBranchFilterSuperAdmin]);
+
+  useEffect(() => {
+    if (!isBranchFilterSuperAdmin) return;
+    if (isLoadingBranchFilter || isLoadingBranches) return;
+    const rows = branchesData?.data;
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (selectedBranch !== "") return;
+    setSelectedBranch(String(rows[0].id));
+  }, [
+    isBranchFilterSuperAdmin,
+    isLoadingBranchFilter,
+    isLoadingBranches,
+    branchesData,
+    selectedBranch,
+    setSelectedBranch,
+  ]);
+  const { data: groupsData, isLoading: isLoadingGroups } = useGetLabTestGroupsQuery(undefined, {
+    skip: !canView && !canAdd && !canEdit,
+  });
+  const { data: categoriesData, isLoading: isLoadingCategories } = useGetLabTestCategoriesQuery(undefined, {
+    skip: !canView && !canAdd && !canEdit,
+  });
+
+  const selectedBranchId = hookFilterBranchId ?? null;
+  const isBranchIdValid = selectedBranchId != null;
 
   const {
     data: labTestsDataAll,
@@ -133,12 +177,11 @@ export default function LabTestsPage() {
       page: currentPage,
       limit: itemsPerPage,
       search: debouncedSearchTerm || undefined,
-      sort: undefined,
-      order: undefined,
+      sort: "createdAt",
       group: selectedGroupId || undefined,
       category: selectedCategory || undefined,
     },
-    { skip: isBranchIdValid }
+    { skip: isBranchIdValid || !canView }
   );
 
   const {
@@ -151,13 +194,12 @@ export default function LabTestsPage() {
       page: currentPage,
       limit: itemsPerPage,
       search: debouncedSearchTerm || undefined,
-      sort: undefined,
-      order: undefined,
+      sort: "createdAt",
       group: selectedGroupId || undefined,
       category: selectedCategory || undefined,
     },
     {
-      skip: !isBranchIdValid,
+      skip: !isBranchIdValid || !canView,
       refetchOnMountOrArgChange: true,
     }
   );
@@ -196,7 +238,28 @@ export default function LabTestsPage() {
       description: item.testDescription ?? "",
       price: formatPrice(toNum(item.testFee)),
       status: capitalizeStatus(item.status),
-      createdAt: formatCreatedAt(item.created_at),
+      updatedAt: formatDateOnly(
+        item.updatedAt ?? item.updated_at ?? item.createdAt ?? item.created_at ?? ""
+      ),
+      privateUpdatedAt: formatDateOnly(
+        item.testFeeLastUpdatedAt ?? ""
+      ),
+      panelUpdatedAt: formatDateOnly(
+        item.panelPriceLastUpdatedAt ??
+          item.updatedAt ??
+          item.updated_at ??
+          item.createdAt ??
+          item.created_at ??
+          ""
+      ),
+      tpaUpdatedAt: formatDateOnly(
+        item.tpaPriceLastUpdatedAt ??
+          item.updatedAt ??
+          item.updated_at ??
+          item.createdAt ??
+          item.created_at ??
+          ""
+      ),
       groupName: item.groupName,
       categoryName: item.categoryName,
       privatePrice: formatPrice(toNum(item.testFee)),
@@ -246,6 +309,7 @@ export default function LabTestsPage() {
   );
 
   const handleAddNew = () => {
+    if (!canAdd) return;
     setFormValues({
       testName: "",
       description: "",
@@ -258,6 +322,7 @@ export default function LabTestsPage() {
   };
 
   const handleEdit = (test: LabTest) => {
+    if (!canEdit) return;
     setSelectedLabTest(test);
     const priceForTab =
       activeTab === "panel"
@@ -283,6 +348,7 @@ export default function LabTestsPage() {
   };
 
   const handleView = (test: LabTest) => {
+    if (!canView) return;
     setSelectedLabTest(test);
     setDialogMode("view");
   };
@@ -304,6 +370,8 @@ export default function LabTestsPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (dialogMode === "add" && !canAdd) return;
+    if (dialogMode === "edit" && !canEdit) return;
 
     if (dialogMode === "edit" && selectedLabTest) {
       if (activeTab === "panel" || activeTab === "tpa") {
@@ -420,6 +488,12 @@ export default function LabTestsPage() {
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
+          {!canView ? (
+            <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+              You don&apos;t have permission to view lab tests.
+            </div>
+          ) : (
+          <>
           <div className="mb-4 w-full max-w-[600px]">
             <Tabs options={panelTabOptions} value={activeTab} onChange={handleTabChange} />
           </div>
@@ -430,11 +504,12 @@ export default function LabTestsPage() {
                 <div className="flex-[1_1_300px] min-w-[200px] max-w-[260px]">
                   <FormSelectField
                     label=""
-                    options={branchOptions}
+                    options={branchFilterDisplayOptions}
                     mode="single"
                     value={selectedBranch}
                     onChange={(val) => setSelectedBranch(typeof val === "string" ? val : val?.[0] ?? "")}
-                    placeholder={isLoadingBranches ? "Loading..." : "Select Branch"}
+                    placeholder={isLoadingBranchFilter ? "Loading..." : "Select Branch"}
+                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
                     width="100%"
                     height={44}
                   />
@@ -471,6 +546,16 @@ export default function LabTestsPage() {
                     placeholder="Search Here..."
                   />
                 </div>
+                {/* {canAdd ? (
+                  <button
+                    type="button"
+                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                    onClick={handleAddNew}
+                  >
+                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                    <span>Add Lab Test</span>
+                  </button>
+                ) : null} */}
               </div>
             </div>
 
@@ -499,14 +584,16 @@ export default function LabTestsPage() {
                     </>
                   )}
                   <TableHead>Updated At</TableHead>
-                  <TableHead position="last">Action</TableHead>
+                  {(activeTab === "all" ? canView : canEdit) ? (
+                    <TableHead position="last">Action</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoadingLabTests ? (
                   <TableRow>
                     <TableData
-                      colSpan={activeTab === "all" ? 12 : 8}
+                      colSpan={activeTab === "all" ? ((activeTab === "all" ? canView : canEdit) ? 12 : 11) : ((activeTab === "all" ? canView : canEdit) ? 8 : 7)}
                       className="py-12 text-center text-sm text-[#9CA3AF]"
                     >
                       Loading...
@@ -515,7 +602,7 @@ export default function LabTestsPage() {
                 ) : paginatedLabTests.length === 0 ? (
                   <TableRow>
                     <TableData
-                      colSpan={activeTab === "all" ? 12 : 8}
+                      colSpan={activeTab === "all" ? ((activeTab === "all" ? canView : canEdit) ? 12 : 11) : ((activeTab === "all" ? canView : canEdit) ? 8 : 7)}
                       className="py-12 text-center text-sm text-[#9CA3AF]"
                     >
                       No lab tests found
@@ -583,35 +670,49 @@ export default function LabTestsPage() {
                           </TableData>
                         </>
                       )}
-                      <TableData className="whitespace-nowrap">{test.createdAt}</TableData>
-                      <TableData position="last">
-                        <div className="flex items-center gap-3">
-                          {activeTab === "all" ? (
-                            <button
-                              type="button"
-                              onClick={() => handleView(test)}
-                              className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                              aria-label="View lab test"
-                            >
-                              <Image src="/icons/ViewEyeIcon.svg" alt="View" width={20} height={20} />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleEdit(test)}
-                              className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                              aria-label="Edit lab test"
-                            >
-                              <Image
-                                src="/icons/EditIconBlack.svg"
-                                alt="Edit"
-                                width={20}
-                                height={20}
-                              />
-                            </button>
-                          )}
-                        </div>
+                      <TableData className="whitespace-nowrap">
+                        {activeTab === "private"
+                          ? (test.privateUpdatedAt ?? test.updatedAt)
+                          : activeTab === "panel"
+                            ? (test.panelUpdatedAt ?? test.updatedAt)
+                            : activeTab === "tpa"
+                              ? (test.tpaUpdatedAt ?? test.updatedAt)
+                              : test.updatedAt}
                       </TableData>
+                      {(activeTab === "all" ? canView : canEdit) ? (
+                        <TableData position="last">
+                          <div className="flex items-center gap-3">
+                            {activeTab === "all" ? (
+                              <Tooltip content="View" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleView(test)}
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                  aria-label="View lab test"
+                                >
+                                  <Image src="/icons/ViewEyeIcon.svg" alt="View" width={20} height={20} />
+                                </button>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip content="Edit" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(test)}
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                  aria-label="Edit lab test"
+                                >
+                                  <Image
+                                    src="/icons/EditIconBlack.svg"
+                                    alt="Edit"
+                                    width={20}
+                                    height={20}
+                                  />
+                                </button>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </TableData>
+                      ) : null}
                     </TableRow>
                   ))
                 )}
@@ -629,12 +730,18 @@ export default function LabTestsPage() {
               />
             )}
           </div>
+          </>
+          )}
         </ListBorder>
       </div>
 
       {/* Add / Edit (Private) / Edit (Panel|TPA) / View (All) Dialog */}
       <Dialog
-        open={dialogMode !== null}
+        open={
+          (dialogMode === "add" && canAdd) ||
+          (dialogMode === "edit" && canEdit) ||
+          (dialogMode === "view" && canView)
+        }
         onClose={() => {
           setDialogMode(null);
           setFormErrors({});

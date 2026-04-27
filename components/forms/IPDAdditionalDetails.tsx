@@ -28,6 +28,13 @@ interface IPDAdditionalDetailsProps {
   };
   errors?: Record<string, string>;
   searchTypeOptions?: SelectOption[];
+  onVerify?: (visitorIndex: number) => void;
+  isVerifyLoading?: boolean;
+  visitorIndex?: number;
+  /** When true, field is read-only and shows cursor-not-allowed (used when value came from API) */
+  buildingReadOnly?: boolean;
+  roomNumberReadOnly?: boolean;
+  bedNumberReadOnly?: boolean;
 }
 
 export default function IPDAdditionalDetails({
@@ -41,17 +48,28 @@ export default function IPDAdditionalDetails({
     { value: "UHID", label: "UHID" },
     { value: "Phone", label: "Phone" },
   ],
+  onVerify,
+  isVerifyLoading = false,
+  visitorIndex = 0,
+  buildingReadOnly = false,
+  roomNumberReadOnly = false,
+  bedNumberReadOnly = false,
 }: IPDAdditionalDetailsProps) {
+  const uhidLen = (data.uhid || "").trim().length;
+  const canVerify =
+    (data.searchType === "Phone" && (data.phoneNumber || "").trim().length === 10) ||
+    (data.searchType === "UHID" && uhidLen >= 9 && uhidLen <= 20);
+
   return (
     <div className="space-y-6 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]">
       <h3 className="text-base font-medium leading-[120%] text-[#262D3B]">{title}</h3>
 
       <div className="flex flex-col gap-4">
-        <div className="flex w-full gap-4">
+        <div className="flex w-full gap-4 items-start">
           <div className={"w-1/3"}>
             <div
               data-field="searchType"
-              className="scroll-mt-4 hover:cursor-not-allowed transition-opacity"
+              className="scroll-mt-4 transition-opacity"
             >
               <PatientTypeButtonGroup
                 options={["UHID", "Phone"]}
@@ -71,29 +89,30 @@ export default function IPDAdditionalDetails({
                   // Trigger validation when user leaves the field without selecting
                   onBlur?.("searchType");
                 }}
-                label="Search Type"
+                label="Search Type *"
                 required={false}
                 error={errors?.searchType}
                 fieldRef={fieldRefs?.searchType as React.RefObject<HTMLDivElement>}
                 dataField="searchType"
-                disabled={true}
               />
             </div>
           </div>
 
-          {/* Dynamic field for Phone Number or UHID based on Search Type */}
+          {/* Dynamic field for Phone Number or UHID based on Search Type + Verify button */}
           {data.searchType === "Phone" && (
-            <div className="w-2/3 ">
+            <div className="w-2/3 flex flex-wrap items-start gap-3">
               <div
                 ref={fieldRefs?.phoneNumber as React.RefObject<HTMLInputElement>}
                 data-field="phoneNumber"
-                className="scroll-mt-4"
+                className="scroll-mt-4 flex-1 min-w-[180px]"
               >
                 <FormInputField
                   label="Patient Phone *"
                   value={data.phoneNumber || ""}
                   onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, "").slice(0, 10); // Only allow digits, max 10
+                    let value = e.target.value.replace(/\D/g, "");
+                    value = value.replace(/^0+/, "");
+                    value = value.slice(0, 10);
                     onChange("phoneNumber", value);
                   }}
                   onBlur={() => {
@@ -105,22 +124,36 @@ export default function IPDAdditionalDetails({
                   error={errors?.phoneNumber}
                 />
               </div>
+              {onVerify && (
+                <button
+                  type="button"
+                  onClick={() => onVerify(visitorIndex)}
+                  disabled={isVerifyLoading || !canVerify}
+                  className="mt-0 h-11 shrink-0 self-start rounded-[32px] border border-[#0B8C00] bg-[#0B8C00] px-5 text-sm font-medium text-white transition-colors hover:bg-[#096b00] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isVerifyLoading ? "Verifying..." : "Verify"}
+                </button>
+              )}
             </div>
           )}
 
           {data.searchType === "UHID" && (
-            <div className="w-2/3">
+            <div className="w-2/3 flex flex-wrap items-start gap-3">
               <div
                 ref={fieldRefs?.uhid as React.RefObject<HTMLInputElement>}
                 data-field="uhid"
-                className="scroll-mt-4"
+                className="scroll-mt-4 flex-1 min-w-[180px]"
               >
                 <FormInputField
                   label="Patient UHID *"
                   value={data.uhid || ""}
                   onChange={(e) => {
-                    // Remove spaces, allow alphanumeric characters, limit to 15 characters
-                    const value = e.target.value.replace(/\s/g, "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 15).toUpperCase();
+                    let value = e.target.value
+                      .replace(/\s/g, "")
+                      .replace(/[^a-zA-Z0-9]/g, "")
+                      .toUpperCase();
+                    value = value.replace(/^0+/, "");
+                    value = value.slice(0, 20);
                     onChange("uhid", value);
                   }}
                   onBlur={() => {
@@ -128,16 +161,26 @@ export default function IPDAdditionalDetails({
                   }}
                   placeholder="Enter UHID"
                   type="text"
-                  maxLength={15}
+                  maxLength={20}
                   error={errors?.uhid}
                 />
               </div>
+              {onVerify && (
+                <button
+                  type="button"
+                  onClick={() => onVerify(visitorIndex)}
+                  disabled={isVerifyLoading || !canVerify}
+                  className="mt-0 h-11 shrink-0 self-start rounded-[32px] border border-[#0B8C00] bg-[#0B8C00] px-5 text-sm font-medium text-white transition-colors hover:bg-[#096b00] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isVerifyLoading ? "Verifying..." : "Verify"}
+                </button>
+              )}
             </div>
           )}
         </div>
 
         <div className="flex w-full gap-4">
-          <div className="flex-1">
+          <div className={`flex-1 ${buildingReadOnly ? "cursor-not-allowed" : ""}`}>
             <FormInputField
               ref={fieldRefs?.building}
               label="Building"
@@ -148,11 +191,11 @@ export default function IPDAdditionalDetails({
               }}
               placeholder="Building"
               error={errors?.building}
-              disabled
+              readOnly={buildingReadOnly}
             />
           </div>
 
-          <div className="flex-1">
+          <div className={`flex-1 ${roomNumberReadOnly ? "cursor-not-allowed" : ""}`}>
             <FormInputField
               ref={fieldRefs?.roomNumber}
               label="Room Number"
@@ -167,10 +210,10 @@ export default function IPDAdditionalDetails({
               placeholder="Room Number"
               type="tel"
               error={errors?.roomNumber}
-              disabled
+              readOnly={roomNumberReadOnly}
             />
           </div>
-          <div className="flex-1">
+          <div className={`flex-1 ${bedNumberReadOnly ? "cursor-not-allowed" : ""}`}>
             <FormInputField
               ref={fieldRefs?.bedNumber}
               label="Bed Number"
@@ -185,7 +228,7 @@ export default function IPDAdditionalDetails({
               placeholder="Bed Number"
               type="tel"
               error={errors?.bedNumber}
-              disabled
+              readOnly={bedNumberReadOnly}
             />
           </div>
         </div>

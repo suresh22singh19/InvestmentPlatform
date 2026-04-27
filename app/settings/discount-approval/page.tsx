@@ -1,17 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Button, Dialog, FormInputField, FormSelectField, Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, MessageDialog } from "@/components/ui";
+import { Button, Dialog, FormSelectField, Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, MessageDialog, Tooltip } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import { useGetBranchesQuery, useGetDiscountConfigsQuery, useCreateDiscountConfigMutation, useUpdateDiscountConfigMutation } from "@/store/api/settingsApi";
-import { useLazyGetUsersQuery } from "@/store/api/publicApi";
+import { useGetUsersListQuery } from "@/store/api/publicApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
-import { selectLoginData, selectUserId } from "@/store/slices/authSlice";
+import { selectUserId, selectUserBranchId } from "@/store/slices/authSlice";
 import { useAppSelector } from "@/store/hooks";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
 type DiscountApproval = {
     id: number;
@@ -25,59 +27,25 @@ type DiscountApproval = {
 
 
 
-// Custom Select Component with ArrowDown icon
-const CustomSelect = ({
-    options,
-    value,
-    onChange,
-    placeholder = "Select",
-    width = 300,
-}: {
-    options: SelectOption[];
-    value: string[];
-    onChange: (value: string[]) => void;
-    placeholder?: string;
-    width?: number;
-}) => {
-    return (
-        <>
-            <style jsx global>{`
-                .custom-select-with-arrow button > span:last-child {
-                    display: none !important;
-                }
-            `}</style>
-            <div className="relative custom-select-with-arrow" style={{ width: `${width}px` }}>
-                <FormSelectField
-                    label=""
-                    options={options}
-                    mode="multiple"
-                    value={value}
-                    onChange={(val) => {
-                        if (Array.isArray(val)) {
-                            onChange(val);
-                        }
-                    }}
-                    placeholder={placeholder}
-                    width={width}
-                    height={44}
-                />
-                <div 
-                    className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center" 
-                    style={{ height: '44px' }}
-                >
-                    <Image src="/icons/ArrowDown.svg" alt="Arrow down" width={20} height={20} />
-                </div>
-            </div>
-        </>
-    );
-};
 
 export default function DiscountApprovalPage() {
+    const discountApprovalPermission = usePermission("settings", { subModule: "discount-approval" });
+    const canView = discountApprovalPermission.canView;
+    const canAdd = discountApprovalPermission.canAdd;
+    const canEdit = discountApprovalPermission.canEdit;
+
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
-    const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+    const {
+        selectedBranchFilter,
+        setSelectedBranchFilter,
+        branchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        filterBranchId: hookFilterBranchId,
+    } = useBranchFilter();
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [sortField, setSortField] = useState<string>("");
@@ -87,9 +55,6 @@ export default function DiscountApprovalPage() {
         level1: "",
         level2: "",
     });
-
-    // Fetch users
-    const [getUsers, { data: usersData, isLoading: isLoadingUsers }] = useLazyGetUsersQuery();
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
@@ -97,75 +62,60 @@ export default function DiscountApprovalPage() {
     const [branchError, setBranchError] = useState("");
     const [level1Error, setLevel1Error] = useState("");
     const [level2Error, setLevel2Error] = useState("");
+
+    const userBranchId = useAppSelector(selectUserBranchId);
+
+    const formBranchIdForUsers = useMemo(() => {
+        const n = parseInt(formValues.branchName, 10);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }, [formValues.branchName]);
+
+    const usersListDialogActive = isDialogOpen && (isEditMode ? canEdit : canAdd);
+    const {
+        data: usersData,
+        isLoading: isLoadingUsersList,
+        isFetching: isFetchingUsersList,
+    } = useGetUsersListQuery(
+        { branchId: formBranchIdForUsers ?? 0 },
+        {
+            skip: !usersListDialogActive || formBranchIdForUsers == null,
+        }
+    );
+    const isLoadingUsers = isLoadingUsersList || isFetchingUsersList;
+
+    const levelUserPlaceholderBase = !formValues.branchName
+        ? "Select a branch first"
+        : isLoadingUsers
+          ? "Loading users..."
+          : "Select user";
+
     
     // Debounce search to avoid too many API calls
     const debouncedSearchTerm = useDebounce(searchTerm, 500);
-    const prevSearchTermRef = useRef(searchTerm);
-    
+
     // Trim the debounced search term to remove leading and trailing spaces
     // Only pass to API if trimmed value is not empty (don't hit API for spaces only)
     const trimmedSearchTerm = debouncedSearchTerm.trim();
     const searchParam = trimmedSearchTerm || undefined;
-    
-    // Reset to first page when search term changes
-    useEffect(() => {
-        if (prevSearchTermRef.current !== searchTerm) {
-            prevSearchTermRef.current = searchTerm;
-            setCurrentPage(1);
-        }
-    }, [searchTerm]);
-    
-    // Reset to first page when branch selection changes
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [selectedBranches]);
-    
-    // Get complete login data from Redux store
-    const loginData = useAppSelector(selectLoginData);
+
     const loggedInUserId = useAppSelector(selectUserId);
 
-    // Log the complete login data to see everything
-    // console.log("Complete Login Data:", loginData);
-    // console.log("User ID:", loggedInUserId);
-
-    // Fetch branches from API
-    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery();
-
-    // Fetch users when dialog opens
-    useEffect(() => {
-        if (isDialogOpen) {
-            getUsers({ search: undefined });
-        }
-    }, [isDialogOpen, getUsers]);
-    
-    // Get selected branch IDs - send as array (single or multiple)
-    const selectedBranchIds = useMemo(() => {
-        if (selectedBranches.length === 0) {
-            return undefined;
-        }
-        
-        // Convert string array to number array
-        const branchIds = selectedBranches
-            .map((id) => parseInt(id, 10))
-            .filter((id) => !isNaN(id));
-        
-        if (branchIds.length === 0) {
-            return undefined;
-        }
-        
-        // Return array whether it's single or multiple branch IDs
-        return branchIds;
-    }, [selectedBranches]);
-    
-    // Fetch discount configs from API
-    const { data: discountConfigsData, isLoading: isLoadingConfigs, refetch: refetchConfigs } = useGetDiscountConfigsQuery({
-        page: currentPage,
-        limit: itemsPerPage,
-        search: searchParam,
-        sort: sortField || undefined,
-        order: sortField ? sortOrder : undefined,
-        branchId: selectedBranchIds,
+    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
+        skip: !canView,
     });
+
+    const { data: discountConfigsData, isLoading: isLoadingConfigs, refetch: refetchConfigs } =
+        useGetDiscountConfigsQuery(
+            {
+                page: currentPage,
+                limit: itemsPerPage,
+                search: searchParam,
+                sort: sortField || undefined,
+                order: sortField ? sortOrder : undefined,
+                branchId: hookFilterBranchId,
+            },
+            { skip: !canView }
+        );
     
     // Create discount config mutation
     const [createDiscountConfig, { isLoading: isCreating }] = useCreateDiscountConfigMutation();
@@ -184,13 +134,27 @@ export default function DiscountApprovalPage() {
         }));
     }, [branchesData]);
 
-    // Convert users to SelectOption format
+
+    // getUsersList: { id, userName, branch? } — no email; duplicate userNames get #id suffix
     const userOptions: SelectOption[] = useMemo(() => {
-        if (!usersData?.data) return [];
-        return usersData.data.map((user) => ({
-            value: user.id.toString(),
-            label: `${user.name} (${user.email})`,
-        }));
+        const rows = usersData?.data;
+        if (!rows?.length) return [];
+        const nameCounts = new Map<string, number>();
+        for (const u of rows) {
+            const key = (u.userName ?? u.name ?? "").trim().toLowerCase() || `id-${u.id}`;
+            nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+        }
+        return rows.map((user) => {
+            const displayName = (user.userName ?? user.name ?? "").trim() || `User ${user.id}`;
+            const key = (user.userName ?? user.name ?? "").trim().toLowerCase() || `id-${user.id}`;
+            const duplicateName = (nameCounts.get(key) ?? 0) > 1;
+            const emailSuffix = user.email?.trim() ? ` (${user.email})` : "";
+            const dedupeSuffix = duplicateName ? ` #${user.id}` : "";
+            return {
+                value: user.id.toString(),
+                label: `${displayName}${emailSuffix}${dedupeSuffix}`,
+            };
+        });
     }, [usersData]);
 
     // Filter Level 1 options to exclude user selected in Level 2
@@ -260,10 +224,16 @@ export default function DiscountApprovalPage() {
     };
 
     const handleAddNew = () => {
+        if (!canAdd) return;
         setIsEditMode(false);
         setEditingId(null);
+        const defaultBranch =
+            userBranchId != null &&
+            branchOptions.some((o) => o.value === String(userBranchId))
+                ? String(userBranchId)
+                : "";
         setFormValues({
-            branchName: "",
+            branchName: defaultBranch,
             level1: "",
             level2: "",
         });
@@ -274,6 +244,7 @@ export default function DiscountApprovalPage() {
     };
 
     const handleEdit = (approval: DiscountApproval) => {
+        if (!canEdit) return;
         setIsEditMode(true);
         setEditingId(approval.id);
         
@@ -290,6 +261,9 @@ export default function DiscountApprovalPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (isEditMode && !canEdit) return;
+        if (!isEditMode && !canAdd) return;
 
         // Clear previous errors
         setBranchError("");
@@ -375,20 +349,23 @@ export default function DiscountApprovalPage() {
             setBranchError("");
             setLevel1Error("");
             setLevel2Error("");
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(`Failed to ${isEditMode ? "update" : "create"} discount config:`, error);
-            
-            // Handle error - show error message
+
             let errorMsg = `Failed to ${isEditMode ? "update" : "create"} discount config. Please try again.`;
-            
-            if (error?.data?.message) {
-                errorMsg = error.data.message;
-            } else if (error?.data?.error) {
-                errorMsg = error.data.error;
-            } else if (error?.error) {
-                errorMsg = error.error;
-            } else if (error?.message) {
-                errorMsg = error.message;
+            const err = error as {
+                data?: { message?: string; error?: string };
+                error?: string;
+                message?: string;
+            };
+            if (err?.data?.message) {
+                errorMsg = err.data.message;
+            } else if (err?.data?.error) {
+                errorMsg = err.data.error;
+            } else if (err?.error) {
+                errorMsg = err.error;
+            } else if (err?.message) {
+                errorMsg = err.message;
             }
             
             setApiErrorMessage(errorMsg);
@@ -413,35 +390,53 @@ export default function DiscountApprovalPage() {
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
+                    {!canView ? (
+                        <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                            You don&apos;t have permission to view discount approval configuration.
+                        </div>
+                    ) : (
                     <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
                         <div className="mb-6 flex items-center justify-between">
                             <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                             <div className="flex items-center gap-3">
-                                <div className="flex-shrink-0" style={{ width: "300px" }}>
-                                    <CustomSelect
-                                        options={branchOptions}
-                                        value={selectedBranches}
-                                        onChange={setSelectedBranches}
-                                        placeholder={isLoadingBranches ? "Loading..." : "Select"}
-                                        width={300}
-                                    />
-                                </div>
+                                <FormSelectField
+                                    label=""
+                                    hideLabel
+                                    options={branchFilterOptions}
+                                    value={selectedBranchFilter}
+                                    onChange={(value) => {
+                                        setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                                        setCurrentPage(1);
+                                    }}
+                                    placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                    mode="single"
+                                    background="normal"
+                                    width={300}
+                                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                />
                                 <div className="flex-shrink-0" style={{ width: "300px" }}>
                                     <TableSearchInput
                                         value={searchTerm}
-                                        onChange={setSearchTerm}
+                                        onChange={(value) => {
+                                            setSearchTerm((prev) => {
+                                                if (prev !== value) setCurrentPage(1);
+                                                return value;
+                                            });
+                                        }}
                                         placeholder="Search Here..."
                                     />
                                 </div>
-                                <button
-                                    type="button"
-                                    className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
-                                    onClick={handleAddNew}
-                                >
-                                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
-                                    Add Discount Approval Configuration
-                                </button>
+                                {canAdd ? (
+                                    <button
+                                        type="button"
+                                        className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                                        onClick={handleAddNew}
+                                    >
+                                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
+                                        <span className="text-hide">Add Discount Approval Configuration</span>
+                                    </button>
+                                ) : null}
                             </div>
                         </div>
 
@@ -516,19 +511,23 @@ export default function DiscountApprovalPage() {
                                             </TableData>
                                             <TableData>
                                                 <div className="flex items-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleEdit(approval)}
-                                                        className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                        aria-label="Edit"
-                                                    >
-                                                        <Image
-                                                            src="/icons/EditIconBlack.svg"
-                                                            alt="Edit"
-                                                            width={20}
-                                                            height={20}
-                                                        />
-                                                    </button>
+                                                    {canEdit ? (
+                                                        <Tooltip content="Edit" position="top" delay={0}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleEdit(approval)}
+                                                                className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                                aria-label="Edit"
+                                                            >
+                                                                <Image
+                                                                    src="/icons/EditIconBlack.svg"
+                                                                    alt="Edit"
+                                                                    width={20}
+                                                                    height={20}
+                                                                />
+                                                            </button>
+                                                        </Tooltip>
+                                                    ) : null}
                                                 </div>
                                             </TableData>
                                         </TableRow>
@@ -547,11 +546,12 @@ export default function DiscountApprovalPage() {
                             />
                         )}
                     </div>
+                    )}
                 </ListBorder>
             </div>
 
             <Dialog
-                open={isDialogOpen}
+                open={isDialogOpen && (isEditMode ? canEdit : canAdd)}
                 onClose={() => {
                     setIsDialogOpen(false);
                     setIsEditMode(false);
@@ -571,9 +571,13 @@ export default function DiscountApprovalPage() {
                                 value={formValues.branchName}
                                 onChange={(value) => {
                                     const selectedValue = Array.isArray(value) ? value[0] : value;
+                                    const nextBranch = selectedValue || "";
                                     setFormValues((prev) => ({
                                         ...prev,
-                                        branchName: selectedValue || "",
+                                        branchName: nextBranch,
+                                        ...(prev.branchName !== nextBranch
+                                            ? { level1: "", level2: "" }
+                                            : {}),
                                     }));
                                     // Clear error when valid input is selected
                                     if (selectedValue && branchError) {
@@ -589,6 +593,10 @@ export default function DiscountApprovalPage() {
                             {branchError && (
                                 <span className="mt-2 text-xs text-[#F87171]">{branchError}</span>
                             )}
+                            <p className="mt-2 text-[11px] leading-snug text-[#7B8089]">
+                                Choose a branch to load users into Level 1 and Level 2 (users listed for that
+                                branch only).
+                            </p>
                         </div>
 
                         <div>
@@ -618,11 +626,18 @@ export default function DiscountApprovalPage() {
                                     }
                                 }}
                                 options={level1Options}
-                                placeholder="Select Level 1"
+                                placeholder={`${levelUserPlaceholderBase} (level 1)`}
+                                emptyMessage={
+                                    !formValues.branchName
+                                        ? "Select a branch first"
+                                        : isLoadingUsers
+                                          ? "Loading…"
+                                          : "No users returned for this branch"
+                                }
                                 mode="single"
                                 background="white"
                                 height={44}
-                                disabled={isLoadingUsers}
+                                disabled={!formValues.branchName || isLoadingUsers}
                             />
                             {level1Error && (
                                 <span className="mt-2 text-xs text-[#F87171]">{level1Error}</span>
@@ -656,11 +671,18 @@ export default function DiscountApprovalPage() {
                                     }
                                 }}
                                 options={level2Options}
-                                placeholder="Select Level 2"
+                                placeholder={`${levelUserPlaceholderBase} (level 2)`}
+                                emptyMessage={
+                                    !formValues.branchName
+                                        ? "Select a branch first"
+                                        : isLoadingUsers
+                                          ? "Loading…"
+                                          : "No users returned for this branch"
+                                }
                                 mode="single"
                                 background="white"
                                 height={44}
-                                disabled={isLoadingUsers}
+                                disabled={!formValues.branchName || isLoadingUsers}
                             />
                             {level2Error && (
                                 <span className="mt-2 text-xs text-[#F87171]">{level2Error}</span>

@@ -360,7 +360,7 @@ export default function FieldUsersPage() {
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Field Users
+                  <span className="text-hide">Add Field Users</span>
                 </button>
               </div>
             </div>

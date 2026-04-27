@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Button } from "../ui/Button";
 import { useState, useRef, useEffect, useMemo } from "react";
 import DateFilterDropdown from "./DateFilterDropdown";
-import { ScrollableContainer, TableSearchInput } from "../ui";
+import { ScrollableContainer, TableSearchInput, Tooltip } from "../ui";
 import NoDataBox from "./NoDataBox";
 import { useGetPreBookingsListQuery, type PreBookingItem } from "@/store/api/registrationApi";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -17,6 +17,7 @@ interface BookingItem {
     date: string;
     time: string;
     bookingNumber: string;
+    patientMobile: string;
     period: "past" | "present" | "future" | "";
 }
 
@@ -24,11 +25,18 @@ interface PreBookingPanelProps {
     onPreBookingClick?: (preBooking: PreBookingItem | null) => void;
     selectedPreBookingId?: string | number | null; // ID of currently selected pre-booking
     onRefetchReady?: (refetch: () => void) => void; // Callback to expose refetch function
+    /** Branch for pre-bookings list (defaults to 1 if omitted — prefer auth branch from parent) */
+    branchId?: number | string;
 }
 
 type TimePeriod = "past" | "present" | "future" | "";
 
-export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingId, onRefetchReady }: PreBookingPanelProps = {}) {
+export default function PreBookingPanel({
+    onPreBookingClick,
+    selectedPreBookingId,
+    onRefetchReady,
+    branchId: branchIdProp,
+}: PreBookingPanelProps = {}) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("present");
@@ -47,22 +55,33 @@ export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingI
     const debouncedSearchTerm = useDebounce(searchTerm, 500);
     const searchParam = debouncedSearchTerm.trim() || "";
 
-    // Fetch pre-bookings from API
-    const { data: preBookingsData, isLoading, isError, refetch } = useGetPreBookingsListQuery({
-        branchId: 1,
-        page: 1,
-        limit: 25,
-        search: searchParam,
-        fromDate: fromDate,
-        toDate: toDate,
-        dateFilter: selectedPeriod || "",
-    });
+    const listBranchId = branchIdProp ?? 1;
 
-    // Expose refetch function to parent component
+    // Fetch pre-bookings from API — refetch whenever the panel remounts (e.g. sidebar closed then reopened)
+    const { data: preBookingsData, isLoading, isError, refetch } = useGetPreBookingsListQuery(
+        {
+            branchId: listBranchId,
+            page: 1,
+            limit: 25,
+            search: searchParam,
+            fromDate: fromDate,
+            toDate: toDate,
+            dateFilter: selectedPeriod || "",
+        },
+        { refetchOnMountOrArgChange: true }
+    );
+
+    // Expose refetch to parent. RTK throws if the panel was unmounted (subscription ended) — swallow that.
     useEffect(() => {
-        if (onRefetchReady && refetch) {
-            onRefetchReady(() => refetch());
-        }
+        if (!onRefetchReady || !refetch) return;
+        onRefetchReady(() => {
+            void Promise.resolve(refetch()).catch((e: unknown) => {
+                const msg = e instanceof Error ? e.message : String(e);
+                if (!msg.includes("Cannot refetch a query that has not been started yet")) {
+                    console.warn("Pre-bookings refetch failed:", e);
+                }
+            });
+        });
     }, [onRefetchReady, refetch]);
 
     useEffect(() => {
@@ -176,6 +195,7 @@ export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingI
             // Get patient ID (UHID) - show complete UHID
             const patientId = item.uhid || "N/A";
             const formattedPatientId = patientId || "N/A";
+            const patientMobile = item.contactNumber || "N/A";
 
             // Get booking number - use id as booking number
             const bookingNumber = item.id ? `#${item.id}` : "#N/A";
@@ -195,6 +215,7 @@ export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingI
                 date: formatDate(item.appointmentDate),
                 time: formatTime(appointmentTime),
                 bookingNumber: bookingNumber,
+                patientMobile: patientMobile,
                 period: selectedPeriod, // API already filters by dateFilter
             };
         });
@@ -226,6 +247,15 @@ export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingI
                 return "All Bookings";
         }
     };
+
+    const maskPhoneNumber = (phoneNumber: string | null | undefined): string => {
+        if (!phoneNumber) return "N/A";
+        const cleaned = phoneNumber.replace(/\D/g, ""); // Remove non-digits
+        if (cleaned.length < 4) return phoneNumber; // If less than 4 digits, return as is
+        const last4 = cleaned.slice(-4);
+        const masked = "XXXXXX" + last4;
+        return masked;
+      };
 
     return (
         <div className="w-full relative" style={{ overflow: 'visible' }}>
@@ -348,12 +378,13 @@ export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingI
                                                 const rawPreBooking = rawPreBookings.find(pb => String(pb.id) === booking.id);
                                                 const isSelected = selectedPreBookingId !== null && selectedPreBookingId !== undefined && String(selectedPreBookingId) === booking.id;
                                                 
+                                                const isNonClickable = selectedPeriod === "past" || selectedPeriod === "future";
                                                 return (
                                                 <div
                                                     key={booking.id}
                                                     onClick={() => {
+                                                        if (isNonClickable) return;
                                                         if (rawPreBooking) {
-                                                            // If clicking the same pre-booking, deselect (pass null)
                                                             if (isSelected) {
                                                                 onPreBookingClick?.(null);
                                                             } else {
@@ -361,18 +392,23 @@ export default function PreBookingPanel({ onPreBookingClick, selectedPreBookingI
                                                             }
                                                         }
                                                     }}
-                                                    className={`cursor-pointer px-3 py-2 rounded-[12px] transition-colors duration-300 ease-in-out mb-3 w-auto ${
-                                                        isSelected
-                                                            ? "bg-[rgba(11,140,0,0.15)] border-2 border-[#0B8C00]"
-                                                            : "bg-[rgba(223,224,226,0.05)] border border-[#DFE0E2] hover:bg-[rgba(11,140,0,0.05)] hover:border-[#0B8C00] focus:bg-[rgba(11,140,0,0.05)] focus:border-[#0B8C00]"
+                                                    className={`px-3 py-2 rounded-[12px] transition-colors duration-300 ease-in-out mb-3 w-auto ${
+                                                        isNonClickable
+                                                            ? "cursor-not-allowed bg-[rgba(223,224,226,0.05)] border border-[#DFE0E2] opacity-80"
+                                                            : isSelected
+                                                                ? "cursor-pointer bg-[rgba(11,140,0,0.15)] border-2 border-[#0B8C00]"
+                                                                : "cursor-pointer bg-[rgba(223,224,226,0.05)] border border-[#DFE0E2] hover:bg-[rgba(11,140,0,0.05)] hover:border-[#0B8C00] focus:bg-[rgba(11,140,0,0.05)] focus:border-[#0B8C00]"
                                                     }`}
                                                 >
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="leading-[12px]">
-                                                            <h4 className="font-inter font-medium text-base leading-[120%] text-[#262D3B]">{booking.name}</h4>
-                                                            <span className="font-inter font-normal text-xs leading-[120%] text-[#434956]">{booking.patientId}</span>
+                                                            <Tooltip content={booking.name}>
+                                                            <h6 className="font-inter font-medium text-base leading-[120%] text-[#262D3B] min-w-0 max-w-[175px] truncate" >{booking.name}</h6>
+                                                                </Tooltip>
+                                                            {/* <span className="font-inter font-normal text-xs leading-[120%] text-[#434956]">{booking.patientId}</span> */}
+                                                            <span className="font-inter font-normal text-xs leading-[120%] text-[#434956]">{booking.patientMobile ? maskPhoneNumber(booking.patientMobile) : "N/A"}</span>
                                                         </div>
-                                                        <div className="px-4 py-1.5 bg-white border border-[rgba(22,163,74,0.2)] rounded-[30px] font-inter font-normal text-xs leading-[120%] text-[#16A34A] w-auto text-nowrap">
+                                                        <div className="px-3 py-1.5 bg-white border border-[rgba(22,163,74,0.2)] rounded-[30px] font-inter font-normal text-xs leading-[120%] text-[#16A34A] w-auto text-nowrap">
                                                             {booking.status}
                                                         </div>
                                                     </div>

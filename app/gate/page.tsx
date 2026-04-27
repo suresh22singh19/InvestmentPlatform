@@ -1,41 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GateHeaderBar } from "@/components/layout/GateHeaderBar";
 import { GateManagementPanel } from "@/components/gate/GateManagementPanel";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
-import { selectUser, logout, setCredentials } from "@/store/slices/authSlice";
+import { selectUser, selectLoginType, selectPermissionsMap, logout, setCredentials } from "@/store/slices/authSlice";
+import { hasOnlyGateModuleViewAccess } from "@/utils/permission";
 
 export default function GatePage() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectUser);
+  const loginType = useAppSelector(selectLoginType);
+  const permissionsMap = useAppSelector(selectPermissionsMap);
   const [isChecking, setIsChecking] = useState(true);
 
+  const isGateOnlyUser = useMemo(() => hasOnlyGateModuleViewAccess(permissionsMap), [permissionsMap]);
+  const isGateUser =
+    Boolean(loginType && loginType.toLowerCase().includes("gate")) || isGateOnlyUser;
+
   useEffect(() => {
-    // Restore user from localStorage if not in Redux store
     if (!user && typeof window !== "undefined") {
-      // First try to get the full loginData
       const storedLoginData = localStorage.getItem("loginData");
-      
+
       if (storedLoginData) {
         try {
           const loginData = JSON.parse(storedLoginData);
           dispatch(setCredentials(loginData));
-        } catch (error) {
-          console.error("Failed to parse stored loginData", error);
+        } catch {
           router.push("/");
           return;
         }
       } else {
-        // Fallback: reconstruct from individual localStorage items
         const storedUser = localStorage.getItem("user");
         const storedToken = localStorage.getItem("authToken");
         const storedTokenType = localStorage.getItem("tokenType");
         const storedLoginType = localStorage.getItem("loginType");
         const storedExpiresIn = localStorage.getItem("expiresIn");
-        
+
         if (storedUser && storedToken) {
           try {
             const parsedUser = JSON.parse(storedUser);
@@ -46,8 +49,7 @@ export default function GatePage() {
               login_type: storedLoginType || "admin",
               expires_in: storedExpiresIn ? parseInt(storedExpiresIn, 10) : 3600,
             }));
-          } catch (error) {
-            console.error("Failed to parse stored user", error);
+          } catch {
             router.push("/");
             return;
           }
@@ -62,17 +64,12 @@ export default function GatePage() {
   }, [user, dispatch, router]);
 
   useEffect(() => {
-    if (!isChecking && user) {
-      // If user is not a Gate user, redirect to dashboard
-      if (user.groupName !== "Gate") {
-        router.push("/dashboard");
-        return;
-      }
+    if (!isChecking && user && !isGateUser) {
+      router.push("/dashboard");
     }
-  }, [user, router, isChecking]);
+  }, [user, router, isChecking, isGateUser]);
 
-  // Show nothing while checking authentication
-  if (isChecking || !user || user.groupName !== "Gate") {
+  if (isChecking || !user || !isGateUser) {
     return null;
   }
 
@@ -88,8 +85,8 @@ export default function GatePage() {
       <div className="flex flex-col min-h-screen w-full">
         {/* Top Header Bar - Logo left, User right */}
         <GateHeaderBar
-          userName={user.name || user.email}
-          userRole={user.groupName}
+          userName={user.userName || user.email}
+          userRole={user.role?.name || "Gate"}
           onLogout={handleLogout}
         />
 

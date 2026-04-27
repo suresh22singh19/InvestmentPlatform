@@ -2,21 +2,73 @@
 
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeading } from '@/components/layout/PageHeading'
-import { ActionCard, Breadcrumb, ConfigurationProgress, ConfigurationProgressCard, ConfigurationSummaryPanel, MasterDataCard } from '@/components/ui'
-import { RoomInventory, RoomTypeMaster, StructureBuilder, HardwareMaster, FacilitiesMaster, CompleteHierarchyTree, RoomConfiguration } from '@/components/infrastructure'
+import {
+  ActionCard,
+  Breadcrumb,
+  ConfigurationProgress,
+  ConfigurationProgressCard,
+  ConfigurationSummaryPanel,
+  MasterDataCard,
+} from '@/components/ui'
+import { BedManagement, RoomInventory, RoomTypeMaster, StructureBuilder, HardwareMaster, FacilitiesMaster, CompleteHierarchyTree, RoomConfiguration, ConsultancyBranchService } from '@/components/infrastructure'
 import type { RoomInventoryItem } from '@/components/infrastructure'
 import { useSearchParams } from 'next/navigation'
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
+import { useGetBranchHierarchyTreeQuery, useGetBranchRoomTypesByBranchQuery } from '@/store/api/branchSetupApi'
+import { branchRoomTypeSelectOptions } from '@/lib/utils/branchRoomTypeOptions'
+import { usePermission } from '@/hooks/usePermission'
+import type { HierarchyInsights } from '@/lib/utils/branchHierarchyStats'
+import {
+  computeBranchHierarchyStats,
+  formatHierarchyLastModified,
+  roomsConfiguredDisplay,
+  statDisplay,
+} from '@/lib/utils/branchHierarchyStats'
+import type { FacilityConfigurationSummarySnapshot } from '@/lib/types/facilityConfigurationSummary'
 
+function insightMasterCount(
+  ins: HierarchyInsights | null | undefined,
+  key: 'totalBranchRoomTypes' | 'totalBranchHardware' | 'totalBranchFacility',
+): number | null {
+  if (!ins || typeof ins !== 'object') return null;
+  const v = ins[key];
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  return 0;
+}
 
+function subtitleRoomTypes(n: number | null, loading: boolean, hasBranch: boolean): string {
+  if (!hasBranch) return '—';
+  if (loading && n === null) return 'Loading…';
+  const c = n ?? 0;
+  return c === 1 ? '1 type defined' : `${c} types defined`;
+}
 
-const configurationProgressCards = [
+function subtitleItemsAvailable(
+  n: number | null,
+  loading: boolean,
+  hasBranch: boolean,
+): string {
+  if (!hasBranch) return '—';
+  if (loading && n === null) return 'Loading…';
+  const c = n ?? 0;
+  if (c === 1) return '1 item available — click to view list';
+  return `${c} items available — click to view list`;
+}
+
+/** Tree nodes use ids like `room-42`; room APIs expect numeric string `42`. */
+function roomIdForApi(id: string): string {
+  const m = /^room-(\d+)$/i.exec(String(id).trim());
+  if (m) return m[1];
+  return String(id).trim();
+}
+
+type ProgressCardStatus = "Complete" | "In Progress" | "-";
+
+const PROGRESS_CARD_TEMPLATES = [
   {
     id: 1,
     title: "Buildings & Structure",
-    description: "Define buildings, blocks, and floors",
-    value: "2",
-    status: "Complete" as const,
+    description: "Define buildings and floors",
     icon: (
       <svg
         className="h-5 w-5 text-green-700"
@@ -38,8 +90,6 @@ const configurationProgressCards = [
     id: 2,
     title: "Floors",
     description: "Add floors to each building",
-    value: "3",
-    status: "Complete" as const,
     icon: (
       <svg
         className="h-5 w-5 text-green-700"
@@ -59,33 +109,8 @@ const configurationProgressCards = [
   },
   {
     id: 3,
-    title: "Departments",
-    description: "Organize hospital departments",
-    value: "1",
-    status: "Complete" as const,
-    icon: (
-      <svg
-        className="h-5 w-5 text-green-700"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-        />
-      </svg>
-    ),
-    iconBgColor: "bg-green-100",
-  },
-  {
-    id: 4,
     title: "Rooms Created",
     description: "Add rooms and spaces",
-    value: "2",
-    status: "Complete" as const,
     icon: (
       <svg
         className="h-5 w-5 text-green-700"
@@ -104,11 +129,9 @@ const configurationProgressCards = [
     iconBgColor: "bg-green-100",
   },
   {
-    id: 5,
+    id: 4,
     title: "Rooms Configured",
     description: "Hardware, facilities, and details",
-    value: "1 / 2",
-    status: "In Progress" as const,
     icon: (
       <svg
         className="h-5 w-5 text-green-700"
@@ -126,29 +149,268 @@ const configurationProgressCards = [
     ),
     iconBgColor: "bg-green-100",
   },
-];
+] as const;
+
+function metricToDisplayString(m: number | string): string {
+  if (m === "-") return "-";
+  return String(m);
+}
+
+/** Progress cards: unknown count → "0" (aligned with Structure Overview). */
+function progressCardCountDisplay(v: string): string {
+  return v === "-" ? "0" : v;
+}
+
+/** Progress card for room ratio: unknown → "0 / 0". */
+function progressCardRoomsValue(raw: string): string {
+  return raw === "-" ? "0 / 0" : raw;
+}
+
+function statusForStructureCount(display: string): ProgressCardStatus {
+  if (display === "-") return "-";
+  const n = parseInt(display, 10);
+  if (!Number.isFinite(n)) return "-";
+  return n > 0 ? "Complete" : "In Progress";
+}
+
+function statusForRoomsConfiguredCard(value: string, configuredKnown: boolean): ProgressCardStatus {
+  if (!configuredKnown || value === "-") return "-";
+  const parts = value.split("/").map((s) => parseInt(s.trim(), 10));
+  if (parts.length !== 2 || !parts.every((x) => Number.isFinite(x))) return "-";
+  const [c, t] = parts;
+  if (t === 0) return "Complete";
+  return c >= t ? "Complete" : "In Progress";
+}
+
+function readCompletionPercent(
+  searchParams: ReturnType<typeof useSearchParams>,
+  fallback: number | null
+): number | null {
+  const raw = searchParams?.get("completion");
+  if (raw == null || raw === "") return fallback;
+  if (raw === "-" || raw.toUpperCase() === "N/A") return null;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null;
+}
+
+/** Integer for progress UI, or "-" placeholders from list navigation (never NaN). */
+function readQueryMetric(
+  searchParams: ReturnType<typeof useSearchParams>,
+  key: string,
+  fallback: number
+): number | string {
+  const raw = searchParams?.get(key);
+  if (raw == null || raw === "") return fallback;
+  if (raw === "-" || raw.toUpperCase() === "N/A") return "-";
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : "-";
+}
 
 const page = () => {
+  const modulePermission = usePermission("Infrastructure");
+  const subModulePermission = usePermission("Infrastructure", { subModule: "Add Hospital/Clinic" });
+  const canView = modulePermission.canView || subModulePermission.canView;
+  const canAdd = modulePermission.canAdd || subModulePermission.canAdd;
+  const canEdit = modulePermission.canEdit || subModulePermission.canEdit;
+  const canDelete = modulePermission.canDelete || subModulePermission.canDelete;
+
   const searchParams = useSearchParams();
-  const facilityName = searchParams.get('facility') || 'City General Hospital';
-  const facilityType = searchParams.get('type') || 'Hospital';
-  const facilityAddress = searchParams.get('address') || '123 Healthcare Blvd, Medical District';
-  const completionPercentage = parseInt(searchParams.get('completion') || '35');
-  const buildings = parseInt(searchParams.get('buildings') || '2');
-  const blocks = parseInt(searchParams.get('blocks') || '1');
-  const floors = parseInt(searchParams.get('floors') || '3');
-  const departments = parseInt(searchParams.get('departments') || '1');
-  const totalRooms = parseInt(searchParams.get('totalRooms') || '2');
-  const configuredRooms = parseInt(searchParams.get('configuredRooms') || '1');
-  const incompleteRooms = parseInt(searchParams.get('incompleteRooms') || '1');
+  const facilityName = searchParams?.get('facility') || 'City General Hospital';
+  const facilityType = searchParams?.get('type') || 'Hospital';
+  const facilityAddress = searchParams?.get('address') || '123 Healthcare Blvd, Medical District';
+  const branchIdParam = searchParams?.get('branchId');
+  const branchIdNum =
+    branchIdParam != null && /^\d+$/.test(branchIdParam.trim())
+      ? Number(branchIdParam)
+      : null;
+
+  const { data: hierarchyResponse, isLoading: hierarchyLoading } =
+    useGetBranchHierarchyTreeQuery(branchIdNum ?? 0, { skip: branchIdNum === null || !canView });
+
+  const { data: branchRoomTypesRes } = useGetBranchRoomTypesByBranchQuery(branchIdNum ?? 0, {
+    skip: branchIdNum === null || !canView,
+  });
+
+  const branchRoomTypeRows =
+    branchRoomTypesRes?.success && Array.isArray(branchRoomTypesRes.data) ? branchRoomTypesRes.data : [];
+
+  const roomTypeOptionsForConfig = useMemo(
+    () => branchRoomTypeSelectOptions(branchRoomTypeRows),
+    [branchRoomTypeRows],
+  );
+
+  const hierarchyStats = useMemo(() => {
+    if (branchIdNum === null) return undefined;
+    if (hierarchyLoading && !hierarchyResponse) return null;
+    if (!hierarchyResponse?.success || !Array.isArray(hierarchyResponse.data)) return null;
+    return computeBranchHierarchyStats(hierarchyResponse.data);
+  }, [branchIdNum, hierarchyLoading, hierarchyResponse]);
+
+  const displayFacilityName =
+    hierarchyResponse?.success && hierarchyResponse.data?.[0]?.name
+      ? String(hierarchyResponse.data[0].name)
+      : facilityName;
+
+  const completionForUi = useMemo((): number | null => {
+    if (branchIdNum !== null) {
+      if (hierarchyStats == null) return null;
+      return hierarchyStats.completionPercent;
+    }
+    return readCompletionPercent(searchParams, null);
+  }, [branchIdNum, hierarchyStats, searchParams]);
+
+  const buildings = readQueryMetric(searchParams, 'buildings', 2);
+  const floors = readQueryMetric(searchParams, 'floors', 3);
+  const totalRooms = readQueryMetric(searchParams, 'totalRooms', 2);
+  const configuredRooms = readQueryMetric(searchParams, 'configuredRooms', 1);
+  const incompleteRooms = readQueryMetric(searchParams, 'incompleteRooms', 1);
+
+  const configurationProgressCards = useMemo(() => {
+    const templates = [...PROGRESS_CARD_TEMPLATES];
+    if (branchIdNum === null) {
+      const b = readQueryMetric(searchParams, "buildings", 2);
+      const f = readQueryMetric(searchParams, "floors", 3);
+      const tr = readQueryMetric(searchParams, "totalRooms", 2);
+      const cr = readQueryMetric(searchParams, "configuredRooms", 1);
+      const bStr = metricToDisplayString(b);
+      const fStr = metricToDisplayString(f);
+      const trStr = metricToDisplayString(tr);
+      const crStr = metricToDisplayString(cr);
+      const roomsValRaw =
+        trStr === "-" || crStr === "-" ? "-" : `${crStr} / ${trStr}`;
+      const roomsKnown = trStr !== "-" && crStr !== "-";
+      return templates.map((t, i) => {
+        const rows: Array<{ value: string; status: ProgressCardStatus }> = [
+          {
+            value: progressCardCountDisplay(bStr),
+            status: statusForStructureCount(progressCardCountDisplay(bStr)),
+          },
+          {
+            value: progressCardCountDisplay(fStr),
+            status: statusForStructureCount(progressCardCountDisplay(fStr)),
+          },
+          {
+            value: progressCardCountDisplay(trStr),
+            status: statusForStructureCount(progressCardCountDisplay(trStr)),
+          },
+          {
+            value: progressCardRoomsValue(roomsValRaw),
+            status: statusForRoomsConfiguredCard(roomsValRaw, roomsKnown),
+          },
+        ];
+        return { ...t, ...rows[i] };
+      });
+    }
+    if (hierarchyStats == null) {
+      return templates.map((t, i) => ({
+        ...t,
+        value: i === 3 ? "0 / 0" : "0",
+        status:
+          i === 3
+            ? statusForRoomsConfiguredCard("-", false)
+            : statusForStructureCount("0"),
+      }));
+    }
+    const s = hierarchyStats;
+    const roomsValRaw = roomsConfiguredDisplay(s.configuredRooms, s.rooms, s.configuredKnown);
+    const bDisp = progressCardCountDisplay(statDisplay(s.buildings));
+    const fDisp = progressCardCountDisplay(statDisplay(s.floors));
+    const rDisp = progressCardCountDisplay(statDisplay(s.rooms));
+    return [
+      { ...templates[0], value: bDisp, status: statusForStructureCount(bDisp) },
+      { ...templates[1], value: fDisp, status: statusForStructureCount(fDisp) },
+      { ...templates[2], value: rDisp, status: statusForStructureCount(rDisp) },
+      {
+        ...templates[3],
+        value: progressCardRoomsValue(roomsValRaw),
+        status: statusForRoomsConfiguredCard(roomsValRaw, s.configuredKnown),
+      },
+    ];
+  }, [branchIdNum, hierarchyStats, searchParams]);
+
+  const panelBuildings =
+    branchIdNum !== null
+      ? hierarchyStats == null
+        ? "-"
+        : statDisplay(hierarchyStats.buildings)
+      : buildings;
+  const panelFloors =
+    branchIdNum !== null
+      ? hierarchyStats == null
+        ? "-"
+        : statDisplay(hierarchyStats.floors)
+      : floors;
+  const panelTotalRooms =
+    branchIdNum !== null
+      ? hierarchyStats == null
+        ? "-"
+        : statDisplay(hierarchyStats.rooms)
+      : totalRooms;
+  const panelConfiguredRooms =
+    branchIdNum !== null
+      ? hierarchyStats == null
+        ? "-"
+        : hierarchyStats.configuredKnown
+          ? statDisplay(hierarchyStats.configuredRooms)
+          : "-"
+      : configuredRooms;
+  const panelIncompleteRooms =
+    branchIdNum !== null
+      ? hierarchyStats == null
+        ? "-"
+        : hierarchyStats.configuredKnown
+          ? statDisplay(hierarchyStats.incompleteRooms)
+          : "-"
+      : incompleteRooms;
+
+  const lastModifiedStr =
+    branchIdNum === null || hierarchyStats == null
+      ? "-"
+      : formatHierarchyLastModified(hierarchyStats.lastModifiedIso);
+
+  const facilityConfigurationSummary = useMemo((): FacilityConfigurationSummarySnapshot | null => {
+    if (branchIdNum === null) return null;
+    return {
+      completionPercentage: completionForUi,
+      lastModified: lastModifiedStr,
+      buildings: panelBuildings,
+      floors: panelFloors,
+      totalRooms: panelTotalRooms,
+      configuredRooms: panelConfiguredRooms,
+      incompleteRooms: panelIncompleteRooms,
+    };
+  }, [
+    branchIdNum,
+    completionForUi,
+    lastModifiedStr,
+    panelBuildings,
+    panelFloors,
+    panelTotalRooms,
+    panelConfiguredRooms,
+    panelIncompleteRooms,
+  ]);
+
   const [isPanelOpen, setIsPanelOpen] = useState(true);
-  const [activeView, setActiveView] = useState<'structure' | 'inventory' | 'roomType' | 'hardware' | 'facilities' | 'hierarchyTree' | 'roomConfigFromStructure' | null>(null);
+  const [activeView, setActiveView] = useState<
+    | 'structure'
+    | 'inventory'
+    | 'roomType'
+    | 'hardware'
+    | 'facilities'
+    | 'hierarchyTree'
+    | 'roomConfigFromStructure'
+    | 'bedManagementFromStructure'
+    | 'branchConsultancy'
+    | null
+  >(null);
   const [roomToEditFromStructure, setRoomToEditFromStructure] = useState<RoomInventoryItem | null>(null);
+  const [roomForBedsFromStructure, setRoomForBedsFromStructure] = useState<RoomInventoryItem | null>(null);
 
   /** Build RoomInventoryItem from Structure Builder tree room + context so we can open Room Configuration */
   const handleEditRoomFromStructure = (room: { id: string; name: string; roomNumber?: string; roomType?: string }, context: { building: string; block: string; floor: string }) => {
+    if (!canAdd && !canEdit) return;
     const roomItem: RoomInventoryItem = {
-      id: room.id,
+      id: roomIdForApi(room.id),
       roomNumber: room.roomNumber ?? room.name,
       roomType: room.roomType ?? 'Consultation Room',
       building: context.building,
@@ -167,95 +429,138 @@ const page = () => {
     setIsPanelOpen(false);
   };
 
-  const masterDataCards = [
-    {
-      id: 1,
-      title: "Room Types",
-      subtitle: "6 types defined",
-      icon: (
-        <svg
-          className="h-6 w-6 text-green-700"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-          />
-        </svg>
-      ),
-      iconBgColor: "bg-green-100",
-      onClick: () => {
-        setActiveView('roomType');
-        setIsPanelOpen(false);
+  const handleOpenBedManagementFromStructure = (
+    room: { id: string; name: string; roomNumber?: string; roomType?: string },
+    context: { building: string; block: string; floor: string; buildingId: number; floorId: number },
+  ) => {
+    if (!canEdit) return;
+    const roomItem: RoomInventoryItem = {
+      id: roomIdForApi(room.id),
+      roomNumber: room.roomNumber ?? room.name,
+      roomType: room.roomType ?? 'Consultation Room',
+      building: context.building,
+      block: context.block,
+      floor: context.floor,
+      buildingId: context.buildingId,
+      floorId: context.floorId,
+      status: 'incomplete',
+      occupancyStatus: 'Vacant',
+      capacity: 1,
+      genderUsage: 'Mixed',
+      hasAC: false,
+      hardwareCount: 0,
+      facilitiesCount: 0,
+    };
+    setRoomForBedsFromStructure(roomItem);
+    setActiveView('bedManagementFromStructure');
+    setIsPanelOpen(false);
+  };
+
+  const masterDataCards = useMemo(() => {
+    const hasBranch = branchIdNum !== null;
+    const branch0 =
+      hierarchyResponse?.success && Array.isArray(hierarchyResponse.data)
+        ? hierarchyResponse.data[0]
+        : undefined;
+    const ins = branch0?.insights ?? null;
+    const countRt = insightMasterCount(ins, 'totalBranchRoomTypes');
+    const countHw = insightMasterCount(ins, 'totalBranchHardware');
+    const countFc = insightMasterCount(ins, 'totalBranchFacility');
+    const loading = hasBranch && hierarchyLoading && !hierarchyResponse;
+
+    return [
+      {
+        id: 1,
+        title: 'Room Types',
+        subtitle: subtitleRoomTypes(countRt, loading, hasBranch),
+        icon: (
+          <svg
+            className="h-6 w-6 text-green-700"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+            />
+          </svg>
+        ),
+        iconBgColor: 'bg-green-100',
+        onClick: () => {
+          if (!canView) return;
+          setActiveView('roomType');
+          setIsPanelOpen(false);
+        },
       },
-    },
-    {
-      id: 2,
-      title: "Hardware",
-      subtitle: "10 items available — click to view list",
-      icon: (
-        <svg
-          className="h-6 w-6 text-green-700"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-          />
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-        </svg>
-      ),
-      iconBgColor: "bg-green-100",
-      onClick: () => {
-        setActiveView('hardware');
-        setIsPanelOpen(false);
+      {
+        id: 2,
+        title: 'Hardware',
+        subtitle: subtitleItemsAvailable(countHw, loading, hasBranch),
+        icon: (
+          <svg
+            className="h-6 w-6 text-green-700"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        ),
+        iconBgColor: 'bg-green-100',
+        onClick: () => {
+          if (!canView) return;
+          setActiveView('hardware');
+          setIsPanelOpen(false);
+        },
       },
-    },
-    {
-      id: 3,
-      title: "Facilities",
-      subtitle: "10 items available — click to view list",
-      icon: (
-        <svg
-          className="h-6 w-6 text-green-700"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-          />
-        </svg>
-      ),
-      iconBgColor: "bg-green-100",
-      onClick: () => {
-        setActiveView('facilities');
-        setIsPanelOpen(false);
+      {
+        id: 3,
+        title: 'Facilities',
+        subtitle: subtitleItemsAvailable(countFc, loading, hasBranch),
+        icon: (
+          <svg
+            className="h-6 w-6 text-green-700"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+            />
+          </svg>
+        ),
+        iconBgColor: 'bg-green-100',
+        onClick: () => {
+          if (!canView) return;
+          setActiveView('facilities');
+          setIsPanelOpen(false);
+        },
       },
-    },
-  ];
+    ];
+  }, [branchIdNum, canView, hierarchyLoading, hierarchyResponse]);
 
   const actionCards = [
     {
       id: 1,
       title: "Manage Structure",
-      description: "Buildings, blocks, floors & departments",
+      description: "Buildings, floors & rooms",
       icon: (
         <svg
           className="h-6 w-6 text-green-700"
@@ -274,6 +579,7 @@ const page = () => {
       buttonLabel: "Configure",
       iconBgColor: "bg-green-100",
       onClick: () => {
+        if (!canView) return;
         setActiveView('structure');
         setIsPanelOpen(false);
       },
@@ -300,14 +606,15 @@ const page = () => {
       buttonLabel: "View All",
       iconBgColor: "bg-green-100",
       onClick: () => {
+        if (!canView) return;
         setActiveView('inventory');
         setIsPanelOpen(false);
       },
     },
     {
       id: 3,
-      title: "Room Type Master",
-      description: "Manage custom room types",
+      title: "Branch Consultancy Service",
+      description: "Consultancy fees and billing for this branch",
       icon: (
         <svg
           className="h-6 w-6 text-green-700"
@@ -319,14 +626,15 @@ const page = () => {
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+            d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8.25a6.5 6.5 0 01-6.5-6.5H9"
           />
         </svg>
       ),
-      buttonLabel: "Manage",
+      buttonLabel: "Configure",
       iconBgColor: "bg-green-100",
       onClick: () => {
-        setActiveView('roomType');
+        if (!canView) return;
+        setActiveView("branchConsultancy");
         setIsPanelOpen(false);
       },
     },
@@ -355,9 +663,19 @@ const page = () => {
       icon: homeIcon,
     },
     {
-      label: facilityName,
+      label: displayFacilityName,
     },
   ];
+
+  if (!canView) {
+    return (
+      <AppShell>
+        <div className="rounded-[12px] border border-red-200 bg-red-50 p-4 text-red-700">
+          You do not have permission to view infrastructure configuration.
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -366,28 +684,108 @@ const page = () => {
         <div className={`transition-all duration-300 ${isPanelOpen ? 'w-[80%]' : 'w-full'}`}>
           {activeView === 'structure' ? (
             <StructureBuilder
-              facilityName={facilityName}
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              prefetchedBranchRoomTypes={branchRoomTypeRows}
               facilityType={facilityType as "Hospital" | "Clinic"}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
               onBack={() => setActiveView(null)}
               onEditRoom={handleEditRoomFromStructure}
+              onOpenBedManagement={handleOpenBedManagementFromStructure}
             />
           ) : activeView === 'roomConfigFromStructure' && roomToEditFromStructure ? (
             <RoomConfiguration
-              facilityName={facilityName}
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
               room={roomToEditFromStructure}
+              roomTypeOptions={roomTypeOptionsForConfig}
+              branchRoomTypeRows={branchRoomTypeRows}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
               onBack={() => { setActiveView('structure'); setRoomToEditFromStructure(null); }}
               onSave={() => { setActiveView('structure'); setRoomToEditFromStructure(null); }}
             />
+          ) : activeView === 'bedManagementFromStructure' && roomForBedsFromStructure ? (
+            <BedManagement
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              room={roomForBedsFromStructure}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => {
+                setActiveView('structure');
+                setRoomForBedsFromStructure(null);
+              }}
+            />
           ) : activeView === 'inventory' ? (
-            <RoomInventory facilityName={facilityName} onBack={() => setActiveView(null)} />
+            <RoomInventory
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => setActiveView(null)}
+            />
+          ) : activeView === "branchConsultancy" ? (
+            <ConsultancyBranchService
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => setActiveView(null)}
+            />
           ) : activeView === 'roomType' ? (
-            <RoomTypeMaster facilityName={facilityName} onBack={() => setActiveView(null)} />
+            <RoomTypeMaster
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => setActiveView(null)}
+            />
           ) : activeView === 'hardware' ? (
-            <HardwareMaster facilityName={facilityName} onBack={() => setActiveView(null)} />
+            <HardwareMaster
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => setActiveView(null)}
+            />
           ) : activeView === 'facilities' ? (
-            <FacilitiesMaster facilityName={facilityName} onBack={() => setActiveView(null)} />
+            <FacilitiesMaster
+              facilityName={displayFacilityName}
+              branchId={branchIdNum}
+              canView={canView}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => setActiveView(null)}
+            />
           ) : activeView === 'hierarchyTree' ? (
-            <CompleteHierarchyTree facilityName={facilityName} facilityType={facilityType as "Hospital" | "Clinic"} onBack={() => setActiveView(null)} />
+            <CompleteHierarchyTree
+              branchId={branchIdNum}
+              facilityName={displayFacilityName}
+              facilityType={facilityType as "Hospital" | "Clinic"}
+              configurationSummary={facilityConfigurationSummary ?? undefined}
+              onBack={() => setActiveView(null)}
+            />
           ) : (
             <>
               <div className="space-y-6 border-b border-gray-200 pb-4">
@@ -398,7 +796,7 @@ const page = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2 flex-1">
                     <div className="flex items-center gap-3">
-                      <p className="text-xl font-semibold text-gray-900">{facilityName}</p>
+                      <p className="text-xl font-semibold text-gray-900">{displayFacilityName}</p>
                       <p className="rounded-full bg-green-600 px-3 py-1 text-xs font-medium text-white">
                         {facilityType}
                       </p>
@@ -431,7 +829,7 @@ const page = () => {
                 </div>
 
                 {/* Configuration Progress Card */}
-                <ConfigurationProgress completionPercentage={completionPercentage} />
+                <ConfigurationProgress completionPercentage={completionForUi} />
               </div>
 
               {/* Action Cards */}
@@ -461,7 +859,13 @@ const page = () => {
                       icon={card.icon}
                       iconBgColor={card.iconBgColor}
                       onButtonClick={card.onClick}
-                      buttonLabel={card.id === 2 || card.id === 3 ? "View list" : undefined}
+                      buttonLabel={
+                        card.id === 1
+                          ? "Configure"
+                          : card.id === 2 || card.id === 3
+                            ? "View list"
+                            : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -513,7 +917,7 @@ const page = () => {
                     <div className="flex-1 min-w-0">
                       <h3 className="text-base font-semibold text-gray-900">Complete Hierarchy Tree</h3>
                       <p className="text-sm text-gray-600 mt-1">
-                        View the complete structure including all buildings, floors, departments, rooms, and beds in an expandable tree view
+                        View the complete structure including all buildings, floors, rooms, and beds in an expandable tree view
                       </p>
                     </div>
 
@@ -521,6 +925,7 @@ const page = () => {
                     <div className="flex-shrink-0">
                       <button
                         onClick={() => {
+                          if (!canView) return;
                           setActiveView('hierarchyTree');
                           setIsPanelOpen(false);
                         }}
@@ -534,17 +939,17 @@ const page = () => {
               </div>
 
               {/* What's Next Section */}
-              <div className="mt-4">
+              {/* <div className="mt-4">
                 <div className="rounded-[12px] border border-gray-200 bg-white p-4 ">
                   <h2 className="text-lg font-semibold text-gray-900 mb-4">What's Next?</h2>
 
                   <div className="flex items-start gap-4">
-                    {/* Step Number Icon */}
+               
                     <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-green-600">
                       <span className="text-white font-semibold text-base">4</span>
                     </div>
 
-                    {/* Step Content */}
+                    
                     <div className="flex-1">
                       <h3 className="text-base font-semibold text-gray-900 mb-1">Configure Rooms</h3>
                       <p className="text-sm text-gray-600">
@@ -553,25 +958,24 @@ const page = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </>
           )}
         </div>
 
         {/* Right Side Panel - 20% - Always visible when panel is open */}
         <ConfigurationSummaryPanel
-          facilityName={facilityName}
+          facilityName={displayFacilityName}
           facilityType={facilityType as "Hospital" | "Clinic"}
-          completionPercentage={completionPercentage}
+          completionPercentage={completionForUi}
           isOpen={isPanelOpen}
           onClose={() => setIsPanelOpen(false)}
-          buildings={buildings}
-          blocks={blocks}
-          floors={floors}
-          departments={departments}
-          totalRooms={totalRooms}
-          configuredRooms={configuredRooms}
-          incompleteRooms={incompleteRooms}
+          buildings={panelBuildings}
+          floors={panelFloors}
+          totalRooms={panelTotalRooms}
+          configuredRooms={panelConfiguredRooms}
+          incompleteRooms={panelIncompleteRooms}
+          lastModified={lastModifiedStr}
         />
 
       </div>

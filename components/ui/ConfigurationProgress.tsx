@@ -4,7 +4,8 @@ import React from "react";
 
 type ConfigurationProgressProps = {
   status?: string;
-  completionPercentage: number;
+  /** When `null`, shows "-" and an empty progress bar. */
+  completionPercentage: number | null;
   className?: string;
 };
 
@@ -13,6 +14,13 @@ export const ConfigurationProgress = ({
   completionPercentage,
   className = "",
 }: ConfigurationProgressProps) => {
+  const pct =
+    completionPercentage != null && Number.isFinite(completionPercentage)
+      ? Math.min(100, Math.max(0, completionPercentage))
+      : null;
+  const labelRight =
+    pct === null ? "-" : `${pct}% Complete`;
+
   return (
     <div className={`rounded-[12px] border border-gray-200 bg-white p-4 ${className}`}>
       <div className="mb-3 flex items-center justify-between">
@@ -38,15 +46,12 @@ export const ConfigurationProgress = ({
           </svg>
           <span className="text-sm font-medium text-gray-900">{status}</span>
         </div>
-        <span className="text-sm font-medium text-gray-900">
-          {completionPercentage}% Complete
-        </span>
+        <span className="text-sm font-medium text-gray-900">{labelRight}</span>
       </div>
-      {/* Progress Bar */}
       <div className="h-2 w-full overflow-hidden rounded-full bg-green-100">
         <div
           className="h-full bg-green-600 transition-all duration-300"
-          style={{ width: `${completionPercentage}%` }}
+          style={{ width: pct === null ? "0%" : `${pct}%` }}
         />
       </div>
     </div>

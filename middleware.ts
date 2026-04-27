@@ -13,10 +13,10 @@ export function middleware(request: NextRequest) {
 
   // Allow API routes and static files
   if (
-    pathname.startsWith('/api/') ||
-    pathname.startsWith('/_next/') ||
-    pathname.startsWith('/static/') ||
-    pathname.includes('.')
+    pathname?.startsWith('/api/') ||
+    pathname?.startsWith('/_next/') ||
+    pathname?.startsWith('/static/') ||
+    pathname?.includes('.')
   ) {
     return NextResponse.next();
   }

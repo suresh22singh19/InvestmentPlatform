@@ -77,6 +77,26 @@ const capitalizeFirstLetter = (str: string | null | undefined): string => {
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 };
 
+// Capitalize first letter of each word for Gender, Marital Status, Religion, Occupation (if value exists)
+const capitalizeWords = (str: string | null | undefined): string => {
+    if (!str || typeof str !== "string" || !str.trim()) return "N/A";
+    return str
+        .trim()
+        .split(/\s+/)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(" ");
+};
+
+// Helper function to mask phone number (show last 4 digits, mask first 6 with 'x')
+const maskPhoneNumber = (phoneNumber: string | null | undefined): string => {
+    if (!phoneNumber) return "N/A";
+    const cleaned = phoneNumber.replace(/\D/g, ""); // Remove non-digits
+    if (cleaned.length < 4) return phoneNumber; // If less than 4 digits, return as is
+    const last4 = cleaned.slice(-4);
+    const masked = "XXXXXX" + last4;
+    return masked;
+};
+
 export default function ViewRegistrationFormPage() {
     const router = useRouter();
     const params = useParams();
@@ -117,6 +137,10 @@ export default function ViewRegistrationFormPage() {
         );
     }
 
+    const jsHealthCardNoDisplay =
+        typeof patientData.jsHealthCardNo === "string" ? patientData.jsHealthCardNo.trim() : "";
+    const showHealthCardPreview = jsHealthCardNoDisplay.length > 0;
+
     return (
         <AppShell>
             <div className="space-y-8">
@@ -133,82 +157,116 @@ export default function ViewRegistrationFormPage() {
                     {/* personal details  */}
                     <div className="w-full overflow-hidden lg:rounded-[20px] lg:border lg:border-[#E3EEE1] lg:p-4 mb-4">
                         <h3 className="font-inter font-semibold text-[18px] md:text-[20px] lg:text-[24px] leading-[120%] text-[#262D3B] mb-4">Personal Information</h3>
-                        <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
-                            <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                                <Image src="/icons/patientinfo.svg" alt="patient info" width={20} height={20} /> Patient Information
-                            </h4>
-                            <div className="space-y-4">
-                                {/* Grid 1 */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Contact Number</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.contactNumber || "N/A"}</p>
-                                    </div>
+                        <div className="grid grid-cols-12 gap-4 mb-4">
+                            <div className={showHealthCardPreview ? "col-span-12 lg:col-span-9" : "col-span-12"}>
+                                <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4">
+                                    <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
+                                        <Image src="/icons/patientinfo.svg" alt="patient info" width={20} height={20} /> Patient Information
+                                    </h4>
+                                    <div className="space-y-4">
+                                        {/* Grid 1 */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0 break-words">
+                                                <p className="text-xs font-medium text-[#7B8089]">Contact Number</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{maskPhoneNumber(patientData.contactNumber)}</p>
+                                            </div>
 
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Whatsapp No</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.whatsappNo || "N/A"}</p>
-                                    </div>
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Whatsapp No</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{maskPhoneNumber(patientData.whatsappNo)}</p>
+                                            </div>
 
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Aadhar Card Number</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.aadharCardNo || "N/A"}</p>
-                                    </div>
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Aadhar Card Number</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.aadharCardNo || "N/A"}</p>
+                                            </div>
 
-                                    <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                        <p className="text-xs font-medium text-[#7B8089]">Patient Name</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.patientTitle || ""} {patientData.patientName || "N/A"}</p>
+                                            <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 break-words">
+                                                <p className="text-xs font-medium text-[#7B8089]">Patient Name</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.patientTitle || ""} {capitalizeWords(patientData.patientName)}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Grid 2 */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0 break-words">
+                                                <p className="text-xs font-medium text-[#7B8089]">Father / Husband's Name</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.guardianTitle || ""} {capitalizeWords(patientData.guardianName)}</p>
+                                            </div>
+
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Gender</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{capitalizeWords(patientData.gender)}</p>
+                                            </div>
+
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Age</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.age || "N/A"}</p>
+                                            </div>
+
+                                            <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
+                                                <p className="text-xs font-medium text-[#7B8089]">Marital Status</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{capitalizeWords(patientData.maritalStatus)}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Grid 3 */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Religion</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{capitalizeWords(patientData.religion)}</p>
+                                            </div>
+
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Occupation</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{capitalizeWords(patientData.occupation)}</p>
+                                            </div>
+
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">Email Address</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.emailAddress || "N/A"}</p>
+                                            </div>
+
+                                            <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
+                                                <p className="text-xs font-medium text-[#7B8089]">JS Health Card No.</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.jsHealthCardNo || "N/A"}</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                                <p className="text-xs font-medium text-[#7B8089]">UHID</p>
+                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.uhid || "N/A"}</p>
+                                            </div>
+
+
+                                        </div>
+
                                     </div>
                                 </div>
-
-                                {/* Grid 2 */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Father / Husband's Name</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.guardianTitle || ""} {patientData.guardianName || "N/A"}</p>
-                                    </div>
-
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Gender</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.gender || "N/A"}</p>
-                                    </div>
-
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Age</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.age || "N/A"}</p>
-                                    </div>
-
-                                    <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                        <p className="text-xs font-medium text-[#7B8089]">Marital Status</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.maritalStatus || "N/A"}</p>
-                                    </div>
-                                </div>
-
-                                {/* Grid 3 */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Religion</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.religion || "N/A"}</p>
-                                    </div>
-
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Occupation</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.occupation || "N/A"}</p>
-                                    </div>
-
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Email Address</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.emailAddress || "N/A"}</p>
-                                    </div>
-
-                                    <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                        <p className="text-xs font-medium text-[#7B8089]">JS Health Card No.</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{patientData.jsHealthCardNo || "N/A"}</p>
-                                    </div>
-                                </div>
-
                             </div>
+                            {showHealthCardPreview && (
+                                <div className="col-span-12 lg:col-span-3">
+                                    <div className="flex h-full w-full items-center justify-center rounded-[20px] border border-[#E3EEE1] bg-white p-4">
+                                        <div className="relative inline-block max-w-full">
+                                            <Image
+                                                src="/images/HealthCard.jpeg"
+                                                alt="Health card preview"
+                                                width={380}
+                                                height={380}
+                                                className="h-auto max-h-[380px] w-full max-w-[380px] object-contain"
+                                            />
+                                            <p
+                                                className="absolute bottom-3 left-[22px] text-[13px] font-semibold tracking-[3px] text-[#fff71f] drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] sm:text-[15px] sm:tracking-[4px]"
+                                                aria-label={`JS Health Card ${jsHealthCardNoDisplay}`}
+                                            >
+                                                {jsHealthCardNoDisplay}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
+
                         <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
                             <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
                                 <Image src="/icons/addressicon.svg" alt="Address info" width={20} height={20} /> Address Information
@@ -276,7 +334,7 @@ export default function ViewRegistrationFormPage() {
                         </div>
                         <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
                             <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                                <Image src="/icons/patientinfo.svg" alt="patient info" width={20} height={20} /> Patient Type 
+                                <Image src="/icons/patientinfo.svg" alt="patient info" width={20} height={20} /> Patient Type
                             </h4>
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
@@ -316,17 +374,33 @@ export default function ViewRegistrationFormPage() {
 
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                             <p className="text-xs font-medium text-[#7B8089]">Source</p>
-                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.referralSourceInfo || patientData.source || "N/A"}</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">
+                                                {(() => {
+                                                    const ref = appointment?.patientReferral as any;
+                                                    const source: string | null | undefined = ref?.source ?? patientData.source;
+                                                    const sourceSelected: string | null | undefined = ref?.sourceSelected ?? patientData.referralSourceInfo;
+
+                                                    // Special cases for source
+                                                    if (source === "Referral") return "Patient Referral";
+                                                    if (source === "Doctor") return "Doctor Referral";
+
+                                                    if (source && sourceSelected) return `${source} (${sourceSelected})`;
+                                                    if (source) return source;
+                                                    if (sourceSelected) return sourceSelected;
+
+                                                    return "N/A";
+                                                })()}
+                                            </p>
                                         </div>
 
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                            <p className="text-xs font-medium text-[#7B8089]">Referral Name</p>
-                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.referralName || "N/A"}</p>
+                                            <p className="text-xs font-medium text-[#7B8089]"> Patient Referral Name</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{(appointment?.patientReferral as any)?.referralName ?? patientData.referralName ?? "N/A"}</p>
                                         </div>
 
                                         <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                            <p className="text-xs font-medium text-[#7B8089]">Referral Mobile</p>
-                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.referralMobile || "N/A"}</p>
+                                            <p className="text-xs font-medium text-[#7B8089]"> Patient Referral Mobile</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{(appointment?.patientReferral as any)?.referralMobile ?? patientData.referralMobile ?? "N/A"}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -341,7 +415,7 @@ export default function ViewRegistrationFormPage() {
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                         <p className="text-xs font-medium text-[#7B8089]">Doctor </p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctor?.userName || appointment.doctor?.email || "N/A"}</p>
+                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctor?.name ||appointment.doctor?.userName || appointment.doctor?.email || "N/A"}</p>
                                     </div>
 
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
@@ -375,15 +449,18 @@ export default function ViewRegistrationFormPage() {
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                         <p className="text-xs font-medium text-[#7B8089]">Consultation Charges</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctorFee || patientData.payment?.doctorFee || "N/A"}</p>
+                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctorFee || patientData.payment?.doctorFee || "0"}</p>
                                     </div>
 
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                         <p className="text-xs font-medium text-[#7B8089]">Payment Mode</p>
                                         <p className="text-sm font-medium text-[#262D3B]">
-                                            {Number(appointment?.doctorFee ?? patientData.payment?.doctorFee ?? 0) === 0
-                                                ? "N/A"
-                                                : (patientData.payment?.paymentMode || patientData.schemeType || "N/A")}
+                                            {String(appointment?.isConsultancyVoucherApplied ?? "").toLowerCase() === "yes"
+                                                ? "OPD Voucher Applied"
+                                                : Number(appointment?.doctorFee ?? patientData.payment?.doctorFee ?? 0) === 0
+                                                  ? "0"
+                                                  : capitalizeWords(patientData.payment?.paymentMode || patientData.schemeType || "Cash") +
+                                                    (patientData.payment?.paymentMode === "credit" ? " (Online Payment)" : "")}
                                         </p>
                                     </div>
 
@@ -400,45 +477,45 @@ export default function ViewRegistrationFormPage() {
                             </div>
                         </div>
                         {(patientData.payment?.gstNumber || patientData.gstNumber) && (
-                                <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
-                                    <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                                        <Image src="/icons/patientinfo.svg" alt="Billing info" width={20} height={20} /> Billing Information
-                                    </h4>
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">GST Number</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.gstNumber || patientData.gstNumber || "N/A"}</p>
-                                            </div>
-
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">Company Name</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.companyName || "N/A"}</p>
-                                            </div>
-
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">State</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.state || "N/A"}</p>
-                                            </div>
-
-                                            <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                                <p className="text-xs font-medium text-[#7B8089]">City</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.city || "N/A"}</p>
-                                            </div>
+                            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
+                                <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
+                                    <Image src="/icons/patientinfo.svg" alt="Billing info" width={20} height={20} /> Billing Information
+                                </h4>
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">GST Number</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.gstNumber || patientData.gstNumber || "N/A"}</p>
                                         </div>
-                                        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">Pincode</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.pincode || "N/A"}</p>
-                                            </div>
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">Billing Address</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.billingAddress || "N/A"}</p>
-                                            </div>
+
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Company Name</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.companyName || "N/A"}</p>
+                                        </div>
+
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">State</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.state || "N/A"}</p>
+                                        </div>
+
+                                        <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
+                                            <p className="text-xs font-medium text-[#7B8089]">City</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.city || "N/A"}</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Pincode</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.pincode || "N/A"}</p>
+                                        </div>
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Billing Address</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.billingAddress || "N/A"}</p>
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        )}
                     </div>
                     {/* Payment details  */}
 
@@ -470,14 +547,14 @@ export default function ViewRegistrationFormPage() {
 
                                         <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
                                             <p className="text-xs font-medium text-[#7B8089]">Allergies</p>
-                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.allergies || "No"}</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{typeof appointment.allergies === "string" && appointment.allergies.trim() ? appointment.allergies.trim() : "No"}</p>
                                         </div>
                                     </div>
                                     {/* Grid 2 */}
                                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                             <p className="text-xs font-medium text-[#7B8089]">Surgeries</p>
-                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.surgeries || "No"}</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{typeof appointment.surgeries === "string" && appointment.surgeries.trim() ? appointment.surgeries.trim() : "No"}</p>
                                         </div>
 
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
@@ -600,7 +677,7 @@ export default function ViewRegistrationFormPage() {
                                             <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                                 <p className="text-xs font-medium text-[#7B8089]">Addiction</p>
                                                 <p className="text-sm font-medium text-[#262D3B]">
-                                                    {patientData.addictionType?.length 
+                                                    {patientData.addictionType?.length
                                                         ? patientData.addictionType.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(", ")
                                                         : "Other"}
                                                 </p>

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import type { SelectOption } from "@/components/ui/FormSelectField";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -18,11 +19,21 @@ import {
   TableSearchInput,
   Pagination,
   MessageDialog,
+  Tooltip,
+  FormSelectField,
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
-import { useGetDietCategoriesQuery, useCreateDietCategoryMutation, useUpdateDietCategoryMutation, useDeleteDietCategoryMutation } from "@/store/api/settingsApi";
+import {
+  useGetDietCategoriesQuery,
+  useCreateDietCategoryMutation,
+  useUpdateDietCategoryMutation,
+  useDeleteDietCategoryMutation,
+  useGetBranchesQuery,
+} from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
 type DietCategory = {
   id: number;
@@ -31,7 +42,162 @@ type DietCategory = {
   remark: string;
 };
 
+const sanitizeAlphaText = (value: string) =>
+  value
+    .replace(/[^a-zA-Z\s]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, 100);
+
+function capitalizeFirst(str: string | null | undefined): string {
+  if (str == null || str === "") return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+function branchSelectLabel(name: string, typeRaw: string | null | undefined): string {
+  const t = (typeRaw ?? "").trim();
+  if (!t) return name;
+  return `${name} (${capitalizeFirst(t)})`;
+}
+
+// Extracted outside to avoid re-creating on every parent render
+const DynamicFoodItems = ({ foodItems, onViewAll }: { foodItems: string[]; onViewAll: (items: string[]) => void }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemsRef = useRef<(HTMLSpanElement | null)[]>([]);
+  const [visibleCount, setVisibleCount] = useState(foodItems.length);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  const calculateVisibleItems = useCallback(() => {
+    if (!containerRef.current || foodItems.length === 0) {
+      setVisibleCount(foodItems.length);
+      setIsOverflowing(false);
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+
+        const container = containerRef.current;
+        const containerWidth = container.offsetWidth;
+        const gap = 8;
+        const basePadding = 32;
+        const charWidth = 7;
+        const viewAllButtonBaseWidth = 90;
+
+        let totalWidth = 0;
+        let count = 0;
+
+        for (let i = 0; i < foodItems.length; i++) {
+          const itemElement = itemsRef.current[i];
+          let itemWidth: number;
+
+          if (itemElement && itemElement.offsetWidth > 0) {
+            itemWidth = itemElement.offsetWidth + gap;
+          } else {
+            const textWidth = foodItems[i].length * charWidth;
+            itemWidth = Math.max(60, textWidth + basePadding) + gap;
+          }
+
+          const needsViewAllButton = i < foodItems.length - 1;
+          const viewAllButtonWidth = needsViewAllButton
+            ? viewAllButtonBaseWidth + (foodItems.length - i - 1).toString().length * charWidth + gap
+            : 0;
+
+          const requiredWidth = totalWidth + itemWidth + viewAllButtonWidth;
+
+          if (requiredWidth > containerWidth && i > 0) {
+            count = i;
+            setIsOverflowing(true);
+            break;
+          }
+
+          totalWidth += itemWidth;
+          count = i + 1;
+        }
+
+        if (count === foodItems.length) {
+          setIsOverflowing(false);
+        } else if (count === 0 && foodItems.length > 0) {
+          count = 1;
+          setIsOverflowing(true);
+        }
+
+        setVisibleCount(count);
+      });
+    });
+  }, [foodItems]);
+
+  useEffect(() => {
+    itemsRef.current = new Array(foodItems.length).fill(null);
+
+    const timeoutId = setTimeout(() => {
+      calculateVisibleItems();
+    }, 50);
+
+    let resizeTimeout: NodeJS.Timeout;
+    const handleResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        calculateVisibleItems();
+      }, 100);
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        calculateVisibleItems();
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(resizeTimeout);
+      window.removeEventListener("resize", handleResize);
+      if (resizeObserver && containerRef.current) {
+        resizeObserver.unobserve(containerRef.current);
+      }
+    };
+  }, [calculateVisibleItems, foodItems]);
+
+  const visibleItems = foodItems.slice(0, visibleCount);
+  const remainingCount = foodItems.length - visibleCount;
+
+  return (
+    <div ref={containerRef} className="flex flex-wrap items-center gap-2 w-full min-w-0">
+      {visibleItems.map((food, index) => (
+        <span
+          key={`${food}-${index}`}
+          ref={(el) => {
+            itemsRef.current[index] = el;
+          }}
+          className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
+        >
+          {food}
+        </span>
+      ))}
+      {isOverflowing && remainingCount > 0 && (
+        <button
+          type="button"
+          onClick={() => onViewAll(foodItems)}
+          className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
+        >
+          View all +{remainingCount}
+        </button>
+      )}
+    </div>
+  );
+};
+
 export default function DietCategoryPage() {
+  const dietCategoryPermission = usePermission("settings", { subModule: "diet-category" });
+  const canView = dietCategoryPermission.canView;
+  const canAdd = dietCategoryPermission.canAdd;
+  const canEdit = dietCategoryPermission.canEdit;
+  const canDelete = dietCategoryPermission.canDelete;
+
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -54,6 +220,8 @@ export default function DietCategoryPage() {
   }, [formValues]);
 
   const [dietFoodInput, setDietFoodInput] = useState("");
+  /** Add/Edit dialog: super admin can change; others locked to the page branch (disabled). */
+  const [formBranchId, setFormBranchId] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -61,6 +229,66 @@ export default function DietCategoryPage() {
   const [apiErrorMessage, setApiErrorMessage] = useState("");
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const {
+    selectedBranchFilter,
+    setSelectedBranchFilter,
+    branchFilterOptions,
+    isLoadingBranches,
+    isBranchFilterDisabled,
+    filterBranchId,
+    isSuperAdmin: isBranchFilterSuperAdmin,
+    branchFilterPersistReady,
+  } = useBranchFilter({ persistSuperAdminSelectionKey: "hiims-settings-diet-category-branch" });
+
+  const { data: branchesListData } = useGetBranchesQuery(undefined);
+
+  const dietCategoryBranchOptions = useMemo((): SelectOption[] => {
+    const rows = branchesListData?.data;
+    if (!isBranchFilterSuperAdmin) {
+      if (!Array.isArray(rows) || rows.length === 0) return branchFilterOptions;
+      return branchFilterOptions.map((opt) => {
+        const id = parseInt(String(opt.value), 10);
+        if (!Number.isFinite(id)) return opt;
+        const b = rows.find((x) => Number(x.id) === id) as { name?: string; type?: string } | undefined;
+        if (!b?.name) return opt;
+        return {
+          value: opt.value,
+          label: branchSelectLabel(String(b.name), b.type),
+        };
+      });
+    }
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    return rows.map((b) => {
+      const row = b as { id: number; name?: string; type?: string };
+      return {
+        value: String(row.id),
+        label: branchSelectLabel(String(row.name ?? ""), row.type),
+      };
+    });
+  }, [isBranchFilterSuperAdmin, branchesListData, branchFilterOptions]);
+
+  useEffect(() => {
+    if (!isBranchFilterSuperAdmin) return;
+    if (isLoadingBranches) return;
+    const rows = branchesListData?.data;
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (selectedBranchFilter !== "") return;
+    setSelectedBranchFilter(String(rows[0].id));
+  }, [
+    isBranchFilterSuperAdmin,
+    isLoadingBranches,
+    branchesListData,
+    selectedBranchFilter,
+    setSelectedBranchFilter,
+  ]);
+
+  const shouldSkipDietCategoriesQuery =
+    !canView ||
+    !branchFilterPersistReady ||
+    filterBranchId === undefined ||
+    !Number.isFinite(filterBranchId) ||
+    filterBranchId < 1;
 
   // Form refs for arrow key navigation
   const addFormRef = useRef<HTMLFormElement>(null);
@@ -73,17 +301,24 @@ export default function DietCategoryPage() {
   // Debounce search to avoid too many API calls
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
-  // Reset to first page when search term changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedSearchTerm]);
-
-  // Fetch diet categories from API
-  const { data: dietCategoriesData, isLoading: isLoadingDietCategories, refetch: refetchDietCategories } = useGetDietCategoriesQuery({
-    page: currentPage,
-    limit: itemsPerPage,
-    search: debouncedSearchTerm || undefined,
-  });
+  // Fetch diet categories from API (scoped by branch)
+  const { data: dietCategoriesData, isLoading: isLoadingDietCategories, refetch: refetchDietCategories } =
+    useGetDietCategoriesQuery(
+      {
+        page: currentPage,
+        limit: itemsPerPage,
+        search: debouncedSearchTerm || undefined,
+        sort: "createdAt",
+        ...(filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1
+          ? { branchId: filterBranchId }
+          : {}),
+      },
+      {
+        skip: shouldSkipDietCategoriesQuery,
+        /** Fresh GET whenever branch (or other args) change; avoid stale list after switching branch. */
+        refetchOnMountOrArgChange: true,
+      }
+    );
 
   // Create, update, and delete mutations
   const [createDietCategory, { isLoading: isCreating }] = useCreateDietCategoryMutation();
@@ -142,12 +377,25 @@ export default function DietCategoryPage() {
   const totalItems = dietCategoriesData?.total || 0;
   const paginatedDietCategories = dietCategories;
 
+  const resolveDefaultFormBranchId = () => {
+    if (selectedBranchFilter && /^\d+$/.test(selectedBranchFilter)) {
+      return selectedBranchFilter;
+    }
+    if (filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1) {
+      return String(filterBranchId);
+    }
+    return "";
+  };
+
   const handleViewFood = (foodItems: string[]) => {
+    if (!canView) return;
     setSelectedFoodItems(foodItems);
     setViewFoodDialogOpen(true);
   };
 
   const handleEdit = (category: DietCategory) => {
+    if (!canEdit) return;
+    setFormBranchId(resolveDefaultFormBranchId());
     setSelectedDietCategory(category);
     const initialValues = {
       dietCategory: category.dietCategory,
@@ -163,6 +411,8 @@ export default function DietCategoryPage() {
   };
 
   const handleAdd = () => {
+    if (!canAdd) return;
+    setFormBranchId(resolveDefaultFormBranchId());
     setSelectedDietCategory(null);
     const initialValues = {
       dietCategory: "",
@@ -210,15 +460,6 @@ export default function DietCategoryPage() {
     });
   };
 
-  const validateForm = () => {
-    const errors: Record<string, string> = {};
-    if (!formValues.dietCategory.trim()) errors.dietCategory = "Diet Category is required";
-    if (formValues.dietFoodItems.length === 0) errors.dietFood = "At least one diet food item is required";
-    if (!formValues.remark.trim()) errors.remark = "Remark is required";
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     
@@ -241,12 +482,50 @@ export default function DietCategoryPage() {
     
     // Re-validate with latest values
     const errors: Record<string, string> = {};
-    if (!currentFormValues.dietCategory.trim()) errors.dietCategory = "Diet Category is required";
-    if (currentFormValues.dietFoodItems.length === 0) errors.dietFood = "At least one diet food item is required";
-    if (!currentFormValues.remark.trim()) errors.remark = "Remark is required";
+    if (!currentFormValues.dietCategory.trim()) {
+      errors.dietCategory = "Diet Category is required";
+    } else if (!/^[a-zA-Z\s]+$/.test(currentFormValues.dietCategory.trim())) {
+      errors.dietCategory = "Diet Category must contain only letters and spaces";
+    } else if (currentFormValues.dietCategory.trim().length > 100) {
+      errors.dietCategory = "Diet Category cannot exceed 100 characters";
+    }
+
+    if (currentFormValues.dietFoodItems.length === 0) {
+      errors.dietFood = "At least one diet food item is required";
+    } else if (
+      currentFormValues.dietFoodItems.some(
+        (food) => !food.trim() || food.trim().length > 100 || !/^[a-zA-Z\s]+$/.test(food.trim())
+      )
+    ) {
+      errors.dietFood = "Diet Food must contain only letters and spaces, max 100 characters";
+    }
+
+    if (!currentFormValues.remark.trim()) {
+      errors.remark = "Remark is required";
+    } else if (!/^[a-zA-Z\s]+$/.test(currentFormValues.remark.trim())) {
+      errors.remark = "Remark must contain only letters and spaces";
+    } else if (currentFormValues.remark.trim().length > 100) {
+      errors.remark = "Remark cannot exceed 100 characters";
+    }
     
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
+      return;
+    }
+
+    if (selectedDietCategory && !canEdit) return;
+    if (!selectedDietCategory && !canAdd) return;
+
+    const branchId = isBranchFilterSuperAdmin
+      ? (() => {
+          const n = parseInt(formBranchId, 10);
+          return Number.isFinite(n) && n >= 1 ? n : undefined;
+        })()
+      : filterBranchId;
+
+    if (branchId === undefined || !Number.isFinite(branchId) || branchId < 1) {
+      setApiErrorMessage("Select a branch before saving.");
+      setShowApiErrorDialog(true);
       return;
     }
 
@@ -297,6 +576,7 @@ export default function DietCategoryPage() {
           remark: currentFormValues.remark.trim(),
           status: "active" as "active" | "inactive",
           dietFoods: updatedDietFoods,
+          branchId,
         };
         
         // Debug log to verify payload
@@ -311,6 +591,7 @@ export default function DietCategoryPage() {
           remark: currentFormValues.remark.trim(),
           status: "active" as "active" | "inactive",
           dietFoods: dietFoods,
+          branchId,
         };
         
         // Debug log to verify payload
@@ -333,21 +614,26 @@ export default function DietCategoryPage() {
       });
       setDietFoodInput("");
       setFormErrors({});
+      setFormBranchId("");
       setSelectedDietCategory(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`Failed to ${selectedDietCategory ? "update" : "create"} diet category:`, error);
 
-      // Handle error - show error message
       let errorMsg = `Failed to ${selectedDietCategory ? "update" : "create"} diet category. Please try again.`;
-
-      if (error?.data?.message) {
-        errorMsg = error.data.message;
-      } else if (error?.data?.error) {
-        errorMsg = error.data.error;
-      } else if (error?.error) {
-        errorMsg = error.error;
-      } else if (error?.message) {
-        errorMsg = error.message;
+      const err = error as {
+        data?: { message?: string | string[]; error?: string };
+        error?: string;
+        message?: string;
+      };
+      if (err?.data?.message != null) {
+        const m = err.data.message;
+        errorMsg = Array.isArray(m) ? m.map(String).join(" ") : String(m);
+      } else if (err?.data?.error) {
+        errorMsg = err.data.error;
+      } else if (err?.error) {
+        errorMsg = err.error;
+      } else if (err?.message) {
+        errorMsg = err.message;
       }
 
       setApiErrorMessage(errorMsg);
@@ -385,173 +671,44 @@ export default function DietCategoryPage() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!canDelete) return;
+    if (
+      filterBranchId === undefined ||
+      !Number.isFinite(filterBranchId) ||
+      filterBranchId < 1
+    ) {
+      setApiErrorMessage("Select a branch before deleting.");
+      setShowApiErrorDialog(true);
+      return;
+    }
     try {
-      const result = await deleteDietCategory({ id }).unwrap();
+      const result = await deleteDietCategory({ id, branchId: filterBranchId }).unwrap();
       setSuccessMessage(result?.message || "Diet category deleted successfully");
       setShowSuccessDialog(true);
       await refetchDietCategories();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to delete diet category:", error);
-      
+
       let errorMsg = "Failed to delete diet category. Please try again.";
-      
-      if (error?.data?.message) {
-        errorMsg = error.data.message;
-      } else if (error?.data?.error) {
-        errorMsg = error.data.error;
-      } else if (error?.error) {
-        errorMsg = error.error;
-      } else if (error?.message) {
-        errorMsg = error.message;
+      const err = error as {
+        data?: { message?: string; error?: string };
+        error?: string;
+        message?: string;
+      };
+      if (err?.data?.message != null) {
+        const m = err.data.message;
+        errorMsg = Array.isArray(m) ? m.map(String).join(" ") : String(m);
+      } else if (err?.data?.error) {
+        errorMsg = err.data.error;
+      } else if (err?.error) {
+        errorMsg = err.error;
+      } else if (err?.message) {
+        errorMsg = err.message;
       }
       
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
     }
-  };
-
-  // Dynamic component to display food items based on available space
-  const DynamicFoodItems = ({ foodItems }: { foodItems: string[] }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const itemsRef = useRef<(HTMLSpanElement | null)[]>([]);
-    const [visibleCount, setVisibleCount] = useState(foodItems.length);
-    const [isOverflowing, setIsOverflowing] = useState(false);
-
-    const calculateVisibleItems = useCallback(() => {
-      if (!containerRef.current || foodItems.length === 0) {
-        setVisibleCount(foodItems.length);
-        setIsOverflowing(false);
-        return;
-      }
-
-      // Use double RAF to ensure DOM is fully updated
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!containerRef.current) return;
-
-          const container = containerRef.current;
-          const containerWidth = container.offsetWidth;
-          const gap = 8; // gap-2 = 8px
-          const basePadding = 32; // px-4 = 16px on each side
-          const charWidth = 7; // Approximate character width for text-xs
-          const viewAllButtonBaseWidth = 90; // Base width for "View all" button
-
-          let totalWidth = 0;
-          let count = 0;
-
-          // Calculate how many items can fit
-          for (let i = 0; i < foodItems.length; i++) {
-            const itemElement = itemsRef.current[i];
-            let itemWidth: number;
-            
-            if (itemElement && itemElement.offsetWidth > 0) {
-              // Use actual measured width
-              itemWidth = itemElement.offsetWidth + gap;
-            } else {
-              // Estimate width based on text length
-              const textWidth = foodItems[i].length * charWidth;
-              itemWidth = Math.max(60, textWidth + basePadding) + gap;
-            }
-
-            // Check if we need to show "View all" button
-            const needsViewAllButton = i < foodItems.length - 1;
-            const viewAllButtonWidth = needsViewAllButton 
-              ? viewAllButtonBaseWidth + (foodItems.length - i - 1).toString().length * charWidth + gap
-              : 0;
-
-            const requiredWidth = totalWidth + itemWidth + viewAllButtonWidth;
-
-            if (requiredWidth > containerWidth && i > 0) {
-              // We need to show "View all" button, so stop here
-              count = i;
-              setIsOverflowing(true);
-              break;
-            }
-
-            totalWidth += itemWidth;
-            count = i + 1;
-          }
-
-          // If all items fit, no overflow
-          if (count === foodItems.length) {
-            setIsOverflowing(false);
-          } else if (count === 0 && foodItems.length > 0) {
-            // Even first item doesn't fit, show at least one with "View all"
-            count = 1;
-            setIsOverflowing(true);
-          }
-
-          setVisibleCount(count);
-        });
-      });
-    }, [foodItems]);
-
-    useEffect(() => {
-      // Reset refs array when foodItems change
-      itemsRef.current = new Array(foodItems.length).fill(null);
-      
-      // Initial calculation
-      const timeoutId = setTimeout(() => {
-        calculateVisibleItems();
-      }, 50); // Small delay to ensure container is rendered
-
-      // Recalculate on window resize with debounce
-      let resizeTimeout: NodeJS.Timeout;
-      const handleResize = () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-          calculateVisibleItems();
-        }, 100);
-      };
-      
-      window.addEventListener('resize', handleResize);
-      
-      // Use ResizeObserver to detect container size changes
-      let resizeObserver: ResizeObserver | null = null;
-      if (containerRef.current) {
-        resizeObserver = new ResizeObserver(() => {
-          calculateVisibleItems();
-        });
-        resizeObserver.observe(containerRef.current);
-      }
-
-      return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(resizeTimeout);
-        window.removeEventListener('resize', handleResize);
-        if (resizeObserver && containerRef.current) {
-          resizeObserver.unobserve(containerRef.current);
-        }
-      };
-    }, [calculateVisibleItems, foodItems]);
-
-    const visibleItems = foodItems.slice(0, visibleCount);
-    const remainingCount = foodItems.length - visibleCount;
-
-    return (
-      <div ref={containerRef} className="flex flex-wrap items-center gap-2 w-full min-w-0">
-        {visibleItems.map((food, index) => (
-          <span
-            key={`${food}-${index}`}
-            ref={(el) => {
-              itemsRef.current[index] = el;
-            }}
-            className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
-          >
-            {food}
-          </span>
-        ))}
-        {isOverflowing && remainingCount > 0 && (
-          <button
-            type="button"
-            onClick={() => handleViewFood(foodItems)}
-            className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
-          >
-            View all +{remainingCount}
-          </button>
-        )}
-      </div>
-    );
   };
 
   const isSubmitting = isCreating || isUpdating;
@@ -564,27 +721,54 @@ export default function DietCategoryPage() {
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
+          {!canView ? (
+            <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+              You don&apos;t have permission to view diet category.
+            </div>
+          ) : (
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
-
-              <div className="flex items-center gap-3">
+            <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
+              <div className="relative shrink-0">
+                <FormSelectField
+                  label=""
+                  hideLabel
+                  options={dietCategoryBranchOptions}
+                  value={selectedBranchFilter}
+                  onChange={(value) => {
+                    setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                    setCurrentPage(1);
+                  }}
+                  placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                  mode="single"
+                  background="normal"
+                  width={300}
+                  disabled={isBranchFilterDisabled || isLoadingBranches}
+                />
+              </div>
+              <div className="w-[280px] shrink-0 min-w-[200px]">
                 <TableSearchInput
                   value={searchTerm}
-                  onChange={setSearchTerm}
+                  onChange={(value) => {
+                    setSearchTerm((prev) => {
+                      if (prev !== value) setCurrentPage(1);
+                      return value;
+                    });
+                  }}
                   placeholder="Search Here..."
                 />
+              </div>
 
+              {canAdd ? (
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleAdd}
                   disabled={isSubmitting}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Diet Category
+                  <span className="text-hide">Add Diet Category</span>
                 </button>
-              </div>
+              ) : null}
             </div>
 
             <Table>
@@ -626,34 +810,42 @@ export default function DietCategoryPage() {
                       <TableData position="first" className="w-[80px]">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
                       <TableData className="w-[200px]">{category.dietCategory}</TableData>
                       <TableData className="w-[300px]">
-                        <DynamicFoodItems foodItems={category.dietFood} />
+                        <DynamicFoodItems foodItems={category.dietFood} onViewAll={handleViewFood} />
                       </TableData>
                       <TableData className="w-[250px]">{category.remark}</TableData>
                       <TableData position="last" className="w-[120px]">
                         <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(category)}
-                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="Edit diet category"
-                            disabled={isSubmitting}
-                          >
-                            <Image
-                              src="/icons/EditIconBlack.svg"
-                              alt="Edit"
-                              width={20}
-                              height={20}
-                            />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(category.id)}
-                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="Delete diet category"
-                            disabled={isDeleting || isSubmitting}
-                          >
-                            <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
-                          </button>
+                          {canEdit ? (
+                            <Tooltip content="Edit" position="top" delay={0}>
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(category)}
+                                className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label="Edit diet category"
+                                disabled={isSubmitting}
+                              >
+                                <Image
+                                  src="/icons/EditIconBlack.svg"
+                                  alt="Edit"
+                                  width={20}
+                                  height={20}
+                                />
+                              </button>
+                            </Tooltip>
+                          ) : null}
+                          {canDelete ? (
+                            <Tooltip content="Delete" position="top" delay={0}>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(category.id)}
+                                className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label="Delete diet category"
+                                disabled={isDeleting || isSubmitting}
+                              >
+                                <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
+                              </button>
+                            </Tooltip>
+                          ) : null}
                         </div>
                       </TableData>
                     </TableRow>
@@ -673,12 +865,13 @@ export default function DietCategoryPage() {
               />
             )}
           </div>
+          )}
         </ListBorder>
       </div>
 
       {/* View Food Items Dialog */}
       <Dialog
-        open={viewFoodDialogOpen}
+        open={viewFoodDialogOpen && canView}
         onClose={() => {
           setViewFoodDialogOpen(false);
           setSelectedFoodItems([]);
@@ -700,11 +893,12 @@ export default function DietCategoryPage() {
 
       {/* Add Diet Category Dialog */}
       <Dialog
-        open={addDialogOpen}
+        open={addDialogOpen && canAdd}
         onClose={() => {
           if (isSubmitting) return;
           setAddDialogOpen(false);
           setFormErrors({});
+          setFormBranchId("");
           setSelectedDietCategory(null);
           setDietFoodInput("");
         }}
@@ -713,12 +907,29 @@ export default function DietCategoryPage() {
       >
         <form ref={addFormRef} onSubmit={handleSubmit} className="space-y-6">
           <div>
+            <FormSelectField
+              label="Branch *"
+              options={dietCategoryBranchOptions}
+              value={formBranchId}
+              onChange={(value) => {
+                if (!isBranchFilterSuperAdmin) return;
+                setFormBranchId(Array.isArray(value) ? value[0] : value || "");
+              }}
+              placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+              mode="single"
+              background="white"
+              disabled={isLoadingBranches || isSubmitting || !isBranchFilterSuperAdmin}
+            />
+          </div>
+
+          <div>
             <FormInputField
               label="Diet Category"
               value={formValues.dietCategory}
               onChange={(event) => {
+                const value = sanitizeAlphaText(event.target.value);
                 setFormValues((prev) => {
-                  const updated = { ...prev, dietCategory: event.target.value };
+                  const updated = { ...prev, dietCategory: value };
                   formValuesRef.current = updated;
                   return updated;
                 });
@@ -726,6 +937,7 @@ export default function DietCategoryPage() {
               }}
               height={44}
               placeholder="Diet Category"
+              maxLength={100}
               required
               disabled={isSubmitting}
             />
@@ -739,7 +951,8 @@ export default function DietCategoryPage() {
                   label="Diet Food"
                   value={dietFoodInput}
                   onChange={(event) => {
-                    setDietFoodInput(event.target.value);
+                    const value = sanitizeAlphaText(event.target.value);
+                    setDietFoodInput(value);
                     setFormErrors((prev) => ({ ...prev, dietFood: "" }));
                   }}
                   onKeyDown={(event) => {
@@ -750,6 +963,7 @@ export default function DietCategoryPage() {
                   }}
                   height={44}
                   placeholder="Diet Food"
+                  maxLength={100}
                   disabled={isSubmitting}
                 />
               </div>
@@ -795,8 +1009,9 @@ export default function DietCategoryPage() {
               label="Remark"
               value={formValues.remark}
               onChange={(event) => {
+                const value = sanitizeAlphaText(event.target.value);
                 setFormValues((prev) => {
-                  const updated = { ...prev, remark: event.target.value };
+                  const updated = { ...prev, remark: value };
                   formValuesRef.current = updated;
                   return updated;
                 });
@@ -804,6 +1019,7 @@ export default function DietCategoryPage() {
               }}
               height={73}
               placeholder="Remark"
+              maxLength={100}
               required
               disabled={isSubmitting}
             />
@@ -820,6 +1036,7 @@ export default function DietCategoryPage() {
               onClick={() => {
                 setAddDialogOpen(false);
                 setFormErrors({});
+                setFormBranchId("");
                 setSelectedDietCategory(null);
                 setDietFoodInput("");
               }}
@@ -833,11 +1050,12 @@ export default function DietCategoryPage() {
 
       {/* Edit Diet Category Dialog */}
       <Dialog
-        open={editDialogOpen}
+        open={editDialogOpen && canEdit}
         onClose={() => {
           if (isSubmitting) return;
           setEditDialogOpen(false);
           setFormErrors({});
+          setFormBranchId("");
           setSelectedDietCategory(null);
           setDietFoodInput("");
         }}
@@ -846,12 +1064,31 @@ export default function DietCategoryPage() {
       >
         <form ref={editFormRef} onSubmit={handleSubmit} className="space-y-6">
           <div>
+            <FormSelectField
+              label="Branch *"
+              options={dietCategoryBranchOptions}
+              value={formBranchId}
+              onChange={(value) => {
+                if (!isBranchFilterSuperAdmin) return;
+                setFormBranchId(Array.isArray(value) ? value[0] : value || "");
+              }}
+              placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+              mode="single"
+              background="white"
+              disabled={
+                isLoadingBranches || isSubmitting || !isBranchFilterSuperAdmin || editDialogOpen
+              }
+            />
+          </div>
+
+          <div>
             <FormInputField
               label="Diet Category"
               value={formValues.dietCategory}
               onChange={(event) => {
+                const value = sanitizeAlphaText(event.target.value);
                 setFormValues((prev) => {
-                  const updated = { ...prev, dietCategory: event.target.value };
+                  const updated = { ...prev, dietCategory: value };
                   formValuesRef.current = updated;
                   return updated;
                 });
@@ -859,6 +1096,7 @@ export default function DietCategoryPage() {
               }}
               height={44}
               placeholder="Diet Category"
+              maxLength={100}
               required
               disabled={isSubmitting}
             />
@@ -872,7 +1110,8 @@ export default function DietCategoryPage() {
                   label="Diet Food"
                   value={dietFoodInput}
                   onChange={(event) => {
-                    setDietFoodInput(event.target.value);
+                    const value = sanitizeAlphaText(event.target.value);
+                    setDietFoodInput(value);
                     setFormErrors((prev) => ({ ...prev, dietFood: "" }));
                   }}
                   onKeyDown={(event) => {
@@ -883,6 +1122,7 @@ export default function DietCategoryPage() {
                   }}
                   height={44}
                   placeholder="Diet Food"
+                  maxLength={100}
                   disabled={isSubmitting}
                 />
               </div>
@@ -928,8 +1168,9 @@ export default function DietCategoryPage() {
               label="Remark"
               value={formValues.remark}
               onChange={(event) => {
+                const value = sanitizeAlphaText(event.target.value);
                 setFormValues((prev) => {
-                  const updated = { ...prev, remark: event.target.value };
+                  const updated = { ...prev, remark: value };
                   formValuesRef.current = updated;
                   return updated;
                 });
@@ -937,6 +1178,7 @@ export default function DietCategoryPage() {
               }}
               height={73}
               placeholder="Remark"
+              maxLength={100}
               required
               disabled={isSubmitting}
             />
@@ -953,6 +1195,7 @@ export default function DietCategoryPage() {
               onClick={() => {
                 setEditDialogOpen(false);
                 setFormErrors({});
+                setFormBranchId("");
                 setSelectedDietCategory(null);
                 setDietFoodInput("");
               }}

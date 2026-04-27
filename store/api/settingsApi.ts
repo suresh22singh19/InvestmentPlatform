@@ -6,6 +6,7 @@
 import { baseApi } from "./baseApi";
 import type { RootState } from "../index";
 import { API_BASE_URL } from "@/lib/config/api";
+import { getVisitClientIp } from "@/lib/api/clientVisitIp";
 import { getUserId, getAuthToken } from "../utils/apiHelpers";
 
 interface ConfigurationResponse {
@@ -46,6 +47,8 @@ interface Branch {
   emailAddress: string | null;
   address: string;
   state: string;
+  /** e.g. hospital | clinic | daycare */
+  type?: string;
   branchCode: string;
   branchStatus: string;
   status: string;
@@ -54,6 +57,174 @@ interface Branch {
 interface BranchesResponse {
   success: boolean;
   data: Branch[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+/** GET /admin/settings/getBranchRoleByCategoryType */
+export interface BranchAssignableRole {
+  id: number;
+  name: string;
+  roleCategoryType: string;
+  mainScope: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+}
+
+export interface GetBranchRoleByCategoryTypeResponse {
+  message: string;
+  statusCode: number;
+  timestamp: string;
+  data: BranchAssignableRole[];
+}
+
+export type GetBranchRoleByCategoryTypeParams = {
+  roleCategoryType: "facility" | "corporate";
+  /** Required when roleCategoryType is facility */
+  branchId?: number;
+  /** From branch `type` (GET /branches): hospital | clinic; daycare maps to hospital */
+  branchType?: "hospital" | "clinic";
+};
+
+/** GET /admin/settings/getUsers */
+export interface SettingsApiUserBranch {
+  id: number;
+  name: string;
+}
+
+export interface SettingsApiUserRole {
+  id: number;
+  name: string;
+  roleCategoryType: string;
+  mainScope: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: number | null;
+  updatedBy: number | null;
+}
+
+export interface SettingsApiUser {
+  id: number;
+  branchId: number;
+  empId: string | null;
+  userName: string;
+  email: string;
+  phone: string;
+  ipAddress: string | null;
+  lastLogin: string | null;
+  loginType: string;
+  otp: string | null;
+  otpExpire: string | null;
+  status: string;
+  previousEntryPermission: string | null;
+  permissionDate: string | null;
+  revenueStatus?: string;
+  dutyAdminEmp?: string;
+  dialerUsername: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: number | null;
+  groupId: number | null;
+  roleCategoryType: string | null;
+  roleId: number | null;
+  role: SettingsApiUserRole | null;
+  branch: SettingsApiUserBranch | null;
+  /** When API returns extended permission flags on the user row. */
+  canDownload?: boolean;
+}
+
+export interface GetUsersResponse {
+  success: boolean;
+  data: SettingsApiUser[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+/** API may return either a legacy envelope or a raw user array. */
+export type GetUsersApiResponse = SettingsApiUser[] | GetUsersResponse;
+
+export function normalizeGetUsersResponse(
+  res: GetUsersApiResponse | undefined
+): { rows: SettingsApiUser[]; total: number | null } {
+  if (res == null) return { rows: [], total: null };
+  if (Array.isArray(res)) return { rows: res, total: null };
+  if (typeof res === "object" && "data" in res && Array.isArray((res as GetUsersResponse).data)) {
+    const r = res as GetUsersResponse;
+    return { rows: r.data, total: typeof r.total === "number" ? r.total : null };
+  }
+  return { rows: [], total: null };
+}
+
+export type GetUsersParams = {
+  page?: number;
+  limit?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  search?: string;
+  branchId?: number;
+  /** When set, filters users by facility vs corporate (e.g. `corporate` hides branch-scoped listing). */
+  roleCategoryType?: "facility" | "corporate";
+};
+
+/** POST /admin/settings/addUser */
+export interface AddUserRequest {
+  branchId?: number;
+  empId: string | null;
+  userName: string;
+  email: string;
+  phone: string;
+  groupId?: number;
+  loginType: "no-auth" | "ip" | "otp" | "ip-otp";
+  status: "active" | "inactive";
+  roleId: number;
+  roleCategoryType: "facility" | "corporate";
+}
+
+export interface AddUserResponse {
+  success: boolean;
+  data: unknown;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+/** PUT /admin/settings/users/:id */
+export interface UpdateUserResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export type UpdateUserBody = Partial<{
+  userName: string;
+  email: string;
+  phone: string;
+  password: string;
+  roleId: number | string;
+  loginType: string;
+  status: string;
+  branchId: number;
+  empId: string | null;
+  groupId: number | null;
+  roleIds: number[];
+  roleCategoryType: string;
+}>;
+
+/** GET /admin/settings/generateUsersPdf */
+export interface GenerateUsersPdfResponse {
+  success: boolean;
+  data: { url: string; filename: string };
   message: string;
   timestamp: string;
   statusCode: number;
@@ -74,7 +245,13 @@ interface LabTestApiItem {
   status: string;
   tpaStatus: string;
   panelStatus: string;
-  created_at: string;
+  createdAt?: string;
+  updatedAt?: string;
+  created_at?: string;
+  updated_at?: string;
+  testFeeLastUpdatedAt?: string | null;
+  tpaPriceLastUpdatedAt?: string | null;
+  panelPriceLastUpdatedAt?: string | null;
 }
 
 interface GetLabTestsParams {
@@ -191,6 +368,7 @@ interface GetBranchIPsParams {
   sort?: string;
   order?: "asc" | "desc";
   search?: string;
+  branchId?: number;
 }
 
 interface CreateBranchIPRequest {
@@ -456,6 +634,7 @@ interface GetDietCategoriesParams {
   sort?: string;
   order?: "asc" | "desc";
   search?: string;
+  branchId?: number;
 }
 
 interface CreateDietCategoryRequest {
@@ -463,6 +642,7 @@ interface CreateDietCategoryRequest {
   remark: string;
   status: "active" | "inactive";
   dietFoods: DietFood[];
+  branchId: number;
 }
 
 interface CreateDietCategoryResponse {
@@ -478,6 +658,7 @@ interface UpdateDietCategoryRequest {
   remark: string;
   status: "active" | "inactive";
   dietFoods: DietFood[];
+  branchId: number;
 }
 
 interface UpdateDietCategoryResponse {
@@ -536,6 +717,7 @@ interface GetDiagnosisDietsParams {
   sort?: string;
   order?: "asc" | "desc";
   search?: string;
+  branchId?: number;
 }
 
 interface CreateDiagnosisDietRequest {
@@ -545,6 +727,7 @@ interface CreateDiagnosisDietRequest {
   dietDetail: number[];
   instructions: string;
   status: "active" | "inactive";
+  branchId: number;
 }
 
 interface CreateDiagnosisDietResponse {
@@ -558,6 +741,7 @@ interface UpdateDiagnosisDietRequest {
   id: number;
   dietDetail: number[];
   instructions: string;
+  branchId: number;
 }
 
 interface UpdateDiagnosisDietResponse {
@@ -569,6 +753,7 @@ interface UpdateDiagnosisDietResponse {
 
 interface DeleteDiagnosisDietRequest {
   id: number;
+  branchId: number;
 }
 
 interface DeleteDiagnosisDietResponse {
@@ -580,6 +765,7 @@ interface DeleteDiagnosisDietResponse {
 
 interface DeleteDietCategoryRequest {
   id: number;
+  branchId: number;
 }
 
 interface DeleteDietCategoryResponse {
@@ -631,6 +817,7 @@ interface GetPanelsParams {
   sort?: string;
   order?: "asc" | "desc";
   search?: string;
+  branchId?: number;
 }
 
 interface PanelsResponse {
@@ -647,6 +834,7 @@ interface PanelsResponse {
 interface CreatePanelRequest {
   name: string;
   status: "active" | "inactive";
+  branchId: number;
 }
 
 interface CreatePanelResponse {
@@ -660,6 +848,7 @@ interface UpdatePanelRequest {
   id: number;
   name: string;
   status: "active" | "inactive";
+  branchId: number;
 }
 
 interface UpdatePanelResponse {
@@ -672,6 +861,209 @@ interface UpdatePanelResponse {
   message: string;
   timestamp: string;
   statusCode: number;
+}
+
+interface DeletePanelResponse {
+  success: boolean;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export type HardwareFacilitiesType = "hardware" | "facility";
+
+interface HardwareFacilitiesItem {
+  id: number;
+  name: string;
+  description?: string | null;
+  hardwareFacilitiesType: HardwareFacilitiesType;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+  deletedBy?: number | null;
+  deletedAt?: string | null;
+}
+
+export interface GetHardwareOrFacilitiesParams {
+  type: HardwareFacilitiesType;
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+interface HardwareOrFacilitiesListResponse {
+  success: boolean;
+  data: HardwareFacilitiesItem[];
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+}
+
+interface CreateHardwareOrFacilitiesRequest {
+  name: string;
+  hardwareFacilitiesType: HardwareFacilitiesType;
+}
+
+interface CreateHardwareOrFacilitiesResponse {
+  success: boolean;
+  data?: HardwareFacilitiesItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface UpdateHardwareOrFacilitiesRequest {
+  id: number;
+  name: string;
+  hardwareFacilitiesType: HardwareFacilitiesType;
+}
+
+interface UpdateHardwareOrFacilitiesResponse {
+  success: boolean;
+  data?: HardwareFacilitiesItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface DeleteHardwareOrFacilitiesResponse {
+  success: boolean;
+  data?: string;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface GetHardwareOrFacilitiesByIdResponse {
+  success: boolean;
+  data?: HardwareFacilitiesItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface RoomTypeItem {
+  id: number;
+  roomType: string;
+  roomTypeCode: string;
+  roomNumberPrefix: string;
+  isRented: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+  deletedBy?: number | null;
+  deletedAt?: string | null;
+}
+
+interface GetAllRoomTypesParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+interface GetAllRoomTypesResponse {
+  success: boolean;
+  data: RoomTypeItem[];
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+}
+
+interface CreateRoomTypeRequest {
+  roomType: string;
+  roomTypeCode: string;
+  roomNumberPrefix: string;
+  isRented: boolean;
+}
+
+interface CreateRoomTypeResponse {
+  success: boolean;
+  data?: RoomTypeItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface UpdateRoomTypeRequest {
+  id: number;
+  roomType?: string;
+  roomTypeCode?: string;
+  roomNumberPrefix?: string;
+  isRented?: boolean;
+}
+
+interface UpdateRoomTypeResponse {
+  success: boolean;
+  data?: RoomTypeItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface DeleteRoomTypeResponse {
+  success: boolean;
+  data?: null;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface MasterServiceItem {
+  id: number;
+  category: string;
+  subCategory: string;
+  price: number;
+  status: boolean;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+  deletedBy?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+interface GetAllMasterServicesParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  category?: string;
+  subCategory?: string;
+}
+
+export interface GetAllMasterServicesResponse {
+  success: boolean;
+  data: MasterServiceItem[];
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+}
+
+interface CreateMasterServiceRequest {
+  category: string;
+  subCategory: string;
+  price: number;
+}
+
+interface CreateMasterServiceResponse {
+  success: boolean;
+  data?: MasterServiceItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
 }
 
 interface DiagnosisCategory {
@@ -793,6 +1185,140 @@ interface UpdateDiagnosisCategoryRequest {
 
 interface UpdateDiagnosisCategoryResponse {
   success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+// Arogya / Health Card types
+interface GetArogyaCardsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  branchId?: number;
+}
+
+export interface ArogyaBranchRule {
+  id?: number;
+  arogyaCardId?: number;
+  branchId: number;
+  consultantBy: number;
+  productBy: number;
+  serviceBy: number;
+  pathologyBy: number;
+  radiologyBy?: number;
+  fibroscanBy?: number;
+  consultantTo: number;
+  productTo: number;
+  serviceTo: number;
+  pathologyTo: number;
+  radiologyTo?: number;
+  fibroscanTo?: number;
+  consultantRedeem: number;
+  consultantRedeemType: number;
+  productRedeem: number;
+  productRedeemType: number;
+  serviceRedeem: number;
+  serviceRedeemType: number;
+  pathologyRedeem: number;
+  pathologyRedeemType: number;
+  radiologyRedeem?: number;
+  radiologyRedeemType?: number;
+  fibroscanRedeem?: number;
+  fibroscanRedeemType?: number;
+  status?: number;
+  addedBy?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ArogyaCard {
+  id: number;
+  cardName: string;
+  cardType: string;
+  description: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  pointValuation: string;
+  seriesStart: number;
+  seriesEnd: number;
+  arogyaBranchRule: ArogyaBranchRule | null;
+}
+
+interface ArogyaCardsResponse {
+  success: boolean;
+  data: ArogyaCard[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+}
+
+interface ArogyaBranchRulePayload {
+  branchId: number;
+  addedBy?: number;
+  consultantBy?: number;
+  consultantTo?: number;
+  productBy?: number;
+  productTo?: number;
+  serviceBy?: number;
+  serviceTo?: number;
+  pathologyBy?: number;
+  pathologyTo?: number;
+  radiologyBy?: number;
+  radiologyTo?: number;
+  fibroscanBy?: number;
+  fibroscanTo?: number;
+  consultantRedeem?: number;
+  consultantRedeemType?: number;
+  productRedeem?: number;
+  productRedeemType?: number;
+  serviceRedeem?: number;
+  serviceRedeemType?: number;
+  pathologyRedeem?: number;
+  pathologyRedeemType?: number;
+  radiologyRedeem?: number;
+  radiologyRedeemType?: number;
+  fibroscanRedeem?: number;
+  fibroscanRedeemType?: number;
+}
+
+interface CreateArogyaCardRequest {
+  cardName: string;
+  cardType: string;
+  description?: string;
+  pointValuation: number;
+  seriesStart: string;
+  seriesEnd: string;
+  status: string;
+  branchRule: ArogyaBranchRulePayload;
+}
+
+interface CreateArogyaCardResponse {
+  success: boolean;
+  data?: ArogyaCard;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+interface UpdateArogyaCardRequest {
+  id: number;
+  cardName?: string;
+  pointValuation?: number;
+  seriesStart?: number | string;
+  seriesEnd?: number | string;
+  status?: string;
+  branchRule: Partial<ArogyaBranchRulePayload>;
+}
+
+interface UpdateArogyaCardResponse {
+  success: boolean;
+  data?: null;
   message: string;
   timestamp: string;
   statusCode: number;
@@ -1090,8 +1616,186 @@ interface DiscountConfigsResponse {
   limit?: number;
 }
 
+interface MasterSettingItem {
+  id: number;
+  metaKey: string;
+  metaValueOne: string;
+  metaValueTwo: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+}
+
+interface GetMasterSettingsResponse {
+  success: boolean;
+  data: MasterSettingItem[];
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface CreateMasterSettingRequest {
+  metaKey: string;
+  metaValueOne: string;
+  metaValueTwo: string;
+}
+
+interface MasterSettingMutationResponse {
+  success: boolean;
+  data: null;
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface UpdateMasterSettingRequest {
+  id: number;
+  metaValueOne: string;
+}
+
+export interface SupportContactItem {
+  id: number;
+  name: string;
+  phone: string;
+  role: string;
+  categoryId: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+}
+
+export interface SupportCategoryWithContacts {
+  id: number;
+  title: string;
+  description: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+  contacts: SupportContactItem[];
+}
+
+export interface GetSupportContactsResponse {
+  success: boolean;
+  data: SupportCategoryWithContacts[];
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface SupportContactLookupCategory {
+  id: number;
+  title: string;
+  description: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+}
+
+export interface SupportContactLookupItem extends SupportContactItem {
+  category?: SupportContactLookupCategory;
+}
+
+export interface GetSupportContactByPhoneResponse {
+  success: boolean;
+  data: SupportContactLookupItem;
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface CreateSupportContactsRequest {
+  categoryId: number;
+  contacts: Array<{ name: string; phone: string; role: string }>;
+}
+
+export interface SupportContactMutationResponse {
+  success: boolean;
+  data: null;
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface UpdateSupportContactRequest {
+  id: number;
+  name?: string;
+  phone?: string;
+  role?: string;
+}
+
 export const settingsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
+    getAdminSupportContacts: builder.query<GetSupportContactsResponse, void>({
+      query: () => ({
+        url: "/admin/settings/dashboard/getSupportContacts",
+        method: "GET",
+      }),
+      providesTags: ["Settings"],
+    }),
+    getSupportContactByPhone: builder.query<GetSupportContactByPhoneResponse, string>({
+      query: (phone) => ({
+        url: "/admin/settings/dashboard/getSupportContactByphone",
+        method: "GET",
+        params: { phone },
+      }),
+    }),
+    createSupportContacts: builder.mutation<
+      SupportContactMutationResponse,
+      CreateSupportContactsRequest
+    >({
+      query: (body) => ({
+        url: "/admin/settings/dashboard/createSupportContacts",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateSupportContact: builder.mutation<
+      SupportContactMutationResponse,
+      UpdateSupportContactRequest
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/admin/settings/dashboard/updateSupportContacts/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    getMasterSettings: builder.query<GetMasterSettingsResponse, void>({
+      query: () => ({
+        url: "/admin/settings/master/getMasterSettings",
+        method: "GET",
+      }),
+      providesTags: ["Settings"],
+    }),
+    createMasterSetting: builder.mutation<
+      MasterSettingMutationResponse,
+      CreateMasterSettingRequest
+    >({
+      query: (body) => ({
+        url: "/admin/settings/master/createMasterSetting",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateMasterSetting: builder.mutation<
+      MasterSettingMutationResponse,
+      UpdateMasterSettingRequest
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/admin/settings/master/updateMasterSetting/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
     getConfiguration: builder.query<ConfigurationResponse, void>({
       query: () => ({
         url: "/admin/settings/configuration",
@@ -1110,12 +1814,104 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Settings"],
     }),
+    updateProfile: builder.mutation<
+      { message: string; statusCode: number },
+      { userName: string; imgUrl?: File | null }
+    >({
+      query: ({ userName, imgUrl }) => {
+        const formData = new FormData();
+        formData.append("userName", userName);
+        if (imgUrl) {
+          formData.append("imgUrl", imgUrl);
+        }
+        return {
+          url: "/admin/settings/updateProfile",
+          method: "PUT",
+          body: formData,
+        };
+      },
+    }),
     getBranches: builder.query<BranchesResponse, void>({
       query: () => ({
         url: "/admin/settings/branches",
         method: "GET",
       }),
       providesTags: ["Settings"],
+    }),
+    getBranchRoleByCategoryType: builder.query<
+      GetBranchRoleByCategoryTypeResponse,
+      GetBranchRoleByCategoryTypeParams
+    >({
+      query: ({ roleCategoryType, branchId, branchType }) => {
+        const params = new URLSearchParams();
+        params.append("roleCategoryType", roleCategoryType);
+        if (roleCategoryType === "facility" && branchId != null && Number.isFinite(branchId)) {
+          params.append("branchId", String(branchId));
+        }
+        if (roleCategoryType === "facility" && branchType) {
+          params.append("branchType", branchType);
+        }
+        return {
+          url: `/admin/settings/getBranchRoleByCategoryType?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    getUsers: builder.query<GetUsersApiResponse, GetUsersParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page != null) queryParams.append("page", String(params.page));
+        if (params?.limit != null) queryParams.append("limit", String(params.limit));
+        if (params?.sort) queryParams.append("sort", params.sort);
+        if (params?.order) queryParams.append("order", params.order);
+        if (params?.search) queryParams.append("search", params.search.trim());
+        if (params?.roleCategoryType) {
+          queryParams.append("roleCategoryType", params.roleCategoryType);
+        }
+        if (
+          params?.branchId != null &&
+          Number.isFinite(params.branchId) &&
+          params.roleCategoryType !== "corporate"
+        ) {
+          queryParams.append("branchId", String(params.branchId));
+        }
+        const qs = queryParams.toString();
+        return {
+          url: `/admin/settings/getUsers${qs ? `?${qs}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    addUser: builder.mutation<AddUserResponse, AddUserRequest>({
+      query: (body) => ({
+        url: "/admin/settings/addUser",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateUser: builder.mutation<UpdateUserResponse, { id: number; body: UpdateUserBody }>({
+      query: ({ id, body }) => ({
+        url: `/admin/settings/users/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    generateUsersPdf: builder.query<GenerateUsersPdfResponse, { branchId?: number } | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", String(params.branchId));
+        }
+        const qs = queryParams.toString();
+        return {
+          url: `/admin/settings/generateUsersPdf${qs ? `?${qs}` : ""}`,
+          method: "GET",
+        };
+      },
     }),
     getLabTestGroups: builder.query<LabTestGroupsResponse, void>({
       query: () => ({
@@ -1207,6 +2003,9 @@ export const settingsApi = baseApi.injectEndpoints({
         if (params?.sort) queryParams.append("sort", params.sort);
         if (params?.order) queryParams.append("order", params.order);
         if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", params.branchId.toString());
+        }
 
         const queryString = queryParams.toString();
         return {
@@ -1338,12 +2137,14 @@ export const settingsApi = baseApi.injectEndpoints({
         // Get user ID and token using helper functions
         const userId = getUserId(state);
         const token = getAuthToken(state);
+        const visitIp = await getVisitClientIp();
         
         const response = await fetch(`${API_BASE_URL}/admin/settings/duplicate-number-permission/${payload.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
             "Authorization": token ? `Bearer ${token}` : "",
+            ...(visitIp ? { "x-forwarded-for": visitIp } : {}),
           },
           body: JSON.stringify({
             status: payload.status ? payload.status.toUpperCase() : payload.status,
@@ -1425,6 +2226,9 @@ export const settingsApi = baseApi.injectEndpoints({
         if (params?.sort) queryParams.append("sort", params.sort);
         if (params?.order) queryParams.append("order", params.order);
         if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", String(params.branchId));
+        }
 
         const queryString = queryParams.toString();
         return {
@@ -1455,9 +2259,147 @@ export const settingsApi = baseApi.injectEndpoints({
         body: {
           name: payload.name,
           status: payload.status,
+          branchId: payload.branchId,
         },
       }),
       invalidatesTags: ["Settings"],
+    }),
+    deletePanel: builder.mutation<DeletePanelResponse, { id: number }>({
+      query: (payload) => ({
+        url: `/admin/settings/panel/${payload.id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    getHardwareOrFacilities: builder.query<
+      HardwareOrFacilitiesListResponse,
+      GetHardwareOrFacilitiesParams
+    >({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        queryParams.append("type", params.type);
+        if (params.page != null) queryParams.append("page", params.page.toString());
+        if (params.limit != null) queryParams.append("limit", params.limit.toString());
+        if (params.search) queryParams.append("search", params.search);
+        return {
+          url: `/admin/settings/hardware-facilities/getHardwareOrFacilities?${queryParams.toString()}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    getHardwareOrFacilitiesById: builder.query<
+      GetHardwareOrFacilitiesByIdResponse,
+      { id: number; type: HardwareFacilitiesType }
+    >({
+      query: ({ id, type }) => ({
+        url: `/admin/settings/hardware-facilities/getHardwareOrFacilities/${id}?type=${type}`,
+        method: "GET",
+      }),
+      providesTags: ["Settings"],
+    }),
+    createHardwareOrFacilities: builder.mutation<
+      CreateHardwareOrFacilitiesResponse,
+      CreateHardwareOrFacilitiesRequest
+    >({
+      query: (payload) => ({
+        url: "/admin/settings/hardware-facilities/createHardwareOrFacilities",
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateHardwareOrFacilities: builder.mutation<
+      UpdateHardwareOrFacilitiesResponse,
+      UpdateHardwareOrFacilitiesRequest
+    >({
+      query: (payload) => ({
+        url: `/admin/settings/hardware-facilities/updateHardwareOrFacilities/${payload.id}`,
+        method: "PATCH",
+        body: {
+          name: payload.name,
+          hardwareFacilitiesType: payload.hardwareFacilitiesType,
+        },
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    deleteHardwareOrFacilities: builder.mutation<
+      DeleteHardwareOrFacilitiesResponse,
+      { id: number }
+    >({
+      query: (payload) => ({
+        url: `/admin/settings/hardware-facilities/deleteHardwareOrFacilities/${payload.id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    getAllRoomTypes: builder.query<GetAllRoomTypesResponse, GetAllRoomTypesParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page != null) queryParams.append("page", params.page.toString());
+        if (params?.limit != null) queryParams.append("limit", params.limit.toString());
+        if (params?.search) queryParams.append("search", params.search);
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/room-type/getAllRoomTypes${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createRoomType: builder.mutation<CreateRoomTypeResponse, CreateRoomTypeRequest>({
+      query: (payload) => ({
+        url: "/admin/settings/room-type/createRoomType",
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateRoomType: builder.mutation<UpdateRoomTypeResponse, UpdateRoomTypeRequest>({
+      query: (payload) => {
+        const { id, ...rest } = payload;
+        const body: Record<string, unknown> = {};
+        if (rest.roomType !== undefined) body.roomType = rest.roomType;
+        if (rest.roomTypeCode !== undefined) body.roomTypeCode = rest.roomTypeCode;
+        if (rest.roomNumberPrefix !== undefined) body.roomNumberPrefix = rest.roomNumberPrefix;
+        if (rest.isRented !== undefined) body.isRented = rest.isRented;
+        return {
+          url: `/admin/settings/room-type/updateRoomType/${id}`,
+          method: "PATCH",
+          body,
+        };
+      },
+      invalidatesTags: ["Settings"],
+    }),
+    deleteRoomType: builder.mutation<DeleteRoomTypeResponse, { id: number }>({
+      query: (payload) => ({
+        url: `/admin/settings/room-type/deleteRoomType/${payload.id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    getAllMasterServices: builder.query<GetAllMasterServicesResponse, GetAllMasterServicesParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page != null) queryParams.append("page", params.page.toString());
+        if (params?.limit != null) queryParams.append("limit", params.limit.toString());
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.category) queryParams.append("category", params.category);
+        if (params?.subCategory) queryParams.append("subCategory", params.subCategory);
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/master-service/getAllMasterServices${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["MasterServices"],
+    }),
+    createMasterService: builder.mutation<CreateMasterServiceResponse, CreateMasterServiceRequest>({
+      query: (payload) => ({
+        url: "/admin/settings/master-service/createMasterService",
+        method: "POST",
+        body: payload,
+      }),
     }),
     getDiagnosisCategoriesOnly: builder.query<DiagnosisCategoriesOnlyResponse, GetDiagnosisCategoriesOnlyParams | void>({
       query: (params) => {
@@ -1550,13 +2492,13 @@ export const settingsApi = baseApi.injectEndpoints({
     getTherapies: builder.query<TherapiesResponse, GetTherapiesParams | void>({
       query: (params) => {
         const searchParams = new URLSearchParams();
-        if (params?.branchId != null) searchParams.set("branchId", String(params.branchId));
-        if (params?.page != null) searchParams.set("page", String(params.page));
-        if (params?.limit != null) searchParams.set("limit", String(params.limit));
-        if (params?.sort) searchParams.set("sort", params.sort);
-        if (params?.order) searchParams.set("order", params.order);
-        if (params?.search) searchParams.set("search", params.search);
-        const queryString = searchParams.toString();
+        if (params?.branchId != null) searchParams?.set("branchId", String(params.branchId));
+        if (params?.page != null) searchParams?.set("page", String(params.page));
+        if (params?.limit != null) searchParams?.set("limit", String(params.limit));
+        if (params?.sort) searchParams?.set("sort", params.sort);
+        if (params?.order) searchParams?.set("order", params.order);
+        if (params?.search) searchParams?.set("search", params.search);
+        const queryString = searchParams?.toString();
         return {
           url: `/admin/settings/therapy${queryString ? `?${queryString}` : ""}`,
           method: "GET",
@@ -1732,12 +2674,14 @@ export const settingsApi = baseApi.injectEndpoints({
         // Get user ID and token using helper functions
         const userId = getUserId(state);
         const token = getAuthToken(state);
+        const visitIp = await getVisitClientIp();
         
         const response = await fetch(`${API_BASE_URL}/admin/settings/contact-change-request/${payload.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
             "Authorization": token ? `Bearer ${token}` : "",
+            ...(visitIp ? { "x-forwarded-for": visitIp } : {}),
           },
           body: JSON.stringify({
             status: payload.status ? payload.status.toUpperCase() : payload.status,
@@ -1763,6 +2707,9 @@ export const settingsApi = baseApi.injectEndpoints({
         if (params?.sort) queryParams.append("sort", params.sort);
         if (params?.order) queryParams.append("order", params.order);
         if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", String(params.branchId));
+        }
 
         const queryString = queryParams.toString();
         return {
@@ -1795,6 +2742,7 @@ export const settingsApi = baseApi.injectEndpoints({
           remark: payload.remark,
           status: payload.status,
           dietFoods: payload.dietFoods,
+          branchId: payload.branchId,
         },
       }),
       invalidatesTags: ["Settings"],
@@ -1814,6 +2762,9 @@ export const settingsApi = baseApi.injectEndpoints({
         if (params?.sort) queryParams.append("sort", params.sort);
         if (params?.order) queryParams.append("order", params.order);
         if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", String(params.branchId));
+        }
 
         const queryString = queryParams.toString();
         return {
@@ -1844,6 +2795,7 @@ export const settingsApi = baseApi.injectEndpoints({
         body: {
           dietDetail: payload.dietDetail,
           instructions: payload.instructions,
+          branchId: payload.branchId,
         },
       }),
       invalidatesTags: ["Settings"],
@@ -1852,10 +2804,17 @@ export const settingsApi = baseApi.injectEndpoints({
       DeleteDiagnosisDietResponse,
       DeleteDiagnosisDietRequest
     >({
-      query: (payload) => ({
-        url: `/admin/settings/diagnosis/${payload.id}`,
-        method: "DELETE",
-      }),
+      query: (payload) => {
+        const qs = new URLSearchParams();
+        if (payload.branchId != null && Number.isFinite(payload.branchId)) {
+          qs.append("branchId", String(payload.branchId));
+        }
+        const queryString = qs.toString();
+        return {
+          url: `/admin/settings/diagnosis/${payload.id}${queryString ? `?${queryString}` : ""}`,
+          method: "DELETE",
+        };
+      },
       invalidatesTags: ["Settings"],
     }),
 
@@ -1863,19 +2822,114 @@ export const settingsApi = baseApi.injectEndpoints({
       DeleteDietCategoryResponse,
       DeleteDietCategoryRequest
     >({
-      query: (payload) => ({
-        url: `/admin/settings/diet-category/${payload.id}`,
-        method: "DELETE",
-      }),
+      query: (payload) => {
+        const qs = new URLSearchParams();
+        if (payload.branchId != null && Number.isFinite(payload.branchId)) {
+          qs.append("branchId", String(payload.branchId));
+        }
+        const queryString = qs.toString();
+        return {
+          url: `/admin/settings/diet-category/${payload.id}${queryString ? `?${queryString}` : ""}`,
+          method: "DELETE",
+        };
+      },
       invalidatesTags: ["Settings"],
+    }),
+
+    getArogyaCards: builder.query<ArogyaCardsResponse, GetArogyaCardsParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page != null) queryParams.append("page", params.page.toString());
+        if (params?.limit != null) queryParams.append("limit", params.limit.toString());
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", params.branchId.toString());
+        }
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/arogya-cards${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createArogyaCard: builder.mutation<
+      CreateArogyaCardResponse,
+      CreateArogyaCardRequest
+    >({
+      queryFn: async (payload, api) => {
+        const state = api.getState() as RootState;
+        const userId = getUserId(state);
+        const token = getAuthToken(state);
+        const body = {
+          ...payload,
+          branchRule: {
+            addedBy: userId ?? 0,
+            ...payload.branchRule,
+          },
+        };
+        const visitIp = await getVisitClientIp();
+        const response = await fetch(`${API_BASE_URL}/admin/settings/arogya-card`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+            ...(visitIp ? { "x-forwarded-for": visitIp } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        if (response.ok) {
+          return { data };
+        }
+        return { error: data };
+      },
+      invalidatesTags: ["Settings"],
+    }),
+    updateArogyaCard: builder.mutation<
+      UpdateArogyaCardResponse,
+      UpdateArogyaCardRequest
+    >({
+      query: (payload) => {
+        const { id, ...body } = payload;
+        return {
+          url: `/admin/settings/arogya-card/${id}`,
+          method: "PATCH",
+          body,
+        };
+      },
+      invalidatesTags: ["Settings"],
+    }),
+    updatePassword: builder.mutation<
+      { message: string; statusCode: number },
+      { userId: number; oldPassword: string; newPassword: string; confirmPassword: string }
+    >({
+      query: ({ userId, ...body }) => ({
+        url: `/admin/settings/updatePassword/${userId}`,
+        method: "PUT",
+        body,
+      }),
     }),
   }),
 });
 
 export const {
+  useGetAdminSupportContactsQuery,
+  useLazyGetSupportContactByPhoneQuery,
+  useCreateSupportContactsMutation,
+  useUpdateSupportContactMutation,
+  useGetMasterSettingsQuery,
+  useCreateMasterSettingMutation,
+  useUpdateMasterSettingMutation,
   useGetConfigurationQuery,
   useUpdateConfigurationMutation,
+  useUpdateProfileMutation,
   useGetBranchesQuery,
+  useGetBranchRoleByCategoryTypeQuery,
+  useGetUsersQuery,
+  useAddUserMutation,
+  useUpdateUserMutation,
+  useLazyGenerateUsersPdfQuery,
   useGetLabTestsQuery,
   useGetLabTestsByBranchQuery,
   useGetLabTestQuery,
@@ -1900,6 +2954,19 @@ export const {
   useLazyGetPanelsQuery,
   useCreatePanelMutation,
   useUpdatePanelMutation,
+  useDeletePanelMutation,
+  useGetHardwareOrFacilitiesQuery,
+  useLazyGetHardwareOrFacilitiesQuery,
+  useGetHardwareOrFacilitiesByIdQuery,
+  useCreateHardwareOrFacilitiesMutation,
+  useUpdateHardwareOrFacilitiesMutation,
+  useDeleteHardwareOrFacilitiesMutation,
+  useGetAllRoomTypesQuery,
+  useCreateRoomTypeMutation,
+  useUpdateRoomTypeMutation,
+  useDeleteRoomTypeMutation,
+  useGetAllMasterServicesQuery,
+  useCreateMasterServiceMutation,
   useGetDiagnosisCategoriesOnlyQuery,
   useGetDiagnosisCategoriesQuery,
   useCreateDiagnosisCategoryMutation,
@@ -1926,5 +2993,9 @@ export const {
   useCreateDiagnosisDietMutation,
   useUpdateDiagnosisDietMutation,
   useDeleteDiagnosisDietMutation,
+  useGetArogyaCardsQuery,
+  useCreateArogyaCardMutation,
+  useUpdateArogyaCardMutation,
+  useUpdatePasswordMutation,
 } = settingsApi;
 

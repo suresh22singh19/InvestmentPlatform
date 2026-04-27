@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useFormik } from "formik";
 import GateEntryLayout from "@/components/gate/GateEntryLayout";
@@ -8,9 +8,27 @@ import { GoToHomeButton, BackToPreviousPageButton, Button, MessageDialog, Dialog
 import { AddressDetails, VisitorsDetails, type Visitor, type AddressFormData } from "@/components/forms";
 import PatientDetails from "@/components/forms/PatientDetails";
 import { gatePatientMedicineTypeSchema, type GatePatientMedicineTypeFormValues } from "@/lib/validation/gateSchemas";
-import { useVisitorEntryMutation, useLazyCheckExistingPatientsByPhoneQuery, type ExistingPatient, type VisitorEntryItem } from "@/store/api/gateApi";
-import { useGetCountriesQuery, useGetStatesQuery, useGetCitiesQuery, useLazyGetTehsilsQuery, useLazyGetAreasQuery } from "@/store/api/publicApi";
+import {
+  useVisitorEntryMutation,
+  useLazyCheckGateExistingPatientsByPhoneQuery,
+  useLazyGetVisitorByAadharQuery,
+  type ExistingPatient,
+  type VisitorEntryItem,
+  type VisitorByAadharItem,
+} from "@/store/api/gateApi";
+import {
+  useGetCountriesQuery,
+  useGetStatesQuery,
+  useGetCitiesQuery,
+  useLazyGetTehsilsQuery,
+  useLazyGetAreasQuery,
+  useLazyGetStatesQuery,
+  useLazyGetCitiesQuery,
+} from "@/store/api/publicApi";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserBranchId, selectPermissionsMap } from "@/store/slices/authSlice";
+import { getSubModulePermissions } from "@/utils/permission";
 
 // Helper functions to get names from IDs
 const getCountryName = (countryId: string, countriesData: any) => {
@@ -35,6 +53,27 @@ const getStateName = (stateId: string, statesData: any) => {
 const getCityName = (cityId: string, citiesData: any) => {
   const city = citiesData?.data?.find((c: any) => c.id.toString() === cityId);
   return city?.name || "";
+};
+
+/** Patient address on submit: India uses state/city IDs → names; non-India uses plain text in form fields. */
+const stateValueForVisitorPayload = (
+  countryId: string | undefined,
+  stateVal: string | undefined,
+  statesData: any
+): string => {
+  if (stateVal == null || String(stateVal).trim() === "") return "";
+  if (countryId === "6") return getStateName(stateVal, statesData);
+  return String(stateVal).trim();
+};
+
+const cityValueForVisitorPayload = (
+  countryId: string | undefined,
+  cityVal: string | undefined,
+  citiesData: any
+): string => {
+  if (cityVal == null || String(cityVal).trim() === "") return "";
+  if (countryId === "6") return getCityName(cityVal, citiesData);
+  return String(cityVal).trim();
 };
 
 // Helper functions to get tehsil and area names from IDs (used in patient-medicine-type page)
@@ -63,6 +102,13 @@ const getAreaNameAsync = async (areaId: string, tehsilId: string, getAreasQuery:
 };
 
 export default function GatePatientMedicineTypePage() {
+  const userBranchId = useAppSelector(selectUserBranchId);
+  const branchId = userBranchId ?? 1;
+  const permissionsMap = useAppSelector(selectPermissionsMap);
+  const gatePermissions = useMemo(
+    () => getSubModulePermissions(permissionsMap, "Gate", "Patient Medicine Type"),
+    [permissionsMap]
+  );
   const router = useRouter();
   const [visitorEntry, { isLoading: isSubmitting }] = useVisitorEntryMutation();
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -71,6 +117,14 @@ export default function GatePatientMedicineTypePage() {
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [patientExistsDialogOpen, setPatientExistsDialogOpen] = useState(false);
   const [existingPatients, setExistingPatients] = useState<ExistingPatient[]>([]);
+  const [visitorExistsDialogOpen, setVisitorExistsDialogOpen] = useState(false);
+  const [existingVisitors, setExistingVisitors] = useState<VisitorByAadharItem[]>([]);
+  const [visitorDialogVisitorIndex, setVisitorDialogVisitorIndex] = useState<number>(0);
+  const [visitorLookupLoading, setVisitorLookupLoading] = useState<Record<string, boolean>>({});
+  const [visitorDialogSelectingId, setVisitorDialogSelectingId] = useState<number | string | null>(null);
+  const [lockedVisitors, setLockedVisitors] = useState<Record<string, boolean>>({});
+  const [activeVisitorAadharId, setActiveVisitorAadharId] = useState<string | null>(null);
+  const [isVisitorAddressLockedByFirstSelection, setIsVisitorAddressLockedByFirstSelection] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<ExistingPatient | null>(null);
   // Store original address details to restore when switching back to Patient
@@ -85,7 +139,35 @@ export default function GatePatientMedicineTypePage() {
     addressLine1?: string;
     addressLine2?: string;
   } | null>(null);
-  const branchId = 1; // Default branch ID
+  const addressByVisitTypeRef = useRef<{
+    patient: {
+      pinCode: string;
+      country: string;
+      state: string;
+      city: string;
+      tehsil: string;
+      area: string;
+      address: string;
+      addressLine1: string;
+      addressLine2: string;
+    } | null;
+    visitor: {
+      pinCode: string;
+      country: string;
+      state: string;
+      city: string;
+      tehsil: string;
+      area: string;
+      address: string;
+      addressLine1: string;
+      addressLine2: string;
+    } | null;
+  }>({
+    patient: null,
+    visitor: null,
+  });
+  // Branch should be taken from logged-in user (fallback to 1 if unavailable)
+  // Note: `branchId` is declared near top of component from auth state.
   const isClosingDialogRef = useRef(false);
   const lastCheckedContactNumberRef = useRef<string>("");
   const lastCheckedUHIDRef = useRef<string>("");
@@ -94,9 +176,14 @@ export default function GatePatientMedicineTypePage() {
   
   // Loading state for mobile number API check
   const [isMobileNumberLoading, setIsMobileNumberLoading] = useState(false);
+  const [noPatientFoundMessage, setNoPatientFoundMessage] = useState<string | null>(null);
+  const isVisitorLookupLoading = Object.values(visitorLookupLoading).some(Boolean);
   
   // Lazy query for checking existing patients
-  const [checkExistingPatientsQuery] = useLazyCheckExistingPatientsByPhoneQuery();
+  const [checkExistingPatientsQuery] = useLazyCheckGateExistingPatientsByPhoneQuery();
+  const [getVisitorByAadhar] = useLazyGetVisitorByAadharQuery();
+  const [getStatesQuery] = useLazyGetStatesQuery();
+  const [getCitiesQuery] = useLazyGetCitiesQuery();
 
   // Refs for form fields
   const mobileNumberRef = useRef<HTMLInputElement>(null);
@@ -117,6 +204,8 @@ export default function GatePatientMedicineTypePage() {
   const visitorNameRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
   const visitorCountryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const visitorAadharRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const visitorPassportRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const visitorNationalIdRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   // Form ref for arrow key navigation
   const formRef = useRef<HTMLFormElement>(null);
@@ -165,25 +254,63 @@ export default function GatePatientMedicineTypePage() {
     onSubmit: async () => {},
   });
 
-  // Fetch countries, states, and cities to get names from IDs
-  // These must be after formik initialization
+  // Countries always; states/cities master APIs only for India (dropdown IDs). Non-India: text fields, no state/city API.
   const { data: countriesData } = useGetCountriesQuery({});
+  const addressCountryIsIndia = formik.values.country === "6";
   const { data: statesData } = useGetStatesQuery(
-    formik.values.country ? { countryId: formik.values.country } : undefined,
-    { skip: !formik.values.country }
+    formik.values.country && addressCountryIsIndia ? { countryId: formik.values.country } : undefined,
+    { skip: !formik.values.country || !addressCountryIsIndia }
   );
   const { data: citiesData } = useGetCitiesQuery(
-    formik.values.state ? { stateId: formik.values.state } : undefined,
-    { skip: !formik.values.state }
+    formik.values.state && addressCountryIsIndia ? { stateId: formik.values.state } : undefined,
+    { skip: !formik.values.state || !addressCountryIsIndia }
   );
   
   // Lazy queries for tehsils and areas - fetch during form submission
   const [getTehsilsQuery] = useLazyGetTehsilsQuery();
   const [getAreasQuery] = useLazyGetAreasQuery();
 
+  const getAddressSnapshotFromValues = (values: GatePatientMedicineTypeFormValues) => ({
+    pinCode: values.pinCode || "",
+    country: values.country || "6",
+    state: values.state || "",
+    city: values.city || "",
+    tehsil: (values as any).tehsil || "",
+    area: (values as any).area || "",
+    address: values.address || "",
+    addressLine1: (values as any).addressLine1 || "",
+    addressLine2: (values as any).addressLine2 || "",
+  });
+
+  const applyAddressSnapshot = (snapshot: ReturnType<typeof getAddressSnapshotFromValues>) => {
+    formik.setFieldValue("pinCode", snapshot.pinCode, false);
+    formik.setFieldValue("country", snapshot.country, false);
+    formik.setFieldValue("state", snapshot.state, false);
+    formik.setFieldValue("city", snapshot.city, false);
+    formik.setFieldValue("tehsil", snapshot.tehsil, false);
+    formik.setFieldValue("area", snapshot.area, false);
+    formik.setFieldValue("address", snapshot.address, false);
+    formik.setFieldValue("addressLine1", snapshot.addressLine1, false);
+    formik.setFieldValue("addressLine2", snapshot.addressLine2, false);
+  };
+
   // Helper function to convert Formik errors to flat structure for components
   const getFormErrors = (): Record<string, string> => {
     const errors: Record<string, string> = {};
+    const visitors = formik.values.visitors || [];
+    const duplicateAadharIndices = new Set<number>();
+
+    // Determine duplicate Aadhaar rows: only mark repeated entries (2nd, 3rd...), never the first one.
+    const firstAadharIndexByValue = new Map<string, number>();
+    visitors.forEach((visitor, index) => {
+      const aadhar = (visitor.aadharCardNo || "").trim();
+      if (aadhar.length !== 12) return;
+      if (!firstAadharIndexByValue.has(aadhar)) {
+        firstAadharIndexByValue.set(aadhar, index);
+      } else {
+        duplicateAadharIndices.add(index);
+      }
+    });
 
     // Patient Details errors
     if (formik.errors.mobileNumber && formik.touched.mobileNumber) {
@@ -240,21 +367,31 @@ export default function GatePatientMedicineTypePage() {
               Object.keys(visitorError).forEach((field) => {
                 const fieldError = visitorError[field];
                 const fieldTouched = (visitorTouched as any)?.[field];
-                const isFieldTouched = fieldTouched === true || (visitorTouched && typeof visitorTouched === "object" && Object.keys(visitorTouched).length > 0);
+                const isFieldTouched = fieldTouched === true;
 
-                if (typeof fieldError === "string" && isFieldTouched) {
-                  // Special handling for duplicate error on aadharCardNo - only show if field has value
+                if (typeof fieldError === "string") {
+                  // For duplicate Aadhaar, show error only on duplicated rows (not first occurrence).
                   if (field === "aadharCardNo" && fieldError === "Visitor Aadhar Card No. must be unique") {
                     const visitorValue = formik.values.visitors?.[index]?.aadharCardNo;
-                    if (visitorValue && visitorValue.trim().length === 12) {
+                    if (
+                      visitorValue &&
+                      visitorValue.trim().length === 12 &&
+                      duplicateAadharIndices.has(index)
+                    ) {
                       errors[`visitorAadhar_${index}`] = fieldError;
                     }
+                  } else if (!isFieldTouched) {
+                    return;
                   } else if (field === "nameSelect") {
                     errors[`visitorTitle_${index}`] = fieldError;
                   } else if (field === "name") {
                     errors[`visitorName_${index}`] = fieldError;
                   } else if (field === "aadharCardNo") {
                     errors[`visitorAadhar_${index}`] = fieldError;
+                  } else if (field === "passportNumber") {
+                    errors[`visitorPassport_${index}`] = fieldError;
+                  } else if (field === "nationalId") {
+                    errors[`visitorNationalId_${index}`] = fieldError;
                   }
                 }
               });
@@ -267,13 +404,64 @@ export default function GatePatientMedicineTypePage() {
     return errors;
   };
 
-  // Function to scroll to first error field
-  const scrollToFirstError = () => {
-    const errors = getFormErrors();
+  // Flatten validation errors to same key format as getFormErrors (for first-error lookup by sequence).
+  const flattenValidationErrors = (validationErrors: typeof formik.errors): Record<string, string> => {
+    const flat: Record<string, string> = {};
+    if (!validationErrors) return flat;
+    Object.keys(validationErrors).forEach((key) => {
+      const error = validationErrors[key as keyof typeof formik.errors];
+      if (typeof error === "string") flat[key] = error;
+      else if (Array.isArray(error) && key === "visitors") {
+        (error as any[]).forEach((visitorError: any, index: number) => {
+          if (visitorError && typeof visitorError === "object") {
+            Object.keys(visitorError).forEach((field) => {
+              const msg = visitorError[field];
+              if (typeof msg !== "string") return;
+              if (field === "nameSelect") flat[`visitorTitle_${index}`] = msg;
+              else if (field === "name") flat[`visitorName_${index}`] = msg;
+              else if (field === "aadharCardNo") flat[`visitorAadhar_${index}`] = msg;
+              else if (field === "passportNumber") flat[`visitorPassport_${index}`] = msg;
+              else if (field === "nationalId") flat[`visitorNationalId_${index}`] = msg;
+            });
+          }
+        });
+      }
+    });
+    return flat;
+  };
+
+  // Ref → target ref according to sequence (same as form layout: first field, then next, then next).
+  // Patient Details → Address Details → Visitors (per visitor: Title, Name, Aadhar).
+  const PATIENT_MEDICINE_TYPE_FIELD_ORDER: readonly string[] = [
+    "mobileNumber",   // 1 → mobileNumberRef
+    "title",          // 2 → titleRef (Title)
+    "patientName",    // 3 → patientNameRef
+    "uhid",           // 4 → uhidRef
+    "whoVisited",     // 5 → whoVisitedRef
+    "pinCode",        // 6 → pinCodeRef
+    "country",        // 7 → countryRef
+    "state",          // 8 → stateRef
+    "city",           // 9 → cityRef (District)
+    "tehsil",         // 10 → tehsilRef
+    "area",           // 11 → areaRef (Post Office)
+    "address",        // 12 → addressRef
+    "addressLine1",   // 13 → addressLine1Ref
+    "addressLine2",   // 14 → addressLine2Ref
+  ];
+
+  // Use validationErrors when provided (e.g. from validateForm() on submit) so we use fresh result
+  // and focus the first invalid field in form order (sequence by sequence).
+  const scrollToFirstError = (validationErrors?: typeof formik.errors) => {
+    const errors = validationErrors ? flattenValidationErrors(validationErrors) : getFormErrors();
     if (Object.keys(errors).length === 0) return;
 
-    const firstErrorKey = Object.keys(errors)[0];
-    scrollToErrorField(firstErrorKey);
+    const visitorCount = formik.values.visitors?.length ?? 0;
+    const order: string[] = [...PATIENT_MEDICINE_TYPE_FIELD_ORDER];
+    for (let i = 0; i < visitorCount; i++) {
+      order.push(`visitorTitle_${i}`, `visitorName_${i}`, `visitorAadhar_${i}`, `visitorPassport_${i}`, `visitorNationalId_${i}`);
+    }
+    const firstErrorKey = order.find((key) => errors[key]);
+    if (firstErrorKey) scrollToErrorField(firstErrorKey);
   };
 
   // Function to scroll to error field
@@ -346,6 +534,36 @@ export default function GatePatientMedicineTypePage() {
       const visitor = formik.values.visitors?.[index];
       if (visitor && visitor.id) {
         const ref = visitorAadharRefs.current[visitor.id];
+        if (ref) {
+          setTimeout(() => {
+            ref.scrollIntoView({ behavior: "smooth", block: "center" });
+            ref.focus();
+          }, 100);
+          return;
+        }
+      }
+    }
+
+    if (errorKey.startsWith("visitorPassport_")) {
+      const index = parseInt(errorKey.replace("visitorPassport_", ""));
+      const visitor = formik.values.visitors?.[index];
+      if (visitor && visitor.id) {
+        const ref = visitorPassportRefs.current[visitor.id];
+        if (ref) {
+          setTimeout(() => {
+            ref.scrollIntoView({ behavior: "smooth", block: "center" });
+            ref.focus();
+          }, 100);
+          return;
+        }
+      }
+    }
+
+    if (errorKey.startsWith("visitorNationalId_")) {
+      const index = parseInt(errorKey.replace("visitorNationalId_", ""));
+      const visitor = formik.values.visitors?.[index];
+      if (visitor && visitor.id) {
+        const ref = visitorNationalIdRefs.current[visitor.id];
         if (ref) {
           setTimeout(() => {
             ref.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -433,11 +651,11 @@ export default function GatePatientMedicineTypePage() {
                 visitorAddressLine1: (values as any).addressLine1 || "",
                 visitorAddressLine2: (values as any).addressLine2 || "",
               }),
-          visitorCity: values.city ? getCityName(values.city, citiesData) : "",
+          visitorCity: cityValueForVisitorPayload(values.country, values.city, citiesData),
           visitorTehsil: tehsilName,
           visitorArea: areaName,
           visitorAreaId: areaId ? areaId : undefined, // Add areaId from the selected area ID (numeric ID from areas API)
-          visitorState: values.state ? getStateName(values.state, statesData) : "",
+          visitorState: stateValueForVisitorPayload(values.country, values.state, statesData),
           visitorCountry: values.country ? getCountryName(values.country, countriesData) : "",
           visitorPinCode: values.pinCode || "",
           patientName: values.patientName || "",
@@ -469,7 +687,7 @@ export default function GatePatientMedicineTypePage() {
             visitorTitle: visitor.nameSelect || undefined,
             visitorName: visitor.name,
             visitorType: "MEDICINE" as const,
-            visitorContactNumber: "", // No separate visitor contact number field in form - only patient mobile number exists
+            visitorContactNumber: (visitor.visitorContactNumber || "").trim(), // From "Already Exists" dialog selection
             visitorAadharCardNo,
             visitorPassportNumber,
             visitorNationalId,
@@ -480,11 +698,11 @@ export default function GatePatientMedicineTypePage() {
                   visitorAddressLine1: (values as any).addressLine1 || "",
                   visitorAddressLine2: (values as any).addressLine2 || "",
                 }),
-            visitorCity: values.city ? getCityName(values.city, citiesData) : "",
+            visitorCity: cityValueForVisitorPayload(values.country, values.city, citiesData),
             visitorTehsil: tehsilName,
             visitorArea: areaName,
             visitorAreaId: areaId ? areaId : undefined, // Add areaId from the selected area ID (numeric ID from areas API)
-            visitorState: values.state ? getStateName(values.state, statesData) : "",
+            visitorState: stateValueForVisitorPayload(values.country, values.state, statesData),
             visitorCountry: values.country ? getCountryName(values.country, countriesData) : "",
             visitorPinCode: values.pinCode || "",
             patientName: values.patientName,
@@ -577,12 +795,235 @@ export default function GatePatientMedicineTypePage() {
       country: "Indian",
       aadharCardNo: "",
     };
-    formik.setFieldValue("visitors", [...currentVisitors, newVisitor]);
+    const updatedVisitors = [...currentVisitors, newVisitor];
+    // Prevent immediate revalidation from clearing duplicate Aadhaar error on active row.
+    formik.setFieldValue("visitors", updatedVisitors, false);
+
+    if (activeVisitorAadharId !== null) {
+      const activeIndex = updatedVisitors.findIndex((v) => v.id === activeVisitorAadharId);
+      const activeValue = activeIndex >= 0 ? updatedVisitors[activeIndex]?.aadharCardNo?.trim() || "" : "";
+      if (activeValue.length === 12) {
+        const duplicateCount = updatedVisitors.filter(
+          (v, idx) => idx !== activeIndex && (v.aadharCardNo || "").trim() === activeValue
+        ).length;
+        if (duplicateCount > 0 && activeIndex >= 0) {
+          formik.setFieldError(
+            `visitors.${activeIndex}.aadharCardNo`,
+            "Visitor Aadhar Card No. must be unique"
+          );
+          formik.setFieldTouched(`visitors.${activeIndex}.aadharCardNo`, true, false);
+        }
+      }
+    }
+  };
+
+  const handleVisitorAadharLookup = async (index: number, overrideAadhar?: string) => {
+    const visitors = formik.values.visitors || [];
+    const visitor = visitors[index];
+    if (!visitor) return;
+
+    const visitorKey = String(visitor.id ?? index);
+    const aadhar = (overrideAadhar ?? visitor.aadharCardNo ?? "").trim();
+    if (!aadhar || aadhar.length !== 12) return;
+    if (visitorLookupLoading[visitorKey]) return;
+
+    try {
+      setVisitorLookupLoading((prev) => ({ ...prev, [visitorKey]: true }));
+      const res = await getVisitorByAadhar({ visitorAadharCardNo: aadhar }).unwrap();
+      const list = Array.isArray(res.data) ? res.data : res.data ? [res.data] : [];
+      if (list.length > 0) {
+        setExistingVisitors(list);
+        setVisitorDialogVisitorIndex(index);
+        setVisitorExistsDialogOpen(true);
+      } else {
+        setExistingVisitors([]);
+      }
+    } catch (error) {
+      console.error("Error fetching visitors by Aadhaar:", error);
+      setExistingVisitors([]);
+    } finally {
+      setVisitorLookupLoading((prev) => ({ ...prev, [visitorKey]: false }));
+    }
+  };
+
+  const handleVisitorDialogClose = (options?: { skipClearAadhar?: boolean }) => {
+    setVisitorExistsDialogOpen(false);
+    setExistingVisitors([]);
+    setVisitorDialogSelectingId(null);
+
+    if (options?.skipClearAadhar) return;
+    const visitors = formik.values.visitors || [];
+    const visitor = visitors[visitorDialogVisitorIndex];
+    if (!visitor) return;
+
+    setLockedVisitors((prev) => {
+      const next = { ...prev };
+      delete next[String(visitor.id ?? visitorDialogVisitorIndex)];
+      return next;
+    });
+
+    formik.setFieldValue(`visitors.${visitorDialogVisitorIndex}.aadharCardNo`, "", false);
+    formik.setFieldTouched(`visitors.${visitorDialogVisitorIndex}.aadharCardNo`, false, false);
+    formik.setFieldError(`visitors.${visitorDialogVisitorIndex}.aadharCardNo`, undefined);
+  };
+
+  const handleSelectVisitorFromDialog = async (visitor: VisitorByAadharItem, rowKey: number | string) => {
+    if (visitorDialogSelectingId !== null) return;
+    setVisitorDialogSelectingId(rowKey);
+
+    try {
+      const visitors = formik.values.visitors || [];
+      const index = visitorDialogVisitorIndex;
+      const current = visitors[index];
+      if (!current) return;
+
+      const visitorKey = String(current.id ?? index);
+      const isVisitorMode =
+        String((formik.values as any).whoVisited || "patient").toLowerCase() === "visitor";
+      const visitorCountryRaw = String(visitor.visitorNationality || visitor.visitorCountry || "Indian").trim();
+      const normalizedVisitorCountry =
+        visitorCountryRaw.toLowerCase().includes("foreigner")
+          ? "Foreigner"
+          : visitorCountryRaw.toLowerCase().includes("nepal")
+            ? "Nepal"
+            : "Indian";
+
+      const updatedVisitors = [...visitors];
+      updatedVisitors[index] = {
+        ...current,
+        nameSelect: (visitor.visitorTitle || "").trim() || current.nameSelect || "Mr",
+        name: (visitor.visitorName || "").trim() || current.name,
+        aadharCardNo: (visitor.visitorAadharCardNo || "").trim() || current.aadharCardNo,
+        country: normalizedVisitorCountry,
+        visitorContactNumber: (visitor.visitorContactNumber || "").trim(),
+      };
+      formik.setFieldValue("visitors", updatedVisitors, false);
+
+      // Auto-fill address only in Visitor mode and only once from the first selected visitor.
+      // In Patient mode, selecting an existing visitor must not modify Patient Address Details.
+      if (isVisitorMode && !isVisitorAddressLockedByFirstSelection) {
+        const visitorPinCode = String(visitor.visitorPinCode || "").trim();
+        const visitorAddress = String(visitor.visitorAddress || "").trim();
+        const visitorAddressLine1 = String(visitor.visitorAddressLine1 || "").trim();
+        const visitorAddressLine2 = String(visitor.visitorAddressLine2 || "").trim();
+        const visitorCountryName = String(visitor.visitorCountry || "").trim();
+        const visitorStateName = String(visitor.visitorState || "").trim();
+        const visitorCityName = String(visitor.visitorCity || "").trim();
+        const visitorTehsilName = String(visitor.visitorTehsil || "").trim();
+        const visitorAreaName = String(visitor.visitorArea || "").trim();
+
+        const countryId = getCountryId(visitorCountryName || "India", countriesData);
+        formik.setFieldValue("country", countryId || "6", false);
+        formik.setFieldValue("pinCode", visitorPinCode, false);
+        formik.setFieldValue("address", visitorAddress, false);
+        formik.setFieldValue("addressLine1", visitorAddressLine1, false);
+        formik.setFieldValue("addressLine2", visitorAddressLine2, false);
+
+        let stateId = "";
+        let cityId = "";
+        let tehsilId = "";
+        let areaId = "";
+
+        if (countryId && visitorStateName) {
+          try {
+            const statesResult = await getStatesQuery({ countryId }).unwrap();
+            const states = statesResult?.data || [];
+            const matchedState = states.find(
+              (s: any) => String(s.name || "").toLowerCase() === visitorStateName.toLowerCase()
+            );
+            if (matchedState?.id) {
+              stateId = String(matchedState.id);
+              formik.setFieldValue("state", stateId, false);
+            }
+          } catch (error) {
+            console.error("Error fetching states for visitor address:", error);
+          }
+        }
+
+        if (stateId && visitorCityName) {
+          try {
+            const citiesResult = await getCitiesQuery({ stateId }).unwrap();
+            const cities = citiesResult?.data || [];
+            const matchedCity = cities.find(
+              (c: any) => String(c.name || "").toLowerCase() === visitorCityName.toLowerCase()
+            );
+            if (matchedCity?.id) {
+              cityId = String(matchedCity.id);
+              formik.setFieldValue("city", cityId, false);
+            }
+          } catch (error) {
+            console.error("Error fetching cities for visitor address:", error);
+          }
+        }
+
+        if (cityId && visitorTehsilName) {
+          try {
+            const tehsilsResult = await getTehsilsQuery({ districtId: cityId }).unwrap();
+            const tehsils = tehsilsResult?.data || [];
+            const matchedTehsil = tehsils.find(
+              (t: any) => String(t.name || "").toLowerCase() === visitorTehsilName.toLowerCase()
+            );
+            if (matchedTehsil?.id) {
+              tehsilId = String(matchedTehsil.id);
+              formik.setFieldValue("tehsil", tehsilId, false);
+            }
+          } catch (error) {
+            console.error("Error fetching tehsils for visitor address:", error);
+          }
+        }
+
+        if (tehsilId && visitorAreaName) {
+          try {
+            const areasResult = await getAreasQuery({ tehsilId }).unwrap();
+            const areas = areasResult?.data || [];
+            const matchedArea = areas.find(
+              (a: any) => String(a.name || "").toLowerCase() === visitorAreaName.toLowerCase()
+            );
+            if (matchedArea?.id) {
+              areaId = String(matchedArea.id);
+              formik.setFieldValue("area", areaId, false);
+            }
+          } catch (error) {
+            console.error("Error fetching areas for visitor address:", error);
+          }
+        }
+
+        setIsVisitorAddressLockedByFirstSelection(true);
+      }
+
+      formik.setFieldTouched(`visitors.${index}.nameSelect`, true, false);
+      formik.setFieldTouched(`visitors.${index}.name`, true, false);
+      formik.setFieldTouched(`visitors.${index}.aadharCardNo`, true, false);
+      formik.setFieldTouched(`visitors.${index}.country`, true, false);
+      formik.setFieldError(`visitors.${index}.nameSelect`, undefined);
+      formik.setFieldError(`visitors.${index}.name`, undefined);
+      formik.setFieldError(`visitors.${index}.aadharCardNo`, undefined);
+      formik.setFieldError(`visitors.${index}.country`, undefined);
+
+      setLockedVisitors((prev) => ({ ...prev, [visitorKey]: true }));
+      handleVisitorDialogClose({ skipClearAadhar: true });
+    } finally {
+      setVisitorDialogSelectingId(null);
+    }
   };
 
   const handleRemoveVisitor = (id: string) => {
     const currentVisitors = formik.values.visitors || [];
     const updatedVisitors = currentVisitors.filter((visitor) => visitor.id !== id);
+
+    setLockedVisitors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setVisitorLookupLoading((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (activeVisitorAadharId === id) {
+      setActiveVisitorAadharId(null);
+    }
     
     // Clear ALL errors and touched states for ALL visitors when a row is removed
     // This ensures no stale errors remain after array indices shift
@@ -607,7 +1048,7 @@ export default function GatePatientMedicineTypePage() {
     
     // Multiple visitors remain - re-check for duplicates after a brief delay
     setTimeout(() => {
-      const finalVisitors = formik.values.visitors || [];
+      const finalVisitors = updatedVisitors;
       finalVisitors.forEach((visitor, index) => {
         if (visitor.aadharCardNo && visitor.aadharCardNo.trim().length === 12) {
           const duplicateCount = finalVisitors.filter((v, idx) => 
@@ -677,18 +1118,25 @@ export default function GatePatientMedicineTypePage() {
       // Handle new response structure with registrations and preBookings
       const registrations = result.data?.registrations || [];
       const preBookings = result.data?.preBookings || [];
-      
-      if (registrations.length > 0) {
-        const mappedPatients = registrations.map((patient: any) => ({
-          ...patient,
-          name: patient.patientName || patient.name,
-          branchName: patient.branchName || "N/A",
-        }));
-        setExistingPatients(mappedPatients);
-        setPatientExistsDialogOpen(true);
+      const userLead = result.data?.userLead;
+
+      if (registrations.length > 0 || preBookings.length > 0 || userLead) {
+        setNoPatientFoundMessage(null);
+        if (registrations.length > 0) {
+          const mappedPatients = registrations.map((patient: any) => ({
+            ...patient,
+            name: patient.patientName || patient.name,
+            branchName: patient.branchName || "N/A",
+          }));
+          setExistingPatients(mappedPatients);
+          setPatientExistsDialogOpen(true);
+        }
       } else {
         lastCheckedContactNumberRef.current = "";
         lastCheckedUHIDRef.current = "";
+        if (mobileNumber) {
+          setNoPatientFoundMessage("No patient found for the provided phone number");
+        }
       }
     } catch (error) {
       console.error("Error checking existing patients:", error);
@@ -705,10 +1153,13 @@ export default function GatePatientMedicineTypePage() {
   // Handle mobile number change - check when it reaches 10 digits
   const handleMobileNumberChange = (field: string, value: string) => {
     formik.setFieldValue(field, value, false);
-    
+
+    // Clear "no patient found" message when user changes the number
+    setNoPatientFoundMessage(null);
+
     // If form is read-only, don't check for existing patients
     if (isReadOnly) return;
-    
+
     // Check if mobile number reaches 10 digits
     if (value.length === 10) {
       checkExistingPatients(value, undefined);
@@ -738,6 +1189,7 @@ export default function GatePatientMedicineTypePage() {
     setSelectedPatient(patient);
     setPatientExistsDialogOpen(false);
     setIsReadOnly(true);
+    setNoPatientFoundMessage(null);
     
     // Clear all errors and touched state before filling
     formik.setErrors({});
@@ -765,8 +1217,11 @@ export default function GatePatientMedicineTypePage() {
       formik.setFieldValue("pinCode", addressData.pinCode, false);
       formik.setFieldValue("addressLine1", addressData.addressLine1, false);
       formik.setFieldValue("addressLine2", addressData.addressLine2, false);
-      // Country will be set in useEffect after countries data loads
-      
+      // Avoid default India ("6") while resolving API country — prevents India state/city effects from running on foreign addresses
+      if (patient.address.country) {
+        formik.setFieldValue("country", "", false);
+      }
+
       // Store original address details for restoration when switching back to Patient
       originalAddressRef.current = {
         pinCode: addressData.pinCode,
@@ -799,10 +1254,26 @@ export default function GatePatientMedicineTypePage() {
     if (countryId) {
       formik.setFieldValue("country", countryId, false);
       console.log("Country found and set:", countryNameFromAPI, "->", countryId);
-      
-      // Update original address ref with country ID
+
       if (originalAddressRef.current) {
         originalAddressRef.current.country = countryId;
+      }
+
+      // Non-India: state/city are free text from API (no states/cities master lists)
+      if (countryId !== "6" && selectedPatient.address) {
+        const a = selectedPatient.address;
+        const st = a.state != null ? String(a.state).trim() : "";
+        const ct = a.city != null ? String(a.city).trim() : "";
+        formik.setFieldValue("state", st, false);
+        formik.setFieldValue("city", ct, false);
+        formik.setFieldValue("tehsil", "" as any, false);
+        formik.setFieldValue("area", "" as any, false);
+        if (originalAddressRef.current) {
+          originalAddressRef.current.state = st;
+          originalAddressRef.current.city = ct;
+          originalAddressRef.current.tehsil = "";
+          originalAddressRef.current.area = "";
+        }
       }
     } else {
       console.warn("Country not found:", countryNameFromAPI);
@@ -810,10 +1281,11 @@ export default function GatePatientMedicineTypePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPatient, countriesData]);
 
-  // Update state and city IDs when address data is available
+  // Update state and city IDs when address data is available (India only)
   useEffect(() => {
     if (!selectedPatient?.address) return;
-    
+    if (formik.values.country !== "6") return;
+
     // Find state ID - case insensitive matching
     if (selectedPatient.address.state && statesData) {
       const statesList = Array.isArray(statesData) 
@@ -845,10 +1317,11 @@ export default function GatePatientMedicineTypePage() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, statesData]);
+  }, [selectedPatient, statesData, formik.values.country]);
 
-  // Find city ID after state is set - separate useEffect to ensure state is set first
+  // Find city ID after state is set - separate useEffect to ensure state is set first (India only)
   useEffect(() => {
+    if (formik.values.country !== "6") return;
     if (!selectedPatient?.address?.city || !formik.values.state) return;
     
     // Wait a bit for cities data to load after state is set
@@ -894,10 +1367,11 @@ export default function GatePatientMedicineTypePage() {
     
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, formik.values.state, citiesData]);
+  }, [selectedPatient, formik.values.state, formik.values.country, citiesData]);
 
-  // Find tehsil ID after city is set - separate useEffect to ensure city is set first
+  // Find tehsil ID after city is set - separate useEffect to ensure city is set first (India only)
   useEffect(() => {
+    if (formik.values.country !== "6") return;
     if (!selectedPatient?.address?.tehsil || !formik.values.city) return;
     
     // Wait a bit for tehsils data to load after city is set
@@ -947,10 +1421,11 @@ export default function GatePatientMedicineTypePage() {
     
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, formik.values.city, formik.values.pinCode, getTehsilsQuery]);
+  }, [selectedPatient, formik.values.country, formik.values.city, formik.values.pinCode, getTehsilsQuery]);
 
-  // Find area ID after tehsil is set - separate useEffect to ensure tehsil is set first
+  // Find area ID after tehsil is set - separate useEffect to ensure tehsil is set first (India only)
   useEffect(() => {
+    if (formik.values.country !== "6") return;
     if (!selectedPatient?.address?.area || !formik.values.tehsil) return;
     
     // Wait a bit for areas data to load after tehsil is set
@@ -1000,7 +1475,7 @@ export default function GatePatientMedicineTypePage() {
     
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, formik.values.tehsil, formik.values.pinCode, getAreasQuery]);
+  }, [selectedPatient, formik.values.country, formik.values.tehsil, formik.values.pinCode, getAreasQuery]);
 
   // Memoized close handler
   const handleDialogClose = useCallback(() => {
@@ -1032,24 +1507,50 @@ export default function GatePatientMedicineTypePage() {
   }, [formik, patientExistsDialogOpen]);
 
   const handleVisitorChange = (id: string, field: "nameSelect" | "name" | "aadharCardNo" | "passportNumber" | "nationalId" | "country", value: string) => {
+    if (
+      lockedVisitors[id] &&
+      (field === "aadharCardNo" || field === "nameSelect" || field === "name" || field === "country")
+    ) {
+      return;
+    }
+
     const currentVisitors = formik.values.visitors || [];
     const visitorIndex = currentVisitors.findIndex((v) => v.id === id);
+    if (field === "aadharCardNo" && visitorIndex >= 0) {
+      setActiveVisitorAadharId(id);
+    }
     
     if (visitorIndex >= 0) {
       const updatedVisitors = currentVisitors.map((visitor) =>
         visitor.id === id ? { ...visitor, [field]: value } : visitor
       );
       formik.setFieldValue("visitors", updatedVisitors, false);
+
+      // When nationality changes, clear touched/error for passport/nationalId so their
+      // errors don't appear until the user actually touches those fields.
+      if (field === "country") {
+        formik.setFieldTouched(`visitors.${visitorIndex}.passportNumber`, false, false);
+        formik.setFieldTouched(`visitors.${visitorIndex}.nationalId`, false, false);
+        formik.setFieldError(`visitors.${visitorIndex}.passportNumber`, undefined);
+        formik.setFieldError(`visitors.${visitorIndex}.nationalId`, undefined);
+      }
       
       // Check for duplicate Aadhar Card numbers if field is aadharCardNo
       // Show error instantly when 12 digits are entered and it's a duplicate (only on the field being edited)
       if (field === "aadharCardNo") {
+        let shouldLookupVisitor = false;
+        const lookupAadhar = value.trim();
         if (!value || value.trim() === "") {
           // Empty value - clear duplicate error if exists
           const currentError = (formik.errors.visitors?.[visitorIndex] as any)?.aadharCardNo;
           if (currentError === "Visitor Aadhar Card No. must be unique") {
             formik.setFieldError(`visitors.${visitorIndex}.aadharCardNo`, undefined);
           }
+          setLockedVisitors((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
         } else if (value && value.trim().length === 12) {
           // Check for duplicates in updatedVisitors array (excluding current visitor)
           const duplicateCount = updatedVisitors.filter((visitor, idx) => 
@@ -1070,6 +1571,7 @@ export default function GatePatientMedicineTypePage() {
             setTimeout(() => {
               formik.validateField(`visitors.${visitorIndex}.aadharCardNo`);
             }, 0);
+            shouldLookupVisitor = true;
           }
         } else if (value && value.trim().length < 12) {
           // If less than 12 digits, clear duplicate error (user is still typing)
@@ -1077,6 +1579,15 @@ export default function GatePatientMedicineTypePage() {
           if (currentError === "Visitor Aadhar Card No. must be unique") {
             formik.setFieldError(`visitors.${visitorIndex}.aadharCardNo`, undefined);
           }
+          setLockedVisitors((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }
+
+        if (shouldLookupVisitor && lookupAadhar.length === 12) {
+          void handleVisitorAadharLookup(visitorIndex, lookupAadhar);
         }
       }
       
@@ -1116,7 +1627,7 @@ export default function GatePatientMedicineTypePage() {
   };
 
   return (
-    <GateEntryLayout title="">
+    <GateEntryLayout title="" subModuleName="Patient Medicine Type">
       <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
@@ -1126,8 +1637,15 @@ export default function GatePatientMedicineTypePage() {
 
         <form
           ref={formRef}
+          noValidate
           onSubmit={async (e) => {
             e.preventDefault();
+            // Prevent multiple submissions while a request is already in progress
+            if (formik.isSubmitting || isSubmitting) {
+              return;
+            }
+            formik.setSubmitting(true);
+            try {
             const errors = await formik.validateForm();
             if (Object.keys(errors).length > 0) {
               formik.setErrors(errors);
@@ -1181,11 +1699,14 @@ export default function GatePatientMedicineTypePage() {
               const mergedTouched = { ...formik.touched, ...touchedFields };
               formik.setTouched(mergedTouched, false);
 
-              scrollToFirstError();
+              scrollToFirstError(errors as typeof formik.errors);
               return;
             }
 
             await handleFormSubmit(formik.values);
+            } finally {
+              formik.setSubmitting(false);
+            }
           }}
           className="space-y-6"
         >
@@ -1209,19 +1730,55 @@ export default function GatePatientMedicineTypePage() {
                   handleUHIDChange(value);
                 }
               } else if (field === "whoVisited") {
+                const currentMode =
+                  ((formik.values as any).whoVisited || "patient").toLowerCase() === "visitor"
+                    ? "visitor"
+                    : "patient";
+                const targetMode = value.toLowerCase() === "visitor" ? "visitor" : "patient";
+
+                // Save current mode address before switching.
+                addressByVisitTypeRef.current[currentMode] = getAddressSnapshotFromValues(formik.values);
+
                 formik.setFieldValue(field, value, false);
+
+                // Reset address validation visibility on mode switch so
+                // Visitor Address errors are not shown in Patient Address and vice versa.
+                const addressFields = [
+                  "pinCode",
+                  "country",
+                  "state",
+                  "city",
+                  "tehsil",
+                  "area",
+                  "address",
+                  "addressLine1",
+                  "addressLine2",
+                ] as const;
+                addressFields.forEach((addressField) => {
+                  formik.setFieldTouched(addressField, false, false);
+                  formik.setFieldError(addressField, undefined);
+                });
                 
-                // If Visitor is selected, clear address fields but keep country as India
-                if (value.toLowerCase() === "visitor") {
-                  formik.setFieldValue("pinCode", "", false);
-                  formik.setFieldValue("state", "", false);
-                  formik.setFieldValue("city", "", false);
-                  formik.setFieldValue("address", "", false);
-                  formik.setFieldValue("addressLine1", "", false);
-                  formik.setFieldValue("addressLine2", "", false);
-                  // Keep country as India (6)
-                  formik.setFieldValue("country", "6", false);
-                  
+                // Keep address details unchanged when switching whoVisited.
+                // Only ensure at least one visitor row exists for Visitor flow.
+                if (targetMode === "visitor") {
+                  const visitorAddressSnapshot = addressByVisitTypeRef.current.visitor;
+                  if (visitorAddressSnapshot) {
+                    applyAddressSnapshot(visitorAddressSnapshot);
+                  } else {
+                    // First time entering Visitor mode: keep it isolated from Patient address.
+                    applyAddressSnapshot({
+                      pinCode: "",
+                      country: "6",
+                      state: "",
+                      city: "",
+                      tehsil: "",
+                      area: "",
+                      address: "",
+                      addressLine1: "",
+                      addressLine2: "",
+                    });
+                  }
                   // Auto-add one visitor if none exists
                   const currentVisitors = formik.values.visitors || [];
                   if (currentVisitors.length === 0) {
@@ -1229,22 +1786,43 @@ export default function GatePatientMedicineTypePage() {
                       id: Date.now().toString(),
                       nameSelect: "",
                       name: "",
+                      country: "Indian",
                       aadharCardNo: "",
                     };
                     formik.setFieldValue("visitors", [newVisitor], false);
                   }
-                } else if (value.toLowerCase() === "patient" && originalAddressRef.current) {
-                  // If Patient is selected and we have stored address, restore it
-                  const originalAddress = originalAddressRef.current;
-                  formik.setFieldValue("pinCode", originalAddress.pinCode, false);
-                  formik.setFieldValue("country", originalAddress.country, false);
-                  formik.setFieldValue("state", originalAddress.state, false);
-                  formik.setFieldValue("city", originalAddress.city, false);
-                  formik.setFieldValue("tehsil", originalAddress.tehsil, false);
-                  formik.setFieldValue("area", originalAddress.area, false);
-                  formik.setFieldValue("address", originalAddress.address, false);
-                  formik.setFieldValue("addressLine1", originalAddress.addressLine1 ?? "", false);
-                  formik.setFieldValue("addressLine2", originalAddress.addressLine2 ?? "", false);
+                } else if (targetMode === "patient") {
+                  const patientAddressSnapshot =
+                    addressByVisitTypeRef.current.patient ||
+                    (originalAddressRef.current
+                      ? {
+                          pinCode: originalAddressRef.current.pinCode || "",
+                          country: originalAddressRef.current.country || "6",
+                          state: originalAddressRef.current.state || "",
+                          city: originalAddressRef.current.city || "",
+                          tehsil: originalAddressRef.current.tehsil || "",
+                          area: originalAddressRef.current.area || "",
+                          address: originalAddressRef.current.address || "",
+                          addressLine1: originalAddressRef.current.addressLine1 || "",
+                          addressLine2: originalAddressRef.current.addressLine2 || "",
+                        }
+                      : null);
+
+                  if (patientAddressSnapshot) {
+                    applyAddressSnapshot(patientAddressSnapshot);
+                  } else {
+                    applyAddressSnapshot({
+                      pinCode: "",
+                      country: "6",
+                      state: "",
+                      city: "",
+                      tehsil: "",
+                      area: "",
+                      address: "",
+                      addressLine1: "",
+                      addressLine2: "",
+                    });
+                  }
                 }
               } else {
                 formik.setFieldValue(field, value, false);
@@ -1279,8 +1857,10 @@ export default function GatePatientMedicineTypePage() {
               whoVisited: whoVisitedRef,
             }}
             errors={getFormErrors()}
-            readOnly={isReadOnly}
+            readOnly={false}
+            lockIdentityFields={true}
             isMobileNumberLoading={isMobileNumberLoading}
+            mobileNumberMessage={noPatientFoundMessage || undefined}
           />
 
           {/* Conditionally render sections based on whoVisited */}
@@ -1293,12 +1873,14 @@ export default function GatePatientMedicineTypePage() {
                 onRemoveVisitor={handleRemoveVisitor}
                 onVisitorChange={handleVisitorChange}
                 onVisitorBlur={(index, field) => {
-                  const fieldName = field === "nameSelect" ? "nameSelect" : field === "name" ? "name" : field === "aadharCardNo" ? "aadharCardNo" : field === "passportNumber" ? "passportNumber" : "nationalId";
+                  const fieldName = field === "nameSelect" ? "nameSelect" : field === "name" ? "name" : field === "aadharCardNo" ? "aadharCardNo" : field === "passportNumber" ? "passportNumber" : field === "nationalId" ? "nationalId" : field === "country" ? "country" : field;
                   formik.setFieldTouched(`visitors.${index}.${fieldName}`, true, false);
                   
                   // Check for duplicate Aadhar Card numbers on blur if field is aadharCardNo
                   if (field === "aadharCardNo") {
                     const currentVisitors = formik.values.visitors || [];
+                    const currentVisitorId = currentVisitors[index]?.id;
+                    if (currentVisitorId) setActiveVisitorAadharId(currentVisitorId);
                     const currentValue = currentVisitors[index]?.aadharCardNo;
 
                     if (currentValue && currentValue.trim().length === 12) {
@@ -1317,13 +1899,18 @@ export default function GatePatientMedicineTypePage() {
                           formik.setFieldError(`visitors.${index}.aadharCardNo`, undefined);
                         }
                         formik.validateField(`visitors.${index}.${fieldName}`);
+                        void handleVisitorAadharLookup(index, currentValue.trim());
                       }
                     } else {
                       // Not 12 digits yet, validate normally
                       formik.validateField(`visitors.${index}.${fieldName}`);
                     }
+                  } else if (field === "country") {
+                    // Nationality changed — validate country, but do NOT touch passport/nationalId
+                    // so their errors don't appear until the user actually interacts with those fields.
+                    formik.validateField(`visitors.${index}.country`);
                   } else {
-                    // Not aadharCardNo field, validate normally
+                    // Not aadharCardNo/country field, validate normally
                     formik.validateField(`visitors.${index}.${fieldName}`);
                   }
                 }}
@@ -1331,12 +1918,17 @@ export default function GatePatientMedicineTypePage() {
                 visitorNameRefs={visitorNameRefs}
                 visitorCountryRefs={visitorCountryRefs}
                 visitorAadharRefs={visitorAadharRefs}
+                visitorPassportRefs={visitorPassportRefs}
+                visitorNationalIdRefs={visitorNationalIdRefs}
                 countryOptions={[
                   { value: "Indian", label: "Indian" },
                   { value: "Nepal", label: "Nepal" },
                   { value: "Foreigner", label: "Foreigner" },
                 ]}
                 errors={getFormErrors()}
+                visitorLookupLoading={visitorLookupLoading}
+                lockedVisitors={lockedVisitors}
+                disableFirstVisitorDelete={(formik.values as any).whoVisited?.toLowerCase() === "visitor"}
               />
 
               {/* Address Details Section - Show at bottom when Visitor is selected */}
@@ -1450,12 +2042,14 @@ export default function GatePatientMedicineTypePage() {
                 onRemoveVisitor={handleRemoveVisitor}
                 onVisitorChange={handleVisitorChange}
                 onVisitorBlur={(index, field) => {
-                  const fieldName = field === "nameSelect" ? "nameSelect" : field === "name" ? "name" : field === "aadharCardNo" ? "aadharCardNo" : field === "passportNumber" ? "passportNumber" : "nationalId";
+                  const fieldName = field === "nameSelect" ? "nameSelect" : field === "name" ? "name" : field === "aadharCardNo" ? "aadharCardNo" : field === "passportNumber" ? "passportNumber" : field === "nationalId" ? "nationalId" : field === "country" ? "country" : field;
                   formik.setFieldTouched(`visitors.${index}.${fieldName}`, true, false);
                   
                   // Check for duplicate Aadhar Card numbers on blur if field is aadharCardNo
                   if (field === "aadharCardNo") {
                     const currentVisitors = formik.values.visitors || [];
+                    const currentVisitorId = currentVisitors[index]?.id;
+                    if (currentVisitorId) setActiveVisitorAadharId(currentVisitorId);
                     const currentValue = currentVisitors[index]?.aadharCardNo;
 
                     if (currentValue && currentValue.trim().length === 12) {
@@ -1474,13 +2068,18 @@ export default function GatePatientMedicineTypePage() {
                           formik.setFieldError(`visitors.${index}.aadharCardNo`, undefined);
                         }
                         formik.validateField(`visitors.${index}.${fieldName}`);
+                        void handleVisitorAadharLookup(index, currentValue.trim());
                       }
                     } else {
                       // Not 12 digits yet, validate normally
                       formik.validateField(`visitors.${index}.${fieldName}`);
                     }
+                  } else if (field === "country") {
+                    // Nationality changed — validate country, but do NOT touch passport/nationalId
+                    // so their errors don't appear until the user actually interacts with those fields.
+                    formik.validateField(`visitors.${index}.country`);
                   } else {
-                    // Not aadharCardNo field, validate normally
+                    // Not aadharCardNo/country field, validate normally
                     formik.validateField(`visitors.${index}.${fieldName}`);
                   }
                 }}
@@ -1488,26 +2087,33 @@ export default function GatePatientMedicineTypePage() {
                 visitorNameRefs={visitorNameRefs}
                 visitorCountryRefs={visitorCountryRefs}
                 visitorAadharRefs={visitorAadharRefs}
+                visitorPassportRefs={visitorPassportRefs}
+                visitorNationalIdRefs={visitorNationalIdRefs}
                 countryOptions={[
                   { value: "Indian", label: "Indian" },
                   { value: "Nepal", label: "Nepal" },
                   { value: "Foreigner", label: "Foreigner" },
                 ]}
                 errors={getFormErrors()}
+                visitorLookupLoading={visitorLookupLoading}
+                lockedVisitors={lockedVisitors}
+                disableFirstVisitorDelete={(formik.values as any).whoVisited?.toLowerCase() === "visitor"}
               />
             </>
           )}
 
           {/* Action Buttons */}
           <div className="flex items-center justify-start gap-4">
-            <Button 
-              type="submit" 
-              variant="primary" 
-              isLoading={isSubmitting}
-              disabled={isSubmitting}
-            >
-              Submit
-            </Button>
+            {gatePermissions.canAdd && (
+              <Button 
+                type="submit" 
+                variant="primary" 
+                isLoading={isSubmitting}
+                disabled={isSubmitting}
+              >
+                Submit
+              </Button>
+            )}
             <BackToPreviousPageButton onClick={handleBack} />
           </div>
         </form>
@@ -1534,6 +2140,81 @@ export default function GatePatientMedicineTypePage() {
         confirmText="OK"
         showCancel={false}
       />
+
+      {/* Visitor Already Exists Dialog */}
+      <Dialog
+        open={visitorExistsDialogOpen}
+        onClose={() => handleVisitorDialogClose()}
+        title=""
+        width={1400}
+      >
+        <div className="space-y-6">
+          <div className="flex items-center justify-center rounded-[8px] border border-[#0B8C00]/20 bg-[#0B8C00]/20 px-5 py-4">
+            <p className="text-[28px] font-medium leading-[120%] text-[#0B8C00]">
+              Visitor Already Exists
+            </p>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-white">
+                <TableHead position="first">Sr no.</TableHead>
+                <TableHead sortable>Visitor Name</TableHead>
+                <TableHead sortable>Contact Number</TableHead>
+                <TableHead sortable>Aadhar Card Number</TableHead>
+                <TableHead position="last">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {existingVisitors.length === 0 ? (
+                <TableRow>
+                  <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
+                    {isVisitorLookupLoading ? "Loading visitors..." : "No visitors found"}
+                  </TableData>
+                </TableRow>
+              ) : (
+                existingVisitors.map((visitor, index) => {
+                  const rowKey = visitor.id ?? index;
+                  const isSelecting = visitorDialogSelectingId === rowKey;
+                  const displayName = visitor.visitorTitle
+                    ? `${visitor.visitorTitle} ${visitor.visitorName}`
+                    : visitor.visitorName;
+                  return (
+                    <TableRow key={rowKey} className="bg-white transition-colors hover:bg-[#F7FAF7]">
+                      <TableData variant="primary">{index + 1}</TableData>
+                      <TableData>{displayName || "-"}</TableData>
+                      <TableData>{visitor.visitorContactNumber || "-"}</TableData>
+                      <TableData>{visitor.visitorAadharCardNo || "-"}</TableData>
+                      <TableData>
+                        <button
+                          type="button"
+                          onClick={() => void handleSelectVisitorFromDialog(visitor, rowKey)}
+                          disabled={visitorDialogSelectingId !== null}
+                          className="flex h-7 items-center justify-center rounded-[32px] border border-[#0B8C00] bg-white px-4 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] disabled:cursor-not-allowed disabled:opacity-75"
+                        >
+                          {isSelecting ? (
+                            <svg
+                              className="h-4 w-4 animate-spin text-[#0B8C00]"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                          ) : (
+                            "Select"
+                          )}
+                        </button>
+                      </TableData>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Dialog>
 
       {/* Patient Already Exists Dialog */}
       <Dialog
@@ -1577,7 +2258,11 @@ export default function GatePatientMedicineTypePage() {
                   >
                     <TableData variant="primary">{index + 1}</TableData>
                     <TableData>{patient.uhid || "-"}</TableData>
-                    <TableData>{patient.patientName || patient.name || "-"}</TableData>
+                    <TableData>
+                      {[patient.patientTitle, patient.patientName || patient.name]
+                        .filter(Boolean)
+                        .join(" ") || "-"}
+                    </TableData>
                     <TableData>{patient.branchName || "N/A"}</TableData>
                     <TableData>
                       <button

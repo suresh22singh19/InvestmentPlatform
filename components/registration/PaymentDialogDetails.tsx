@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { Dialog, ThreeDotLoader } from "@/components/ui";
 import { useEffect } from "react";
+import { PaymentReceiptCapture } from "@/components/registration/PaymentReceiptCapture";
 
 interface PaymentDialogDetailsProps {
     open: boolean;
@@ -19,6 +20,8 @@ interface PaymentDialogDetailsProps {
     stateName: string;
     jsHealthCardNo: string;
     uhid?: string; // Patient UHID (takes priority over jsHealthCardNo)
+    /** Invoice number from registration API (shown after successful payment) */
+    invoiceNumber?: string;
     consultationCharges: number;
     subtotal: number;
     tax: number;
@@ -35,9 +38,12 @@ interface PaymentDialogDetailsProps {
     billingPincode?: string;
     onPrint: () => void;
     onSaveAndNext: () => void;
-    onDownload: () => void;
+    onDownload: () => void | Promise<void>;
     isSubmitting?: boolean;
-    isHospitalRegistration?: boolean;
+    isDownloadingInvoice?: boolean;
+    canDownload?: boolean;
+    /** When true, only Download and Print are shown (post-success receipt). */
+    receiptActionsOnly?: boolean;
 }
 
 export default function PaymentDialogDetails({
@@ -53,6 +59,7 @@ export default function PaymentDialogDetails({
     stateName,
     jsHealthCardNo,
     uhid,
+    invoiceNumber,
     consultationCharges,
     subtotal,
     tax,
@@ -71,7 +78,9 @@ export default function PaymentDialogDetails({
     onSaveAndNext,
     onDownload,
     isSubmitting = false,
-    isHospitalRegistration = false,
+    isDownloadingInvoice = false,
+    canDownload = true,
+    receiptActionsOnly = false,
 }: PaymentDialogDetailsProps) {
     // Add print styles for proper spacing - single page only
     useEffect(() => {
@@ -79,8 +88,8 @@ export default function PaymentDialogDetails({
         style.textContent = `
             @media print {
                 @page {
-                    margin: 0.2cm;
-                    size: A4;
+                    margin: 8mm;
+                    size: A4 portrait;
                 }
                 * {
                     -webkit-print-color-adjust: exact !important;
@@ -108,7 +117,8 @@ export default function PaymentDialogDetails({
                     border: none !important;
                     max-width: 100% !important;
                     width: 100% !important;
-                    max-height: 100vh !important;
+                    height: auto !important;
+                    max-height: none !important;
                     margin: 0 !important;
                     padding: 2px 2px !important;
                     border-radius: 0 !important;
@@ -143,6 +153,16 @@ export default function PaymentDialogDetails({
                 .invoice-content {
                     gap: 0 !important;
                     padding-top: 0 !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    border-top: none !important;
+                }
+                #payment-receipt-capture {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    box-sizing: border-box !important;
+                    border: 1px solid #C0C3C8 !important;
+                    background: #ffffff !important;
                 }
             }
         `;
@@ -153,14 +173,6 @@ export default function PaymentDialogDetails({
             }
         };
     }, []);
-
-    // Check if transaction ID should be displayed (only for digital payments)
-    const isDigitalPayment = paymentMode?.toLowerCase() === 'credit';
-    const showTransactionId = isDigitalPayment && transactionId && transactionId.trim() !== '';
-    // Format currency
-    const formatCurrency = (amount: number) => {
-        return `₹${amount.toLocaleString('en-IN')}`;
-    };
 
     // Custom header with only close button
     const customHeader = (
@@ -177,212 +189,105 @@ export default function PaymentDialogDetails({
     );
 
     return (
-        <Dialog open={open} onClose={onClose} title="" width="50%" customHeader={customHeader}>
-            <div className="w-full bg-white flex flex-col gap-[16px] invoice-content mt-[-20px]">
-              {/* Outer border wrapping entire invoice content */}
-              <div className="border border-[#C0C3C8] rounded-[1px] overflow-hidden flex flex-col">
-                {/* Header: Logo + Company Info + Payment Receipt */}
-                <div className="flex items-center py-[11px] px-[24px]">
-                    <div className="flex-shrink-0">
-                        <Image
-                            src="/images/logo.png"
-                            alt="Jeena Sikho Lifecare Limited Logo"
-                            width={120}
-                            height={80}
-                            className="object-contain"
-                        />
-                    </div>
-                    <div className="flex flex-col items-center flex-1">
-                        <h1 className="font-inter not-italic font-semibold text-[20px] leading-[130%] text-center text-[#434956] mb-1">
-                            Jeena Sikho Lifecare Limited
-                        </h1>
-                        <p className="font-inter not-italic font-normal text-[12px] leading-[140%] text-center text-[#434956]">
-                            Pind Devinagar, Hadbast No. 18, Chandigarh Delhi Highway,Tehsil Derabassi,<br />
-                            Distt Mohali Punjab, DERABASSI, PUNJAB 140507, Devinagar BO, derabassi,<br />
-                            Mohali (Ajitgarh), PUNJAB(140507)
-                        </p>
-                        <h2 className="font-inter not-italic font-semibold text-[20px] leading-[130%] text-center text-[#434956] mt-3">
-                            Payment Receipt
-                        </h2>
-                    </div>
-                </div>
-
-                {/* Bill Date & Patient UHID rows */}
-                <div className="flex flex-col w-full">
-                    {/* Bill Date Row */}
-                    <div className="flex items-center gap-[8px] w-full h-[55px] border-t border-[#C0C3C8] py-[11px] px-[24px]">
-                        <span className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956]">Bill Date:</span>
-                        <span className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">{billDate}</span>
-                    </div>
-                    {/* Patient UHID Row */}
-                    <div className="flex items-center gap-[8px] w-full h-[55px] border-t border-[#C0C3C8] py-[11px] px-[24px]">
-                        <span className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956]">Patient UHID:</span>
-                        <span className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
-                            {uhid || 'N/A'}
-                        </span>
-                    </div>
-                </div>
-
-                {/* Customer Details Section */}
-                <div className="flex flex-col w-full border-t border-[#C0C3C8]">
-                    <h3 className="font-inter not-italic font-extrabold text-[19px] leading-[130%] text-[#434956] py-[11px] px-[24px] pb-0">
-                        Customer Details
-                    </h3>
-                    <div className="flex flex-col gap-[8px] py-[11px] px-[24px]">
-                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                            <span className="font-extrabold">Name:</span>{' '}
-                            <span className="font-medium">{patientName}</span>
-                        </p>
-                        {(!countryName || countryName === "India") ? (
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">Address:</span>{' '}
-                                <span className="font-medium">{address || "N/A"}</span>
-                            </p>
-                        ) : (
-                            <>
-                                <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                    <span className="font-extrabold">Address Line 1:</span>{' '}
-                                    <span className="font-medium">{addressLine1?.trim() || "N/A"}</span>
-                                </p>
-                                <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                    <span className="font-extrabold">Address Line 2:</span>{' '}
-                                    <span className="font-medium">{addressLine2?.trim() || "N/A"}</span>
-                                </p>
-                            </>
-                        )}
-                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                            <span className="font-extrabold">City:</span>{' '}
-                            <span className="font-medium">{cityName}</span>
-                        </p>
-                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                            <span className="font-extrabold">State:</span>{' '}
-                            <span className="font-medium">{stateName}</span>
-                        </p>
-                    </div>
-                </div>
-
-                {/* GST Billing Section */}
-                {gstBilling && (
-                    <div className="flex flex-col w-full border-t border-[#C0C3C8]">
-                        <h3 className="font-inter not-italic font-semibold text-[24px] leading-[130%] text-[#434956] py-[11px] px-[24px]">
-                            GST Billing
-                        </h3>
-                        <div className="flex flex-col gap-[8px] py-[11px] px-[24px]">
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">GST Number:</span>{' '}
-                                <span className="font-medium">{gstNumber || 'N/A'}</span>
-                            </p>
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">Company Name:</span>{' '}
-                                <span className="font-medium">{companyName || 'N/A'}</span>
-                            </p>
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">Billing Address:</span>{' '}
-                                <span className="font-medium">{billingAddress || 'N/A'}</span>
-                            </p>
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">State:</span>{' '}
-                                <span className="font-medium">{billingStateName || 'N/A'}</span>
-                            </p>
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">City:</span>{' '}
-                                <span className="font-medium">{billingCityName || 'N/A'}</span>
-                            </p>
-                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
-                                <span className="font-extrabold">Pin Code:</span>{' '}
-                                <span className="font-medium">{billingPincode || 'N/A'}</span>
-                            </p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Items Table */}
-                <table className="w-full border-collapse">
-                    {/* Header Row */}
-                    <thead>
-                        <tr>
-                            <th className="text-left font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[14px] px-[24px]">
-                                Item Name
-                            </th>
-                            <th className="text-left font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[14px] px-[24px] w-[160px]">
-                                Amount
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {/* Consultation Fee Row */}
-                        <tr>
-                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
-                                Consultation Fee
-                            </td>
-                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
-                                {formatCurrency(consultationCharges)}
-                            </td>
-                        </tr>
-                        {/* Subtotal Row */}
-                        <tr>
-                            <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px] text-right">
-                                Subtotal
-                            </td>
-                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
-                                {formatCurrency(subtotal)}
-                            </td>
-                        </tr>
-                        {/* Tax Row */}
-                        <tr>
-                            <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px] text-right">
-                                Tax
-                            </td>
-                            <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
-                                {formatCurrency(tax)}
-                            </td>
-                        </tr>
-                        {/* Total Amount Row */}
-                        <tr>
-                            <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px] text-right">
-                                Total Amount:
-                            </td>
-                            <td className="font-inter not-italic font-semibold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] py-[12px] px-[24px]">
-                                {formatCurrency(totalAmount)}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-              </div>
+        <Dialog
+            open={open}
+            onClose={onClose}
+            title=""
+            width="60%"
+            customHeader={customHeader}
+            contentPadding="pt-0 pb-6 px-4"
+        >
+            <div className="invoice-content flex w-full min-w-0 flex-col gap-[16px] ">
+                <PaymentReceiptCapture
+                    captureId="payment-receipt-capture"
+                    patientName={patientName}
+                    address={address}
+                    countryName={countryName}
+                    addressLine1={addressLine1}
+                    addressLine2={addressLine2}
+                    pinCode={pinCode}
+                    cityName={cityName}
+                    stateName={stateName}
+                    jsHealthCardNo={jsHealthCardNo}
+                    uhid={uhid}
+                    invoiceNumber={invoiceNumber}
+                    consultationCharges={consultationCharges}
+                    subtotal={subtotal}
+                    tax={tax}
+                    totalAmount={totalAmount}
+                    billDate={billDate}
+                    transactionId={transactionId}
+                    paymentMode={paymentMode}
+                    gstBilling={gstBilling}
+                    gstNumber={gstNumber}
+                    companyName={companyName}
+                    billingAddress={billingAddress}
+                    billingStateName={billingStateName}
+                    billingCityName={billingCityName}
+                    billingPincode={billingPincode}
+                />
 
                 {/* Action Buttons */}
-                <div className="no-print flex justify-end items-center gap-2">
+                <div className="no-print flex flex-wrap justify-end items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] rounded-[32px] border border-[#C0C3C8] bg-white font-inter text-[14px] font-medium leading-[120%] text-[#434956] transition-colors hover:bg-[#F5F6F8]"
+                    >
+                        Close
+                    </button>
                     <button
                         onClick={onPrint}
                         className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#0B8C00] hover:bg-[#0B8C00]/10 transition-colors"
                     >
                         <Image src="/icons/Printer.svg" alt="Print invoice" width={20} height={20} />
-                        Print Invoice
+                        Print
                     </button>
-                    <button
-                        onClick={onSaveAndNext}
-                        disabled={isSubmitting}
-                        className={`flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border bg-[#0B8C00] border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#ffffff] transition-colors ${
-                            isSubmitting
-                                ? "opacity-50 cursor-not-allowed"
-                                : "cursor-pointer hover:bg-[#0A7A00]"
-                        }`}
-                    >
-                        {isSubmitting ? (
-                            <ThreeDotLoader color="white" size="small" />
-                        ) : (
-                            <>
-                                <Image src="/icons/save.svg" alt={isHospitalRegistration ? "Submit" : "Save and next"} width={20} height={20} />
-                                <span>{isHospitalRegistration ? "Submit" : "Save & Next"}</span>
-                            </>
-                        )}
-                    </button>
-                    {/* <button
-                        onClick={onDownload}
-                        className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#9A7909] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#9A7909] hover:bg-[#9A7909]/10 transition-colors"
-                    >
-                        <Image src="/icons/Download.svg" alt="Download invoice" width={20} height={20} /> Download Now
-                    </button> */}
+                    {canDownload ? (
+                        <button
+                            type="button"
+                            onClick={() => void onDownload()}
+                            disabled={isSubmitting || isDownloadingInvoice}
+                            className={`flex h-10 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 font-inter text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7] disabled:cursor-not-allowed disabled:opacity-60 ${
+                                isDownloadingInvoice ? "cursor-wait" : "cursor-pointer"
+                            }`}
+                        >
+                            {isDownloadingInvoice ? (
+                                <ThreeDotLoader color="green" size="small" />
+                            ) : (
+                                <>
+                                    <Image
+                                        src="/icons/DownloadExport.svg"
+                                        alt="Download receipt"
+                                        width={20}
+                                        height={20}
+                                        className="shrink-0"
+                                    />
+                                    Download
+                                </>
+                            )}
+                        </button>
+                    ) : null}
+                    {!receiptActionsOnly ? (
+                        <button
+                            onClick={onSaveAndNext}
+                            disabled={isSubmitting}
+                            className={`flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border bg-[#0B8C00] border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#ffffff] transition-colors ${
+                                isSubmitting
+                                    ? "opacity-50 cursor-not-allowed"
+                                    : "cursor-pointer hover:bg-[#0A7A00]"
+                            }`}
+                        >
+                            {isSubmitting ? (
+                                <ThreeDotLoader color="white" size="small" />
+                            ) : (
+                                <>
+                                    <Image src="/icons/save.svg" alt="Submit" width={20} height={20} />
+                                    <span>Submit</span>
+                                </>
+                            )}
+                        </button>
+                    ) : null}
                 </div>
             </div>
         </Dialog>

@@ -323,7 +323,7 @@ export default function GroupsPage() {
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Groups
+                 <span className="text-hide">Add Groups</span>
                 </button>
               </div>
             </div>

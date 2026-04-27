@@ -19,12 +19,15 @@ import {
   Pagination,
   MessageDialog,
   Tabs,
+  Tooltip,
 } from "@/components/ui";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useGetBranchesQuery, useGetTherapiesQuery, useCreateTherapyMutation, useUpdateTherapyMutation } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
 type PanelTherapy = {
   id: number;
@@ -64,13 +67,24 @@ const panelTabOptions = [
 ];
 
 export default function PanelTherapyPage() {
+  const therapyPermission = usePermission("settings", { subModule: "therapy" });
+  const canView = therapyPermission.canView;
+  const canAdd = therapyPermission.canAdd;
+  const canEdit = therapyPermission.canEdit;
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState<string>("");
+  const {
+    selectedBranchFilter: selectedBranch,
+    setSelectedBranchFilter: setSelectedBranch,
+    branchFilterOptions: hookBranchFilterOptions,
+    isLoadingBranches: isLoadingBranchFilter,
+    isBranchFilterDisabled,
+    filterBranchId: hookFilterBranchId,
+  } = useBranchFilter();
   const [activeTab, setActiveTab] = useState<string>("private");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [sortField, setSortField] = useState<string | undefined>(undefined);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortField, setSortField] = useState<string>("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | "view" | null>(null);
   const [selectedTherapy, setSelectedTherapy] = useState<PanelTherapy | null>(null);
   const [formValues, setFormValues] = useState({
@@ -106,14 +120,12 @@ export default function PanelTherapyPage() {
   };
 
   // Fetch branches from API
-  const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery();
+  const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
+    skip: !canView && !canAdd && !canEdit,
+  });
 
   // Get selected branch ID for filtering
-  const selectedBranchId = useMemo(() => {
-    if (!selectedBranch) return undefined;
-    const branchId = parseInt(selectedBranch, 10);
-    return isNaN(branchId) ? undefined : branchId;
-  }, [selectedBranch]);
+  const selectedBranchId = hookFilterBranchId;
 
   // Fetch therapies from API
   const { data: therapiesData, isLoading: isLoadingTherapies, refetch: refetchTherapies } = useGetTherapiesQuery({
@@ -122,7 +134,9 @@ export default function PanelTherapyPage() {
     search: debouncedSearchTerm || undefined,
     branchId: selectedBranchId,
     sort: sortField,
-    order: sortField ? sortOrder : undefined,
+    order: sortOrder,
+  }, {
+    skip: !canView && !canAdd && !canEdit,
   });
 
   // Create and update mutations
@@ -209,6 +223,7 @@ export default function PanelTherapyPage() {
   const totalItems = therapiesData?.data?.length ? (therapiesData?.total || therapies.length) : therapies.length;
 
   const handleAddNew = () => {
+    if (!canAdd) return;
     setFormValues({
       branchIds: [],
       therapyName: "",
@@ -229,6 +244,7 @@ export default function PanelTherapyPage() {
   };
 
   const handleEdit = (therapy: PanelTherapy) => {
+    if (!canEdit) return;
     setSelectedTherapy(therapy);
 
     // When a branch is selected in the page filter, show only that branch in Edit (and it will be non-editable)
@@ -263,6 +279,7 @@ export default function PanelTherapyPage() {
   };
 
   const handleView = (therapy: PanelTherapy) => {
+    if (!canView) return;
     setSelectedTherapy(therapy);
     setDialogMode("view");
   };
@@ -297,6 +314,8 @@ export default function PanelTherapyPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (dialogMode === "add" && !canAdd) return;
+    if (dialogMode === "edit" && !canEdit) return;
     if (!validateForm()) return;
 
     try {
@@ -468,30 +487,37 @@ export default function PanelTherapyPage() {
                   onChange={(value) => {
                     const newValue = Array.isArray(value) ? value[0] : value || "";
                     setSelectedBranch(newValue);
-                    setCurrentPage(1); // Reset to first page when filter changes
+                    setCurrentPage(1);
                   }}
-                  options={branchOptions}
-                  placeholder={isLoadingBranches ? "Loading..." : "Select Branch"}
+                  options={hookBranchFilterOptions}
+                  placeholder={isLoadingBranchFilter ? "Loading..." : "Select Branch"}
                   mode="single"
                   background="normal"
                   width={300}
-                  disabled={isLoadingBranches}
+                  disabled={isBranchFilterDisabled || isLoadingBranchFilter}
                 />
                 </div>
                 <div className="flex-shrink-0" style={{ width: "300px" }}>
                 <TableSearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Search Here..." />
                 </div>
-                <button
-                  type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
-                  onClick={handleAddNew}
-                >
-                  <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Therapy
-                </button>
+                {canAdd ? (
+                  <button
+                    type="button"
+                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                    onClick={handleAddNew}
+                  >
+                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                    <span className="text-hide">Add Therapy</span>
+                  </button>
+                ) : null}
               </div>
             </div>
 
+            {!canView ? (
+              <div className="py-12 text-center text-sm text-[#9CA3AF]">
+                You don&apos;t have permission to view therapies.
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -509,7 +535,7 @@ export default function PanelTherapyPage() {
                       <TableHead>HSN Code</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead>Created At</TableHead>
-                      <TableHead position="last">Action</TableHead>
+                      {canView || canEdit ? <TableHead position="last">Action</TableHead> : null}
                     </>
                   ) : (
                     <>
@@ -521,7 +547,7 @@ export default function PanelTherapyPage() {
                       <TableHead sortable sortDirection={getSortDirection("category")} onSort={() => handleSort("category")}>Category</TableHead>
                       <TableHead sortable sortDirection={getSortDirection("status")} onSort={() => handleSort("status")}>Status</TableHead>
                       <TableHead sortable sortDirection={getSortDirection("createdAt")} onSort={() => handleSort("createdAt")}>Created At</TableHead>
-                      <TableHead position="last">Action</TableHead>
+                      {canView || canEdit ? <TableHead position="last">Action</TableHead> : null}
                     </>
                   )}
                 </TableRow>
@@ -529,13 +555,13 @@ export default function PanelTherapyPage() {
               <TableBody>
                 {isLoadingTherapies ? (
                   <TableRow>
-                    <TableData colSpan={activeTab === "all" ? 13 : 9} className="py-12 text-center text-sm text-[#9CA3AF]">
+                    <TableData colSpan={activeTab === "all" ? (canView || canEdit ? 13 : 12) : (canView || canEdit ? 9 : 8)} className="py-12 text-center text-sm text-[#9CA3AF]">
                       Loading...
                     </TableData>
                   </TableRow>
                 ) : paginatedTherapies.length === 0 ? (
                   <TableRow>
-                    <TableData colSpan={activeTab === "all" ? 13 : 9} className="py-12 text-center text-sm text-[#9CA3AF]">
+                    <TableData colSpan={activeTab === "all" ? (canView || canEdit ? 13 : 12) : (canView || canEdit ? 9 : 8)} className="py-12 text-center text-sm text-[#9CA3AF]">
                       No panel therapies found
                     </TableData>
                   </TableRow>
@@ -566,26 +592,36 @@ export default function PanelTherapyPage() {
                       <TableData className="whitespace-nowrap">{therapy.hsnCode}</TableData>
                       <TableData>{therapy.category}</TableData>
                       <TableData className="whitespace-nowrap">{therapy.createdAt}</TableData>
-                      <TableData position="last">
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                            onClick={() => handleView(therapy)}
-                            aria-label="View therapy"
-                          >
-                            <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                            onClick={() => handleEdit(therapy)}
-                            aria-label="Edit therapy"
-                          >
-                            <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
-                          </button>
-                        </div>
-                      </TableData>
+                      {canView || canEdit ? (
+                        <TableData position="last">
+                          <div className="flex items-center gap-3">
+                            {canView ? (
+                              <Tooltip content="View" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                  onClick={() => handleView(therapy)}
+                                  aria-label="View therapy"
+                                >
+                                  <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
+                                </button>
+                              </Tooltip>
+                            ) : null}
+                            {canEdit ? (
+                              <Tooltip content="Edit" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                  onClick={() => handleEdit(therapy)}
+                                  aria-label="Edit therapy"
+                                >
+                                  <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
+                                </button>
+                              </Tooltip>
+                            ) : null}
+                          </div>
+                        </TableData>
+                      ) : null}
                     </TableRow>
                   ))
                 ) : (
@@ -606,24 +642,35 @@ export default function PanelTherapyPage() {
                           </span>
                         </TableData>
                         <TableData className="whitespace-nowrap">{therapy.createdAt}</TableData>
-                        <TableData position="last">
-                          <div className="flex items-center gap-3">
-                            <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleView(therapy)} aria-label="View therapy">
-                              <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
-                            </button>
-                            <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleEdit(therapy)} aria-label="Edit therapy">
-                              <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
-                            </button>
-                          </div>
-                        </TableData>
+                        {canView || canEdit ? (
+                          <TableData position="last">
+                            <div className="flex items-center gap-3">
+                              {canView ? (
+                                <Tooltip content="View" position="top" delay={0}>
+                                  <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleView(therapy)} aria-label="View therapy">
+                                    <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
+                                  </button>
+                                </Tooltip>
+                              ) : null}
+                              {canEdit ? (
+                                <Tooltip content="Edit" position="top" delay={0}>
+                                  <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleEdit(therapy)} aria-label="Edit therapy">
+                                    <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
+                                  </button>
+                                </Tooltip>
+                              ) : null}
+                            </div>
+                          </TableData>
+                        ) : null}
                       </TableRow>
                     );
                   })
                 )}
               </TableBody>
             </Table>
+            )}
 
-            {!isLoadingTherapies && totalItems > 0 && (
+            {canView && !isLoadingTherapies && totalItems > 0 && (
               <Pagination
                 currentPage={currentPage}
                 totalItems={totalItems}
@@ -638,7 +685,12 @@ export default function PanelTherapyPage() {
       </div>
 
       <Dialog
-        open={dialogMode !== null}
+        open={
+          dialogMode !== null &&
+          ((dialogMode === "view" && canView) ||
+            (dialogMode === "add" && canAdd) ||
+            (dialogMode === "edit" && canEdit))
+        }
         onClose={() => {
           setDialogMode(null);
           setSelectedTherapy(null);
@@ -754,11 +806,14 @@ export default function PanelTherapyPage() {
                 value={formValues.therapyName}
                 onChange={(event) => {
                   if (dialogMode === "view" || dialogMode === "edit") return;
-                  setFormValues((prev) => ({ ...prev, therapyName: event.target.value }));
+                  let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                  value = value.slice(0, 100);
+                  setFormValues((prev) => ({ ...prev, therapyName: value }));
                   setFormErrors((prev) => ({ ...prev, therapyName: "" }));
                 }}
                 height={44}
                 placeholder="Therapy"
+                maxLength={100}
                 required={dialogMode !== "view"}
                 disabled={dialogMode === "view" || dialogMode === "edit"}
               />
@@ -770,11 +825,14 @@ export default function PanelTherapyPage() {
                 value={formValues.productCode}
                 onChange={(event) => {
                   if (dialogMode === "view" || dialogMode === "edit") return;
-                  setFormValues((prev) => ({ ...prev, productCode: event.target.value }));
+                  let value = event.target.value.replace(/[^a-zA-Z0-9]/g, "");
+                  value = value.slice(0, 100);
+                  setFormValues((prev) => ({ ...prev, productCode: value }));
                   setFormErrors((prev) => ({ ...prev, productCode: "" }));
                 }}
                 height={44}
                 placeholder="Product Code"
+                maxLength={100}
                 required={dialogMode !== "view"}
                 disabled={dialogMode === "view" || dialogMode === "edit"}
               />
@@ -786,11 +844,14 @@ export default function PanelTherapyPage() {
                 value={formValues.hsnCode}
                 onChange={(event) => {
                   if (dialogMode === "view" || dialogMode === "edit") return;
-                  setFormValues((prev) => ({ ...prev, hsnCode: event.target.value }));
+                  let value = event.target.value.replace(/[^a-zA-Z0-9]/g, "");
+                  value = value.slice(0, 100);
+                  setFormValues((prev) => ({ ...prev, hsnCode: value }));
                   setFormErrors((prev) => ({ ...prev, hsnCode: "" }));
                 }}
                 height={44}
                 placeholder="HSN Code"
+                maxLength={100}
                 required={dialogMode !== "view"}
                 disabled={dialogMode === "view" || dialogMode === "edit"}
               />

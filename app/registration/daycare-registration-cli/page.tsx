@@ -70,8 +70,6 @@ export default function DaycareRegistrationPage() {
     const [currentPendingRegistrationId, setCurrentPendingRegistrationId] = useState<string | null>(null);
     const [selectedPreBookingId, setSelectedPreBookingId] = useState<string | number | null>(null);
     const [selectedPreBooking, setSelectedPreBooking] = useState<PreBookingItem | null>(null);
-    const refetchPreBookingsListRef = useRef<(() => void) | null>(null);
-
     // Patient exists dialog state
     const [patientExistsDialogOpen, setPatientExistsDialogOpen] = useState(false);
     const [existingPatients, setExistingPatients] = useState<ExistingPatient[]>([]);
@@ -100,7 +98,7 @@ export default function DaycareRegistrationPage() {
 
     // Lazy query for checking existing patients
     const [checkExistingPatientsQuery] = registrationApi.useLazyCheckExistingPatientsByPhoneQuery();
-    
+
     // Mutation for requesting duplicate number permission
     const [requestDuplicateNumberPermission, { isLoading: isCreatingException }] = useRequestDuplicateNumberPermissionMutation();
 
@@ -111,109 +109,145 @@ export default function DaycareRegistrationPage() {
     const formsContainerRef = useRef<HTMLDivElement>(null);
     const registrationHeadingRef = useRef<HTMLDivElement>(null);
 
+    // Ref for the left sidebar panel container (for click-outside detection)
+    const leftSidebarRef = useRef<HTMLDivElement>(null);
+
     // Enable arrow key navigation for form fields
     useArrowKeyNavigation(formsContainerRef, true, (fieldName) => {
         formik.setFieldTouched(fieldName as keyof RegistrationPersonalDetailsFormValues, true, false);
         formik.validateField(fieldName);
     });
 
+    // Click-outside detection for responsive mode (when panels take full height on left side)
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            // Only handle click-outside when in responsive mode (width <= 1280px where small-screens becomes absolute)
+            if (window.innerWidth > 1280) {
+                return;
+            }
+
+            // Only close if sidebar is open
+            if (!isLeftSidebarOpen) {
+                return;
+            }
+
+            // Check if click is outside the sidebar container
+            if (
+                leftSidebarRef.current &&
+                !leftSidebarRef.current.contains(event.target as Node) &&
+                // Also check if click is not on the toggle button
+                !registrationHeadingRef.current?.contains(event.target as Node)
+            ) {
+                setIsLeftSidebarOpen(false);
+            }
+        };
+
+        if (isLeftSidebarOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [isLeftSidebarOpen]);
+
     // Get socket hook
     const { onDuplicateNumberPermissionUpdate } = useSocket();
 
     // Three steps for Daycare Registration
     const registrationSteps = [
-        { number: "Step 01", label: "Personal Info" },
+        { number: "Step 01", label: "Personal" },
         { number: "Step 02", label: "Vitals" },
-        { number: "Step 03", label: "Medical Info" },
+        { number: "Step 03", label: "Medical" },
     ];
 
     // Source options for Referral component
     const sourceOptions: SelectOption[] = [
-        { value: "tv", label: "TV" },
-        { value: "newspaper", label: "NewsPaper" },
-        { value: "social-media", label: "Social Media" },
-        { value: "doctor", label: "Doctor" },
-        { value: "other", label: "Referral" },
+        { value: "TV", label: "TV" },
+        { value: "NewsPaper", label: "NewsPaper" },
+        { value: "Social Media", label: "Social Media" },
+        { value: "Doctor", label: "Doctor" },
+        { value: "Referral", label: "Referral" },
     ];
 
     // TV-specific field options
     const tvSpecificFieldOptions: SelectOption[] = [
-        { value: "sahara-one", label: "Sahara one" },
-        { value: "zee-tv", label: "Zee TV" },
-        { value: "man-tv", label: "MAN TV" },
-        { value: "9xm", label: "9XM" },
-        { value: "9xm-jalwa", label: "9XM JALWA" },
-        { value: "9x-jhakas", label: "9X JHAKAS" },
-        { value: "9x-tashan", label: "9X TASHAN" },
-        { value: "news-world-india", label: "NEWS WORLD INDIA" },
-        { value: "janta-tv", label: "JANTA TV" },
-        { value: "shubh-tv", label: "SHUBH TV" },
-        { value: "india-news-rajasthan", label: "INDIA NEWS RAJASTHAN" },
-        { value: "kashis-news", label: "KASHIS NEWS" },
-        { value: "lakshya-tv", label: "LAKSHYA TV" },
-        { value: "india-news-mp", label: "INDIA NEWS MP" },
-        { value: "india-news-up", label: "INDIA NEWS UP" },
-        { value: "india-news-hariyan", label: "INDIA NEWS HARIYAN" },
-        { value: "nation-live", label: "NATION LIVE" },
-        { value: "sharthi-tv", label: "SHARTHI TV" },
-        { value: "channel-one", label: "CHANNEL ONE" },
-        { value: "inventary", label: "INVENTARY" },
-        { value: "adhyatam-tv", label: "ADHYATAM TV" },
-        { value: "all-cable", label: "ALL CABLE" },
-        { value: "chardi-kala-time-tv", label: "CHARDI KALA TIME TV" },
-        { value: "sarv-dharam-tv", label: "SARV DHARAM TV" },
-        { value: "sadvidya-tv", label: "SADVIDYA TV" },
-        { value: "sadhna-tv", label: "SADHNA TV" },
-        { value: "ishwar-tv", label: "ISHWAR TV" },
-        { value: "sadhna-mp", label: "SADHNA MP" },
-        { value: "sadhna-plus", label: "SADHNA PLUS" },
-        { value: "darshan-24", label: "DARSHAN 24" },
-        { value: "anjan-tv", label: "ANJAN TV" },
-        { value: "care-world", label: "CARE WORLD" },
-        { value: "chirtpath-marathi", label: "CHIRTPATH MARATHI" },
-        { value: "manoranjan-tv", label: "MANORANJAN TV" },
-        { value: "manoranjan-movie", label: "MANORANJAN MOVIE" },
-        { value: "rt-movies", label: "RT MOVIES" },
-        { value: "vaa-movie", label: "VAA MOVIE" },
-        { value: "enter-10", label: "ENTER 10" },
-        { value: "b-flix", label: "B FLIX" },
-        { value: "dhamal-tv", label: "DHAMAL TV" },
-        { value: "housefull-action", label: "HOUSEFULL ACTION" },
-        { value: "ptc-tv", label: "PTC TV" },
-        { value: "multiplex", label: "MULTIPLEX" },
-        { value: "punjab-plus", label: "PUNJAB PLUS" },
-        { value: "digi-cable", label: "DIGI CABLE" },
-        { value: "india-talkies", label: "INDIA TALKIES" },
-        { value: "garv-punjab", label: "GARV PUNJAB" },
-        { value: "fastway-cable", label: "FASTWAY CABLE" },
-        { value: "sanskrity-tv", label: "SANSKRITY TV" },
-        { value: "dhishoom-tv", label: "DHISHOOM TV" },
-        { value: "zee-salam", label: "ZEE SALAM" },
+        { value: "Sahara one", label: "Sahara one" },
+        { value: "Zee TV", label: "Zee TV" },
+        { value: "MAN TV", label: "MAN TV" },
+        { value: "9XM", label: "9XM" },
+        { value: "9XM JALWA", label: "9XM JALWA" },
+        { value: "9X JHAKAS", label: "9X JHAKAS" },
+        { value: "9X TASHAN", label: "9X TASHAN" },
+        { value: "NEWS WORLD INDIA", label: "NEWS WORLD INDIA" },
+        { value: "JANTA TV", label: "JANTA TV" },
+        { value: "SHUBH TV", label: "SHUBH TV" },
+        { value: "INDIA NEWS RAJASTHAN", label: "INDIA NEWS RAJASTHAN" },
+        { value: "KASHIS NEWS", label: "KASHIS NEWS" },
+        { value: "LAKSHYA TV", label: "LAKSHYA TV" },
+        { value: "INDIA NEWS MP", label: "INDIA NEWS MP" },
+        { value: "INDIA NEWS UP", label: "INDIA NEWS UP" },
+        { value: "INDIA NEWS HARIYAN", label: "INDIA NEWS HARIYAN" },
+        { value: "NATION LIVE", label: "NATION LIVE" },
+        { value: "SHARTHI TV", label: "SHARTHI TV" },
+        { value: "CHANNEL ONE", label: "CHANNEL ONE" },
+        { value: "INVENTARY", label: "INVENTARY" },
+        { value: "ADHYATAM TV", label: "ADHYATAM TV" },
+        { value: "ALL CABLE", label: "ALL CABLE" },
+        { value: "CHARDI KALA TIME TV", label: "CHARDI KALA TIME TV" },
+        { value: "SARV DHARAM TV", label: "SARV DHARAM TV" },
+        { value: "SADVIDYA TV", label: "SADVIDYA TV" },
+        { value: "SADHNA TV", label: "SADHNA TV" },
+        { value: "ISHWAR TV", label: "ISHWAR TV" },
+        { value: "SADHNA MP", label: "SADHNA MP" },
+        { value: "SADHNA PLUS", label: "SADHNA PLUS" },
+        { value: "DARSHAN 24", label: "DARSHAN 24" },
+        { value: "ANJAN TV", label: "ANJAN TV" },
+        { value: "CARE WORLD", label: "CARE WORLD" },
+        { value: "CHIRTPATH MARATHI", label: "CHIRTPATH MARATHI" },
+        { value: "MANORANJAN TV", label: "MANORANJAN TV" },
+        { value: "MANORANJAN MOVIE", label: "MANORANJAN MOVIE" },
+        { value: "RT MOVIES", label: "RT MOVIES" },
+        { value: "VAA MOVIE", label: "VAA MOVIE" },
+        { value: "ENTER 10", label: "ENTER 10" },
+        { value: "B FLIX", label: "B FLIX" },
+        { value: "DHAMAL TV", label: "DHAMAL TV" },
+        { value: "HOUSEFULL ACTION", label: "HOUSEFULL ACTION" },
+        { value: "PTC TV", label: "PTC TV" },
+        { value: "MULTIPLEX", label: "MULTIPLEX" },
+        { value: "PUNJAB PLUS", label: "PUNJAB PLUS" },
+        { value: "DIGI CABLE", label: "DIGI CABLE" },
+        { value: "INDIA TALKIES", label: "INDIA TALKIES" },
+        { value: "GARV PUNJAB", label: "GARV PUNJAB" },
+        { value: "FASTWAY CABLE", label: "FASTWAY CABLE" },
+        { value: "SANSKRITY TV", label: "SANSKRITY TV" },
+        { value: "DHISHOOM TV", label: "DHISHOOM TV" },
+        { value: "ZEE SALAM", label: "ZEE SALAM" },
     ];
 
     // Newspaper-specific field options
     const newspaperSpecificFieldOptions: SelectOption[] = [
-        { value: "hindustan-times", label: "Hindustan Times" },
-        { value: "dainik-jagran", label: "Dainik Jagran" },
-        { value: "dainik-bhaskar", label: "Dainik Bhaskar" },
-        { value: "malayala-manorama", label: "Malayala Manorama" },
-        { value: "daily-thanthi", label: "Daily Thanthi" },
-        { value: "rajasthan-patrika", label: "Rajasthan Patrika" },
-        { value: "amar-ujala", label: "Amar Ujala" },
-        { value: "the-times-of-india", label: "The Times of India" },
+        { value: "Hindustan Times", label: "Hindustan Times" },
+        { value: "Dainik Jagran", label: "Dainik Jagran" },
+        { value: "Dainik Bhaskar", label: "Dainik Bhaskar" },
+        { value: "Malayala Manorama", label: "Malayala Manorama" },
+        { value: "Daily Thanthi", label: "Daily Thanthi" },
+        { value: "Rajasthan Patrika", label: "Rajasthan Patrika" },
+        { value: "Amar Ujala", label: "Amar Ujala" },
+        { value: "The Times of India", label: "The Times of India" },
     ];
 
     // Social Media-specific field options
     const socialMediaSpecificFieldOptions: SelectOption[] = [
-        { value: "facebook", label: "Facebook" },
-        { value: "instagram", label: "Instagram" },
-        { value: "youtube", label: "Youtube" },
-        { value: "whatsapp", label: "Whtsapp" },
-        { value: "twitter", label: "Twitter" },
-        { value: "linkedin", label: "Linkedin" },
-        { value: "india-mart", label: "INDIA MART" },
-        { value: "just-dial", label: "JUST DIAL" },
-        { value: "website", label: "WEBSITE" },
+        { value: "Facebook", label: "Facebook" },
+        { value: "Instagram", label: "Instagram" },
+        { value: "Youtube", label: "Youtube" },
+        { value: "Whtsapp", label: "Whtsapp" },
+        { value: "Twitter", label: "Twitter" },
+        { value: "Linkedin", label: "Linkedin" },
+        { value: "INDIA MART", label: "INDIA MART" },
+        { value: "JUST DIAL", label: "JUST DIAL" },
+        { value: "WEBSITE", label: "WEBSITE" },
     ];
 
     // LocalStorage functions for pending registrations
@@ -497,26 +531,31 @@ export default function DaycareRegistrationPage() {
         },
     });
 
-    // Fetch states and cities data to get names from IDs
+    const addressCountryIsIndia = formik.values.country === "6";
     const { data: statesData } = useGetStatesQuery(
-        formik.values.country
-            ? { countryId: formik.values.country }
-            : undefined,
-        { skip: !formik.values.country }
+        formik.values.country && addressCountryIsIndia ? { countryId: formik.values.country } : undefined,
+        { skip: !formik.values.country || !addressCountryIsIndia }
     );
 
     const { data: citiesData } = useGetCitiesQuery(
-        formik.values.state
-            ? { stateId: formik.values.state }
-            : undefined,
-        { skip: !formik.values.state }
+        formik.values.state && addressCountryIsIndia ? { stateId: formik.values.state } : undefined,
+        { skip: !formik.values.state || !addressCountryIsIndia }
     );
 
     // Fetch doctors and panels for matching when patient is selected
     const { data: doctorsData } = useGetDoctorsQuery();
     const { data: panelsData } = useGetPanelsQuery(
-        formik.values.patientType?.toLowerCase() === "panel" ? { page: 1, limit: 100 } : undefined,
-        { skip: formik.values.patientType?.toLowerCase() !== "panel" }
+        formik.values.patientType?.toLowerCase() === "panel" &&
+            Number.isFinite(Number(branchId)) &&
+            Number(branchId) >= 1
+            ? { page: 1, limit: 100, branchId: Number(branchId) }
+            : undefined,
+        {
+            skip:
+                formik.values.patientType?.toLowerCase() !== "panel" ||
+                !Number.isFinite(Number(branchId)) ||
+                Number(branchId) < 1,
+        }
     );
 
     // Fetch countries data
@@ -597,9 +636,9 @@ export default function DaycareRegistrationPage() {
     useEffect(() => {
         if (currentStep > 0) {
             setTimeout(() => {
-                registrationHeadingRef.current?.scrollIntoView({ 
-                    behavior: "smooth", 
-                    block: "start" 
+                registrationHeadingRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
                 });
             }, 100);
         }
@@ -704,9 +743,9 @@ export default function DaycareRegistrationPage() {
                     referralSourceType: "doctor",
                     doctorUserId: doctorId,
                 };
-            } else if (sourceLower === "patient" || values.source === "other") {
+            } else if (sourceLower === "patient" || values.source === "other" || sourceLower === "referral") {
                 referralObject = {
-                    referralSourceType: "patient",
+                    referralSourceType: "Referral",
                     referralRegistrationId: undefined, // Daycare doesn't have referral patient selection yet
                     referralName: values.referralName || undefined,
                     referralMobile: values.referralMobile || undefined,
@@ -714,9 +753,9 @@ export default function DaycareRegistrationPage() {
             } else {
                 // tv | newspaper | social-media
                 let referralSourceInfo = "";
-                if (values.source === "tv" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
-                else if (values.source === "newspaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
-                else if (values.source === "social-media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
+                if (values.source === "TV" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
+                else if (values.source === "NewsPaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
+                else if (values.source === "Social Media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
                 referralObject = {
                     referralSourceType: values.source,
                     doctorUserId: null,
@@ -843,11 +882,6 @@ export default function DaycareRegistrationPage() {
                 const updated = existing.filter(p => p.id !== selectedApprovedPatientId);
                 localStorage.setItem(DUPLICATE_EXCEPTION_PATIENTS_DAYCARE_KEY, JSON.stringify(updated));
                 setSelectedApprovedPatientId(null);
-            }
-
-            // Refetch pre-bookings list after successful registration
-            if (refetchPreBookingsListRef.current) {
-                refetchPreBookingsListRef.current();
             }
 
             if (!result.success) {
@@ -1182,6 +1216,11 @@ export default function DaycareRegistrationPage() {
             formik.setFieldValue("referral", "", false);
             formik.setFieldValue("source", "", false);
         }
+
+        formik.setErrors({});
+        window.setTimeout(() => {
+            void formik.validateForm();
+        }, 450);
     }, [formik, countriesData, statesData, citiesData]);
 
     // Handle add new member
@@ -1313,6 +1352,9 @@ export default function DaycareRegistrationPage() {
         }
     };
 
+    // State to track right-screen visibility
+    const [isRightScreenOpen, setIsRightScreenOpen] = useState(false);
+
     // Generate patient buttons from pending registrations
     const filteredPendingRegistrations = pendingRegistrations.filter(reg => reg.formType === formType);
     const pendingRegistrationButtons = filteredPendingRegistrations.map(reg => {
@@ -1340,13 +1382,13 @@ export default function DaycareRegistrationPage() {
     return (
         <AppShell>
             <div className="flex justify-between items-center">
-                <div ref={registrationHeadingRef} className="prebooking-icon flex items-center gap-3 mb-6">
+                <div ref={registrationHeadingRef} className="prebooking-icon flex items-center gap-3">
                     <Tooltip
                         content="Patient Information"
                         position="right"
                         delay={0}
                     >
-                        <button 
+                        <button
                             onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
                             className="cursor-pointer hover:opacity-80 transition-opacity"
                             aria-label="Patient Information"
@@ -1375,7 +1417,7 @@ export default function DaycareRegistrationPage() {
                             const tooltipText = isApproved ? "Approved" : isRejected ? "Rejected" : "Pending";
                             const hoverBg = isApproved ? "hover:bg-[rgba(11,140,0,0.2)]" : isRejected ? "hover:bg-[rgba(239,68,68,0.2)]" : "hover:bg-[rgba(245,158,11,0.2)]";
                             const iconSrc = isApproved ? "/icons/ProfileDarkIcon.svg" : "/icons/ProfileIconBrown.svg";
-                            const buttonClasses = `py-3 px-6 ${borderColor} border-[1px] ${bgColor} rounded-[16px] flex items-center gap-2 h-[48px] cursor-pointer transition-all duration-300 ${hoverBg} hover:opacity-80 relative ${isSelected && isApproved ? "animate-[pulse-border_2s_ease-in-out_infinite]" : ""}`;
+                            const buttonClasses = `py-3 px-6 ${borderColor} border-[1px] ${bgColor} rounded-[16px] flex items-center gap-2 lg:h-[48px] md:h-[36px] cursor-pointer transition-all duration-300 ${hoverBg} hover:opacity-80 relative ${isSelected && isApproved ? "animate-[pulse-border_2s_ease-in-out_infinite]" : ""}`;
 
                             return (
                                 <button
@@ -1408,7 +1450,7 @@ export default function DaycareRegistrationPage() {
                             <button
                                 key={patient.id}
                                 onClick={() => handleLoadPendingRegistration(patient.registration)}
-                                className={`py-3 px-6 ${patient.bgColor} ${patient.borderColor} border-[1px] rounded-[16px] flex items-center gap-2 h-[48px] cursor-pointer transition-all duration-300 ${patient.isActive
+                                className={`py-3 lg:px-6 px-3 ${patient.bgColor} ${patient.borderColor} border-[1px] rounded-[16px] flex items-center gap-2 lg:h-[48px] md:h-[36px] cursor-pointer transition-all duration-300 ${patient.isActive
                                     ? "hover:bg-[rgba(27, 179, 14, 0.4)] scale-[1.02]"
                                     : "hover:opacity-80 hover:bg-[rgba(11,140,0,0.2)]"
                                     }`}
@@ -1417,25 +1459,25 @@ export default function DaycareRegistrationPage() {
                                 } : {}}
                             >
                                 <Image src={patient.iconSrc} alt="Patient Icon" width={32} height={32} />
-                                <span className={`font-[Inter] font-medium text-sm leading-[120%] text-center ${patient.textColor}`}>
+                                <span className={`font-[Inter] font-medium text-sm leading-[120%] text-center text-hide ${patient.textColor}`}>
                                     {patient.name}
                                 </span>
                             </button>
                         ))}
-                        
+
                         {/* Add New Patient button */}
                         <button
                             onClick={handleAddNewPatient}
-                            className="flex flex-row justify-center items-center py-3 px-6 gap-1 h-[48px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors"
+                            className="flex flex-row justify-center items-center py-3 px-6 gap-1 lg:h-[48px] md:h-[36px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors"
                         >
                             <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00]">Add New Patient</span>
+                            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00] text-hide">Add New Patient</span>
                         </button>
-                        
+
                         {/* View List button */}
                         <Link
                             href="/registration/registrationList"
-                            className="flex flex-row justify-center items-center py-3 px-6 gap-2 h-[48px] border border-[#0B8C00] rounded-[16px] cursor-pointer hover:bg-[#F2F8F2] transition-all duration-300"
+                            className="flex flex-row justify-center items-center py-3 px-6 gap-2 lg:h-[48px] md:h-[36px] border border-[#0B8C00] rounded-[16px] cursor-pointer hover:bg-[#F2F8F2] transition-all duration-300"
                         >
                             <svg
                                 width="20"
@@ -1455,7 +1497,18 @@ export default function DaycareRegistrationPage() {
                                 <line x1="3" y1="12" x2="3.01" y2="12"></line>
                                 <line x1="3" y1="18" x2="3.01" y2="18"></line>
                             </svg>
-                            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00]">View List</span>
+                            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00] text-hide">View List</span>
+                        </Link>
+                        <Link
+                            href="#"
+                            className="right-toggle  py-3 px-6 gap-2  border border-[#0B8C00] lg:h-[48px] md:h-[36px] rounded-[16px] cursor-pointer hover:bg-[#F2F8F2] transition-all duration-300"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                setIsRightScreenOpen(!isRightScreenOpen);
+                            }}
+                        >
+                            {/* <Image src="/icons/prebookingtoggle.svg" alt="Prebooking Icon" width={32} height={32} /> */}
+                            <svg width={20} fill="#0b8c00" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M566.6 470.6L470.6 566.6C461.4 575.8 447.7 578.5 435.7 573.5C423.7 568.5 416 556.9 416 544L416 480L96 480C78.3 480 64 465.7 64 448C64 430.3 78.3 416 96 416L416 416L416 352C416 339.1 423.8 327.4 435.8 322.4C447.8 317.4 461.5 320.2 470.7 329.3L566.7 425.3C579.2 437.8 579.2 458.1 566.7 470.6zM73.4 214.6C60.9 202.1 60.9 181.8 73.4 169.3L169.4 73.3C178.6 64.1 192.3 61.4 204.3 66.4C216.3 71.4 224 83.1 224 96L224 160L544 160C561.7 160 576 174.3 576 192C576 209.7 561.7 224 544 224L224 224L224 288C224 300.9 216.2 312.6 204.2 317.6C192.2 322.6 178.5 319.8 169.3 310.7L73.3 214.7z" /></svg>
                         </Link>
                     </div>
                 </div>
@@ -1464,13 +1517,11 @@ export default function DaycareRegistrationPage() {
             <div className="flex gap-4 h-screen">
                 {/* Left Sidebar - Patient Info Panels */}
                 {isLeftSidebarOpen && (
-                    <div className="w-[20%] transition-all duration-0 ease-in-out flex-shrink-0 space-y-4">
+                    <div ref={leftSidebarRef} className="w-[20%] transition-all duration-0 ease-in-out flex-shrink-0 space-y-4 small-screens">
                         <PreBookingPanel
+                            branchId={branchId}
                             onPreBookingClick={handlePreBookingClick}
                             selectedPreBookingId={selectedPreBookingId}
-                            onRefetchReady={(refetch) => {
-                                refetchPreBookingsListRef.current = refetch;
-                            }}
                         />
                         <JSHealthCardPoints />
                         <PatientOldHistory />
@@ -1482,7 +1533,7 @@ export default function DaycareRegistrationPage() {
                 <div
                     ref={formsContainerRef}
                     data-form-container
-                    className={`transition-all duration-0 ease-in-out ${isLeftSidebarOpen ? 'w-[60%]' : 'w-[80%]'}`}
+                    className={`form-screen transition-all duration-0 ease-in-out ${isLeftSidebarOpen ? 'w-[60%]' : 'w-[80%]'}`}
                 >
                     <RegistrationSteps steps={registrationSteps} currentStep={currentStep} />
 
@@ -1493,6 +1544,7 @@ export default function DaycareRegistrationPage() {
                             getFormErrors={getFormErrors}
                             scrollToFirstError={scrollToFirstError}
                             onNext={handleNextStep}
+                            panelsBranchId={Number(branchId)}
                             sourceOptions={sourceOptions}
                             tvSpecificFieldOptions={tvSpecificFieldOptions}
                             newspaperSpecificFieldOptions={newspaperSpecificFieldOptions}
@@ -1508,6 +1560,7 @@ export default function DaycareRegistrationPage() {
                             getFormErrors={getFormErrors}
                             onNext={handleNextStep}
                             onBack={handleBackSteps}
+                            branchId={Number(branchId)}
                         />
                     )}
 
@@ -1523,7 +1576,7 @@ export default function DaycareRegistrationPage() {
                     )}
                 </div>
 
-                <div className="w-[20%]">
+                <div className="hidden xl:block w-[20%] right-screen">
                     <PersonalDetailsReg />
                     <Vitals />
                     <Doctor />
@@ -1531,6 +1584,26 @@ export default function DaycareRegistrationPage() {
                     <PatientWalletInformation onViewDetails={() => setShowWalletView(true)} />
                     <Therapy />
                 </div>
+                {/* Mobile right screen drawer - slides from right on screens below 1280px */}
+                <div className={`mobile-fix fixed right-0 top-0 h-screen w-[80%] sm:w-[60%] md:w-[50%] lg:w-[40%] bg-white z-50 transform transition-transform duration-300 overflow-hidden ${isRightScreenOpen ? 'translate-x-0' : 'translate-x-full'
+                    }`}>
+                    <div className="h-full overflow-y-auto p-3">
+                        <PersonalDetailsReg />
+                        <Vitals />
+                        <Doctor />
+                        <MedicalDetails />
+                        <PatientWalletInformation onViewDetails={() => setShowWalletView(true)} />
+                        <Therapy />
+                    </div>
+                </div>
+
+                {/* Overlay for mobile right screen - only on screens below 1280px */}
+                {isRightScreenOpen && (
+                    <div
+                        className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 "
+                        onClick={() => setIsRightScreenOpen(false)}
+                    />
+                )}
             </div>
 
             {/* Patient Already Exists Dialog */}

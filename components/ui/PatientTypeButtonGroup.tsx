@@ -13,6 +13,8 @@ interface PatientTypeButtonGroupProps {
     fieldRef?: React.RefObject<HTMLDivElement | null>;
     dataField?: string;
     disabled?: boolean;
+    /** Option values (lowercase) to disable, e.g. ["ipd"]. Disabled options show cursor-not-allowed and are not clickable. */
+    disabledOptions?: string[];
 }
 
 export function PatientTypeButtonGroup({
@@ -26,6 +28,7 @@ export function PatientTypeButtonGroup({
     fieldRef,
     dataField,
     disabled = false,
+    disabledOptions = [],
 }: PatientTypeButtonGroupProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -117,24 +120,40 @@ export function PatientTypeButtonGroup({
             }
             
             // Don't prevent default if we're leaving the group - let form navigation handle it
-            if (!isLeavingGroup) {
+                if (!isLeavingGroup) {
                 e.preventDefault();
                 e.stopPropagation();
-                
-                // Only move focus, don't select the option
+                // Only move focus, don't select the option; skip disabled options
                 if (e.key === "ArrowLeft") {
-                    const prevIndex = index > 0 ? index - 1 : options.length - 1;
-                    buttonRefs.current[prevIndex]?.focus();
+                    let prevIndex = index > 0 ? index - 1 : options.length - 1;
+                    while (disabledOptions.includes(options[prevIndex].toLowerCase())) {
+                        prevIndex = prevIndex > 0 ? prevIndex - 1 : options.length - 1;
+                        if (prevIndex === index) break;
+                    }
+                    if (!disabledOptions.includes(options[prevIndex].toLowerCase())) {
+                        buttonRefs.current[prevIndex]?.focus();
+                    }
                 } else if (e.key === "ArrowRight") {
-                    const nextIndex = index < options.length - 1 ? index + 1 : 0;
-                    buttonRefs.current[nextIndex]?.focus();
+                    let nextIndex = index < options.length - 1 ? index + 1 : 0;
+                    while (disabledOptions.includes(options[nextIndex].toLowerCase())) {
+                        nextIndex = nextIndex < options.length - 1 ? nextIndex + 1 : 0;
+                        if (nextIndex === index) break;
+                    }
+                    if (!disabledOptions.includes(options[nextIndex].toLowerCase())) {
+                        buttonRefs.current[nextIndex]?.focus();
+                    }
                 }
             }
             // If isLeavingGroup is true, let the form navigation handle it (don't prevent default)
         } else if (e.key === "Enter" || e.key === " ") {
+            const optLower = options[index].toLowerCase();
+            if (disabledOptions.includes(optLower)) {
+                e.preventDefault();
+                return;
+            }
             // Select the option when Enter or Space is pressed
             e.preventDefault();
-            onChange(options[index].toLowerCase());
+            onChange(optLower);
         } else if (e.key === "Tab") {
             // When Tab is pressed, trigger blur validation if no value selected
             if (!value && required && onBlur) {
@@ -167,9 +186,11 @@ export function PatientTypeButtonGroup({
                 </span>
             )}
 
-            <div className="flex items-center" style={{ gap: "7px" }}>
+            <div className="flex w-full items-center gap-[7px]">
                 {options.map((option, index) => {
-                    const isActive = value === option.toLowerCase();
+                    const optLower = option.toLowerCase();
+                    const isOptionDisabled = disabled || disabledOptions.includes(optLower);
+                    const isActive = value === optLower;
                     return (
                         <button
                             key={option}
@@ -177,18 +198,20 @@ export function PatientTypeButtonGroup({
                                 buttonRefs.current[index] = el;
                             }}
                             type="button"
-                            onClick={() => !disabled && onChange(option.toLowerCase())}
+                            onClick={() => !disabled && !disabledOptions.includes(optLower) && onChange(optLower)}
                             onKeyDown={(e) => !disabled && handleKeyDown(e, index)}
                             disabled={disabled}
+                            aria-disabled={disabledOptions.includes(optLower) || undefined}
                             className={`
-                                font-inter font-medium text-[12px] leading-[120%] w-full 
+                                font-inter min-w-0 flex-1 basis-0 font-medium text-[12px] leading-[120%]
                                 flex flex-row justify-center items-center transition-all duration-200
                                 border focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 focus:border-[#0B8C00]
-                                ${disabled ? "cursor-not-allowed pointer-events-none" : "cursor-pointer"}
+                                ${isOptionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}
                                 ${isActive
                                     ? "bg-[#0B8C00] text-white border-[#0B8C00]"
                                     : "text-[#434956] bg-white border-[#EBECED] hover:bg-[#F5FBF5]"
                                 }
+                                ${isOptionDisabled && !isActive ? "hover:bg-white hover:opacity-60" : ""}
                             `}
                             style={{
                                 height: "24px",

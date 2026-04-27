@@ -272,7 +272,7 @@ export default function ModuleSettingsPage() {
                     onClick={handleAdd}
                   >
                     <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    Add Modules
+                    <span className="text-hide">Add Modules</span>
                   </button>
                 </div>
 

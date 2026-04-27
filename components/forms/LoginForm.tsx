@@ -8,8 +8,11 @@ import { Toggle } from "@/components/ui/Toggle";
 import { loginSchema, LoginFormValues } from "@/lib/validation/schemas";
 import { LoginType } from "@/types/auth";
 
+/** Return `'otp'` when the server requires an OTP step (do not treat as navigation). */
+export type LoginSubmitPhase = "otp" | void;
+
 interface LoginFormProps {
-  onSubmit: (values: LoginFormValues) => void | Promise<void>;
+  onSubmit: (values: LoginFormValues) => void | Promise<void | LoginSubmitPhase>;
   onAlternativeLogin?: (type: LoginType) => void;
   onForgotPassword?: () => void;
   initialValues?: Partial<LoginFormValues>;
@@ -48,12 +51,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       validationSchema={loginSchema}
       onSubmit={async (values, { setSubmitting }) => {
         try {
-          await onSubmit(values);
+          const phase = await onSubmit(values);
+          if (phase === "otp") {
+            setSubmitting(false);
+            return;
+          }
           // If onSubmit completes without error, we're navigating
-          // Keep button disabled until navigation completes
           setIsNavigating(true);
-          // Don't reset setSubmitting on success - let navigation happen
-          // The component will unmount when navigation completes
         } catch (error) {
           // Reset submitting state and navigation state on error so user can try again
           setSubmitting(false);

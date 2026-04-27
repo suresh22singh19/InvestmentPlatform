@@ -1,365 +1,927 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useFormik, setNestedObjectValues, type FormikTouched } from "formik";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { ListBorder } from "@/components/ui/ListBorder";
-import { FacilityCard, StatCard, Table, TableBody, TableData, TableHead, TableHeader, TableRow, TableSearchInput, Tabs, Dialog, FormInputField, Button } from "@/components/ui";
-import Link from "next/link";
+import { FacilityCard, StatCard, Button, Dialog, MessageDialog, Pagination, ScrollableContainer, FormSelectField } from "@/components/ui";
+import AddressDetails from "@/components/forms/AddressDetails";
+import BranchBasicInformation from "@/components/forms/BranchBasicInformation";
+import type { PhotoCaptureRef } from "@/components/forms/PhotoCapture";
+import BranchBankInformation from "@/components/forms/BranchBankInformation";
+import {
+  branchFacilityFormSchema,
+  initialBranchFacilityValues,
+  BRANCH_FACILITY_FIELD_ORDER,
+  flattenBranchFacilityErrors,
+  pickMandatoryBranchFacilityErrors,
+  pickOptionalOnlyBranchFacilityErrors,
+  type BranchFacilityFormValues,
+} from "@/lib/validation/branchFacilitySchemas";
+import { useGetStatesQuery, useGetCitiesQuery, useGetTehsilsQuery, useGetAreasQuery } from "@/store/api/publicApi";
+import {
+  useAssignModulesToBranchMutation,
+  useCreateBranchMutation,
+  useGetAllBranchesQuery,
+  useGetBranchInsightSummaryQuery,
+  useLazyGetModulesWithBranchMappingQuery,
+  type BranchListRow,
+} from "@/store/api/branchSetupApi";
+import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import type { SelectOption } from "@/components/ui/FormSelectField";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
+const INDIA = "6";
 
+/** Stable string for comparing module id selections (order-independent). */
+function normalizeSortedModuleIds(ids: string[]): string {
+  return [...new Set(ids.map(String))]
+    .sort((a, b) => {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      if (Number.isFinite(na) && Number.isFinite(nb) && String(na) === a && String(nb) === b) {
+        return na - nb;
+      }
+      return a.localeCompare(b);
+    })
+    .join(",");
+}
 
-type Facility = {
-  name: string;
-  type: "Hospital" | "Clinic";
-  address: string;
-  setupStatus: string;
-  setupDate: string;
-  completionPercentage: number;
-  buildings: number;
-  blocks?: number;
-  floors: number;
-  departments: number;
-  roomsConfigured: number;
-  totalRooms: number;
-};``
+function textOrNA(v: unknown): string {
+  if (v == null) return "N/A";
+  const s = String(v).trim();
+  return s === "" ? "N/A" : s;
+}
 
-const initialFacilities: Facility[] = [
-  {
-    name: "City General Hospital",
-    type: "Hospital" as const,
-    address: "123 Healthcare Blvd, Medical District",
-    setupStatus: "Initial Setup",
-    setupDate: "Feb 5, 2026",
-    completionPercentage: 35,
-    buildings: 2,
-    blocks: 2,
-    floors: 3,
-    departments: 6,
-    roomsConfigured: 1,
-    totalRooms: 2,
-  },
-  {
-    name: "Apollo Clinic",
-    type: "Clinic" as const,
-    address: "123 Apollo Clinic, Medical District",
-    setupStatus: "Active Setup",
-    setupDate: "Feb 10, 2026",
-    completionPercentage: 100,
-    buildings: 1,
-    blocks: 0,
-    floors: 2,
-    departments: 2,
-    roomsConfigured: 5,
-    totalRooms: 6,
-  },
-];
+function formatFacilityType(type: string | null | undefined): string {
+  if (type == null || String(type).trim() === "") return "N/A";
+  const t = String(type).trim().toLowerCase();
+  if (t === "hospital") return "Hospital";
+  if (t === "clinic") return "Clinic";
+  if (t === "daycare") return "Daycare";
+  const raw = String(type).trim();
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+function formatBranchDate(iso: string | null | undefined): string {
+  if (!iso || String(iso).trim() === "") return "N/A";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "N/A";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Title-case API status (e.g. branchStatus/status: "active" → "Active"). */
+function formatBranchStatusLabel(v: unknown): string {
+  const raw = textOrNA(v);
+  if (raw === "N/A") return raw;
+  return raw
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+/** Map API row → FacilityCard props; `insights` from getAllBranch drives structure metrics. */
+function branchRowToFacilityCardProps(row: BranchListRow) {
+  const addressParts = [row.address, row.state].filter((p) => p != null && String(p).trim() !== "");
+  const address = addressParts.length ? addressParts.map(String).join(", ") : "N/A";
+  const updated = row.updatedAt ?? row.createdAt;
+  const ins = row.insights;
+  if (ins && typeof ins === "object") {
+    const rooms = ins.rooms ?? {};
+    const roomsTotal = rooms.total ?? 0;
+    const roomsCompleted = rooms.configured ?? rooms.completed ?? 0;
+    const pct = ins.completionPercentage;
+    return {
+      name: textOrNA(row.name),
+      type: formatFacilityType(row.type ?? undefined),
+      address,
+      setupStatus: formatBranchStatusLabel(row.branchStatus ?? row.status),
+      setupDate: formatBranchDate(updated ?? null),
+      completionPercentage:
+        typeof pct === "number" && Number.isFinite(pct) ? Math.min(100, Math.max(0, Math.round(pct))) : 0,
+      buildings: ins.buildings ?? 0,
+      floors: ins.floors ?? 0,
+      roomsConfigured: roomsCompleted,
+      totalRooms: roomsTotal,
+    };
+  }
+  return {
+    name: textOrNA(row.name),
+    type: formatFacilityType(row.type ?? undefined),
+    address,
+    setupStatus: formatBranchStatusLabel(row.branchStatus ?? row.status),
+    setupDate: formatBranchDate(updated ?? null),
+    completionPercentage: null as number | null,
+    buildings: "-",
+    floors: "-",
+    roomsConfigured: "-",
+    totalRooms: "-",
+  };
+}
+
+function mergeBranchFacilityTouchedForKeys(
+  current: FormikTouched<BranchFacilityFormValues> | undefined,
+  flatKeys: string[]
+): FormikTouched<BranchFacilityFormValues> {
+  const cur = current ?? {};
+  const result = { ...cur } as Record<string, unknown>;
+  const addressSubs = new Set<string>();
+
+  for (const key of flatKeys) {
+    if (key.startsWith("address.")) {
+      addressSubs.add(key.slice("address.".length));
+    } else {
+      result[key] = true;
+    }
+  }
+
+  if (addressSubs.size > 0) {
+    const prevAddr =
+      typeof cur.address === "object" && cur.address !== null
+        ? { ...(cur.address as Record<string, boolean>) }
+        : {};
+    for (const sub of addressSubs) {
+      prevAddr[sub] = true;
+    }
+    result.address = prevAddr;
+  }
+
+  return result as FormikTouched<BranchFacilityFormValues>;
+}
+
+function scrollToFirstBranchError(flatErrors: Record<string, string>) {
+  if (Object.keys(flatErrors).length === 0) return;
+  const firstKey =
+    BRANCH_FACILITY_FIELD_ORDER.find((k) => flatErrors[k]) ?? Object.keys(flatErrors)[0];
+  const element = document.querySelector(`[data-field="${firstKey}"]`);
+  if (element instanceof HTMLElement) {
+    setTimeout(() => {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        element.focus();
+      } else {
+        const inputOrTextarea = element.querySelector("input, textarea");
+        if (inputOrTextarea instanceof HTMLInputElement || inputOrTextarea instanceof HTMLTextAreaElement) {
+          setTimeout(() => inputOrTextarea.focus(), 150);
+        } else {
+          const trigger = element.querySelector('button[type="button"], [role="combobox"]');
+          if (trigger instanceof HTMLElement) {
+            setTimeout(() => trigger.focus(), 150);
+          }
+        }
+      }
+    }, 100);
+  }
+}
+
+/** POST /branch/createBranch — wifi: `active` | `deactive` (legacy `inactive` → `deactive`). */
+function normalizeWifiStatusForCreateBranch(raw: string): "active" | "deactive" {
+  const t = raw.trim().toLowerCase();
+  if (t === "deactive" || t === "inactive") return "deactive";
+  return "active";
+}
+
+/** Branch row status: `active` | `inactive`. */
+function normalizeBranchStatusForCreateBranch(raw: string): "active" | "inactive" {
+  const t = raw.trim().toLowerCase();
+  return t === "inactive" ? "inactive" : "active";
+}
+
+/** API Status form field → payload key `status` only (`active` | `inactive`). */
+function normalizeApiStatusForCreateBranch(raw: string): "active" | "inactive" {
+  const t = raw.trim().toLowerCase();
+  return t === "inactive" ? "inactive" : "active";
+}
+
+function normalizeIsFranchiseForCreateBranch(raw: string): "yes" | "no" {
+  return raw.trim().toLowerCase() === "yes" ? "yes" : "no";
+}
+
+function buildCreateBranchFormData(
+  values: BranchFacilityFormValues,
+  resolved: {
+    stateName: string;
+    districtName: string;
+    tehsilName: string;
+    areaName: string;
+    areaId: number;
+  }
+): FormData {
+  const fd = new FormData();
+  const a = values.address;
+  const isIndia = a.country === INDIA;
+
+  const wifiStatus = normalizeWifiStatusForCreateBranch(values.wifiStatus);
+  const branchStatus = normalizeBranchStatusForCreateBranch(values.branchStatus);
+  const apiStatus = normalizeApiStatusForCreateBranch(values.apiStatus);
+  const isFranchise = normalizeIsFranchiseForCreateBranch(values.isFranchise);
+
+  fd.append("name", values.name.trim());
+  fd.append("phoneNumber", values.phoneNumber.trim());
+  fd.append("emailAddress", values.emailAddress.trim());
+  fd.append("panNo", values.panNo.trim().toUpperCase());
+  fd.append(
+    "address",
+    isIndia
+      ? a.address.trim()
+      : [a.addressLine1?.trim() ?? "", a.addressLine2?.trim() ?? ""].filter(Boolean).join(", ")
+  );
+  fd.append("state", resolved.stateName);
+  fd.append("district", resolved.districtName);
+  fd.append("tehsil", resolved.tehsilName);
+  fd.append("area", resolved.areaName);
+  fd.append("areaId", String(resolved.areaId));
+  fd.append("pinCode", a.pinCode.trim());
+  fd.append("firmName", values.firmName.trim());
+  fd.append("firmNameBillFooter", "");
+  fd.append("tinNo", values.tinNo.trim());
+  fd.append("tat", values.tat.trim());
+  fd.append("cstNo", values.cstNo.trim());
+  fd.append("creditLimit", values.creditLimit.trim());
+  fd.append("description", values.description.trim());
+  fd.append("type", values.facilityType.toLowerCase());
+  fd.append("bankName", values.bankName.trim());
+  fd.append("accNo", values.accNo.trim());
+  fd.append("ifscCode", values.ifscCode.trim().toUpperCase());
+  fd.append("bankBranchName", values.bankBranchName.trim());
+  fd.append("gstNumber", values.gstNumber.trim());
+  fd.append("stock", values.stock.trim() || "");
+  fd.append("dp", values.dp.trim() || "");
+  fd.append("warehouse", values.warehouse.trim());
+  fd.append("bypassMapping", "no");
+  fd.append("bypassDrScheme", "no");
+  fd.append("courierApplication", "enabled");
+  fd.append("sms", values.sms === "ON" ? "enabled" : "disabled");
+  fd.append("stateCode", values.stateCode.trim());
+  fd.append("branchCode", values.branchCode.trim());
+  fd.append("branchId", values.branchId.trim());
+  fd.append("branchStatus", branchStatus);
+  fd.append("branchUser", values.branchUser.trim());
+  fd.append("userPassword", values.userPassword);
+  fd.append("advancedReferralAmount", values.advancedReferralAmount.trim() || "0");
+  fd.append("referralAmountInPercent", values.referralAmountInPercent.trim() || "");
+  fd.append("isPanel", "no");
+  fd.append("panel", "");
+  fd.append("showToAgent", values.showToAgent.trim() || "yes");
+  fd.append("status", apiStatus);
+  fd.append("isFranchise", isFranchise);
+  fd.append("shuddhiUuid", "");
+  fd.append("isDialer", "1");
+  fd.append("maplink", values.maplink.trim());
+  fd.append("crone", "yes");
+  fd.append("salesforceId", "");
+  fd.append("wifiStatus", wifiStatus);
+
+  const stateIdRaw = String(a.state ?? "").trim();
+  const stateIdNum = parseInt(stateIdRaw, 10);
+  fd.append("stateId", Number.isFinite(stateIdNum) ? String(stateIdNum) : stateIdRaw);
+
+  const moduleNumericIds = values.moduleIds
+    .map((id) => parseInt(String(id), 10))
+    .filter((n) => Number.isFinite(n));
+  for (const id of moduleNumericIds) {
+    fd.append("moduleIds", String(id));
+  }
+
+  const cloneIdRaw = values.cloneBranchId.trim();
+  if (cloneIdRaw !== "") {
+    const cloneN = parseInt(cloneIdRaw, 10);
+    if (Number.isFinite(cloneN)) {
+      fd.append("cloneBranchId", String(cloneN));
+    }
+  }
+
+  if (values.branchLogo instanceof File) {
+    fd.append("branchLogo", values.branchLogo);
+  } else {
+    fd.append("branchLogo", "");
+  }
+  if (values.branchLogo2 instanceof File) {
+    fd.append("branchLogo_2", values.branchLogo2);
+  } else {
+    fd.append("branchLogo_2", "");
+  }
+
+  return fd;
+}
 
 const page = () => {
   const router = useRouter();
-  const [facilities, setFacilities] = useState<Facility[]>(initialFacilities);
+  const infrastructurePermission = usePermission("Infrastructure");
+  const infrastructureSubPermission = usePermission("Infrastructure", { subModule: "Add Hospital/Clinic" });
+  const canView = infrastructurePermission.canView || infrastructureSubPermission.canView;
+  const canAdd = infrastructurePermission.canAdd || infrastructureSubPermission.canAdd;
+  const canEditBranchModules =
+    infrastructurePermission.canEdit || infrastructureSubPermission.canEdit;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [facilityType, setFacilityType] = useState<"Hospital" | "Clinic">("Hospital");
-  const [facilityName, setFacilityName] = useState("");
-  const [address, setAddress] = useState("");
-  const [errors, setErrors] = useState<{ facilityName?: string; address?: string }>({});
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [msgText, setMsgText] = useState("");
+  const [msgSuccess, setMsgSuccess] = useState(true);
+  const branchPhotoCaptureRef = useRef<PhotoCaptureRef>(null);
+  const [branchPhotoCaptureErrors, setBranchPhotoCaptureErrors] = useState<{
+    vehiclePhoto?: string;
+    aadharPhoto?: string;
+  }>({});
+  const [facilitiesPage, setFacilitiesPage] = useState(1);
+  const [facilitiesPerPage, setFacilitiesPerPage] = useState(10);
+  const {
+    selectedBranchFilter,
+    setSelectedBranchFilter,
+    branchFilterOptions,
+    isLoadingBranches: isLoadingBranchFilter,
+    isBranchFilterDisabled,
+    filterBranchId,
+  } = useBranchFilter();
+
+  const branchListParams = useMemo(
+    () => ({
+      limit: facilitiesPerPage,
+      offset: (facilitiesPage - 1) * facilitiesPerPage,
+      sort: "id",
+      order: "desc" as const,
+      ...(Number.isFinite(filterBranchId) ? { branchId: filterBranchId } : {}),
+    }),
+    [facilitiesPerPage, facilitiesPage, filterBranchId]
+  );
+
+  const {
+    data: branchesRes,
+    isFetching,
+    isError,
+    refetch,
+  } = useGetAllBranchesQuery(branchListParams, { skip: !canView });
+
+  const { data: insightRes } = useGetBranchInsightSummaryQuery(undefined, { skip: !canView });
+
+  const [createBranch, { isLoading: isCreating }] = useCreateBranchMutation();
+  const [modulesDialogBranch, setModulesDialogBranch] = useState<BranchListRow | null>(null);
+  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
+  /** Snapshot from GET when dialog syncs; used to enable "Update modules" only when selection changes. */
+  const [initialModuleSelectionKey, setInitialModuleSelectionKey] = useState<string | null>(null);
+  const modulesSaveInFlightRef = useRef(false);
+  const [assignModules, { isLoading: isSavingModules }] = useAssignModulesToBranchMutation();
+
+  const modulesBranchId = modulesDialogBranch?.id;
+  const [fetchModulesMapping, modulesMappingLazy] = useLazyGetModulesWithBranchMappingQuery();
+  const modulesMappingRes = modulesMappingLazy.data;
+  const isLoadingModules = modulesMappingLazy.isFetching;
+  const isModulesMappingError = modulesMappingLazy.isError;
+
+  const handleOpenEditModules = useCallback(
+    (row: BranchListRow) => {
+      setModulesDialogBranch(row);
+      setSelectedModuleIds([]);
+      setInitialModuleSelectionKey(null);
+      /** `false` = do not use cache; always GET fresh module list for this branch. */
+      void fetchModulesMapping(row.id, false);
+    },
+    [fetchModulesMapping]
+  );
+
+  const branchListTotal = branchesRes?.total ?? 0;
+  const branchRows = branchesRes?.data ?? [];
+
+  useEffect(() => {
+    if (!branchesRes?.success) return;
+    const total = branchesRes.total ?? 0;
+    if (total === 0) return;
+    const tp =
+      branchesRes.totalPages ?? Math.max(1, Math.ceil(total / facilitiesPerPage));
+    if (tp > 0 && facilitiesPage > tp) {
+      setFacilitiesPage(tp);
+    }
+  }, [
+    branchesRes?.success,
+    branchesRes?.total,
+    branchesRes?.totalPages,
+    facilitiesPage,
+    facilitiesPerPage,
+  ]);
+
+  const formik = useFormik<BranchFacilityFormValues>({
+    initialValues: initialBranchFacilityValues,
+    validationSchema: branchFacilityFormSchema,
+    validateOnChange: true,
+    validateOnBlur: true,
+    onSubmit: () => {},
+  });
+
+  const addr = formik.values.address;
+  const infraAddrIsIndia = addr.country === INDIA;
+  const { data: statesData } = useGetStatesQuery(
+    addr.country && infraAddrIsIndia ? { countryId: addr.country } : undefined,
+    { skip: !addr.country || !infraAddrIsIndia || !isDialogOpen }
+  );
+  const { data: citiesData } = useGetCitiesQuery(
+    addr.state && infraAddrIsIndia ? { stateId: addr.state } : undefined,
+    { skip: !addr.state || !infraAddrIsIndia || !isDialogOpen, refetchOnMountOrArgChange: true }
+  );
+  const { data: tehsilsData } = useGetTehsilsQuery(
+    addr.city && addr.country === INDIA
+      ? { districtId: addr.city, ...(addr.pinCode ? { pincode: addr.pinCode.replace(/\D/g, "") } : {}) }
+      : undefined,
+    { skip: !addr.city || addr.country !== INDIA || !isDialogOpen, refetchOnMountOrArgChange: true }
+  );
+  const { data: areasData } = useGetAreasQuery(
+    addr.tehsil && addr.country === INDIA
+      ? { tehsilId: addr.tehsil, ...(addr.pinCode ? { pincode: addr.pinCode.replace(/\D/g, "") } : {}) }
+      : undefined,
+    { skip: !addr.tehsil || addr.country !== INDIA || !isDialogOpen }
+  );
+
+  const resolvedAddressLabels = useMemo(() => {
+    const stateName =
+      statesData?.data?.find((s) => String(s.id) === String(addr.state))?.name?.trim() ?? "";
+    const districtName =
+      citiesData?.data?.find((c) => String(c.id) === String(addr.city))?.name?.trim() ?? "";
+    const tehsilName =
+      tehsilsData?.data?.find((t) => String(t.id) === String(addr.tehsil))?.name?.trim() ?? "";
+    const areaRow = areasData?.data?.find((ar) => String(ar.id) === String(addr.area));
+    const areaName = areaRow?.name?.trim() ?? "";
+    const areaId = areaRow?.id != null ? Number(areaRow.id) : addr.area ? parseInt(String(addr.area), 10) : 0;
+    return { stateName, districtName, tehsilName, areaName, areaId: Number.isFinite(areaId) ? areaId : 0 };
+  }, [statesData, citiesData, tehsilsData, areasData, addr.state, addr.city, addr.tehsil, addr.area]);
+
+  const resetFacilityForm = () => {
+    formik.resetForm({
+      values: {
+        ...initialBranchFacilityValues,
+        address: { ...initialBranchFacilityValues.address },
+      },
+    });
+  };
 
   const handleAddNew = () => {
+    if (!canAdd) return;
+    resetFacilityForm();
     setIsDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
-    setFacilityName("");
-    setAddress("");
-    setFacilityType("Hospital");
-    setErrors({});
+    resetFacilityForm();
   };
 
-  const validateForm = () => {
-    const newErrors: { facilityName?: string; address?: string } = {};
-    
-    if (!facilityName.trim()) {
-      newErrors.facilityName = "Facility name is required";
+  const submitFacility = async () => {
+    if (!canAdd) return;
+    const hasBranchPhotoErrors =
+      branchPhotoCaptureRef.current?.hasErrors() ||
+      !!(branchPhotoCaptureErrors.vehiclePhoto || branchPhotoCaptureErrors.aadharPhoto);
+    if (hasBranchPhotoErrors) {
+      branchPhotoCaptureRef.current?.scrollToError();
+      return;
     }
-    
-    if (!address.trim()) {
-      newErrors.address = "Address is required";
+
+    const errors = await formik.validateForm();
+    const flat = flattenBranchFacilityErrors(errors);
+    const mandatoryFlat = pickMandatoryBranchFacilityErrors(flat);
+    const optionalFlat = pickOptionalOnlyBranchFacilityErrors(flat);
+
+    if (Object.keys(mandatoryFlat).length > 0) {
+      await formik.setTouched(
+        mergeBranchFacilityTouchedForKeys(formik.touched, Object.keys(mandatoryFlat)),
+        false
+      );
+      scrollToFirstBranchError(mandatoryFlat);
+      return;
     }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    if (Object.keys(optionalFlat).length > 0) {
+      await formik.setTouched(setNestedObjectValues(formik.values, true), false);
+      scrollToFirstBranchError(optionalFlat);
+      return;
+    }
+
+    const fd = buildCreateBranchFormData(formik.values, resolvedAddressLabels);
+
+    const createBranchPayloadPreview: Record<string, string | string[]> = {};
+    for (const [key, value] of fd.entries()) {
+      const v =
+        value instanceof File ? `File:${value.name} (${value.size} bytes)` : String(value);
+      const existing = createBranchPayloadPreview[key];
+      if (existing === undefined) {
+        createBranchPayloadPreview[key] = v;
+      } else if (Array.isArray(existing)) {
+        existing.push(v);
+      } else {
+        createBranchPayloadPreview[key] = [existing, v];
+      }
+    }
+    console.log("[createBranch] about to POST /branch/createBranch", createBranchPayloadPreview);
+
+    try {
+      const res = await createBranch(fd).unwrap();
+      if (res.success) {
+        setFacilitiesPage(1);
+        setMsgSuccess(true);
+        setMsgText(res.message || "Facility created successfully.");
+        setMsgOpen(true);
+        handleCloseDialog();
+      } else {
+        setMsgSuccess(false);
+        setMsgText(res.message || "Could not create facility.");
+        setMsgOpen(true);
+      }
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "data" in e
+          ? String((e as { data?: { message?: string } }).data?.message ?? "Request failed.")
+          : "Request failed.";
+      setMsgSuccess(false);
+      setMsgText(msg);
+      setMsgOpen(true);
+    }
   };
 
-  const handleCreateFacility = () => {
-    if (validateForm()) {
-      // Get current date for setupDate
-      const currentDate = new Date();
-      const formattedDate = currentDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
+  const infrastructureStats = useMemo(() => {
+    const insight =
+      insightRes?.success && insightRes.data && typeof insightRes.data === "object"
+        ? insightRes.data
+        : null;
+    const metric = (n: unknown): number | string => {
+      if (insight == null) return "-";
+      if (typeof n === "number" && Number.isFinite(n)) return n;
+      return 0;
+    };
+    const activeSetup = (raw: unknown): string | number => {
+      if (insight == null) return "-";
+      if (raw == null) return "-";
+      if (typeof raw === "string") {
+        const t = raw.trim();
+        if (t === "") return "-";
+        const n = parseInt(t, 10);
+        if (!Number.isFinite(n) || n <= 0) return "-";
+        return n;
+      }
+      if (typeof raw === "number") {
+        if (!Number.isFinite(raw) || raw <= 0) return "-";
+        return raw;
+      }
+      return "-";
+    };
+    return [
+      { title: "Total Facilities", value: metric(insight?.totalBranches) },
+      { title: "Active Setup", value: activeSetup(insight?.totalActiveBranches) },
+      { title: "Total Buildings", value: metric(insight?.totalBuildings) },
+      { title: "Configured Rooms", value: metric(insight?.totalConfiguredRooms) },
+    ];
+  }, [insightRes]);
 
-      // Create new facility object
-      const newFacility: Facility = {
-        name: facilityName.trim(),
-        type: facilityType,
-        address: address.trim(),
-        setupStatus: "Initial Setup",
-        setupDate: formattedDate,
-        completionPercentage: 0,
-        buildings: 0,
-        blocks: 0,
-        floors: 0,
-        departments: 0,
-        roomsConfigured: 0,
-        totalRooms: 0,
-      };
+  const moduleSelectOptions: SelectOption[] = useMemo(() => {
+    if (isLoadingModules) return [];
+    if (!modulesMappingRes?.success || !Array.isArray(modulesMappingRes.data)) return [];
+    return modulesMappingRes.data.map((m) => ({
+      value: String(m.id),
+      label: m.moduleName,
+      /** Already assigned to this branch — cannot be toggled off in the UI. */
+      disabled: m.branchModuleId != null,
+    }));
+  }, [modulesMappingRes, isLoadingModules]);
 
-      // Add new facility to the list
-      setFacilities((prevFacilities) => [...prevFacilities, newFacility]);
-      
-      // TODO: Implement API call to create facility
-      console.log("Creating facility:", newFacility);
-      
-      handleCloseDialog();
+  useEffect(() => {
+    if (modulesBranchId == null) {
+      setSelectedModuleIds([]);
+      setInitialModuleSelectionKey(null);
+      return;
+    }
+    if (!modulesMappingRes?.success || !Array.isArray(modulesMappingRes.data)) return;
+    const next = modulesMappingRes.data
+      .filter((m) => m.branchModuleId != null)
+      .map((m) => String(m.id));
+    setSelectedModuleIds(next);
+    setInitialModuleSelectionKey(normalizeSortedModuleIds(next));
+  }, [modulesBranchId, modulesMappingRes]);
+
+  const isModulesSelectionDirty = useMemo(() => {
+    if (initialModuleSelectionKey == null) return false;
+    return normalizeSortedModuleIds(selectedModuleIds) !== initialModuleSelectionKey;
+  }, [initialModuleSelectionKey, selectedModuleIds]);
+
+  const handleCloseModulesDialog = () => {
+    setModulesDialogBranch(null);
+    setSelectedModuleIds([]);
+    setInitialModuleSelectionKey(null);
+    modulesSaveInFlightRef.current = false;
+  };
+
+  const handleSaveBranchModules = async () => {
+    if (!modulesDialogBranch || modulesSaveInFlightRef.current || isSavingModules) return;
+    const initialAssignedIds =
+      initialModuleSelectionKey != null && initialModuleSelectionKey !== ""
+        ? initialModuleSelectionKey.split(",").filter(Boolean)
+        : [];
+    const initialAssignedSet = new Set(initialAssignedIds);
+    const newlyAddedModuleIds = selectedModuleIds.filter((id) => !initialAssignedSet.has(id));
+    const mappings = newlyAddedModuleIds.map((id) => ({
+      branchId: modulesDialogBranch.id,
+      moduleId: parseInt(id, 10),
+    }));
+    if (mappings.length === 0) {
+      return;
+    }
+    modulesSaveInFlightRef.current = true;
+    try {
+      const res = await assignModules({
+        mappings,
+      }).unwrap();
+      if (res.success) {
+        setMsgSuccess(true);
+        setMsgText(res.message || "Branch modules saved successfully.");
+        setMsgOpen(true);
+        handleCloseModulesDialog();
+      } else {
+        setMsgSuccess(false);
+        setMsgText(res.message || "Could not update modules.");
+        setMsgOpen(true);
+      }
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "data" in e
+          ? String((e as { data?: { message?: string } }).data?.message ?? "Request failed.")
+          : "Request failed.";
+      setMsgSuccess(false);
+      setMsgText(msg);
+      setMsgOpen(true);
+    } finally {
+      modulesSaveInFlightRef.current = false;
     }
   };
 
-  // Calculate stats from facilities
-  const infrastructureStats = useMemo(() => [
-    { title: "Total Facilities", value: facilities.length },
-    { 
-      title: "Active Setup", 
-      value: facilities.filter(f => f.setupStatus === "Active Setup").length 
-    },
-    { 
-      title: "Total Buildings", 
-      value: facilities.reduce((sum, f) => sum + f.buildings, 0) 
-    },
-    { 
-      title: "Configured Rooms", 
-      value: facilities.reduce((sum, f) => sum + f.roomsConfigured, 0) 
-    },
-  ], [facilities]);
-
-  const handleFacilityClick = (facility: Facility) => {
+  const handleFacilityClick = (row: BranchListRow) => {
+    if (!canView) return;
+    const p = branchRowToFacilityCardProps(row);
+    const tr = p.totalRooms;
+    const cr = p.roomsConfigured;
+    const totalRoomsNum = typeof tr === "number" ? tr : parseInt(String(tr), 10);
+    const configuredNum = typeof cr === "number" ? cr : parseInt(String(cr), 10);
+    const trOk = Number.isFinite(totalRoomsNum);
+    const crOk = Number.isFinite(configuredNum);
+    const incomplete = trOk && crOk ? Math.max(0, totalRoomsNum - configuredNum) : 0;
     const params = new URLSearchParams({
-      facility: facility.name,
-      type: facility.type,
-      address: facility.address,
-      completion: facility.completionPercentage.toString(),
-      buildings: facility.buildings.toString(),
-      blocks: (facility.blocks || 0).toString(),
-      floors: facility.floors.toString(),
-      departments: facility.departments.toString(),
-      totalRooms: facility.totalRooms.toString(),
-      configuredRooms: facility.roomsConfigured.toString(),
-      incompleteRooms: (facility.totalRooms - facility.roomsConfigured).toString(),
+      branchId: String(row.id),
+      facility: p.name,
+      type: p.type,
+      address: p.address,
+      completion: p.completionPercentage != null ? String(p.completionPercentage) : "0",
+      buildings: String(p.buildings),
+      floors: String(p.floors),
+      totalRooms: String(p.totalRooms),
+      configuredRooms: String(p.roomsConfigured),
+      incompleteRooms: String(incomplete),
     });
     router.push(`/infrastructure/config-structure?${params.toString()}`);
   };
 
   return (
     <AppShell>
-      <div className="flex flex-col min-h-[calc(100vh-12rem)]">
-        <div className="flex items-center justify-between border-b border-gray-200 pb-4"> 
-
+      {!canView ? (
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+          You don&apos;t have permission to view infrastructure.
+        </div>
+      ) : (
+      <>
+      <div className="flex min-h-[calc(100vh-12rem)] flex-col">
+        <div className="flex items-center justify-between border-b border-gray-200 pb-4">
           <div>
             <PageHeading title="Hospital Management System" />
-            <p className="text-gray-400 mt-0">Configure and manage hospitals, clinics, and their infrastructure</p>
+            <p className="mt-0 text-gray-400">Configure and manage hospitals, clinics, and their infrastructure</p>
           </div>
-          <Button
-            variant="primary"
-            size="medium"
-            onClick={handleAddNew}
-            leftIcon={
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            }
-          >
-            Add Hospital/Clinic
-          </Button>
+          <div className="flex items-center gap-3">
+            <FormSelectField
+              label=""
+              hideLabel
+              options={branchFilterOptions}
+              value={selectedBranchFilter}
+              onChange={(value) => {
+                setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                setFacilitiesPage(1);
+              }}
+              placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+              mode="single"
+              background="normal"
+              width={300}
+              disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+            />
+            {canAdd ? (
+              <Button
+                variant="primary"
+                size="medium"
+                onClick={handleAddNew}
+                leftIcon={
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                }
+              >
+                Add Hospital/Clinic
+              </Button>
+            ) : null}
+          </div>
         </div>
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {infrastructureStats.map((stat) => (
+          {/* {infrastructureStats.map((stat) => (
             <StatCard key={stat.title} title={stat.title} value={stat.value} />
-          ))}
+          ))} */}
         </div>
-        <div className="mt-6 mb-10">
+        <div className="mb-10 mt-6">
           <h2 className="mb-4 text-xl font-semibold text-gray-900">All Hospitals & Clinics</h2>
+          {isError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              Could not load facilities.{" "}
+              <button type="button" className="font-medium underline" onClick={() => void refetch()}>
+                Retry
+              </button>
+            </div>
+          ) : null}
           <div className="space-y-4">
-            {facilities.map((facility, index) => (
-              <FacilityCard
-                key={index}
-                name={facility.name}
-                type={facility.type}
-                address={facility.address}
-                setupStatus={facility.setupStatus}
-                setupDate={facility.setupDate}
-                completionPercentage={facility.completionPercentage}
-                buildings={facility.buildings}
-                blocks={facility.blocks}
-                floors={facility.floors}
-                departments={facility.departments}
-                roomsConfigured={facility.roomsConfigured}
-                totalRooms={facility.totalRooms}
-                onClick={() => handleFacilityClick(facility)}
-              />
-            ))}
+            {isFetching && branchRows.length === 0 ? (
+              <p className="text-sm text-gray-500">Loading facilities…</p>
+            ) : null}
+            {branchRows.map((row) => {
+              const card = branchRowToFacilityCardProps(row);
+              return (
+                <FacilityCard
+                  key={row.id}
+                  name={card.name}
+                  type={card.type}
+                  address={card.address}
+                  setupStatus={card.setupStatus}
+                  setupDate={card.setupDate}
+                  completionPercentage={card.completionPercentage}
+                  buildings={card.buildings}
+                  floors={card.floors}
+                  roomsConfigured={card.roomsConfigured}
+                  totalRooms={card.totalRooms}
+                  onClick={() => handleFacilityClick(row)}
+                  onEditModules={
+                    canEditBranchModules ? () => handleOpenEditModules(row) : undefined
+                  }
+                />
+              );
+            })}
+            {!isFetching && !isError && branchRows.length === 0 ? (
+              <p className="text-sm text-gray-500">No hospitals or clinics found.</p>
+            ) : null}
           </div>
+          {branchListTotal > 0 ? (
+            <Pagination
+              currentPage={facilitiesPage}
+              totalItems={branchListTotal}
+              itemsPerPage={facilitiesPerPage}
+              onPageChange={setFacilitiesPage}
+              onItemsPerPageChange={(n) => {
+                setFacilitiesPerPage(n);
+                setFacilitiesPage(1);
+              }}
+              itemsPerPageOptions={[10, 20, 50, 100]}
+            />
+          ) : null}
         </div>
       </div>
 
       <Dialog
-        open={isDialogOpen}
+        open={isDialogOpen && canAdd}
         onClose={handleCloseDialog}
         title="Add New Facility"
-        width={600}
+        width={1300}
         contentPadding="px-6 py-6"
+        contentOverflow="hidden"
       >
-        <div className="flex flex-col gap-6">
-          {/* Subtitle */}
-          <p className="text-sm text-gray-500 -mt-2">
-            Create a new hospital or clinic to start configuration
-          </p>
-
-          {/* Facility Type Selection */}
-          <div className="flex flex-col gap-3">
-            <label className="text-sm font-medium text-gray-700">Facility Type</label>
-            <div className="grid grid-cols-2 gap-4">
-              {/* Hospital Option */}
-              <button
-                type="button"
-                onClick={() => setFacilityType("Hospital")}
-                className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
-                  facilityType === "Hospital"
-                    ? "border-green-600 bg-white"
-                    : "border-gray-200 bg-white hover:border-gray-300"
-                }`}
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                    facilityType === "Hospital" ? "bg-green-600" : "bg-gray-300"
-                  }`} />
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className={facilityType === "Hospital" ? "text-green-700" : "text-gray-400"}
-                  >
-                    <path
-                      d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v0M9 13v0M9 17v0M15 13v0M15 17v0"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-                <div className="flex flex-col items-start w-full">
-                  <span className="text-sm font-medium text-gray-900">Hospital</span>
-                  <span className="text-xs text-gray-500">Multi-specialty facility</span>
-                </div>
-              </button>
-
-              {/* Clinic Option */}
-              <button
-                type="button"
-                onClick={() => setFacilityType("Clinic")}
-                className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
-                  facilityType === "Clinic"
-                    ? "border-green-600 bg-white"
-                    : "border-gray-200 bg-white hover:border-gray-300"
-                }`}
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                    facilityType === "Clinic" ? "bg-green-600" : "bg-gray-300"
-                  }`} />
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className={facilityType === "Clinic" ? "text-green-700" : "text-gray-400"}
-                  >
-                    <path
-                      d="M9 5h6M9 5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2M9 5v14M15 5v14M12 11v2M8 19h8"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx="7" cy="19" r="2" fill="currentColor" />
-                    <circle cx="17" cy="19" r="2" fill="currentColor" />
-                  </svg>
-                </div>
-                <div className="flex flex-col items-start w-full">
-                  <span className="text-sm font-medium text-gray-900">Clinic</span>
-                  <span className="text-xs text-gray-500">Smaller practice</span>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Facility Name Input */}
-          <div className="flex flex-col gap-2">
-            <FormInputField
-              label="Facility Name *"
-              placeholder="e.g., City General Hospital"
-              value={facilityName}
-              onChange={(e) => {
-                setFacilityName(e.target.value);
-                if (errors.facilityName) {
-                  setErrors({ ...errors, facilityName: undefined });
-                }
-              }}
-              error={errors.facilityName}
+        <div className="flex min-h-0 flex-1 flex-col gap-6">
+          <ScrollableContainer maxHeight="none" className="flex min-h-0 flex-1 flex-col gap-6 pr-1">
+            <BranchBasicInformation
+              formik={formik}
+              photoCaptureRef={branchPhotoCaptureRef}
+              onPhotoValidationChange={(_hasErrors, errs) => setBranchPhotoCaptureErrors(errs)}
             />
-          </div>
-
-          {/* Address Input */}
-          <div className="flex flex-col gap-2">
-            <FormInputField
-              label="Address *"
-              placeholder="e.g., 123 Healthcare Blvd, Medical District"
-              value={address}
-              onChange={(e) => {
-                setAddress(e.target.value);
-                if (errors.address) {
-                  setErrors({ ...errors, address: undefined });
-                }
+            <BranchBankInformation formik={formik} />
+            <AddressDetails
+              formData={formik.values.address}
+              onChange={(field, value) => formik.setFieldValue(`address.${field}`, value)}
+              onBlur={(field) => formik.setFieldTouched(`address.${field}`, true)}
+              dataFieldPrefix="address."
+              nationality="Indian"
+              title="Address"
+              errors={{
+                pinCode: formik.touched.address?.pinCode ? formik.errors.address?.pinCode : undefined,
+                country: formik.touched.address?.country ? formik.errors.address?.country : undefined,
+                state: formik.touched.address?.state ? formik.errors.address?.state : undefined,
+                city: formik.touched.address?.city ? formik.errors.address?.city : undefined,
+                tehsil: formik.touched.address?.tehsil ? formik.errors.address?.tehsil : undefined,
+                area: formik.touched.address?.area ? formik.errors.address?.area : undefined,
+                address: formik.touched.address?.address ? formik.errors.address?.address : undefined,
+                addressLine1: formik.touched.address?.addressLine1 ? formik.errors.address?.addressLine1 : undefined,
+                addressLine2: formik.touched.address?.addressLine2 ? formik.errors.address?.addressLine2 : undefined,
               }}
-              error={errors.address}
             />
-          </div>
+          </ScrollableContainer>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
+          <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200 pt-4">
             <Button
               variant="outline"
               onClick={handleCloseDialog}
               className="min-w-[100px]"
+              disabled={isCreating}
             >
               Cancel
             </Button>
             <Button
               variant="primary"
-              onClick={handleCreateFacility}
-              className="min-w-[140px]"
+              type="button"
+              onClick={() => void submitFacility()}
+              className="min-w-[160px]"
+              disabled={isCreating}
             >
-              Create Facility
+              {isCreating ? "Saving…" : "Create facility"}
             </Button>
           </div>
         </div>
       </Dialog>
+
+      <Dialog
+        open={modulesDialogBranch != null && canEditBranchModules}
+        onClose={handleCloseModulesDialog}
+        title={
+          modulesDialogBranch
+            ? `Edit modules — ${textOrNA(modulesDialogBranch.name)}`
+            : "Edit modules"
+        }
+        width={520}
+        contentPadding="px-6 py-6"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-gray-500">
+            Select one or more modules to assign to this branch.
+          </p>
+          {isLoadingModules ? (
+            <p className="text-sm text-gray-500">Loading modules…</p>
+          ) : isModulesMappingError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              Could not load modules.{" "}
+              <button
+                type="button"
+                className="font-medium underline"
+                onClick={() => {
+                  if (modulesBranchId != null) void fetchModulesMapping(modulesBranchId, false);
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <FormSelectField
+              label="Modules*"
+              mode="multiple"
+              options={moduleSelectOptions}
+              value={selectedModuleIds}
+              onChange={(value) => setSelectedModuleIds(Array.isArray(value) ? value : value ? [value] : [])}
+              placeholder="Select module(s)"
+              background="normal"
+              disabled={isSavingModules}
+            />
+          )}
+          <div className="flex justify-end gap-3 border-t border-gray-200 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleCloseModulesDialog}
+              className="min-w-[100px]"
+              disabled={isSavingModules}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              type="button"
+              onClick={() => void handleSaveBranchModules()}
+              className="min-w-[140px]"
+              isLoading={isSavingModules}
+              disabled={
+                isSavingModules ||
+                isLoadingModules ||
+                isModulesMappingError ||
+                modulesDialogBranch == null ||
+                !isModulesSelectionDirty
+              }
+            >
+              Update modules
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <MessageDialog
+        open={msgOpen}
+        onClose={() => setMsgOpen(false)}
+        message={msgText}
+        icon={msgSuccess ? "/icons/SuccessCheck.svg" : "/icons/CrossIcon.svg"}
+        iconBgColor={msgSuccess ? "#E8F5E9" : "#FEE2E2"}
+        showCancel={false}
+        confirmText="OK"
+        onConfirm={() => setMsgOpen(false)}
+      />
+      </>
+      )}
     </AppShell>
   );
 };

@@ -1,15 +1,17 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Button, Dialog, FormInputField, FormSelectField, Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, MessageDialog } from "@/components/ui";
+import { Button, Dialog, FormInputField, FormSelectField, Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, MessageDialog, Tooltip } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import { useGetBranchIPsQuery, useCreateBranchIPMutation, useUpdateBranchIPMutation, useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useDebounce } from "@/hooks/useDebounce";
 import { validateIPNetwork } from "@/lib/utils/common";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
 type BranchIP = {
     id: number;
@@ -19,6 +21,19 @@ type BranchIP = {
 };
 
 export default function BranchIPNetworkPage() {
+    const branchIpPermission = usePermission("settings", { subModule: "branch-ip-network" });
+    const canView = branchIpPermission.canView;
+    const canAdd = branchIpPermission.canAdd;
+    const canEdit = branchIpPermission.canEdit;
+
+    const {
+        selectedBranchFilter,
+        setSelectedBranchFilter,
+        branchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        filterBranchId: hookFilterBranchId,
+    } = useBranchFilter();
     const [filters, setFilters] = useState({
         searchTerm: "",
         currentPage: 1,
@@ -29,29 +44,26 @@ export default function BranchIPNetworkPage() {
     
     // Debounce search to avoid too many API calls
     const debouncedSearchTerm = useDebounce(filters.searchTerm, 500);
-    const prevSearchTermRef = useRef(filters.searchTerm);
     
     // Trim the debounced search term to remove leading and trailing spaces
     // Only pass to API if trimmed value is not empty (don't hit API for spaces only)
     const trimmedSearchTerm = debouncedSearchTerm.trim();
     const searchParam = trimmedSearchTerm || undefined;
     
-    // Reset to first page when search term changes
-    useEffect(() => {
-        if (prevSearchTermRef.current !== filters.searchTerm) {
-            prevSearchTermRef.current = filters.searchTerm;
-            setFilters((prev) => ({ ...prev, currentPage: 1 }));
-        }
-    }, [filters.searchTerm]);
-
-    const { data: branchIPsData, isLoading: isLoadingBranchIPs, refetch: refetchBranchIPs } = useGetBranchIPsQuery({
-        page: filters.currentPage,
-        limit: filters.itemsPerPage,
-        sort: filters.sortField || undefined,
-        order: filters.sortField ? filters.sortOrder : undefined,
-        search: searchParam,
+    const { data: branchIPsData, isLoading: isLoadingBranchIPs, refetch: refetchBranchIPs } = useGetBranchIPsQuery(
+        {
+            page: filters.currentPage,
+            limit: filters.itemsPerPage,
+            sort: filters.sortField || undefined,
+            order: filters.sortField ? filters.sortOrder : undefined,
+            search: searchParam,
+            branchId: hookFilterBranchId,
+        },
+        { skip: !canView }
+    );
+    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
+        skip: !canView,
     });
-    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery();
     const [createBranchIP, { isLoading: isCreating }] = useCreateBranchIPMutation();
     const [updateBranchIP, { isLoading: isUpdating }] = useUpdateBranchIPMutation();
     
@@ -84,6 +96,7 @@ export default function BranchIPNetworkPage() {
         }));
     }, [branchesData]);
 
+
     // Map API data to UI format
     const branchIPs: BranchIP[] = useMemo(() => {
         if (!branchIPsData?.data) {
@@ -101,6 +114,7 @@ export default function BranchIPNetworkPage() {
     const totalItems = branchIPsData?.total || 0;
 
     const handleAddNew = () => {
+        if (!canAdd) return;
         setIsEditMode(false);
         setEditingId(null);
         setFormValues({
@@ -115,6 +129,7 @@ export default function BranchIPNetworkPage() {
     };
 
     const handleEdit = (branchIP: BranchIP) => {
+        if (!canEdit) return;
         setIsEditMode(true);
         setEditingId(branchIP.id);
         // Find branch ID from branch name
@@ -131,12 +146,22 @@ export default function BranchIPNetworkPage() {
     };
 
     const handleView = (branchIP: BranchIP) => {
+        if (!canView) return;
         setViewingBranchIP(branchIP);
         setIsViewDialogOpen(true);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (isEditMode && !canEdit) {
+            setIsDialogOpen(false);
+            return;
+        }
+        if (!isEditMode && !canAdd) {
+            setIsDialogOpen(false);
+            return;
+        }
 
         // Clear previous errors
         setBranchError("");
@@ -194,9 +219,13 @@ export default function BranchIPNetworkPage() {
                 ipNetwork: "",
                 status: "inactive",
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error creating/updating branch IP:", error);
-            const errorMessage = error?.data?.message || error?.data?.error || (isEditMode ? "Failed to update branch IP network" : "Failed to create branch IP network");
+            const typed = error as { data?: { message?: string; error?: string } };
+            const errorMessage =
+                typed?.data?.message ||
+                typed?.data?.error ||
+                (isEditMode ? "Failed to update branch IP network" : "Failed to create branch IP network");
             setApiErrorMessage(errorMessage);
             setShowApiErrorDialog(true);
         }
@@ -236,26 +265,54 @@ export default function BranchIPNetworkPage() {
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
+                    {!canView ? (
+                        <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                            You don&apos;t have permission to view branch IP network.
+                        </div>
+                    ) : (
                     <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
                         <div className="mb-6 flex items-center justify-between">
                             <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                             <div className="flex items-center gap-3">
+                                <FormSelectField
+                                    label=""
+                                    hideLabel
+                                    options={branchFilterOptions}
+                                    value={selectedBranchFilter}
+                                    onChange={(value) => {
+                                        setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                                        setFilters((prev) => ({ ...prev, currentPage: 1 }));
+                                    }}
+                                    placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                    mode="single"
+                                    background="normal"
+                                    width={300}
+                                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                />
                                 <div className="flex-shrink-0" style={{ width: "300px" }}>
                                     <TableSearchInput
                                         value={filters.searchTerm}
-                                        onChange={(value) => setFilters((prev) => ({ ...prev, searchTerm: value }))}
+                                        onChange={(value) =>
+                                            setFilters((prev) => ({
+                                                ...prev,
+                                                searchTerm: value,
+                                                currentPage: prev.searchTerm !== value ? 1 : prev.currentPage,
+                                            }))
+                                        }
                                         placeholder="Search Here..."
                                     />
                                 </div>
+                                {canAdd ? (
                                 <button
                                     type="button"
                                     className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
                                     onClick={handleAddNew}
                                 >
                                     <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
-                                    Add Branch Network
+                                    <span className="text-hide">Add Branch Network</span>
                                 </button>
+                                ) : null}
                             </div>
                         </div>
 
@@ -337,32 +394,38 @@ export default function BranchIPNetworkPage() {
                                             </TableData>
                                             <TableData>
                                                 <div className="flex items-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleView(branchIP)}
-                                                        className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                        aria-label="View"
-                                                    >
-                                                        <Image
-                                                            src="/icons/ViewEyeIcon.svg"
-                                                            alt="View"
-                                                            width={20}
-                                                            height={20}
-                                                        />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleEdit(branchIP)}
-                                                        className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                        aria-label="Edit"
-                                                    >
-                                                        <Image
-                                                            src="/icons/EditIconBlack.svg"
-                                                            alt="Edit"
-                                                            width={20}
-                                                            height={20}
-                                                        />
-                                                    </button>
+                                                    <Tooltip content="View" position="top" delay={0}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleView(branchIP)}
+                                                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                            aria-label="View"
+                                                        >
+                                                            <Image
+                                                                src="/icons/ViewEyeIcon.svg"
+                                                                alt="View"
+                                                                width={20}
+                                                                height={20}
+                                                            />
+                                                        </button>
+                                                    </Tooltip>
+                                                    {canEdit ? (
+                                                    <Tooltip content="Edit" position="top" delay={0}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleEdit(branchIP)}
+                                                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                            aria-label="Edit"
+                                                        >
+                                                            <Image
+                                                                src="/icons/EditIconBlack.svg"
+                                                                alt="Edit"
+                                                                width={20}
+                                                                height={20}
+                                                            />
+                                                        </button>
+                                                    </Tooltip>
+                                                    ) : null}
                                                 </div>
                                             </TableData>
                                         </TableRow>
@@ -381,9 +444,11 @@ export default function BranchIPNetworkPage() {
                             />
                         )}
                     </div>
+                    )}
                 </ListBorder>
             </div>
 
+            {(canAdd || canEdit) ? (
             <Dialog
                 open={isDialogOpen}
                 onClose={() => {
@@ -431,7 +496,10 @@ export default function BranchIPNetworkPage() {
                                 label="IP Network *"
                                 value={formValues.ipNetwork}
                                 onChange={(event) => {
-                                    const value = event.target.value;
+                                    // Allow only characters valid for IP / CIDR notation: digits, dot, slash
+                                    let value = event.target.value.replace(/[^0-9./]/g, "");
+                                    // Limit maximum length to 32 characters to prevent excessively long input
+                                    value = value.slice(0, 32);
                                     setFormValues((prev) => ({
                                         ...prev,
                                         ipNetwork: value,
@@ -459,6 +527,7 @@ export default function BranchIPNetworkPage() {
                                 height={44}
                                 placeholder="IP Network (e.g., 192.168.1.1 or 192.168.1.0/24)"
                                 required
+                                maxLength={32}
                                 error={ipNetworkError}
                             />
                         </div>
@@ -513,7 +582,9 @@ export default function BranchIPNetworkPage() {
                     </div>
                 </form>
             </Dialog>
+            ) : null}
 
+            {canView ? (
             <Dialog
                 open={isViewDialogOpen}
                 onClose={() => {
@@ -540,6 +611,7 @@ export default function BranchIPNetworkPage() {
                     </div>
                 </div>
             </Dialog>
+            ) : null}
 
             {/* Success Dialog */}
             <MessageDialog

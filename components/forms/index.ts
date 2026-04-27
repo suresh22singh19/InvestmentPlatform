@@ -1,4 +1,6 @@
 export { LoginForm } from "./LoginForm";
+export type { LoginSubmitPhase } from "./LoginForm";
+export { LoginOtpForm } from "./LoginOtpForm";
 export { default as AddressDetails } from "./AddressDetails";
 export type { AddressFormData } from "./AddressDetails";
 export { default as PersonalDetails } from "./PersonalDetails";
@@ -15,3 +17,5 @@ export { default as IPDAdditionalDetails } from "./IPDAdditionalDetails";
 export type { IPDAdditionalDetailsFormData } from "./IPDAdditionalDetails";
 export { default as OtherVisitorDetails } from "./OtherVisitorDetails";
 export type { OtherVisitorFormData } from "./OtherVisitorDetails";
+export { default as BranchBasicInformation } from "./BranchBasicInformation";
+export { default as BranchBankInformation } from "./BranchBankInformation";

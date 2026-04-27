@@ -1,4 +1,31 @@
 import * as Yup from "yup";
+import { isValidEmailAddress } from "@/lib/utils/emailValidation";
+
+// Aadhaar validation helpers: first digit not 0/1, not sequential, not repeating
+function isAadharFirstDigitValid(value: string): boolean {
+  if (!value || value.length === 0) return true;
+  const first = value.trim().charAt(0);
+  return first >= "2" && first <= "9";
+}
+
+function isAadharSequential(value: string): boolean {
+  if (!value || value.length !== 12) return false;
+  const digits = value.replace(/\D/g, "").split("").map(Number);
+  const ascending = digits.every((d, i) => i === 0 || d === (digits[i - 1] + 1) % 10);
+  const descending = digits.every((d, i) => i === 0 || d === (digits[i - 1] + 9) % 10);
+  return ascending || descending;
+}
+
+function isAadharRepeatingOrSame(value: string): boolean {
+  if (!value || value.length !== 12) return false;
+  const s = value.replace(/\D/g, "");
+  if (/^(\d)\1{11}$/.test(s)) return true; // all same digit
+  if (/^(\d{2})\1{5}$/.test(s)) return true; // pattern length 2
+  if (/^(\d{3})\1{3}$/.test(s)) return true; // pattern length 3
+  if (/^(\d{4})\1{2}$/.test(s)) return true; // pattern length 4
+  if (/^(\d{6})\1{1}$/.test(s)) return true; // pattern length 6
+  return false;
+}
 
 // Visitor validation schema (id is optional for validation, used for UI tracking)
 // This schema is context-aware and will be enhanced in gateNewPatientSchema based on nationality
@@ -7,7 +34,9 @@ export const visitorSchema = Yup.object().shape({
   nameSelect: Yup.string()
     .trim()
     .required("Title is required"),
+  visitorContactNumber: Yup.string().trim().optional(),
   name: Yup.string().trim().required("Visitor Name is required")
+    .max(100, "Visitor Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
   country: Yup.string()
     .trim()
@@ -20,7 +49,10 @@ export const visitorSchema = Yup.object().shape({
       then: (schema) => schema
         .required("Visitor Aadhar Card No. is required")
         .length(12, "Visitor Aadhar Card No. must be exactly 12 digits")
-        .matches(/^\d+$/, "Visitor Aadhar Card No. must contain only digits"),
+        .matches(/^\d+$/, "Visitor Aadhar Card No. must contain only digits")
+        .test("aadhar-first-digit", "First digit cannot be 0 or 1", (value) => !value || isAadharFirstDigitValid(value))
+        .test("aadhar-sequential", "Aadhar cannot be a sequential pattern", (value) => !value || !isAadharSequential(value))
+        .test("aadhar-repeating", "Aadhar cannot be a repeating or same-digit pattern", (value) => !value || !isAadharRepeatingOrSame(value)),
       otherwise: (schema) => schema
         .test("skip-if-not-indian", "", function(value) {
           // Skip all validation if country is not Indian
@@ -83,7 +115,10 @@ export const newPatientEntrySchema = Yup.object().shape({
       then: (schema) => schema
         .required("Aadhar Card No. is required")
         .length(12, "Aadhar Card No. must be exactly 12 digits")
-        .matches(/^\d+$/, "Aadhar Card No. must contain only digits"),
+        .matches(/^\d+$/, "Aadhar Card No. must contain only digits")
+        .test("aadhar-first-digit", "First digit cannot be 0 or 1", (value) => !value || isAadharFirstDigitValid(value))
+        .test("aadhar-sequential", "Aadhar cannot be a sequential pattern", (value) => !value || !isAadharSequential(value))
+        .test("aadhar-repeating", "Aadhar cannot be a repeating or same-digit pattern", (value) => !value || !isAadharRepeatingOrSame(value)),
       otherwise: (schema) => schema.optional(),
     }),
   
@@ -121,6 +156,7 @@ export const newPatientEntrySchema = Yup.object().shape({
   patientName: Yup.string()
     .trim()
     .required("Patient Name is required")
+    .max(100, "Patient Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
   
   age: Yup.string()
@@ -150,8 +186,23 @@ export const newPatientEntrySchema = Yup.object().shape({
     }),
   
   emailAddress: Yup.string()
-    .email("Email Address is invalid")
-    .optional(),
+    .trim()
+    .max(100, "Email Address cannot exceed 100 characters")
+    .when("country", {
+      is: "6", // India — optional; validate format when provided
+      then: (schema) =>
+        schema.test("email-format", "Email Address is invalid", (value) => isValidEmailAddress(value)),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("Email Address is required")
+              .test("email-format", "Email Address is invalid", (value) => isValidEmailAddress(value)),
+          otherwise: (s) =>
+            s.test("email-format", "Email Address is invalid", (value) => isValidEmailAddress(value)),
+        }),
+    }),
   
   maritalStatus: Yup.string()
     .optional(),
@@ -184,10 +235,38 @@ export const newPatientEntrySchema = Yup.object().shape({
     .required("Country is required"),
   
   state: Yup.string()
-    .required("State is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("State is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("State is required"),
+        }),
+    }),
   
   city: Yup.string()
-    .required("District is required"),  
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("District is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("District is required"),
+        }),
+    }),  
   
   tehsil: Yup.string()
     .trim()
@@ -334,6 +413,9 @@ export const patientVisitorItemSchema = Yup.object().shape({
       "Aadhar Card Number must contain only digits",
       (value) => !value || /^\d+$/.test(value)
     )
+    .test("aadhar-first-digit", "First digit cannot be 0 or 1", (value) => !value || isAadharFirstDigitValid(value))
+    .test("aadhar-sequential", "Aadhar cannot be a sequential pattern", (value) => !value || !isAadharSequential(value))
+    .test("aadhar-repeating", "Aadhar cannot be a repeating or same-digit pattern", (value) => !value || !isAadharRepeatingOrSame(value))
     .test("unique-aadhar", "Aadhar Card Number must be unique across all visitors", function (value) {
       if (!value) return true;
       const trimmedValue = value.trim();
@@ -362,6 +444,7 @@ export const patientVisitorItemSchema = Yup.object().shape({
   visitorName: Yup.string()
     .trim()
     .required("Visitor Name is required")
+    .max(100, "Visitor Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
 
   patientNameSelect: Yup.string()
@@ -371,6 +454,7 @@ export const patientVisitorItemSchema = Yup.object().shape({
   patientName: Yup.string()
     .trim()
     .required("Patient Name is required")
+    .max(100, "Patient Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
 
   purpose: Yup.string()
@@ -378,33 +462,59 @@ export const patientVisitorItemSchema = Yup.object().shape({
     .required("Purpose is required")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
 
+  searchType: Yup.string()
+    .trim()
+    .required("Search Type is required")
+    .oneOf(["UHID", "Phone"], "Search Type must be UHID or Phone"),
+
   patientUHID: Yup.string()
     .trim()
-    .optional()
-    .test(
-      "min-length-or-empty",
-      "Patient UHID must be at least 10 characters",
-      (value) => !value || value.length >= 10
-    )
-    .test(
-      "alphanumeric-or-empty",
-      "Patient UHID must contain only letters and numbers",
-      (value) => !value || /^[a-zA-Z0-9]*$/.test(value)
-    ),
+    .when("searchType", {
+      is: "UHID",
+      then: (schema) =>
+        schema
+          .required("Patient UHID is required")
+          .min(9, "UHID must be at least 9 characters")
+          .max(20, "UHID cannot exceed 20 characters")
+          .matches(/^[a-zA-Z0-9]+$/, "Patient UHID must contain only letters and numbers"),
+      otherwise: (schema) =>
+        schema
+          .optional()
+          .test(
+            "length-or-empty",
+            "UHID must be 9 to 20 characters",
+            (value) => !value || (value.length >= 9 && value.length <= 20)
+          )
+          .test(
+            "alphanumeric-or-empty",
+            "Patient UHID must contain only letters and numbers",
+            (value) => !value || /^[a-zA-Z0-9]*$/.test(value)
+          ),
+    }),
 
   patientMobileNumber: Yup.string()
     .trim()
-    .optional()
-    .test(
-      "len-or-empty",
-      "Patient Mobile Number must be exactly 10 digits",
-      (value) => !value || value.length === 10
-    )
-    .test(
-      "digits-or-empty",
-      "Patient Mobile Number must contain only digits",
-      (value) => !value || /^\d+$/.test(value)
-    ),
+    .when("searchType", {
+      is: "Phone",
+      then: (schema) =>
+        schema
+          .required("Patient Mobile Number is required")
+          .length(10, "Patient Mobile Number must be exactly 10 digits")
+          .matches(/^\d+$/, "Patient Mobile Number must contain only digits"),
+      otherwise: (schema) =>
+        schema
+          .optional()
+          .test(
+            "len-or-empty",
+            "Patient Mobile Number must be exactly 10 digits",
+            (value) => !value || value.length === 10
+          )
+          .test(
+            "digits-or-empty",
+            "Patient Mobile Number must contain only digits",
+            (value) => !value || /^\d+$/.test(value)
+          ),
+    }),
 
   // Address
   pinCode: Yup.string()
@@ -431,10 +541,38 @@ export const patientVisitorItemSchema = Yup.object().shape({
     .required("Country is required"),
   
   state: Yup.string()
-    .required("State is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("State is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("State is required"),
+        }),
+    }),
   
   city: Yup.string()
-    .required("District is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("District is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("District is required"),
+        }),
+    }),
   
   tehsil: Yup.string()
     .trim()
@@ -485,7 +623,23 @@ export const gatePatientVisitorSchema = Yup.object().shape({
 
 // IPD Visitor validation schema (extends patientVisitorItemSchema with additional fields)
 export const ipdVisitorItemSchema = patientVisitorItemSchema.shape({
-  searchType: Yup.string().trim().optional(),
+  /**
+   * For IPD Visitor page we use `uhid` and `phoneNumber` fields (from IPDAdditionalDetails)
+   * instead of `patientUHID` / `patientMobileNumber` that are used on the OPD/Day Care
+   * Patient Visitor page. Those OPD-specific fields are never rendered or populated
+   * on the IPD Visitor screen, so they must NOT be required here or the form will
+   * fail validation silently on submit.
+   */
+  patientUHID: Yup.string()
+    .trim()
+    .optional(),
+  patientMobileNumber: Yup.string()
+    .trim()
+    .optional(),
+  searchType: Yup.string()
+    .trim()
+    .required("Search Type is required")
+    .oneOf(["UHID", "Phone"], "Search Type must be UHID or Phone"),
   phoneNumber: Yup.string()
     .trim()
     .when("searchType", {
@@ -493,19 +647,45 @@ export const ipdVisitorItemSchema = patientVisitorItemSchema.shape({
       then: (schema) =>
         schema
           .required("Phone Number is required")
-          .min(10, "Phone Number must be at least 10 digits")
+          .length(10, "Phone Number must be exactly 10 digits")
           .matches(/^\d+$/, "Phone Number must contain only digits"),
-      otherwise: (schema) => schema.optional(),
+      otherwise: (schema) =>
+        schema
+          .optional()
+          .test(
+            "len-or-empty",
+            "Phone Number must be exactly 10 digits",
+            (value) => !value || value.length === 10
+          )
+          .test(
+            "digits-or-empty",
+            "Phone Number must contain only digits",
+            (value) => !value || /^\d+$/.test(value)
+          ),
     }),
   uhid: Yup.string()
     .trim()
     .when("searchType", {
       is: "UHID",
-      then: (schema) => schema
-        .required("UHID is required")
-        .min(10, "UHID must be at least 10 characters")
-        .matches(/^[a-zA-Z0-9]*$/, "UHID must contain only letters and numbers"),
-      otherwise: (schema) => schema.optional(),
+      then: (schema) =>
+        schema
+          .required("UHID is required")
+          .min(9, "UHID must be at least 9 characters")
+          .max(20, "UHID cannot exceed 20 characters")
+          .matches(/^[a-zA-Z0-9]+$/, "UHID must contain only letters and numbers"),
+      otherwise: (schema) =>
+        schema
+          .optional()
+          .test(
+            "length-or-empty",
+            "UHID must be 9 to 20 characters",
+            (value) => !value || (value.length >= 9 && value.length <= 20)
+          )
+          .test(
+            "alphanumeric-or-empty",
+            "UHID must contain only letters and numbers",
+            (value) => !value || /^[a-zA-Z0-9]*$/.test(value)
+          ),
     }),
   building: Yup.string().trim().optional(),
   roomNumber: Yup.string().trim().optional(),
@@ -541,7 +721,10 @@ export const otherVisitorItemSchema = Yup.object().shape({
       "digits-or-empty",
       "Aadhar Card Number must contain only digits",
       (value) => !value || /^\d+$/.test(value)
-    ),
+    )
+    .test("aadhar-first-digit", "First digit cannot be 0 or 1", (value) => !value || isAadharFirstDigitValid(value))
+    .test("aadhar-sequential", "Aadhar cannot be a sequential pattern", (value) => !value || !isAadharSequential(value))
+    .test("aadhar-repeating", "Aadhar cannot be a repeating or same-digit pattern", (value) => !value || !isAadharRepeatingOrSame(value)),
 
   visitorNameSelect: Yup.string()
     .trim()
@@ -590,10 +773,38 @@ export const otherVisitorItemSchema = Yup.object().shape({
     .required("Country is required"),
 
   state: Yup.string()
-    .required("State is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("State is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("State is required"),
+        }),
+    }),
 
   city: Yup.string()
-    .required("District is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("District is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("District is required"),
+        }),
+    }),
   
   tehsil: Yup.string()
     .trim()
@@ -660,6 +871,7 @@ export const patientMedicineTypeItemSchema = Yup.object().shape({
   patientName: Yup.string()
     .trim()
     .required("Patient Name is required")
+    .max(100, "Patient Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
 
   uhid: Yup.string()
@@ -692,10 +904,38 @@ export const patientMedicineTypeItemSchema = Yup.object().shape({
     .required("Country is required"),
 
   state: Yup.string()
-    .required("State is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("State is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("State is required"),
+        }),
+    }),
 
   city: Yup.string()
-    .required("District is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("District is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("District is required"),
+        }),
+    }),
   
   tehsil: Yup.string()
     .trim()
@@ -843,10 +1083,38 @@ export const gatePatientMedicineTypeSchema = Yup.object().shape({
     .required("Country is required"),
 
   state: Yup.string()
-    .required("State is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("State is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("State is required"),
+        }),
+    }),
 
   city: Yup.string()
-    .required("District is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("District is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("District is required"),
+        }),
+    }),
   
   tehsil: Yup.string()
     .trim()
@@ -915,11 +1183,19 @@ export const revisitPatientSchema = Yup.object().shape({
   uhid: Yup.string()
     .trim()
     .test(
-      "uhid-length",
-      "UHID must be at least 10 characters",
+      "uhid-min",
+      "UHID must be at least 9 characters",
       function (value) {
         if (!value || value.trim().length === 0) return true; // Optional if other fields are filled
-        return value.length >= 10;
+        return value.length >= 9;
+      }
+    )
+    .test(
+      "uhid-max",
+      "UHID cannot exceed 20 characters",
+      function (value) {
+        if (!value || value.trim().length === 0) return true;
+        return value.length <= 20;
       }
     )
     .matches(/^[a-zA-Z0-9]*$/, "UHID must contain only letters and numbers"),
@@ -934,7 +1210,10 @@ export const revisitPatientSchema = Yup.object().shape({
         return value.length === 12;
       }
     )
-    .matches(/^\d*$/, "Aadhar Card Number must contain only digits"),
+    .matches(/^\d*$/, "Aadhar Card Number must contain only digits")
+    .test("aadhar-first-digit", "First digit cannot be 0 or 1", (value) => !value || value.trim().length === 0 || isAadharFirstDigitValid(value))
+    .test("aadhar-sequential", "Aadhar cannot be a sequential pattern", (value) => !value || !isAadharSequential(value))
+    .test("aadhar-repeating", "Aadhar cannot be a repeating or same-digit pattern", (value) => !value || !isAadharRepeatingOrSame(value)),
   
   preBooking: Yup.string()
     .trim()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useFormik } from "formik";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -13,6 +13,7 @@ import MedicalForm from "@/app/registration/medical";
 import PatientOldHistory from "@/components/registration/PatientOldHistory";
 import { registrationPersonalDetailsSchema, type RegistrationPersonalDetailsFormValues } from "@/lib/validation/registrationSchemas";
 import { useGetAppointmentByIdQuery, useUpdateAppointmentVitalsMedicalMutation, useLazyGetAppointmentsListQuery } from "@/store/api/registrationApi";
+import { parseYesNoDetailsValue, buildYesNoDetailsPayload } from "@/lib/utils/common";
 import { useSelector } from "react-redux";
 import { selectUserId } from "@/store/slices/authSlice";
 import type { RootState } from "@/store";
@@ -22,15 +23,16 @@ export default function VitalsMedicalInfoPage() {
     const params = useParams();
     const searchParams = useSearchParams();
     const appointmentId = params?.patientId as string; // This is actually the appointment ID
-    // Get gender from URL query parameter
-    const genderFromUrl = searchParams.get("gender");
+    // Get gender and patient name from URL query parameters
+    const genderFromUrl = searchParams?.get("gender");
+    const patientNameFromUrl = searchParams?.get("patientName");
     
     const [currentStep, setCurrentStep] = useState(0); // 0 = Vitals, 1 = Medical Info
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const [showPatientHistoryDialog, setShowPatientHistoryDialog] = useState(false);
-    const [patientName, setPatientName] = useState("");
+    const [patientName, setPatientName] = useState(patientNameFromUrl || "");
 
     const vitalsMedicalSteps = [
         { number: "Step 01", label: `Vitals` },
@@ -48,6 +50,13 @@ export default function VitalsMedicalInfoPage() {
         },
         { skip: !appointmentId }
     );
+
+    const vitalsDietListBranchId = useMemo(() => {
+        const bid = appointmentData?.data?.branchId;
+        if (bid == null) return undefined;
+        const n = typeof bid === "number" ? bid : Number(bid);
+        return Number.isFinite(n) && n >= 1 ? n : undefined;
+    }, [appointmentData?.data?.branchId]);
     
     // Mutation for updating appointment vitals/medical
     const [updateAppointmentVitalsMedical, { isLoading: isSubmitting }] = useUpdateAppointmentVitalsMedicalMutation();
@@ -66,10 +75,12 @@ export default function VitalsMedicalInfoPage() {
     // Extract patient name and gender from appointment data
     useEffect(() => {
         if (appointmentData?.data) {
-            const name = appointmentData.data.registration?.patientName || 
-                        appointmentData.data.registration?.patient || 
-                        "Patient";
-            setPatientName(name);
+            if (!patientNameFromUrl) {
+                const name = appointmentData.data.registration?.patientName || 
+                            appointmentData.data.registration?.patient || 
+                            "Patient";
+                setPatientName(name);
+            }
             
             // Populate gender - prioritize URL query parameter, fallback to API data
             const gender = genderFromUrl || appointmentData.data.registration?.gender || "";
@@ -83,6 +94,22 @@ export default function VitalsMedicalInfoPage() {
                 const lastDayFullDiet = (registration as any).lastDayFullDiet || "";
                 if (lastDayFullDiet) {
                     formik.setFieldValue("lastDayFullDiet", lastDayFullDiet, false);
+                }
+            }
+
+            // Populate allergies / surgeries from appointment data (split detail string into Yes/No + details)
+            if (registration) {
+                const rawAllergies = (registration as any).allergies;
+                if (rawAllergies != null && String(rawAllergies).trim() !== "") {
+                    const { yesNo, details } = parseYesNoDetailsValue(String(rawAllergies));
+                    if (yesNo) formik.setFieldValue("allergies", yesNo, false);
+                    formik.setFieldValue("allergiesDetails", details, false);
+                }
+                const rawSurgeries = (registration as any).surgeries;
+                if (rawSurgeries != null && String(rawSurgeries).trim() !== "") {
+                    const { yesNo, details } = parseYesNoDetailsValue(String(rawSurgeries));
+                    if (yesNo) formik.setFieldValue("surgeries", yesNo, false);
+                    formik.setFieldValue("surgeriesDetails", details, false);
                 }
             }
         }
@@ -142,7 +169,9 @@ export default function VitalsMedicalInfoPage() {
         weight: "",
         bloodGroup: "",
         allergies: "",
+        allergiesDetails: "",
         surgeries: "",
+        surgeriesDetails: "",
         dietType: "",
         lastDayFullDiet: "",
         bloodPressure: "",
@@ -250,9 +279,9 @@ export default function VitalsMedicalInfoPage() {
             const isThyroid = values.thyroid?.toLowerCase() === "yes";
             const isMenstrual = values.menstrual?.toLowerCase() === "yes";
             
-            // Map allergies and surgeries to strings (not booleans in registration object)
-            const allergiesString = values.allergies || undefined;
-            const surgeriesString = values.surgeries || undefined;
+            // Allergies / Surgeries: send the free-text details when "Yes", "no" when "No", or omit when empty.
+            const allergiesString = buildYesNoDetailsPayload(values.allergies, (values as any).allergiesDetails);
+            const surgeriesString = buildYesNoDetailsPayload(values.surgeries, (values as any).surgeriesDetails);
             
             // Build addictionType array from checkboxes (only known types) - send in lowercase
             const addictionType: string[] = [];
@@ -413,6 +442,7 @@ export default function VitalsMedicalInfoPage() {
                             onNext={handleNextStep}
                             onBack={handleBackSteps}
                             showBackButton={false}
+                            branchId={vitalsDietListBranchId}
                         />
                     )}
 

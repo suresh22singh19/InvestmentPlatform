@@ -1,6 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import { Tooltip } from "@/components/ui";
+
+/** Long names wrap inside the tooltip up to this width; short names stay tight to the text. */
+const USER_CARD_NAME_TOOLTIP_MAX_WIDTH_PX = 240;
 
 type UserCardProps = {
   id: number;
@@ -15,6 +19,8 @@ type UserCardProps = {
   onView: () => void;
   onEdit: () => void;
   onSetDate: () => void;
+  showViewButton?: boolean;
+  showEditButton?: boolean;
 };
 
 export const UserCard = ({
@@ -30,16 +36,33 @@ export const UserCard = ({
   onView,
   onEdit,
   onSetDate,
+  showViewButton = true,
+  showEditButton = true,
 }: UserCardProps) => {
   return (
     <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-5 shadow-[0px_1px_8px_rgba(25,33,61,0.06)]">
-      <div className="-mx-5 mb-5 flex items-start justify-between border-b border-[#DFE0E2] px-5 pb-5">
-        <div className="flex items-center gap-3">
+      <div className="-mx-5 mb-5 flex items-start justify-between gap-3 border-b border-[#DFE0E2] px-5 pb-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F8F2] text-sm font-medium text-[#0B8C00]">
             {id}
           </div>
-          <div className="min-w-0">
-            <h3 className="text-base font-semibold leading-[120%] text-[#434956]">{name}</h3>
+          <div className="min-w-0 flex-1">
+            <Tooltip
+              position="top"
+              maxWidth={USER_CARD_NAME_TOOLTIP_MAX_WIDTH_PX + 48}
+              content={
+                <span
+                  className="inline-block w-max whitespace-normal break-words text-left text-inherit"
+                  style={{ maxWidth: USER_CARD_NAME_TOOLTIP_MAX_WIDTH_PX }}
+                >
+                  {name}
+                </span>
+              }
+            >
+              <h3 className="inline-block w-max max-w-full truncate text-base font-semibold leading-[120%] text-[#434956]">
+                {name}
+              </h3>
+            </Tooltip>
             <p className="mt-0.5 text-xs leading-[120%] text-[#525763]">{email}</p>
           </div>
         </div>
@@ -107,30 +130,34 @@ export const UserCard = ({
       </div>
 
       <div className="-mx-5 flex items-center gap-2 border-t border-[#DFE0E2] px-5 pt-5">
-        <button
-          type="button"
-          onClick={onView}
-          className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
-        >
-          <Image src="/icons/ViewLightIcon.svg" alt="View" width={14} height={14} className="shrink-0" />
-          View
-        </button>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
-        >
-          <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
-          Edit
-        </button>
-        <button
+        {showViewButton ? (
+          <button
+            type="button"
+            onClick={onView}
+            className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
+          >
+            <Image src="/icons/ViewLightIcon.svg" alt="View" width={14} height={14} className="shrink-0" />
+            View
+          </button>
+        ) : null}
+        {showEditButton ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
+          >
+            <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
+            Edit
+          </button>
+        ) : null}
+        {/* <button
           type="button"
           onClick={onSetDate}
           className="flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
         >
           <Image src="/icons/CalenderLightIcon.svg" alt="Set Date" width={14} height={14} className="shrink-0" />
           Set Date
-        </button>
+        </button> */}
       </div>
     </div>
   );

@@ -29,6 +29,32 @@ export interface PatientReportData {
   rbs: string;
 }
 
+/** Show menstrual history line only for female patients (not male / unknown). */
+function isFemalePatientForReport(gender: string): boolean {
+  const g = (gender || "").trim().toLowerCase();
+  if (!g) return false;
+  if (g === "male" || g === "m" || g.startsWith("male")) return false;
+  return g === "female" || g === "f" || g.startsWith("female");
+}
+
+/** Gender on PDF: first letter capital per word (male → Male, female → Female). */
+function formatGenderForDisplay(gender: string): string {
+  const raw = (gender || "").trim();
+  if (!raw) return "";
+  return raw
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+/** Doctor line on PDF: always "Dr. {name}"; avoids "Dr. Dr." if API already sends a prefix. */
+function formatDoctorNameForDisplay(name: string): string {
+  const raw = (name || "").trim();
+  if (!raw) return "";
+  const withoutPrefix = raw.replace(/^(dr\.?|doctor)\s+/i, "").trim();
+  return withoutPrefix ? `Dr. ${withoutPrefix}` : "Dr.";
+}
+
 // Sidebar treatment categories
 const SIDEBAR_DATA = [
   {
@@ -272,21 +298,42 @@ export const generatePatientReportPDF = async (
 
   // ---- Patient Info (left side) ----
   doc.setFontSize(10);
-  setEnglishFont(doc, "bold");
   doc.setTextColor(midGray[0], midGray[1], midGray[2]);
+  setEnglishFont(doc, "normal");
   const nameLabel = "Name: ";
+  const nameLabelWidth = doc.getTextWidth(nameLabel);
   doc.text(nameLabel, mainContentX, mainY);
+  setEnglishFont(doc, "bold");
   doc.setTextColor(blackColor[0], blackColor[1], blackColor[2]);
-  doc.text(data.patientName || "", mainContentX + doc.getTextWidth(nameLabel), mainY);
-  mainY += 5;
+  // Wrap patient name within available width on the left column so it doesn't overlap other fields
+  const nameX = mainContentX + nameLabelWidth;
+  const nameMaxWidth = doctorInfoX - nameX - 4; // leave small gap before doctor column
+  const nameLines = doc.splitTextToSize(data.patientName || "", Math.max(nameMaxWidth, 40)) as string[];
+  nameLines.forEach((line: string, index: number) => {
+    doc.text(line, nameX, mainY + index * 4.5);
+  });
+  mainY += 4.5 * nameLines.length + 1;
 
+  setEnglishFont(doc, "normal");
   doc.setTextColor(midGray[0], midGray[1], midGray[2]);
   const guardianLabel = "W/o,D/o,S/o: ";
+  const guardianLabelWidth = doc.getTextWidth(guardianLabel);
   doc.text(guardianLabel, mainContentX, mainY);
+  setEnglishFont(doc, "bold");
   doc.setTextColor(blackColor[0], blackColor[1], blackColor[2]);
-  doc.text(data.guardianName || "", mainContentX + doc.getTextWidth(guardianLabel), mainY);
-  mainY += 5;
+  // Same wrap width as patient name — avoid overlapping doctor / Reg. No. column
+  const guardianX = mainContentX + guardianLabelWidth;
+  const guardianMaxWidth = doctorInfoX - guardianX - 4;
+  const guardianLines = doc.splitTextToSize(
+    data.guardianName || "",
+    Math.max(guardianMaxWidth, 40)
+  ) as string[];
+  guardianLines.forEach((line: string, index: number) => {
+    doc.text(line, guardianX, mainY + index * 4.5);
+  });
+  mainY += 4.5 * guardianLines.length + 1;
 
+  setEnglishFont(doc, "normal");
   doc.setTextColor(midGray[0], midGray[1], midGray[2]);
   doc.text("Chief Complaint", mainContentX, mainY);
   mainY += 5;
@@ -294,14 +341,20 @@ export const generatePatientReportPDF = async (
   doc.text("History", mainContentX, mainY);
   mainY += 5;
 
-  doc.text("Menstrual History", mainContentX, mainY);
+  if (isFemalePatientForReport(data.gender)) {
+    doc.text("Menstrual History", mainContentX, mainY);
+  }
+  // Reserve the same vertical space whether the line is shown (female) or not (male), so Diagnosis stays aligned
   mainY += 8;
 
+  setEnglishFont(doc, "normal");
   doc.setTextColor(midGray[0], midGray[1], midGray[2]);
   const diagLabel = "Diagnosis: ";
+  const diagLabelWidth = doc.getTextWidth(diagLabel);
   doc.text(diagLabel, mainContentX, mainY);
+  setEnglishFont(doc, "bold");
   doc.setTextColor(blackColor[0], blackColor[1], blackColor[2]);
-  doc.text(data.diagnosis || "", mainContentX + doc.getTextWidth(diagLabel), mainY);
+  doc.text(data.diagnosis || "", mainContentX + diagLabelWidth, mainY);
 
   // ---- Doctor Info (right side) ----
   let doctorY = headerY + 6;
@@ -309,7 +362,7 @@ export const generatePatientReportPDF = async (
   doc.setFontSize(11);
   setEnglishFont(doc, "bold");
   doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
-  doc.text(data.doctorName || "", doctorInfoX, doctorY);
+  doc.text(formatDoctorNameForDisplay(data.doctorName), doctorInfoX, doctorY);
   doctorY += 5;
 
   doc.setFontSize(9);
@@ -328,13 +381,13 @@ export const generatePatientReportPDF = async (
     { label: "UHID No.:", value: data.uhid },
     { label: "OPD No.:", value: data.opdNo },
     { label: "Age:", value: data.age },
-    { label: "Gender:", value: data.gender },
+    { label: "Gender:", value: formatGenderForDisplay(data.gender) },
     { label: "Date:", value: data.date },
   ];
 
   doc.setFontSize(9);
   labelValuePairs.forEach((pair) => {
-    setEnglishFont(doc, "bold");
+    setEnglishFont(doc, "normal");
     doc.setTextColor(midGray[0], midGray[1], midGray[2]);
     const pairLabel = `${pair.label} `;
     doc.text(pairLabel, doctorInfoX, doctorY);
@@ -420,6 +473,7 @@ export const generatePatientReportPDF = async (
   doc.text("Vitals:", mainContentX, mainY);
   mainY += 5;
 
+  // Always show these rows so layout stays consistent when vitals are missing
   const vitals = [
     { label: "B.P.:", value: data.bloodPressure },
     { label: "Sugar Level:", value: data.sugarLevel },
@@ -430,7 +484,7 @@ export const generatePatientReportPDF = async (
 
   doc.setFontSize(9);
   vitals.forEach((v) => {
-    setEnglishFont(doc, "bold");
+    setEnglishFont(doc, "normal");
     doc.setTextColor(midGray[0], midGray[1], midGray[2]);
     const vLabel = `${v.label} `;
     doc.text(vLabel, mainContentX, mainY);
@@ -638,5 +692,5 @@ export const generatePatientReportPDF = async (
   const safeFileName = (data.patientName || "Patient")
     .replace(/[^a-zA-Z0-9 ]/g, "")
     .trim();
-  doc.save(`${safeFileName}_Report.pdf`);
+  doc.save(`${safeFileName}_Form.pdf`);
 };

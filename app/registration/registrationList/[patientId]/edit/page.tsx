@@ -45,14 +45,15 @@ export default function EditRegistrationFormPage() {
     // Fetch countries, states, and cities for converting names to IDs when loading form
     const { data: countriesData } = useGetCountriesQuery();
     const [selectedCountryId, setSelectedCountryId] = useState<string>("");
+    const editCountryIsIndia = selectedCountryId === "6";
     const { data: statesData } = useGetStatesQuery(
-        selectedCountryId ? { countryId: selectedCountryId } : undefined,
-        { skip: !selectedCountryId }
+        selectedCountryId && editCountryIsIndia ? { countryId: selectedCountryId } : undefined,
+        { skip: !selectedCountryId || !editCountryIsIndia }
     );
     const [selectedStateId, setSelectedStateId] = useState<string>("");
     const { data: citiesData } = useGetCitiesQuery(
-        selectedStateId ? { stateId: selectedStateId } : undefined,
-        { skip: !selectedStateId }
+        selectedStateId && editCountryIsIndia ? { stateId: selectedStateId } : undefined,
+        { skip: !selectedStateId || !editCountryIsIndia }
     );
     const [getStates] = useLazyGetStatesQuery();
     const [getCities] = useLazyGetCitiesQuery();
@@ -298,12 +299,12 @@ export default function EditRegistrationFormPage() {
                 aadharCardNumber: patientData.aadharCardNo || "",
                 patientNameSelect: patientData.patientTitle || "",
                 patientName: patientData.patientName || "",
-                gender: patientData.gender || "",
+                gender: patientData.gender?.toLowerCase() || "",
                 age: patientData.age || "",
-                maritalStatus: patientData.maritalStatus || "",
+                maritalStatus: patientData.maritalStatus?.toLowerCase() || "",
                 fathersHusbandsNameSelect: patientData.guardianTitle || "",
                 fathersHusbandsName: patientData.guardianName || "",
-                religion: patientData.religion || "",
+                religion: patientData.religion?.toLowerCase() || "",
                 specificReligion: patientData.specificReligion || "",
                 occupation: patientData.occupation || "",
                 emailAddress: patientData.emailAddress || "",
@@ -673,6 +674,9 @@ export default function EditRegistrationFormPage() {
 
                     {/* Personal Details Component */}
                     <RegistrationPersonalDetails
+                        emailRequiredByAddressCountry={
+                            Boolean(formik.values.country) && formik.values.country !== "6"
+                        }
                         formData={{
                             contactNumber: formik.values.contactNumber || "",
                             whatsappNo: formik.values.whatsappNo || "",
@@ -716,12 +720,13 @@ export default function EditRegistrationFormPage() {
                                 }
                             }
                             
-                            // For email field: validate on change once touched
+                            // Email: re-validate after value updates so errors clear when criteria met
                             if (field === "emailAddress") {
-                                const isTouched = formik.touched[field as keyof typeof formik.touched];
-                                if (isTouched) {
+                                const touched = formik.touched.emailAddress;
+                                const err = formik.errors.emailAddress;
+                                if (touched || err) {
                                     setTimeout(() => {
-                                        formik.validateField(field);
+                                        void formik.validateField("emailAddress");
                                     }, 0);
                                 }
                             }
@@ -749,6 +754,7 @@ export default function EditRegistrationFormPage() {
                         }}
                         errors={getFormErrors()}
                         readOnlyFields={["contactNumber", "jsHealthCardNo"]}
+                        disableOldContactNumberInDialog={true}
                     />
 
                     {/* Address Details Component */}
@@ -766,6 +772,12 @@ export default function EditRegistrationFormPage() {
                         }}
                         onChange={(field, value) => {
                             formik.setFieldValue(field, value, false);
+
+                            if (field === "country") {
+                                setTimeout(() => {
+                                    formik.validateField("emailAddress");
+                                }, 10);
+                            }
 
                             // For select fields only (country, state, city, tehsil, area), if a value is selected, mark as touched and validate immediately
                             // But only if address fields are ready (IDs have been converted from names)

@@ -326,7 +326,7 @@ export default function SMSPage() {
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add SMS
+                  <span className="text-hide">Add SMS</span>
                 </button>
               </div>
             </div>

@@ -2,11 +2,13 @@
 
 import React from "react";
 
+type CardStatus = "Complete" | "In Progress" | "-";
+
 type ConfigurationProgressCardProps = {
   title: string;
   description: string;
   value: string;
-  status: "Complete" | "In Progress";
+  status: CardStatus;
   icon: React.ReactNode;
   iconBgColor?: string;
   className?: string;
@@ -22,6 +24,13 @@ export const ConfigurationProgressCard = ({
   className = "",
 }: ConfigurationProgressCardProps) => {
   const isComplete = status === "Complete";
+  const isNA = status === "-";
+
+  const badgeClass = isNA
+    ? "bg-gray-100 text-gray-600"
+    : isComplete
+      ? "bg-green-100 text-green-700"
+      : "bg-yellow-100 text-yellow-700";
 
   return (
     <div className={`rounded-[12px] border border-gray-200 bg-white p-4 shadow-sm ${className}`}>
@@ -29,11 +38,7 @@ export const ConfigurationProgressCard = ({
         <div className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-[12px] ${iconBgColor}`}>
           {icon}
         </div>
-        <div className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1 ${
-          isComplete 
-            ? "bg-green-100 text-green-700" 
-            : "bg-yellow-100 text-yellow-700"
-        }`}>
+        <div className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1 ${badgeClass}`}>
           {isComplete && (
             <svg
               className="h-3 w-3"
@@ -52,10 +57,10 @@ export const ConfigurationProgressCard = ({
           {status}
         </div>
       </div>
-      
+
       <h3 className="text-base font-semibold text-gray-900 mb-1">{title}</h3>
       <p className="text-sm text-gray-600 mb-3">{description}</p>
-      
+
       <div className="text-2xl font-bold text-gray-900">{value}</div>
     </div>
   );

@@ -22,6 +22,7 @@ import {
     useUpdateDiagnosisCategoryMutation
 } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/usePermission";
 
 type Diagnosis = {
     id: number;
@@ -117,6 +118,11 @@ const StatusFilterSelect = ({
 };
 
 export default function DiagnosisPage() {
+    const diagnosisPermission = usePermission("settings", { subModule: "diagnosis" });
+    const canView = diagnosisPermission.canView;
+    const canAdd = diagnosisPermission.canAdd;
+    const canEdit = diagnosisPermission.canEdit;
+
     const [searchTerm, setSearchTerm] = useState<string>(() => loadState().searchTerm);
     const [currentPage, setCurrentPage] = useState<number>(() => loadState().currentPage);
     const [itemsPerPage, setItemsPerPage] = useState<number>(() => loadState().itemsPerPage);
@@ -149,17 +155,17 @@ export default function DiagnosisPage() {
         });
     }, [searchTerm, currentPage, itemsPerPage]);
 
-    // Reset to page 1 when status filter changes
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [statusFilter]);
-
     // Fetch diagnosis categories from API
-    const { data: diagnosisData, isLoading: isLoadingDiagnosis, refetch: refetchDiagnosis } = useGetDiagnosisCategoriesQuery({
-        page: currentPage,
-        limit: itemsPerPage,
-        search: searchParam,
-    });
+    const { data: diagnosisData, isLoading: isLoadingDiagnosis, refetch: refetchDiagnosis } = useGetDiagnosisCategoriesQuery(
+        {
+            page: currentPage,
+            limit: itemsPerPage,
+            search: searchParam,
+            sort: "createdAt",
+            order: "desc",
+        },
+        { skip: !canView }
+    );
 
     // Create diagnosis mutation
     const [createDiagnosisCategory, { isLoading: isCreating }] = useCreateDiagnosisCategoryMutation();
@@ -185,6 +191,7 @@ export default function DiagnosisPage() {
         : diagnoses;
 
     const handleAddNew = () => {
+        if (!canAdd) return;
         setFormValues({
             name: "",
             status: "active",
@@ -195,8 +202,8 @@ export default function DiagnosisPage() {
     };
 
     const handleEdit = (diagnosis: Diagnosis) => {
+        if (!canEdit) return;
         setSelectedDiagnosis(diagnosis);
-        const fullDiagnosis = fullDiagnosisData.find((d) => d.id === diagnosis.id);
         setFormValues({
             name: diagnosis.name,
             status: diagnosis.status === "Active" ? "active" : "inactive",
@@ -206,6 +213,7 @@ export default function DiagnosisPage() {
     };
 
     const handleView = (diagnosis: Diagnosis) => {
+        if (!canView) return;
         setSelectedDiagnosis(diagnosis);
         setFormValues({
             name: diagnosis.name,
@@ -227,6 +235,9 @@ export default function DiagnosisPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (dialogMode === "add" && !canAdd) return;
+        if (dialogMode === "edit" && !canEdit) return;
 
         if (!validateForm()) {
             return;
@@ -270,20 +281,23 @@ export default function DiagnosisPage() {
             });
             setFormErrors({});
             setSelectedDiagnosis(null);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(`Failed to ${dialogMode === "add" ? "create" : "update"} diagnosis:`, error);
-            
-            // Handle error - show error message
+
             let errorMsg = `Failed to ${dialogMode === "add" ? "create" : "update"} diagnosis. Please try again.`;
-            
-            if (error?.data?.message) {
-                errorMsg = error.data.message;
-            } else if (error?.data?.error) {
-                errorMsg = error.data.error;
-            } else if (error?.error) {
-                errorMsg = error.error;
-            } else if (error?.message) {
-                errorMsg = error.message;
+            const err = error as {
+                data?: { message?: string; error?: string };
+                error?: string;
+                message?: string;
+            };
+            if (err?.data?.message) {
+                errorMsg = err.data.message;
+            } else if (err?.data?.error) {
+                errorMsg = err.data.error;
+            } else if (err?.error) {
+                errorMsg = err.error;
+            } else if (err?.message) {
+                errorMsg = err.message;
             }
             
             setApiErrorMessage(errorMsg);
@@ -308,71 +322,99 @@ export default function DiagnosisPage() {
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
-                    <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-                        <div className="mb-6 flex items-center justify-between">
-                            <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
-
-                            <div className="flex items-center gap-3">
-                                <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
-                                <div className="w-[300px]">
-                                    <TableSearchInput
-                                        value={searchTerm}
-                                        onChange={setSearchTerm}
-                                        placeholder="Search Here..."
-                                    />
-                                </div>
-                                
-                                <button
-                                    type="button"
-                                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
-                                    onClick={handleAddNew}
-                                >
-                                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                                    Add Diagnosis
-                                </button>
-                            </div>
+                    {!canView ? (
+                        <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                            You don&apos;t have permission to view diagnosis.
                         </div>
+                    ) : (
+                        <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+                            <div className="mb-6 flex items-center justify-between">
+                                <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
-                        {isLoadingDiagnosis ? (
-                            <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
-                        ) : (
-                            <>
-                                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                                    {filteredDiagnoses.map((diagnosis) => (
-                                        <PanelCard
-                                            key={diagnosis.id}
-                                            id={diagnosis.id}
-                                            name={diagnosis.name}
-                                            status={diagnosis.status}
-                                            onView={() => handleView(diagnosis)}
-                                            onEdit={() => handleEdit(diagnosis)}
+                                <div className="flex items-center gap-3">
+                                    <StatusFilterSelect
+                                        value={statusFilter}
+                                        onChange={(next) => {
+                                            setStatusFilter(next);
+                                            setCurrentPage(1);
+                                        }}
+                                    />
+                                    <div className="w-[300px]">
+                                        <TableSearchInput
+                                            value={searchTerm}
+                                            onChange={(value) => {
+                                                setSearchTerm((prev) => {
+                                                    if (prev !== value) setCurrentPage(1);
+                                                    return value;
+                                                });
+                                            }}
+                                            placeholder="Search Here..."
                                         />
-                                    ))}
+                                    </div>
+
+                                    {canAdd ? (
+                                        <button
+                                            type="button"
+                                            className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                                            onClick={handleAddNew}
+                                        >
+                                            <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                                            <span className="text-hide">Add Diagnosis</span>
+                                        </button>
+                                    ) : null}
                                 </div>
+                            </div>
 
-                                {filteredDiagnoses.length === 0 && (
-                                    <div className="py-12 text-center text-sm text-[#9CA3AF]">No diagnoses found</div>
-                                )}
-                            </>
-                        )}
+                            {isLoadingDiagnosis ? (
+                                <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                                        {filteredDiagnoses.map((diagnosis) => (
+                                            <PanelCard
+                                                key={diagnosis.id}
+                                                id={diagnosis.id}
+                                                name={diagnosis.name}
+                                                status={diagnosis.status}
+                                                showViewButton={canView}
+                                                showEditButton={canEdit}
+                                                onView={() => handleView(diagnosis)}
+                                                onEdit={() => handleEdit(diagnosis)}
+                                            />
+                                        ))}
+                                    </div>
 
-                        {!isLoadingDiagnosis && (diagnosisData?.total || filteredDiagnoses.length) > 0 && (
-                            <Pagination
-                                currentPage={currentPage}
-                                totalItems={diagnosisData?.total || filteredDiagnoses.length}
-                                itemsPerPage={itemsPerPage}
-                                onPageChange={handlePageChange}
-                                onItemsPerPageChange={handleItemsPerPageChange}
-                                itemsPerPageOptions={[10, 20, 50, 100]}
-                            />
-                        )}
-                    </div>
+                                    {filteredDiagnoses.length === 0 && (
+                                        <div className="py-12 text-center text-sm text-[#9CA3AF]">No diagnoses found</div>
+                                    )}
+                                </>
+                            )}
+
+                            {!isLoadingDiagnosis && (diagnosisData?.total || filteredDiagnoses.length) > 0 && (
+                                <Pagination
+                                    currentPage={currentPage}
+                                    totalItems={diagnosisData?.total || filteredDiagnoses.length}
+                                    itemsPerPage={itemsPerPage}
+                                    onPageChange={handlePageChange}
+                                    onItemsPerPageChange={handleItemsPerPageChange}
+                                    itemsPerPageOptions={[10, 20, 50, 100]}
+                                />
+                            )}
+                        </div>
+                    )}
                 </ListBorder>
             </div>
 
             {/* Add/Edit/View Dialog */}
             <Dialog
-                open={dialogMode !== null}
+                open={
+                    dialogMode !== null &&
+                    (dialogMode === "add"
+                        ? canAdd
+                        : dialogMode === "edit"
+                          ? canEdit
+                          : canView)
+                }
                 onClose={() => {
                     setDialogMode(null);
                     setFormErrors({});
@@ -417,11 +459,14 @@ export default function DiagnosisPage() {
                                     label="Name *"
                                     value={formValues.name}
                                     onChange={(event) => {
-                                        setFormValues((prev) => ({ ...prev, name: event.target.value }));
+                                        let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                        value = value.slice(0, 100);
+                                        setFormValues((prev) => ({ ...prev, name: value }));
                                         setFormErrors((prev) => ({ ...prev, name: "" }));
                                     }}
                                     height={44}
                                     placeholder="Name"
+                                    maxLength={100}
                                     required
                                     error={formErrors.name}
                                 />

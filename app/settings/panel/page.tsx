@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -17,10 +17,18 @@ import {
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
-import { useGetPanelsQuery, useCreatePanelMutation, useUpdatePanelMutation } from "@/store/api/settingsApi";
+import {
+  useGetPanelsQuery,
+  useCreatePanelMutation,
+  useUpdatePanelMutation,
+  useGetBranchesQuery,
+} from "@/store/api/settingsApi";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useExport, type ExportColumn } from "@/hooks/useExport";
 import { API_BASE_URL } from "@/lib/config/api";
+import { getVisitClientIp } from "@/lib/api/clientVisitIp";
+import { usePermission } from "@/hooks/usePermission";
 
 type Panel = {
   id: number;
@@ -81,7 +89,24 @@ const saveState = (state: StoredState) => {
   }
 };
 
+function capitalizeFirst(str: string | null | undefined): string {
+  if (str == null || str === "") return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+function branchSelectLabel(name: string, typeRaw: string | null | undefined): string {
+  const t = (typeRaw ?? "").trim();
+  if (!t) return name;
+  return `${name} (${capitalizeFirst(t)})`;
+}
+
 export default function PanelPage() {
+  const panelPermission = usePermission("settings", { subModule: "panel" });
+  const canView = panelPermission.canView;
+  const canAdd = panelPermission.canAdd;
+  const canEdit = panelPermission.canEdit;
+  const canDownload = panelPermission.canDownload;
+
   const [searchTerm, setSearchTerm] = useState<string>(() => loadState().searchTerm);
   const [currentPage, setCurrentPage] = useState<number>(() => loadState().currentPage);
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => loadState().itemsPerPage);
@@ -92,10 +117,73 @@ export default function PanelPage() {
     status: "active" as "active" | "inactive",
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  /** Add/Edit/View dialog: super admin can change; others locked to the page branch (disabled). */
+  const [formBranchId, setFormBranchId] = useState("");
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
+
+  const {
+    selectedBranchFilter,
+    setSelectedBranchFilter,
+    branchFilterOptions,
+    isLoadingBranches,
+    isBranchFilterDisabled,
+    filterBranchId,
+    isSuperAdmin: isBranchFilterSuperAdmin,
+    branchFilterPersistReady,
+  } = useBranchFilter({ persistSuperAdminSelectionKey: "hiims-settings-panel-branch" });
+
+  const { data: branchesListData } = useGetBranchesQuery(undefined);
+
+  /** Superadmin: no "All Branches"; labels include facility type. Non–super-admin: single branch, disabled select. */
+  const panelBranchOptions = useMemo((): SelectOption[] => {
+    const rows = branchesListData?.data;
+    if (!isBranchFilterSuperAdmin) {
+      if (!Array.isArray(rows) || rows.length === 0) return branchFilterOptions;
+      return branchFilterOptions.map((opt) => {
+        const id = parseInt(String(opt.value), 10);
+        if (!Number.isFinite(id)) return opt;
+        const b = rows.find((x) => Number(x.id) === id) as { name?: string; type?: string } | undefined;
+        if (!b?.name) return opt;
+        return {
+          value: opt.value,
+          label: branchSelectLabel(String(b.name), b.type),
+        };
+      });
+    }
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    return rows.map((b) => {
+      const row = b as { id: number; name?: string; type?: string };
+      return {
+        value: String(row.id),
+        label: branchSelectLabel(String(row.name ?? ""), row.type),
+      };
+    });
+  }, [isBranchFilterSuperAdmin, branchesListData, branchFilterOptions]);
+
+  useEffect(() => {
+    if (!isBranchFilterSuperAdmin) return;
+    if (isLoadingBranches) return;
+    const rows = branchesListData?.data;
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (selectedBranchFilter !== "") return;
+    setSelectedBranchFilter(String(rows[0].id));
+  }, [
+    isBranchFilterSuperAdmin,
+    isLoadingBranches,
+    branchesListData,
+    selectedBranchFilter,
+    setSelectedBranchFilter,
+  ]);
+
+  const shouldSkipPanelsQuery =
+    !canView ||
+    !branchFilterPersistReady ||
+    filterBranchId === undefined ||
+    !Number.isFinite(filterBranchId) ||
+    filterBranchId < 1;
 
   // Debounce search to avoid too many API calls
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
@@ -114,12 +202,24 @@ export default function PanelPage() {
     });
   }, [searchTerm, currentPage, itemsPerPage]);
 
-  // Fetch panels from API
-  const { data: panelsData, isLoading: isLoadingPanels, refetch: refetchPanels } = useGetPanelsQuery({
-    page: currentPage,
-    limit: itemsPerPage,
-    search: searchParam,
-  });
+  // Fetch panels from API (scoped by branch for super-admin and facility users)
+  const { data: panelsData, isLoading: isLoadingPanels, refetch: refetchPanels } = useGetPanelsQuery(
+    {
+      page: currentPage,
+      limit: itemsPerPage,
+      search: searchParam,
+      sort: "createdAt",
+      order: "desc",
+      ...(filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1
+        ? { branchId: filterBranchId }
+        : {}),
+    },
+    {
+      skip: shouldSkipPanelsQuery,
+      /** Fresh GET whenever branch (or other args) change; avoid stale list after switching branch. */
+      refetchOnMountOrArgChange: true,
+    }
+  );
 
   // Create panel mutation
   const [createPanel, { isLoading: isCreating }] = useCreatePanelMutation();
@@ -142,7 +242,19 @@ export default function PanelPage() {
   const filteredPanels = panels;
   const paginatedPanels = panels;
 
+  const resolveDefaultFormBranchId = () => {
+    if (selectedBranchFilter && /^\d+$/.test(selectedBranchFilter)) {
+      return selectedBranchFilter;
+    }
+    if (filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1) {
+      return String(filterBranchId);
+    }
+    return "";
+  };
+
   const handleAddNew = () => {
+    if (!canAdd) return;
+    setFormBranchId(resolveDefaultFormBranchId());
     setFormValues({
       name: "",
       status: "active",
@@ -153,10 +265,12 @@ export default function PanelPage() {
   };
 
   const handleEdit = (panel: Panel) => {
+    if (!canEdit) return;
     // Prevent editing default panels
     if (panel.isDefaultPanel) {
       return;
     }
+    setFormBranchId(resolveDefaultFormBranchId());
     setSelectedPanel(panel);
     setFormValues({
       name: panel.name,
@@ -167,6 +281,8 @@ export default function PanelPage() {
   };
 
   const handleView = (panel: Panel) => {
+    if (!canView) return;
+    setFormBranchId(resolveDefaultFormBranchId());
     setSelectedPanel(panel);
     setFormValues({
       name: panel.name,
@@ -188,8 +304,23 @@ export default function PanelPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dialogMode === "add" && !canAdd) return;
+    if (dialogMode === "edit" && !canEdit) return;
 
     if (!validateForm()) {
+      return;
+    }
+
+    const branchId = isBranchFilterSuperAdmin
+      ? (() => {
+          const n = parseInt(formBranchId, 10);
+          return Number.isFinite(n) && n >= 1 ? n : undefined;
+        })()
+      : filterBranchId;
+
+    if (branchId === undefined || !Number.isFinite(branchId) || branchId < 1) {
+      setApiErrorMessage("Select a branch before saving.");
+      setShowApiErrorDialog(true);
       return;
     }
 
@@ -200,6 +331,7 @@ export default function PanelPage() {
         const payload = {
           name: formValues.name.trim(),
           status: formValues.status,
+          branchId,
         };
 
         result = await createPanel(payload).unwrap();
@@ -213,6 +345,7 @@ export default function PanelPage() {
           id: selectedPanel.id,
           name: formValues.name.trim(),
           status: formValues.status,
+          branchId,
         };
 
         result = await updatePanel(payload).unwrap();
@@ -231,6 +364,7 @@ export default function PanelPage() {
         status: "active",
       });
       setFormErrors({});
+      setFormBranchId("");
       setSelectedPanel(null);
     } catch (error: any) {
       console.error(`Failed to ${dialogMode === "add" ? "create" : "update"} panel:`, error);
@@ -238,8 +372,9 @@ export default function PanelPage() {
       // Handle error - show error message
       let errorMsg = `Failed to ${dialogMode === "add" ? "create" : "update"} panel. Please try again.`;
       
-      if (error?.data?.message) {
-        errorMsg = error.data.message;
+      if (error?.data?.message != null) {
+        const m = error.data.message;
+        errorMsg = Array.isArray(m) ? m.map(String).join(" ") : String(m);
       } else if (error?.data?.error) {
         errorMsg = error.data.error;
       } else if (error?.error) {
@@ -264,6 +399,7 @@ export default function PanelPage() {
 
   // Fetch all data for export (without limit)
   const fetchAllDataForExport = async (): Promise<Panel[]> => {
+    if (!canDownload) return [];
     try {
       const allPanels: Panel[] = [];
       let page = 1;
@@ -275,14 +411,20 @@ export default function PanelPage() {
           const token = typeof window !== 'undefined' 
             ? (localStorage.getItem('authToken') || sessionStorage.getItem('authToken') || '')
             : '';
+          const visitIp = await getVisitClientIp();
           
+          const branchParam =
+            filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1
+              ? `&branchId=${filterBranchId}`
+              : "";
           const response = await fetch(
-            `${API_BASE_URL}/admin/settings/panel?page=${page}&limit=${limit}${trimmedSearchTerm ? `&search=${encodeURIComponent(trimmedSearchTerm)}` : ''}`,
+            `${API_BASE_URL}/admin/settings/panel?page=${page}&limit=${limit}&sort=createdAt${branchParam}${trimmedSearchTerm ? `&search=${encodeURIComponent(trimmedSearchTerm)}` : ""}`,
             {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': token ? `Bearer ${token}` : '',
+                ...(visitIp ? { 'x-forwarded-for': visitIp } : {}),
               },
             }
           );
@@ -346,31 +488,57 @@ export default function PanelPage() {
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
+          {!canView ? (
+            <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+              You don&apos;t have permission to view panel.
+            </div>
+          ) : (
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
-
-              <div className="flex items-center gap-3">
+            <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
+              <div className="relative shrink-0">
+                <FormSelectField
+                  label=""
+                  hideLabel
+                  options={panelBranchOptions}
+                  value={selectedBranchFilter}
+                  onChange={(value) => {
+                    setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                    setCurrentPage(1);
+                  }}
+                  placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                  mode="single"
+                  background="normal"
+                  width={300}
+                  disabled={isBranchFilterDisabled || isLoadingBranches}
+                />
+              </div>
+              <div className="w-[280px] shrink-0 min-w-[200px]">
                 <TableSearchInput
                   value={searchTerm}
                   onChange={setSearchTerm}
                   placeholder="Search Here..."
                 />
-                <ExportButton 
-                  onExportPDF={handleExportPDF} 
-                  onExportCSV={handleExportCSV}
-                  isLoadingPDF={isLoadingPDF}
-                  isLoadingCSV={isLoadingCSV}
-                />
+              </div>
+              {canDownload ? (
+                <div className="shrink-0">
+                  <ExportButton
+                    onExportPDF={handleExportPDF}
+                    onExportCSV={handleExportCSV}
+                    isLoadingPDF={isLoadingPDF}
+                    isLoadingCSV={isLoadingCSV}
+                  />
+                </div>
+              ) : null}
+              {canAdd ? (
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap whitespace-nowrap"
+                  className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Panel
+                  <span className="text-hide">Add Panel</span>
                 </button>
-              </div>
+              ) : null}
             </div>
 
             {isLoadingPanels ? (
@@ -387,6 +555,8 @@ export default function PanelPage() {
                       isDefaultPanel={panel.isDefaultPanel || false}
                       onView={() => handleView(panel)}
                       onEdit={() => handleEdit(panel)}
+                      showViewButton={canView}
+                      showEditButton={canEdit}
                     />
                   ))}
                 </div>
@@ -408,15 +578,21 @@ export default function PanelPage() {
               />
             )}
           </div>
+          )}
         </ListBorder>
       </div>
 
       {/* Add/Edit/View Dialog */}
       <Dialog
-        open={dialogMode !== null}
+        open={
+          (dialogMode === "add" && canAdd) ||
+          (dialogMode === "edit" && canEdit) ||
+          (dialogMode === "view" && canView)
+        }
         onClose={() => {
           setDialogMode(null);
           setFormErrors({});
+          setFormBranchId("");
           setSelectedPanel(null);
         }}
         title={dialogMode === "add" ? "Add Panel" : dialogMode === "edit" ? "Edit Panel" : "View Panel"}
@@ -425,16 +601,40 @@ export default function PanelPage() {
         <form onSubmit={dialogMode !== "view" ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
           <div className="space-y-6">
             <div>
+              <FormSelectField
+                label="Branch *"
+                options={panelBranchOptions}
+                value={formBranchId}
+                onChange={(value) => {
+                  if (!isBranchFilterSuperAdmin || dialogMode === "view" || dialogMode === "edit") return;
+                  setFormBranchId(Array.isArray(value) ? value[0] : value || "");
+                }}
+                placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                mode="single"
+                background="white"
+                disabled={
+                  isLoadingBranches ||
+                  dialogMode === "view" ||
+                  dialogMode === "edit" ||
+                  !isBranchFilterSuperAdmin
+                }
+              />
+            </div>
+
+            <div>
               <FormInputField
                 label="Name *"
                 value={formValues.name}
                 onChange={(event) => {
                   if (dialogMode === "view" || selectedPanel?.isDefaultPanel) return;
-                  setFormValues((prev) => ({ ...prev, name: event.target.value }));
+                  let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                  value = value.slice(0, 100);
+                  setFormValues((prev) => ({ ...prev, name: value }));
                   setFormErrors((prev) => ({ ...prev, name: "" }));
                 }}
                 height={44}
                 placeholder="Name"
+                maxLength={100}
                 required={dialogMode !== "view"}
                 disabled={dialogMode === "view" || selectedPanel?.isDefaultPanel}
                 error={formErrors.name}
@@ -466,12 +666,13 @@ export default function PanelPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setDialogMode(null);
-                  setFormErrors({});
-                  setSelectedPanel(null);
-                }}
-              >
+                  onClick={() => {
+                    setDialogMode(null);
+                    setFormErrors({});
+                    setFormBranchId("");
+                    setSelectedPanel(null);
+                  }}
+                >
                 Close
               </Button>
             ) : (
@@ -490,6 +691,7 @@ export default function PanelPage() {
                   onClick={() => {
                     setDialogMode(null);
                     setFormErrors({});
+                    setFormBranchId("");
                     setSelectedPanel(null);
                   }}
                   disabled={isCreating || isUpdating}

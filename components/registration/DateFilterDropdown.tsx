@@ -10,9 +10,23 @@ interface DateFilterDropdownProps {
     initialToDate?: string;
 }
 
+const MAX_MONTHS = 3;
+
+/** Add `months` months to a YYYY-MM-DD string, returns YYYY-MM-DD. */
+const addMonths = (dateStr: string, months: number): string => {
+    const d = new Date(dateStr);
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString().slice(0, 10);
+};
+
 export default function DateFilterDropdown({ onFilter, onClear, initialFromDate = "", initialToDate = "" }: DateFilterDropdownProps) {
     const [fromDate, setFromDate] = useState<string>(initialFromDate);
     const [toDate, setToDate] = useState<string>(initialToDate);
+
+    const maxToDate = fromDate ? addMonths(fromDate, MAX_MONTHS) : undefined;
+    const isInvalidDateRange = !!(fromDate && toDate && toDate < fromDate);
+    const isExceedsMaxRange = !!(fromDate && toDate && maxToDate && toDate > maxToDate);
+    const isDisabled = isInvalidDateRange || isExceedsMaxRange;
 
     // Update internal state when initial values change
     useEffect(() => {
@@ -20,7 +34,16 @@ export default function DateFilterDropdown({ onFilter, onClear, initialFromDate 
         setToDate(initialToDate);
     }, [initialFromDate, initialToDate]);
 
+    const handleFromDateChange = (value: string) => {
+        setFromDate(value);
+        // If existing toDate would now exceed the 3-month cap, clear it
+        if (value && toDate && toDate > addMonths(value, MAX_MONTHS)) {
+            setToDate("");
+        }
+    };
+
     const handleFilter = () => {
+        if (isDisabled) return;
         if (onFilter) {
             onFilter(fromDate, toDate);
         }
@@ -52,10 +75,11 @@ export default function DateFilterDropdown({ onFilter, onClear, initialFromDate 
                         label="From Date"
                         placeholder="DD/MM/YY"
                         value={fromDate}
-                        onChange={setFromDate}
+                        onChange={handleFromDateChange}
                         required={false}
                         background="white"
                         width="100%"
+                        maxDate={toDate || undefined}
                     />
                 </div>
 
@@ -68,13 +92,26 @@ export default function DateFilterDropdown({ onFilter, onClear, initialFromDate 
                         required={true}
                         background="white"
                         width="100%"
+                        minDate={fromDate || undefined}
+                        maxDate={maxToDate}
                     />
                 </div>
             </div>
 
+            {isExceedsMaxRange && (
+                <p className="text-xs text-[#DC2626] px-1 -mt-2">
+                    Date range cannot exceed 3 months.
+                </p>
+            )}
+
             <button
                 onClick={handleFilter}
-                className="w-full h-9 bg-[#0B8C00] rounded-[32px] px-6 py-3 flex items-center justify-center gap-2 font-inter font-medium text-sm leading-[120%] text-white cursor-pointer hover:opacity-90 transition-opacity"
+                disabled={isDisabled}
+                className={`w-full h-9 rounded-[32px] px-6 py-3 flex items-center justify-center gap-2 font-inter font-medium text-sm leading-[120%] text-white transition-opacity ${
+                    isDisabled
+                        ? "bg-[#98A2B3] cursor-not-allowed"
+                        : "bg-[#0B8C00] cursor-pointer hover:opacity-90"
+                }`}
             >
                 Apply
             </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { Dialog, Button, FormInputField, FormTextareaField, MessageDialog } from "@/components/ui";
@@ -16,6 +16,7 @@ interface UpdateContactDialogProps {
     currentContactNumber?: string; // Optional - if provided, will pre-fill and disable old contact number field
     registrationId: number | string;
     onSuccess?: (newContactNumber: string) => void;
+    disableOldContactNumber?: boolean;
 }
 
 const validationSchema = Yup.object().shape({
@@ -31,6 +32,8 @@ const validationSchema = Yup.object().shape({
         .matches(/^\d+$/, "Contact Number must contain only digits"),
     remarks: Yup.string()
         .trim()
+        .matches(/^[A-Za-z\s]*$/, "Remarks must contain only letters and spaces")
+        .max(100, "Remarks must be at most 100 characters")
         .optional(),
 });
 
@@ -40,6 +43,7 @@ export default function UpdateContactDialog({
     currentContactNumber,
     registrationId,
     onSuccess,
+    disableOldContactNumber = false,
 }: UpdateContactDialogProps) {
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
@@ -48,6 +52,9 @@ export default function UpdateContactDialog({
     const [oldContactNumberError, setOldContactNumberError] = useState<string | undefined>(undefined);
     const [isCheckingPhoneNumber, setIsCheckingPhoneNumber] = useState(false);
     const [phoneNumberExists, setPhoneNumberExists] = useState<boolean | null>(null);
+    const [isCheckingNewPhoneNumber, setIsCheckingNewPhoneNumber] = useState(false);
+    const [newPhoneNumberExists, setNewPhoneNumberExists] = useState<boolean | null>(null);
+    const [newContactNumberError, setNewContactNumberError] = useState<string | undefined>(undefined);
     const [fetchedRegistrationId, setFetchedRegistrationId] = useState<string | number | null>(null);
     const [patientName, setPatientName] = useState<string | null>(null);
 
@@ -56,9 +63,6 @@ export default function UpdateContactDialog({
     const branchId = useSelector((state: RootState) => selectUserBranchId(state)) || 1;
     const [updateContactNumber, { isLoading: isUpdating }] = useUpdatePatientContactNumberMutation();
     const [checkPhoneNumber] = useLazyCheckPhoneNumberQuery();
-    
-    // Ref to track if we should skip the check (e.g., when currentContactNumber is provided)
-    const skipCheckRef = useRef(!!currentContactNumber);
 
     const formik = useFormik({
         initialValues: {
@@ -89,6 +93,14 @@ export default function UpdateContactDialog({
                 // Validate that new contact number is different from old
                 if (values.newContactNumber === values.oldContactNumber) {
                     setErrorMessage("New contact number must be different from old contact number");
+                    setShowErrorDialog(true);
+                    setSubmitting(false);
+                    return;
+                }
+
+                // Validate that new contact number is not assigned to another patient
+                if (newPhoneNumberExists === true) {
+                    setErrorMessage("Contact number already exists for a patient. Please enter a new number.");
                     setShowErrorDialog(true);
                     setSubmitting(false);
                     return;
@@ -132,94 +144,76 @@ export default function UpdateContactDialog({
         },
     });
 
-    // Debounce old contact number to avoid too many API calls
-    const debouncedOldContactNumber = useDebounce(
-        currentContactNumber ? "" : formik.values.oldContactNumber,
-        500
-    );
+    // Debounce old/new contact numbers to avoid too many API calls
+    const debouncedOldContactNumber = useDebounce(formik.values.oldContactNumber, 500);
 
-    // Update skipCheckRef when currentContactNumber changes and fetch registration details
-    useEffect(() => {
-        skipCheckRef.current = !!currentContactNumber;
-        if (currentContactNumber && open) {
-            setPhoneNumberExists(true);
-            setOldContactNumberError(undefined);
-            // If currentContactNumber is provided, we need to check the phone number
-            // to get fetchedRegistrationId and patientName
-            if (currentContactNumber.length === 10) {
-                checkPhoneNumber({
-                    phoneNumber: currentContactNumber,
-                })
-                    .then((result) => {
-                        if (result.data?.success && result.data.data?.exists) {
-                            const registration = result.data.data?.registration;
-                            if (registration) {
-                                setFetchedRegistrationId(registration.id);
-                                setPatientName(registration.patientName);
-                            }
-                        }
-                    })
-                    .catch((error) => {
-                        console.error("Error checking phone number for current contact:", error);
-                    });
-            }
-        } else if (!currentContactNumber) {
-            // Reset these values when currentContactNumber is cleared
-            setFetchedRegistrationId(null);
-            setPatientName(null);
-        }
-    }, [currentContactNumber, checkPhoneNumber, open]);
+    const runOldContactNumberCheck = useCallback((phoneNumber: string) => {
+        setIsCheckingPhoneNumber(true);
+        setOldContactNumberError(undefined);
+        setPhoneNumberExists(null);
 
-    // Effect to check phone number when user enters 10 digits
-    useEffect(() => {
-        // Skip check if currentContactNumber is provided (it's already validated)
-        if (currentContactNumber) {
-            return;
-        }
+        checkPhoneNumber({
+            phoneNumber,
+        })
+            .then((result) => {
+                if (result.data?.success) {
+                    const exists = result.data.data?.exists ?? false;
+                    setPhoneNumberExists(exists);
 
-        // Only check if we have exactly 10 digits
-        if (debouncedOldContactNumber.length === 10 && /^\d{10}$/.test(debouncedOldContactNumber)) {
-            setIsCheckingPhoneNumber(true);
-            setOldContactNumberError(undefined);
-            setPhoneNumberExists(null);
-
-            checkPhoneNumber({
-                phoneNumber: debouncedOldContactNumber,
-            })
-                .then((result) => {
-                    if (result.data?.success) {
-                        const exists = result.data.data?.exists ?? false;
-                        setPhoneNumberExists(exists);
-                        if (!exists) {
-                            setOldContactNumberError("This number does not exist. Please enter your correct mobile number");
-                            setFetchedRegistrationId(null);
-                            setPatientName(null);
-                        } else {
-                            setOldContactNumberError(undefined);
-                            // Store fetchedRegistrationId and patientName from the response
-                            const registration = result.data.data?.registration;
-                            if (registration) {
-                                setFetchedRegistrationId(registration.id);
-                                setPatientName(registration.patientName);
-                            }
-                        }
-                    } else {
-                        setPhoneNumberExists(false);
+                    if (!exists) {
                         setOldContactNumberError("This number does not exist. Please enter your correct mobile number");
                         setFetchedRegistrationId(null);
                         setPatientName(null);
+                    } else {
+                        setOldContactNumberError(undefined);
+                        const registration = result.data.data?.registration;
+                        if (registration) {
+                            setFetchedRegistrationId(registration.id);
+                            setPatientName(registration.patientName);
+                        } else {
+                            setFetchedRegistrationId(null);
+                            setPatientName(null);
+                        }
                     }
-                })
-                .catch((error) => {
-                    console.error("Error checking phone number:", error);
+                } else {
                     setPhoneNumberExists(false);
                     setOldContactNumberError("This number does not exist. Please enter your correct mobile number");
                     setFetchedRegistrationId(null);
                     setPatientName(null);
-                })
-                .finally(() => {
-                    setIsCheckingPhoneNumber(false);
-                });
+                }
+            })
+            .catch((error) => {
+                console.error("Error checking phone number:", error);
+                setPhoneNumberExists(false);
+                setOldContactNumberError("This number does not exist. Please enter your correct mobile number");
+                setFetchedRegistrationId(null);
+                setPatientName(null);
+            })
+            .finally(() => {
+                setIsCheckingPhoneNumber(false);
+            });
+    }, [checkPhoneNumber]);
+
+    // Instantly check old contact number when dialog opens
+    useEffect(() => {
+        if (!open) return;
+
+        const oldNumberOnOpen = (formik.values.oldContactNumber || "").trim();
+        if (oldNumberOnOpen.length === 10 && /^\d{10}$/.test(oldNumberOnOpen)) {
+            runOldContactNumberCheck(oldNumberOnOpen);
+        } else {
+            setPhoneNumberExists(null);
+            setOldContactNumberError(undefined);
+            setFetchedRegistrationId(null);
+            setPatientName(null);
+        }
+    }, [open, currentContactNumber, formik.values.oldContactNumber, runOldContactNumberCheck]);
+
+    // Effect to check phone number when user enters 10 digits
+    useEffect(() => {
+        // Only check if we have exactly 10 digits
+        if (debouncedOldContactNumber.length === 10 && /^\d{10}$/.test(debouncedOldContactNumber)) {
+            runOldContactNumberCheck(debouncedOldContactNumber);
         } else if (debouncedOldContactNumber.length > 0 && debouncedOldContactNumber.length < 10) {
             // Clear error if user is still typing
             setPhoneNumberExists(null);
@@ -233,7 +227,48 @@ export default function UpdateContactDialog({
             setFetchedRegistrationId(null);
             setPatientName(null);
         }
-    }, [debouncedOldContactNumber, checkPhoneNumber, currentContactNumber]);
+    }, [debouncedOldContactNumber, runOldContactNumberCheck]);
+
+    const runNewContactNumberCheck = useCallback((phoneNumber: string) => {
+        setIsCheckingNewPhoneNumber(true);
+        setNewContactNumberError(undefined);
+        setNewPhoneNumberExists(null);
+
+        checkPhoneNumber({ phoneNumber })
+            .then((result) => {
+                if (result.data?.success) {
+                    const exists = result.data.data?.exists ?? false;
+                    setNewPhoneNumberExists(exists);
+                    if (exists) {
+                        setNewContactNumberError("Contact number already exists for a patient");
+                    } else {
+                        setNewContactNumberError(undefined);
+                    }
+                } else {
+                    setNewPhoneNumberExists(false);
+                    setNewContactNumberError(undefined);
+                }
+            })
+            .catch((error) => {
+                console.error("Error checking new phone number:", error);
+                setNewPhoneNumberExists(null);
+                setNewContactNumberError("Unable to verify new contact number. Please try again.");
+            })
+            .finally(() => {
+                setIsCheckingNewPhoneNumber(false);
+            });
+    }, [checkPhoneNumber]);
+
+    // Check if new contact number already exists when user completes 10 digits
+    useEffect(() => {
+        const newContactNumber = formik.values.newContactNumber;
+        if (newContactNumber.length === 10 && /^\d{10}$/.test(newContactNumber)) {
+            runNewContactNumberCheck(newContactNumber);
+        } else if (newContactNumber.length < 10) {
+            setNewPhoneNumberExists(null);
+            setNewContactNumberError(undefined);
+        }
+    }, [formik.values.newContactNumber, runNewContactNumberCheck]);
 
     const handleClose = () => {
         if (!isUpdating) {
@@ -248,9 +283,11 @@ export default function UpdateContactDialog({
             setOldContactNumberError(undefined);
             setPhoneNumberExists(null);
             setIsCheckingPhoneNumber(false);
+            setNewPhoneNumberExists(null);
+            setIsCheckingNewPhoneNumber(false);
+            setNewContactNumberError(undefined);
             setFetchedRegistrationId(null);
             setPatientName(null);
-            skipCheckRef.current = !!currentContactNumber;
             onClose();
         }
     };
@@ -278,22 +315,19 @@ export default function UpdateContactDialog({
                             label="Old Contact Number *"
                             value={formik.values.oldContactNumber}
                             onChange={(e) => {
-                                // Only allow editing if currentContactNumber is not provided
-                                if (!currentContactNumber) {
-                                    const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                    formik.setFieldValue("oldContactNumber", value, false);
-                                    // Reset validation state when user types
-                                    if (value.length !== 10) {
-                                        setPhoneNumberExists(null);
-                                        setOldContactNumberError(undefined);
-                                    }
+                                const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                formik.setFieldValue("oldContactNumber", value, false);
+                                // Reset validation state when user types
+                                if (value.length !== 10) {
+                                    setPhoneNumberExists(null);
+                                    setOldContactNumberError(undefined);
                                 }
                             }}
                             onBlur={() => {
                                 formik.setFieldTouched("oldContactNumber", true);
                                 formik.validateField("oldContactNumber");
                             }}
-                            placeholder={currentContactNumber ? "" : "Enter 10 digit old mobile number"}
+                            placeholder="Enter 10 digit old mobile number"
                             type="tel"
                             maxLength={10}
                             error={
@@ -301,9 +335,8 @@ export default function UpdateContactDialog({
                                     ? oldContactNumberError || formik.errors.oldContactNumber
                                     : oldContactNumberError
                             }
-                            disabled={!!currentContactNumber || isCheckingPhoneNumber}
-                            readOnly={!!currentContactNumber}
-                            className={currentContactNumber ? "!cursor-not-allowed" : ""}
+                            disabled={disableOldContactNumber || isCheckingPhoneNumber}
+                            readOnly={disableOldContactNumber}
                         />
                     </div>
 
@@ -315,6 +348,10 @@ export default function UpdateContactDialog({
                             onChange={(e) => {
                                 const value = e.target.value.replace(/\D/g, "").slice(0, 10);
                                 formik.setFieldValue("newContactNumber", value, false);
+                                if (value.length !== 10) {
+                                    setNewPhoneNumberExists(null);
+                                    setNewContactNumberError(undefined);
+                                }
                             }}
                             onBlur={() => {
                                 formik.setFieldTouched("newContactNumber", true);
@@ -323,7 +360,11 @@ export default function UpdateContactDialog({
                             placeholder="Enter 10 digit mobile number"
                             type="tel"
                             maxLength={10}
-                            error={formik.touched.newContactNumber ? formik.errors.newContactNumber : undefined}
+                            error={
+                                formik.touched.newContactNumber
+                                    ? newContactNumberError || formik.errors.newContactNumber
+                                    : newContactNumberError
+                            }
                         />
                     </div>
 
@@ -333,13 +374,17 @@ export default function UpdateContactDialog({
                             label="Remarks"
                             value={formik.values.remarks}
                             onChange={(e) => {
-                                formik.setFieldValue("remarks", e.target.value, false);
+                                const value = e.target.value
+                                    .replace(/[^A-Za-z\s]/g, "")
+                                    .slice(0, 100);
+                                formik.setFieldValue("remarks", value, false);
                             }}
                             onBlur={() => {
                                 formik.setFieldTouched("remarks", true);
                                 formik.validateField("remarks");
                             }}
                             placeholder="Enter remarks (optional)"
+                            maxLength={100}
                             error={formik.touched.remarks ? formik.errors.remarks : undefined}
                         />
                     </div>
@@ -359,13 +404,16 @@ export default function UpdateContactDialog({
                             type="submit"
                             variant="primary"
                             size="large"
-                            isLoading={isUpdating || formik.isSubmitting || isCheckingPhoneNumber}
+                            isLoading={isUpdating || formik.isSubmitting || isCheckingPhoneNumber || isCheckingNewPhoneNumber}
                             disabled={
                                 isUpdating ||
                                 formik.isSubmitting ||
                                 isCheckingPhoneNumber ||
+                                isCheckingNewPhoneNumber ||
                                 phoneNumberExists === false ||
-                                (formik.values.oldContactNumber.length === 10 && phoneNumberExists === null)
+                                newPhoneNumberExists === true ||
+                                (formik.values.oldContactNumber.length === 10 && phoneNumberExists === null) ||
+                                (formik.values.newContactNumber.length === 10 && newPhoneNumberExists === null)
                             }
                         >
                             Submit

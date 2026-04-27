@@ -11,6 +11,7 @@ export type FormInputFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, "s
   height?: SizeValue;
   helperText?: string;
   error?: string;
+  suffix?: React.ReactNode;
 };
 
 const normalizeSize = (value: SizeValue | undefined) => {
@@ -26,7 +27,7 @@ const normalizeSize = (value: SizeValue | undefined) => {
 };
 
 export const FormInputField = forwardRef<HTMLInputElement, FormInputFieldProps>(
-  ({ label, width, height = 44, helperText, error, className, ...props }, ref) => {
+  ({ label, width, height = 44, helperText, error, suffix, className, ...props }, ref) => {
     const wrapperStyles = useMemo(() => {
       return {
         width: normalizeSize(width),
@@ -62,10 +63,15 @@ export const FormInputField = forwardRef<HTMLInputElement, FormInputFieldProps>(
 
           <input
             ref={ref}
-            className={`w-full rounded-[32px] border border-[#DFE0E2] bg-white px-6 text-sm font-medium text-[#434956] placeholder:text-[#9CA3AF] focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 transition-colors ${error ? "border-[#F87171]" : ""} ${props.disabled || props.readOnly ? "cursor-not-allowed" : "cursor-text"} ${className ?? ""}`}
+            className={`w-full rounded-[32px] border border-[#DFE0E2] bg-white px-6 text-sm font-medium text-[#434956] placeholder:text-[#9CA3AF] focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 transition-colors ${error ? "border-[#F87171]" : ""} ${props.disabled || props.readOnly ? "cursor-not-allowed" : "cursor-text"} ${suffix ? "pr-12" : ""} ${className ?? ""}`}
             style={inputStyles}
             {...props}
           />
+          {suffix && (
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
+              {suffix}
+            </span>
+          )}
         </div>
 
         {helperText && !error ? (

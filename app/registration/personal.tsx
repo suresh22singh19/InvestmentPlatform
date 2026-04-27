@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { FormikProps } from "formik";
 import { BackToPreviousPageButton } from "@/components/ui";
 import RegistrationPersonalDetails from "@/components/registration/RegistrationPersonalDetails";
@@ -10,12 +10,13 @@ import Referral from "@/components/registration/Referral";
 import AppointmentInformation from "@/components/registration/AppointmentInformation";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import type { RegistrationPersonalDetailsFormValues } from "@/lib/validation/registrationSchemas";
+import { isValidEmailAddress } from "@/lib/utils/emailValidation";
 import { useGetDoctorsQuery } from "@/store/api/registrationApi";
 
 interface PersonalFormProps {
     formik: FormikProps<RegistrationPersonalDetailsFormValues>;
     getFormErrors: () => Record<string, string>;
-    scrollToFirstError: () => void;
+    scrollToFirstError: (errorsOverride?: Record<string, string>) => void;
     onNext: () => void;
     onBack?: () => void;
     sourceOptions: SelectOption[];
@@ -24,13 +25,20 @@ interface PersonalFormProps {
     socialMediaSpecificFieldOptions: SelectOption[];
     onContactNumberChange?: (field: string, value: string) => void;
     onAadharCardNumberChange?: (value: string) => void;
+    onJsHealthCardNoChange?: (value: string) => void;
     onReferralMobileChange?: (value: string) => void;
     readOnlyFields?: string[]; // Array of field names that should be read-only
     submitButtonText?: string; // Optional custom text for submit button
+    /** When set, called instead of onNext after step 1 validation succeeds (e.g. hospital single-step + voucher). */
+    onValidatedContinue?: () => void | Promise<void>;
     isNextDisabled?: boolean; // Disable the Save & Next button (e.g. gate entry required)
     hideReferral?: boolean; // Hide the Referral section (e.g. for existing patients with UHID)
     isContactLoading?: boolean; // Show loading spinner on contact number field
     isReferralMobileLoading?: boolean; // Show loading spinner on referral mobile field
+    /** When provided (including `[]`), Doctor options use this list (e.g. `getDoctorsList` for `registrationBranchId`). Omit to use auth-branch `getDoctors`. */
+    branchDoctorOptions?: SelectOption[];
+    /** Pass through to PatientType — panel list API is scoped by branch. */
+    panelsBranchId?: number;
 }
 
 export default function PersonalForm({
@@ -45,35 +53,38 @@ export default function PersonalForm({
     socialMediaSpecificFieldOptions,
     onContactNumberChange,
     onAadharCardNumberChange,
+    onJsHealthCardNoChange,
     onReferralMobileChange,
     readOnlyFields = [],
     submitButtonText = "Save & Next",
+    onValidatedContinue,
     isNextDisabled = false,
     hideReferral = false,
     isContactLoading = false,
     isReferralMobileLoading = false,
+    branchDoctorOptions,
+    panelsBranchId,
 }: PersonalFormProps) {
     const formRef = useRef<HTMLFormElement>(null);
 
-    // Fetch doctor list for the default branch (branchId is static: 1)
-    const { data: doctorsData } = useGetDoctorsQuery();
+    const useBranchDoctorList = branchDoctorOptions !== undefined;
+    const { data: doctorsDataFallback } = useGetDoctorsQuery(undefined, { skip: useBranchDoctorList });
 
-    // Doctor options from API (used for both Referral Doctor Specific and Appointment Information Doctor *)
-    const doctorOptions: SelectOption[] =
-        doctorsData?.data?.map((doctor) => {
-            const userName = doctor.userName || "";
-            const groupName = doctor.group?.name || "";
-            const groupId = doctor.group?.id || "";
-            const email = doctor.email || "";
+    const doctorOptions: SelectOption[] = useMemo(() => {
+        if (useBranchDoctorList) {
+            return branchDoctorOptions ?? [];
+        }
+        const rows = doctorsDataFallback?.data;
+        if (!Array.isArray(rows) || rows.length === 0) return [];
+        return rows.map((doctor) => {
+            const doctorName = doctor.name || doctor.userName || "";
             const id = doctor.id || "";
-            
             return {
                 value: String(id),
-                label: email
-                    ? `${userName} (${groupId || id}) - ${email}`
-                    : `${userName}${groupName ? ` (${groupName})` : ""}`,
+                label: doctorName,
             };
-        }) || [];
+        });
+    }, [useBranchDoctorList, branchDoctorOptions, doctorsDataFallback]);
 
     // Refs for form fields
     const contactNumberRef = useRef<HTMLInputElement>(null);
@@ -128,6 +139,7 @@ export default function PersonalForm({
     return (
         <form
             ref={formRef}
+            noValidate
             onSubmit={async (e) => {
                 e.preventDefault();
                 
@@ -144,13 +156,26 @@ export default function PersonalForm({
                     }
                     return;
                 }
+
+                // Check for JS Health Card "already assigned" error - prevent submission
+                if (formik.errors.jsHealthCardNo === "JS Health Card No. already assigned to another patient") {
+                    formik.setFieldTouched("jsHealthCardNo", true, false);
+                    if (jsHealthCardNoRef.current) {
+                        setTimeout(() => {
+                            jsHealthCardNoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            jsHealthCardNoRef.current?.focus();
+                        }, 100);
+                    }
+                    return;
+                }
                 
                 // Define fields for Step 1 (Personal Info)
                 const step1Fields = [
                     'contactNumber', 'patientNameSelect', 'patientName', 'gender', 'age',
                     'maritalStatus', 'fathersHusbandsNameSelect', 'fathersHusbandsName',
-                    'religion', 'occupation', 'pinCode', 'country', 'state', 'city', 'tehsil', 'area', 'address',
-                    'patientType', 'doctor', 'appointmentDate', 'timeSlot', 'aadharCardNumber'
+                    'religion', 'occupation', 'emailAddress', 'pinCode', 'country', 'state', 'city', 'tehsil', 'area', 'address',
+                    'addressLine1', 'addressLine2',
+                    'patientType', 'doctor', 'appointmentDate', 'timeSlot', 'aadharCardNumber', 'jsHealthCardNo'
                 ];
                 
                 // Mark step 1 fields as touched
@@ -178,12 +203,23 @@ export default function PersonalForm({
                     }
                 }
                 
+                // JS Health Card No.: required when Patient Type is Private; format must be 12 digits starting with 50503030
+                if (formik.values.patientType?.toLowerCase() === "private") {
+                    const jsValue = (formik.values.jsHealthCardNo || "").trim();
+                    if (!jsValue) {
+                        step1Errors.jsHealthCardNo = "JS Health Card No. is required";
+                        formik.setFieldTouched("jsHealthCardNo", true, false);
+                    } else if (jsValue.length !== 12 || !/^50503030\d{4}$/.test(jsValue)) {
+                        step1Errors.jsHealthCardNo =
+                            "JS Health Card No. must be exactly 12 digits starting with 50503030";
+                        formik.setFieldTouched("jsHealthCardNo", true, false);
+                    }
+                }
+
                 // Check Email Address: if entered, must be valid email format
                 if (formik.values.emailAddress && formik.values.emailAddress.trim() !== '') {
                     const emailValue = formik.values.emailAddress.trim();
-                    // Requires at least 2 characters after the last dot (for TLD like .in, .com, etc.)
-                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-                    if (!emailRegex.test(emailValue)) {
+                    if (!isValidEmailAddress(emailValue)) {
                         step1Errors.emailAddress = 'Please enter a valid email address';
                         formik.setFieldTouched('emailAddress', true, false);
                     }
@@ -250,10 +286,21 @@ export default function PersonalForm({
                     }
                     return;
                 }
+
+                // Check if JS Health Card error exists
+                if (formik.errors.jsHealthCardNo === "JS Health Card No. already assigned to another patient") {
+                    if (jsHealthCardNoRef.current) {
+                        setTimeout(() => {
+                            jsHealthCardNoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            jsHealthCardNoRef.current?.focus();
+                        }, 100);
+                    }
+                    return;
+                }
                 
                 if (Object.keys(step1Errors).length > 0) {
                     formik.setErrors({ ...formik.errors, ...step1Errors });
-                    scrollToFirstError();
+                    scrollToFirstError(step1Errors);
                     return;
                 }
                 
@@ -268,210 +315,39 @@ export default function PersonalForm({
                     }
                     return;
                 }
-                
-                onNext();
+
+                // Second pass: Private patient type must have valid JS Health Card No. before leaving step
+                if (formik.values.patientType?.toLowerCase() === "private") {
+                    const jsValue = (formik.values.jsHealthCardNo || "").trim();
+                    if (!jsValue || jsValue.length !== 12 || !/^50503030\d{4}$/.test(jsValue)) {
+                        const msg = !jsValue
+                            ? "JS Health Card No. is required"
+                            : "JS Health Card No. must be exactly 12 digits starting with 50503030";
+                        formik.setFieldError("jsHealthCardNo", msg);
+                        formik.setFieldTouched("jsHealthCardNo", true, false);
+                        if (jsHealthCardNoRef.current) {
+                            setTimeout(() => {
+                                jsHealthCardNoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                jsHealthCardNoRef.current?.focus();
+                            }, 100);
+                        }
+                        return;
+                    }
+                }
+
+                if (onValidatedContinue) {
+                    await Promise.resolve(onValidatedContinue());
+                } else {
+                    onNext();
+                }
             }}
             className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] p-5 mb-4"
         >
             <h3 className="font-inter font-semibold text-[24px] leading-[120%] text-[#262D3B] mb-4">Personal Info</h3>
 
-            {/* Personal Details Component */}
-            <RegistrationPersonalDetails
-                formData={{
-                    contactNumber: formik.values.contactNumber || "",
-                    whatsappNo: formik.values.whatsappNo || "",
-                    aadharCardNumber: formik.values.aadharCardNumber || "",
-                    patientNameSelect: formik.values.patientNameSelect || "",
-                    patientName: formik.values.patientName || "",
-                    gender: formik.values.gender || "",
-                    age: formik.values.age || "",
-                    maritalStatus: formik.values.maritalStatus || "",
-                    fathersHusbandsNameSelect: formik.values.fathersHusbandsNameSelect || "",
-                    fathersHusbandsName: formik.values.fathersHusbandsName || "",
-                    religion: formik.values.religion || "",
-                    specificReligion: formik.values.specificReligion || "",
-                    occupation: formik.values.occupation || "",
-                    emailAddress: formik.values.emailAddress || "",
-                    jsHealthCardNo: formik.values.jsHealthCardNo || "",
-                }}
-                onChange={(field, value) => {
-                    formik.setFieldValue(field, value, false);
-
-                    // For select fields, if a value is selected, mark as touched and validate immediately
-                    const selectFields = ["gender", "maritalStatus", "religion"];
-                    if (selectFields.includes(field) && value && value.trim() !== "") {
-                        setTimeout(() => {
-                            formik.setFieldTouched(field, true, false);
-                            formik.validateField(field);
-                        }, 0);
-                    }
-
-                    // Special handling for Aadhar Card Number - check if it exists when 12 digits are entered
-                    if (field === "aadharCardNumber") {
-                        const trimmedValue = value?.trim() || "";
-                        
-                        // Always check when 12 digits are entered (every time, no matter what)
-                        if (trimmedValue.length === 12) {
-                            // Always check - don't prevent duplicate calls, check every time
-                            if (onAadharCardNumberChange) {
-                                onAadharCardNumberChange(trimmedValue);
-                            }
-                        } else if (trimmedValue.length < 12) {
-                            // Clear error if Aadhar Card is not 12 digits yet
-                            const currentError = formik.errors.aadharCardNumber;
-                            if (currentError === "Aadhar Card No. already exists") {
-                                formik.setFieldError("aadharCardNumber", undefined);
-                            }
-                        }
-                        
-                        // Skip validation for Aadhar Card if it has API error (to prevent clearing it)
-                        // Don't validate Aadhar Card if it has the "Aadhar Card No. already exists" error
-                        const isTouched = formik.touched.aadharCardNumber;
-                        const hasError = formik.errors.aadharCardNumber;
-                        if (isTouched && hasError && formik.errors.aadharCardNumber === "Aadhar Card No. already exists") {
-                            // Don't validate - keep the error
-                            return;
-                        }
-                    }
-                    
-                    // For input fields: if field was previously invalid (touched and had error), validate on change
-                    const inputFields = ["contactNumber", "whatsappNo", "aadharCardNumber", "patientName", "age", "fathersHusbandsName", "occupation", "jsHealthCardNo"];
-                    if (inputFields.includes(field)) {
-                        const isTouched = formik.touched[field as keyof typeof formik.touched];
-                        const hasError = formik.errors[field as keyof typeof formik.errors];
-
-                        if (isTouched && hasError) {
-                            setTimeout(() => {
-                                formik.validateField(field);
-                            }, 0);
-                        }
-                    }
-                    
-                    // For email field: validate on change once touched (for better UX)
-                    if (field === "emailAddress") {
-                        const isTouched = formik.touched[field as keyof typeof formik.touched];
-                        if (isTouched) {
-                            setTimeout(() => {
-                                formik.validateField(field);
-                            }, 0);
-                        }
-                    }
-                }}
-                onContactNumberChange={(value) => {
-                    if (!onContactNumberChange) return;
-
-                    // Always notify parent on every change so it can clear gate entry error
-                    onContactNumberChange("contactNumber", value || "");
-                }}
-                onBlur={(field) => {
-                    formik.setFieldTouched(field, true, false);
-                    
-                    // Special handling for Aadhar Card No. - check if it exists on blur
-                    if (field === "aadharCardNumber") {
-                        const aadharValue = formik.values.aadharCardNumber?.trim() || "";
-                        if (aadharValue.length === 12 && onAadharCardNumberChange) {
-                            onAadharCardNumberChange(aadharValue);
-                        }
-                    }
-                    
-                    // Don't validate Aadhar Card if it has the "Aadhar Card No. already exists" error
-                    if (field === "aadharCardNumber" && formik.errors.aadharCardNumber === "Aadhar Card No. already exists") {
-                        // Don't validate - keep the error
-                        return;
-                    }
-                    
-                    formik.validateField(field);
-                }}
-                fieldRefs={{
-                    contactNumber: contactNumberRef,
-                    whatsappNo: whatsappNoRef,
-                    aadharCardNumber: aadharCardNumberRef,
-                    patientNameSelect: patientNameSelectRef,
-                    patientName: patientNameRef,
-                    gender: genderRef,
-                    age: ageRef,
-                    maritalStatus: maritalStatusRef,
-                    fathersHusbandsNameSelect: fathersHusbandsNameSelectRef,
-                    fathersHusbandsName: fathersHusbandsNameRef,
-                    religion: religionRef,
-                    occupation: occupationRef,
-                    emailAddress: emailAddressRef,
-                    jsHealthCardNo: jsHealthCardNoRef,
-                }}
-                errors={getFormErrors()}
-                readOnlyFields={readOnlyFields}
-                isContactLoading={isContactLoading}
-            />
-
-            {/* Address Details Component */}
-            <AddressDetails
-                formData={{
-                    pinCode: formik.values.pinCode || "",
-                    country: formik.values.country || "",
-                    state: formik.values.state || "",
-                    city: formik.values.city || "",
-                    tehsil: (formik.values as any).tehsil || "",
-                    area: (formik.values as any).area || "",
-                    address: formik.values.address || "",
-                    addressLine1: (formik.values as any).addressLine1 || "",
-                    addressLine2: (formik.values as any).addressLine2 || "",
-                }}
-                onChange={(field, value) => {
-                    formik.setFieldValue(field, value, false);
-
-                    // For select fields only (country, state, city, tehsil, area), if a value is selected, mark as touched and validate immediately
-                    const selectFields = ["country", "state", "city", "tehsil", "area"] as string[];
-                    if (selectFields.includes(field) && value && value.trim() !== "") {
-                        setTimeout(() => {
-                            const currentValue = formik.values[field as keyof typeof formik.values];
-                            if (currentValue === value || String(currentValue) === String(value)) {
-                                formik.setFieldTouched(field, true, false);
-                                formik.validateField(field);
-                            } else {
-                                setTimeout(() => {
-                                    formik.setFieldTouched(field, true, false);
-                                    formik.validateField(field);
-                                }, 50);
-                            }
-                        }, 10);
-                    }
-
-                    // For input fields: if field was previously invalid (touched and had error), validate on change
-                    const inputFields = ["pinCode", "address", "addressLine1", "addressLine2"];
-                    if (inputFields.includes(field)) {
-                        const isTouched = formik.touched[field as keyof typeof formik.touched];
-                        const hasError = formik.errors[field as keyof typeof formik.errors];
-
-                        if (isTouched && hasError) {
-                            setTimeout(() => {
-                                formik.validateField(field);
-                            }, 0);
-                        }
-                    }
-                }}
-                onBlur={(field) => {
-                    formik.setFieldTouched(field, true, false);
-                    formik.validateField(field);
-                }}
-                title="Address Information"
-                iconSrc="/icons/addressicon.svg"
-                iconAlt="Address info"
-                fieldRefs={{
-                    pinCode: pinCodeRef,
-                    country: countryRef,
-                    state: stateRef,
-                    city: cityRef,
-                    tehsil: tehsilRef,
-                    area: areaRef,
-                    address: addressRef,
-                    addressLine1: addressLine1Ref,
-                    addressLine2: addressLine2Ref,
-                }}
-                errors={getFormErrors()}
-            />
-
-            {/* Patient Type Component */}
+            {/* Patient Type Component - at top of Personal Info */}
             <PatientType
+                panelsBranchId={panelsBranchId}
                 formData={{
                     patientType: formik.values.patientType || "",
                     patientSubType: formik.values.patientSubType || "",
@@ -533,6 +409,242 @@ export default function PersonalForm({
                     benificiaryId: benificiaryIdRef,
                     insuranceCompany: insuranceCompanyRef,
                     ayushCovered: ayushCoveredRef,
+                }}
+                errors={getFormErrors()}
+            />
+
+            {/* Personal Details Component */}
+            <RegistrationPersonalDetails
+                showJsHealthCardNo={formik.values.patientType?.toLowerCase() === "private"}
+                emailRequiredByAddressCountry={
+                    Boolean(formik.values.country) && formik.values.country !== "6"
+                }
+                formData={{
+                    contactNumber: formik.values.contactNumber || "",
+                    whatsappNo: formik.values.whatsappNo || "",
+                    aadharCardNumber: formik.values.aadharCardNumber || "",
+                    patientNameSelect: formik.values.patientNameSelect || "",
+                    patientName: formik.values.patientName || "",
+                    gender: formik.values.gender || "",
+                    age: formik.values.age || "",
+                    maritalStatus: formik.values.maritalStatus || "",
+                    fathersHusbandsNameSelect: formik.values.fathersHusbandsNameSelect || "",
+                    fathersHusbandsName: formik.values.fathersHusbandsName || "",
+                    religion: formik.values.religion || "",
+                    specificReligion: formik.values.specificReligion || "",
+                    occupation: formik.values.occupation || "",
+                    emailAddress: formik.values.emailAddress || "",
+                    jsHealthCardNo: formik.values.jsHealthCardNo || "",
+                }}
+                onChange={(field, value) => {
+                    formik.setFieldValue(field, value, false);
+
+                    // For select fields, if a value is selected, mark as touched and validate immediately
+                    const selectFields = ["gender", "maritalStatus", "religion"];
+                    if (selectFields.includes(field) && value && value.trim() !== "") {
+                        setTimeout(() => {
+                            formik.setFieldTouched(field, true, false);
+                            formik.validateField(field);
+                        }, 0);
+                    }
+
+                    // Special handling for Aadhar Card Number - check if it exists when 12 digits are entered
+                    if (field === "aadharCardNumber") {
+                        const trimmedValue = value?.trim() || "";
+                        
+                        // Always check when 12 digits are entered (every time, no matter what)
+                        if (trimmedValue.length === 12) {
+                            // Always check - don't prevent duplicate calls, check every time
+                            if (onAadharCardNumberChange) {
+                                onAadharCardNumberChange(trimmedValue);
+                            }
+                        } else if (trimmedValue.length < 12) {
+                            // Clear error if Aadhar Card is not 12 digits yet
+                            const currentError = formik.errors.aadharCardNumber;
+                            if (currentError === "Aadhar Card No. already exists") {
+                                formik.setFieldError("aadharCardNumber", undefined);
+                            }
+                        }
+                        
+                        // Skip validation for Aadhar Card if it has API error (to prevent clearing it)
+                        // Don't validate Aadhar Card if it has the "Aadhar Card No. already exists" error
+                        const isTouched = formik.touched.aadharCardNumber;
+                        const hasError = formik.errors.aadharCardNumber;
+                        if (isTouched && hasError && formik.errors.aadharCardNumber === "Aadhar Card No. already exists") {
+                            // Don't validate - keep the error
+                            return;
+                        }
+                    }
+
+                    // JS Health Card No.: notify parent on every change (series length + assignment checks use full value)
+                    if (field === "jsHealthCardNo") {
+                        const trimmedValue = value?.trim() || "";
+                        if (onJsHealthCardNoChange) {
+                            onJsHealthCardNoChange(trimmedValue);
+                        } else if (trimmedValue.length < 12) {
+                            const currentError = formik.errors.jsHealthCardNo;
+                            if (currentError === "JS Health Card No. already assigned to another patient") {
+                                formik.setFieldError("jsHealthCardNo", undefined);
+                            }
+                        }
+                        if (
+                            formik.touched.jsHealthCardNo &&
+                            formik.errors.jsHealthCardNo === "JS Health Card No. already assigned to another patient"
+                        ) {
+                            return;
+                        }
+                    }
+                    
+                    // For input fields: if field was previously invalid (touched and had error), validate on change
+                    const inputFields = ["contactNumber", "whatsappNo", "aadharCardNumber", "patientName", "age", "fathersHusbandsName", "occupation", "jsHealthCardNo"];
+                    if (inputFields.includes(field)) {
+                        const isTouched = formik.touched[field as keyof typeof formik.touched];
+                        const hasError = formik.errors[field as keyof typeof formik.errors];
+
+                        if (isTouched && hasError) {
+                            setTimeout(() => {
+                                formik.validateField(field);
+                            }, 0);
+                        }
+                    }
+                    
+                    // Email: re-run Yup after value commits (required/format by country); clear errors while typing
+                    if (field === "emailAddress") {
+                        const touched = formik.touched.emailAddress;
+                        const err = formik.errors.emailAddress;
+                        if (touched || err) {
+                            setTimeout(() => {
+                                void formik.validateField("emailAddress");
+                            }, 0);
+                        }
+                    }
+                }}
+                onContactNumberChange={(value) => {
+                    if (!onContactNumberChange) return;
+
+                    // Always notify parent on every change so it can clear gate entry error
+                    onContactNumberChange("contactNumber", value || "");
+                }}
+                onBlur={(field) => {
+                    formik.setFieldTouched(field, true, false);
+                    
+                    // Special handling for Aadhar Card No. - check if it exists on blur
+                    if (field === "aadharCardNumber") {
+                        const aadharValue = formik.values.aadharCardNumber?.trim() || "";
+                        if (aadharValue.length === 12 && onAadharCardNumberChange) {
+                            onAadharCardNumberChange(aadharValue);
+                        }
+                    }
+                    
+                    // Don't validate Aadhar Card if it has the "Aadhar Card No. already exists" error
+                    if (field === "aadharCardNumber" && formik.errors.aadharCardNumber === "Aadhar Card No. already exists") {
+                        // Don't validate - keep the error
+                        return;
+                    }
+
+                    // JS Health Card No.: sync parent on blur (series API / assignment)
+                    if (field === "jsHealthCardNo") {
+                        const jsValue = formik.values.jsHealthCardNo?.trim() || "";
+                        if (onJsHealthCardNoChange) {
+                            onJsHealthCardNoChange(jsValue);
+                        }
+                        if (formik.errors.jsHealthCardNo === "JS Health Card No. already assigned to another patient") {
+                            return;
+                        }
+                    }
+                    
+                    formik.validateField(field);
+                }}
+                fieldRefs={{
+                    contactNumber: contactNumberRef,
+                    whatsappNo: whatsappNoRef,
+                    aadharCardNumber: aadharCardNumberRef,
+                    patientNameSelect: patientNameSelectRef,
+                    patientName: patientNameRef,
+                    gender: genderRef,
+                    age: ageRef,
+                    maritalStatus: maritalStatusRef,
+                    fathersHusbandsNameSelect: fathersHusbandsNameSelectRef,
+                    fathersHusbandsName: fathersHusbandsNameRef,
+                    religion: religionRef,
+                    occupation: occupationRef,
+                    emailAddress: emailAddressRef,
+                    jsHealthCardNo: jsHealthCardNoRef,
+                }}
+                errors={getFormErrors()}
+                readOnlyFields={readOnlyFields}
+                isContactLoading={isContactLoading}
+            />
+
+            {/* Address Details Component */}
+            <AddressDetails
+                formData={{
+                    pinCode: formik.values.pinCode || "",
+                    country: formik.values.country || "",
+                    state: formik.values.state || "",
+                    city: formik.values.city || "",
+                    tehsil: (formik.values as any).tehsil || "",
+                    area: (formik.values as any).area || "",
+                    address: formik.values.address || "",
+                    addressLine1: (formik.values as any).addressLine1 || "",
+                    addressLine2: (formik.values as any).addressLine2 || "",
+                }}
+                onChange={(field, value) => {
+                    formik.setFieldValue(field, value, false);
+
+                    if (field === "country") {
+                        setTimeout(() => {
+                            formik.validateField("emailAddress");
+                        }, 10);
+                    }
+
+                    // For select fields only (country, state, city, tehsil, area), if a value is selected, mark as touched and validate immediately
+                    const selectFields = ["country", "state", "city", "tehsil", "area"] as string[];
+                    if (selectFields.includes(field) && value && value.trim() !== "") {
+                        setTimeout(() => {
+                            const currentValue = formik.values[field as keyof typeof formik.values];
+                            if (currentValue === value || String(currentValue) === String(value)) {
+                                formik.setFieldTouched(field, true, false);
+                                formik.validateField(field);
+                            } else {
+                                setTimeout(() => {
+                                    formik.setFieldTouched(field, true, false);
+                                    formik.validateField(field);
+                                }, 50);
+                            }
+                        }, 10);
+                    }
+
+                    // For input fields: if field was previously invalid (touched and had error), validate on change
+                    const inputFields = ["pinCode", "address", "addressLine1", "addressLine2"];
+                    if (inputFields.includes(field)) {
+                        const isTouched = formik.touched[field as keyof typeof formik.touched];
+                        const hasError = formik.errors[field as keyof typeof formik.errors];
+
+                        if (isTouched && hasError) {
+                            setTimeout(() => {
+                                formik.validateField(field);
+                            }, 0);
+                        }
+                    }
+                }}
+                onBlur={(field) => {
+                    formik.setFieldTouched(field, true, false);
+                    formik.validateField(field);
+                }}
+                title="Address Information"
+                iconSrc="/icons/addressicon.svg"
+                iconAlt="Address info"
+                fieldRefs={{
+                    pinCode: pinCodeRef,
+                    country: countryRef,
+                    state: stateRef,
+                    city: cityRef,
+                    tehsil: tehsilRef,
+                    area: areaRef,
+                    address: addressRef,
+                    addressLine1: addressLine1Ref,
+                    addressLine2: addressLine2Ref,
                 }}
                 errors={getFormErrors()}
             />

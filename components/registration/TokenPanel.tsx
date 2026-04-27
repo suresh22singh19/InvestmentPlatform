@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState, useMemo, useEffect, useRef } from "react";
 import NoDataBox from "@/components/registration/NoDataBox";
-import { ScrollableContainer, TableSearchInput } from "../ui";
+import { ScrollableContainer, TableSearchInput, Tooltip } from "../ui";
 import { useGetPatientEntriesQuery, type PatientEntry } from "@/store/api/registrationApi";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -21,9 +21,11 @@ interface TokenPanelProps {
     selectedTokenId?: string | number | null; // ID of currently selected token
     onRefetchReady?: (refetch: () => void) => void; // Callback to expose refetch function to parent
     tokenSearchValue?: string; // Pre-fill search from parent (e.g. contact number auto-fill)
+    /** When set (e.g. superadmin registration branch), patient-entries list uses this branch; otherwise API uses auth branch. */
+    branchId?: number;
 }
 
-export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchReady, tokenSearchValue }: TokenPanelProps = {}) {
+export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchReady, tokenSearchValue, branchId }: TokenPanelProps = {}) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [itemsToShow, setItemsToShow] = useState(4);
     const [searchTerm, setSearchTerm] = useState("");
@@ -48,10 +50,6 @@ export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchRea
         }
     }, [tokenSearchValue]);
 
-    const handleToggleExpand = () => {
-        setIsExpanded(!isExpanded);
-    };
-
     // Debounce search to avoid too many API calls
     const debouncedSearchTerm = useDebounce(searchTerm, 500);
     
@@ -69,7 +67,7 @@ export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchRea
 
     // Fetch patient entries from API
     const { data: patientEntriesData, isLoading, isError, refetch } = useGetPatientEntriesQuery({
-        branchId: 1,
+        ...(branchId !== undefined && Number.isFinite(branchId) ? { branchId } : {}),
         search: searchParam,
         page: currentPage,
         limit: limit,
@@ -84,6 +82,20 @@ export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchRea
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [refetch]); // Only depend on refetch, not onRefetchReady to avoid infinite loop
+
+    // Fresh list whenever the panel is shown (e.g. hospital page toggles token column — component remounts)
+    useEffect(() => {
+        void refetch();
+    }, [refetch]);
+
+    const handleToggleExpand = () => {
+        setIsExpanded((prev) => {
+            if (!prev) {
+                void refetch();
+            }
+            return !prev;
+        });
+    };
 
     // Get raw entries data for passing to click handler
     const rawEntries: PatientEntry[] = useMemo(() => {
@@ -217,11 +229,13 @@ export default function TokenPanel({ onTokenClick, selectedTokenId, onRefetchRea
                                                                     : "bg-[rgba(223,224,226,0.05)] border border-[#DFE0E2] hover:bg-[rgba(11,140,0,0.05)] hover:border-[#0B8C00] focus:bg-[rgba(11,140,0,0.05)] focus:border-[#0B8C00]"
                                                             }`}
                                                         >
-                                                            <div className="flex justify-between items-start mb-2">
-                                                                <div className="leading-[12px]">
-                                                                    <h4 className="font-inter font-medium text-base leading-[120%] text-[#262D3B]">
-                                                                        {token.name}
-                                                                    </h4>
+                                                            <div className="flex justify-between items-start mb-2 gap-2">
+                                                                <div className="leading-[12px] min-w-0 flex-1">
+                                                                    <Tooltip content={token.name || ""}>
+                                                                        <h4 className="font-inter font-medium text-base leading-[120%] text-[#262D3B] min-w-0 max-w-[180px] truncate">
+                                                                            {token.name}
+                                                                        </h4>
+                                                                    </Tooltip>
                                                                     <span className="font-inter font-normal text-xs leading-[120%] text-[#434956]">
                                                                         {token.patientId}
                                                                     </span>

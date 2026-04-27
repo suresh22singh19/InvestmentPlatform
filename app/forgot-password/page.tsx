@@ -25,7 +25,7 @@ export default function ForgotPasswordPage() {
     "team",
     "field-user",
   ];
-  const paramType = searchParams.get("type");
+  const paramType = searchParams?.get("type");
   const returnType =
     paramType && allowedLoginTypes.includes(paramType as LoginType)
       ? (paramType as LoginType)
@@ -75,7 +75,7 @@ export default function ForgotPasswordPage() {
 
   const navigateToLogin = () => {
     if (returnType) {
-      router.push(`/?type=${encodeURIComponent(returnType)}`);
+      router.push(`/`);
       return;
     }
 

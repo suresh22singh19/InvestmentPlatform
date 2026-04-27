@@ -6,12 +6,17 @@ import ScrollableContainer from "./ScrollableContainer";
 type TableProps = {
   children: React.ReactNode;
   className?: string;
+  /** Merged onto the inner table element. Omit to keep default `min-w-max` (content-sized width). */
+  tableClassName?: string;
 };
 
-export const Table = ({ children, className = "" }: TableProps) => {
+export const Table = ({ children, className = "", tableClassName }: TableProps) => {
+  const tableClasses = tableClassName?.trim()
+    ? `w-full border-separate border-spacing-0 ${tableClassName}`
+    : "w-full border-separate border-spacing-0 min-w-max";
   return (
     <ScrollableContainer className={`w-full rounded-t-[8px] ${className}`} maxHeight="none">
-      <table className="w-full border-separate border-spacing-0 min-w-max">{children}</table>
+      <table className={tableClasses}>{children}</table>
     </ScrollableContainer>
   );
 };
@@ -41,12 +46,16 @@ type TableRowProps = {
 };
 
 export const TableRow = ({ children, className = "", onClick }: TableRowProps) => {
+  // <tr> may only contain <td>/<th>; JSX whitespace between cells becomes text nodes and breaks hydration.
+  const cells = React.Children.toArray(children).filter(
+    (child) => typeof child !== "string" || child.trim() !== ""
+  );
   return (
     <tr
       className={`${className} ${onClick ? "cursor-pointer" : ""}`}
       onClick={onClick}
     >
-      {children}
+      {cells}
     </tr>
   );
 };

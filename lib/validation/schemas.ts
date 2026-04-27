@@ -13,6 +13,15 @@ export const loginSchema = Yup.object().shape({
 
 export type LoginFormValues = Yup.InferType<typeof loginSchema>;
 
+export const loginOtpSchema = Yup.object().shape({
+  otp: Yup.string()
+    .matches(/^\d{4,6}$/, "Enter a valid OTP (4–6 digits)")
+    .required("OTP is required")
+    .trim(),
+});
+
+export type LoginOtpFormValues = Yup.InferType<typeof loginOtpSchema>;
+
 export const resetPasswordSchema = Yup.object().shape({
   password: Yup.string()
     .min(6, "Password must be at least 6 characters")

@@ -11,12 +11,11 @@ export interface PaymentDetailsFormData {
     consultationCharges: string;
     paymentMode: string;
     transactionId: string;
-    gstBilling: boolean;
 }
 
 interface PaymentDetailsProps {
     formData: PaymentDetailsFormData;
-    onChange: (field: keyof PaymentDetailsFormData, value: string | boolean) => void;
+    onChange: (field: keyof PaymentDetailsFormData, value: string) => void;
     onBlur?: (field: keyof PaymentDetailsFormData) => void;
     consultationChargesOptions?: SelectOption[];
     paymentModeOptions?: SelectOption[];
@@ -50,7 +49,7 @@ export default function PaymentDetails({
     ],
     paymentModeOptions = [
         { value: "cash", label: "Cash" },
-        { value: "credit", label: "Credit" },
+        { value: "credit", label: "Online Payment" },
     ],
     razorpayPosMachineUsers = [],
     fieldRefs,
@@ -175,7 +174,7 @@ export default function PaymentDetails({
                         )}
                         {!hasPosMachineAccess && (
                             <p className="mt-1 text-xs text-[#F6776E]">
-                                Credit payment is not available. You don't have access to any POS machines.
+                                Online Payment is not available. You don't have access to any POS machines.
                             </p>
                         )}
                     </div>
@@ -214,36 +213,6 @@ export default function PaymentDetails({
                 onPaymentSuccess={onPaymentSuccess}
                 onPaymentError={onPaymentError}
             />
-
-            <div className="relative">
-                <label className="flex items-center gap-2 cursor-pointer select-none relative">
-                    <input
-                        type="checkbox"
-                        checked={formData.gstBilling || false}
-                        onChange={(e) => onChange("gstBilling", e.target.checked)}
-                        onBlur={() => onBlur?.("gstBilling")}
-                        className="
-                            peer h-[16px] w-[16px] appearance-none rounded border border-[#DFE0E2] shrink-0
-                            checked:border-[#0B8C00] checked:bg-[#0B8C00]/15
-                            transition-all"
-                    />
-                    <svg
-                        className="shrink-0 pointer-events-none absolute w-[16px] h-[14px] text-[#0B8C00] hidden peer-checked:block"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                    >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="font-inter not-italic font-medium text-[16px] leading-[120%] text-[#262D3B]">
-                        GST Billing
-                    </span>
-                </label>
-                {errors?.gstBilling && (
-                    <p className="mt-1 text-xs text-[#F6776E]">{errors.gstBilling}</p>
-                )}
-            </div>
         </div>
     );
 }

@@ -1,22 +1,23 @@
 "use client";
 
 import React from "react";
-import Image from "next/image";
 
 type FacilityCardProps = {
   name: string;
-  type: "Hospital" | "Clinic";
+  /** Badge label (e.g. Hospital, Clinic, N/A). */
+  type: string;
   address: string;
   setupStatus: string;
   setupDate: string;
-  completionPercentage: number;
-  buildings: number;
-  blocks?: number;
-  floors: number;
-  departments: number;
-  roomsConfigured: number;
-  totalRooms: number;
+  /** When null, shows N/A and no progress fill. */
+  completionPercentage: number | null;
+  buildings: string | number;
+  floors: string | number;
+  roomsConfigured: string | number;
+  totalRooms: string | number;
   onClick?: () => void;
+  /** When set, shows an edit control in the top-right (does not trigger `onClick`). */
+  onEditModules?: () => void;
 };
 
 export const FacilityCard = ({
@@ -27,12 +28,11 @@ export const FacilityCard = ({
   setupDate,
   completionPercentage,
   buildings,
-  blocks,
   floors,
-  departments,
   roomsConfigured,
   totalRooms,
   onClick,
+  onEditModules,
 }: FacilityCardProps) => {
   return (
     <div
@@ -105,44 +105,32 @@ export const FacilityCard = ({
               <span className="text-gray-500">Updated {setupDate}</span>
             </div>
             <span className="font-medium text-gray-900">
-              {completionPercentage}% Complete
+              {completionPercentage === null ? "-" : `${completionPercentage}% Complete`}
             </span>
           </div>
           {/* Progress Bar */}
           <div className="h-2 w-full overflow-hidden rounded-full bg-green-100">
             <div
               className="h-full bg-green-600 transition-all duration-300"
-              style={{ width: `${completionPercentage}%` }}
+              style={{
+                width: completionPercentage === null ? "0%" : `${Math.min(100, Math.max(0, completionPercentage))}%`,
+              }}
             />
           </div>
         </div>
 
         {/* Statistics */}
-        <div className={`grid gap-4 ${blocks !== undefined && blocks > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-gray-500">Buildings</p>
             <p className="mt-0.5 text-base font-semibold text-gray-900">
               {buildings}
             </p>
           </div>
-          {type === "Hospital" && blocks !== undefined && blocks > 0 && (
-            <div>
-              <p className="text-xs text-gray-500">Blocks</p>
-              <p className="mt-0.5 text-base font-semibold text-gray-900">
-                {blocks}
-              </p>
-            </div>
-          )}
           <div>
             <p className="text-xs text-gray-500">Floors</p>
             <p className="mt-0.5 text-base font-semibold text-gray-900">
               {floors}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Departments</p>
-            <p className="mt-0.5 text-base font-semibold text-gray-900">
-              {departments}
             </p>
           </div>
           <div>
@@ -155,8 +143,33 @@ export const FacilityCard = ({
         </div>
       </div>
 
-      {/* Arrow Icon */}
-      <div className="flex-shrink-0">
+      {/* Edit + navigate chevron (edit stops card navigation) */}
+      <div className="flex flex-shrink-0 flex-row items-center gap-1 self-start">
+        {onEditModules ? (
+          <button
+            type="button"
+            className="rounded-lg p-1.5 text-green-600 transition-colors hover:bg-green-50 hover:text-green-700"
+            aria-label="Edit modules for this branch"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditModules();
+            }}
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          </button>
+        ) : null}
         <svg
           className="h-5 w-5 text-green-600"
           fill="none"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Formik, Form } from "formik";
 import { Logo } from "@/components/ui/Logo";
@@ -8,18 +8,22 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { MessageDialog } from "@/components/ui/MessageDialog";
 import { useResetPasswordMutation } from "@/store/api/authApi";
+import { resetPasswordSchema } from "@/lib/validation/schemas";
 import {
-  resetPasswordSchema,
-  ResetPasswordFormValues,
-} from "@/lib/validation/schemas";
+  decodeJwtPayload,
+  type PasswordFlowTokenPayload,
+} from "@/lib/utils/decodeJwtPayload";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get("token");
-  const email = searchParams.get("email");
-  const loginType = searchParams.get("login_type");
-  
+  const token = searchParams?.get("token");
+  const payload = useMemo(
+    () => (token ? decodeJwtPayload<PasswordFlowTokenPayload>(token) : null),
+    [token]
+  );
+  const email = payload?.email;
+  const loginType = payload?.login_type;
   const [resetPassword, { isLoading }] = useResetPasswordMutation();
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
@@ -30,7 +34,7 @@ export default function ResetPasswordPage() {
 
   const navigateToLogin = () => {
     if (loginType) {
-      router.push(`/?type=${encodeURIComponent(loginType)}`);
+      router.push(`/`);
     } else {
       router.push("/");
     }
@@ -52,12 +56,12 @@ export default function ResetPasswordPage() {
           </p>
         </div>
 
-        {!token || !email || !loginType ? (
+        {!token || !email ? (
           <div className="p-4 rounded-lg bg-red-50 border border-red-200">
             <p className="text-sm text-red-600">
               Invalid reset link. Please request a new password reset.
             </p>
-            <Button
+            {/* <Button
               variant="outline"
               size="large"
               fullWidth
@@ -65,7 +69,7 @@ export default function ResetPasswordPage() {
               onClick={() => router.push("/forgot-password")}
             >
               Go to Forgot Password
-            </Button>
+            </Button> */}
           </div>
         ) : (
           <Formik
@@ -79,7 +83,7 @@ export default function ResetPasswordPage() {
               
               try {
                 const result = await resetPassword({
-                  email: decodeURIComponent(email),
+                  email,
                   password: values.password,
                   confirm_password: values.confirmPassword,
                   token: token,
@@ -183,7 +187,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <Button
-          variant="outline"
+          variant="primary"
           size="large"
           fullWidth
           onClick={navigateToLogin}

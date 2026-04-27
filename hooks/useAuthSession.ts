@@ -1,42 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { logout as logoutAction, selectUser } from "@/store/slices/authSlice";
 
-type StoredUser = {
-  email?: string;
-  [key: string]: unknown;
-};
-
+/**
+ * Shell auth: prefer Redux user (set on login, restored by redux-persist) so the first
+ * paint after navigation from `/` is not `user === null` while localStorage already
+ * has data — that caused blank shell / redirect races vs `setCredentials`.
+ */
 export const useAuthSession = () => {
   const router = useRouter();
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const dispatch = useAppDispatch();
+  const user = useAppSelector(selectUser);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("user") || sessionStorage.getItem("user");
-
-    if (!storedUser) {
-      router.push("/");
-      return;
+    if (user) return;
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("authToken") || sessionStorage.getItem("authToken")
+        : null;
+    if (!token) {
+      router.replace("/");
     }
-
-    try {
-      const parsedUser = JSON.parse(storedUser) as StoredUser;
-      setUser(parsedUser);
-    } catch (error) {
-      console.error("Failed to parse stored user", error);
-      router.push("/");
-    }
-  }, [router]);
+  }, [user, router]);
 
   const logout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("user");
-    sessionStorage.removeItem("authToken");
-    sessionStorage.removeItem("user");
-    router.push("/");
+    dispatch(logoutAction());
+    router.replace("/");
   };
 
   return { user, logout };
 };
-

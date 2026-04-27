@@ -1,5 +1,6 @@
 export { RoomInventory, type RoomInventoryItem, type OccupancyStatus } from './RoomInventory';
 export { RoomTypeMaster } from './RoomTypeMaster';
+export { ConsultancyBranchService } from './ConsultancyBranchService';
 export { StructureBuilder } from './StructureBuilder';
 export { RoomConfiguration } from './RoomConfiguration';
 export { BedManagement } from './BedManagement';

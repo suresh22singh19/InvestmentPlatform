@@ -12,6 +12,7 @@ export interface Visitor {
   passportNumber?: string;
   nationalId?: string;
   country?: string;
+  visitorContactNumber?: string;
 }
 
 export interface VisitorsFormData {
@@ -36,6 +37,9 @@ interface VisitorsDetailsProps {
   visitorNationalIdRefs?: React.MutableRefObject<{ [key: string]: HTMLInputElement | null }>;
   errors?: Record<string, string>;
   arrayError?: string; // Error message for the entire visitors array (e.g., "At least one visitor is required")
+  visitorLookupLoading?: Record<string, boolean>;
+  lockedVisitors?: Record<string, boolean>;
+  disableFirstVisitorDelete?: boolean;
 }
 
 export default function VisitorsDetails({
@@ -67,6 +71,9 @@ export default function VisitorsDetails({
   visitorNationalIdRefs,
   errors,
   arrayError,
+  visitorLookupLoading = {},
+  lockedVisitors = {},
+  disableFirstVisitorDelete = false,
 }: VisitorsDetailsProps) {
   const buttonLabel = visitors.length === 0 ? "Add Visitor" : "Add More Visitor";
   const maxVisitors = 5;
@@ -98,8 +105,12 @@ export default function VisitorsDetails({
       )}
 
       <div className="space-y-4">
-        {visitors.map((visitor, index) => (
-          <div key={visitor.id} className="flex items-start gap-4">
+        {visitors.map((visitor, index) => {
+          const isLockedVisitor = !!lockedVisitors[visitor.id];
+          const isVisitorLookupLoading = !!visitorLookupLoading[visitor.id];
+
+          return (
+            <div key={visitor.id} className="flex items-start gap-4">
             <div className="flex-1 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="flex gap-2">
                 <div
@@ -129,6 +140,7 @@ export default function VisitorsDetails({
                       }
                     }}
                     onBlur={() => onVisitorBlur?.(index, "nameSelect")}
+                    disabled={isLockedVisitor}
                   />
                 </div>
                 <div className="flex-1">
@@ -141,14 +153,29 @@ export default function VisitorsDetails({
                     label="Visitor Name *"
                     value={visitor.name}
                     onChange={(e) => {
-                      // Only allow letters and spaces
-                      const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                      // Only allow letters and spaces, max 100 characters; strip leading spaces only (trailing trimmed on blur)
+                      let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                      value = value.replace(/^\s+/, "");
+                      // Collapse consecutive repeated characters to max 2 (e.g. "aaaa" -> "aa")
+                      value = value.replace(/(.)\1{2,}/g, "$1$1");
+                      // Ensure first character is uppercase (e.g. "test kumar" -> "Test kumar")
+                      if (value.length > 0) {
+                        value = value.charAt(0).toUpperCase() + value.slice(1);
+                      }
+                      value = value.slice(0, 100);
                       onVisitorChange(visitor.id, "name", value);
                     }}
-                    onBlur={() => onVisitorBlur?.(index, "name")}
+                    onBlur={(e) => {
+                      const trimmed = e.target.value.trim();
+                      if (trimmed !== e.target.value) onVisitorChange(visitor.id, "name", trimmed);
+                      onVisitorBlur?.(index, "name");
+                    }}
                     placeholder="Visitor Name"
                     required
+                    maxLength={100}
                     error={errors?.[`visitorName_${index}`]}
+                    disabled={isLockedVisitor}
+                    readOnly={isLockedVisitor}
                   />
                 </div>
               </div>
@@ -176,31 +203,53 @@ export default function VisitorsDetails({
                     }
                   }}
                   onBlur={() => onVisitorBlur?.(index, "country")}
+                  disabled={isLockedVisitor}
                 />
               </div>
-              <div className="md:col-span-2 flex items-center gap-2">
+              <div className="md:col-span-2 flex items-start gap-2">
                 <div className="flex-1">
-                  {/* Show Aadhar Card No. for Indian */}
-                  {visitor.country === "Indian" && (
-                    <FormInputField
-                      ref={(el) => {
-                        if (visitorAadharRefs && el) {
-                          visitorAadharRefs.current[visitor.id] = el;
-                        }
-                      }}
-                      label="Visitor Aadhar Card No. *"
-                      value={visitor.aadharCardNo || ""}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, "").slice(0, 12); // Only allow digits, max 12
-                        onVisitorChange(visitor.id, "aadharCardNo", value);
-                      }}
-                      onBlur={() => onVisitorBlur?.(index, "aadharCardNo")}
-                      placeholder="Visitor Aadhar Card No."
-                      type="tel"
-                      maxLength={12}
-                      required
-                      error={errors?.[`visitorAadhar_${index}`]}
-                    />
+                  {/* Show Aadhar Card No. for Indian (default when country not set) */}
+                  {(visitor.country === "Indian" || !visitor.country) && (
+                    <div className="relative">
+                      <FormInputField
+                        ref={(el) => {
+                          if (visitorAadharRefs && el) {
+                            visitorAadharRefs.current[visitor.id] = el;
+                          }
+                        }}
+                        label="Visitor Aadhar Card No. *"
+                        value={visitor.aadharCardNo || ""}
+                        onChange={(e) => {
+                          let value = e.target.value.replace(/\D/g, "");
+                          // Aadhaar: first digit cannot be 0 or 1 – strip leading 0s and 1s
+                          value = value.replace(/^[01]+/, "");
+                          value = value.slice(0, 12); // Only allow digits, max 12
+                          onVisitorChange(visitor.id, "aadharCardNo", value);
+                        }}
+                        onBlur={() => onVisitorBlur?.(index, "aadharCardNo")}
+                        placeholder="Visitor Aadhar Card No."
+                        type="tel"
+                        maxLength={12}
+                        required
+                        error={errors?.[`visitorAadhar_${index}`]}
+                        disabled={isLockedVisitor || isVisitorLookupLoading}
+                        readOnly={isLockedVisitor}
+                        className={isVisitorLookupLoading ? "!pr-12" : ""}
+                      />
+                      {isVisitorLookupLoading && (
+                        <div className="pointer-events-none absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                          <svg
+                            className="h-5 w-5 animate-spin text-[#0B8C00]"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {/* Show National Id for Nepal */}
                   {visitor.country === "Nepal" && (
@@ -255,19 +304,22 @@ export default function VisitorsDetails({
                     className="flex items-center justify-center shrink-0 mt-0"
                     onClick={() => onRemoveVisitor(visitor.id)}
                     aria-label="Remove visitor"
+                    disabled={disableFirstVisitorDelete && index === 0}
                   >
                     <Image
                       src="/icons/TrashGreenIcon.svg"
                       alt="Delete"
                       width={44}
                       height={44}
+                      className={disableFirstVisitorDelete && index === 0 ? "opacity-50 cursor-not-allowed" : ""}
                     />
                   </button>
                 )}
               </div>
             </div>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

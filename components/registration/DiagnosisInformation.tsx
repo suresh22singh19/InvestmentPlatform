@@ -42,7 +42,7 @@ export default function DiagnosisInformation({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div data-field="diagnosis" className="scroll-mt-4" ref={fieldRefs?.diagnosis}>
                     <FormSelectField
-                        label="Diagnosis *"
+                        label="Primary Disease *"
                         options={diagnosisOptions}
                         value={formData.diagnosis || null}
                         onChange={(value) => {
@@ -68,7 +68,7 @@ export default function DiagnosisInformation({
 
                 <div data-field="subDiagnosis" className="scroll-mt-4" ref={fieldRefs?.subDiagnosis}>
                     <FormSelectField
-                        label="Sub Diagnosis *"
+                        label="Secondary Disease *"
                         options={subDiagnosisOptions}
                         value={formData.subDiagnosis || null}
                         onChange={(value) => {
@@ -81,7 +81,7 @@ export default function DiagnosisInformation({
                             }
                         }}
                         onBlur={() => onBlur?.("subDiagnosis")}
-                        placeholder={!formData.diagnosis ? "First select diagnosis" : "Type to search..."}
+                        placeholder={!formData.diagnosis ? "First select primary disease" : "Type to search..."}
                         mode="single"
                         background="white"
                         disabled={!formData.diagnosis}
@@ -97,11 +97,13 @@ export default function DiagnosisInformation({
                         label="Symptoms"
                         value={formData.symptoms || ""}
                         onChange={(e) => {
-                            onChange("symptoms", e.target.value);
+                            const value = e.target.value.replace(/[^a-zA-Z\s]/g, "").slice(0, 100);
+                            onChange("symptoms", value);
                         }}
                         onBlur={() => onBlur?.("symptoms")}
                         placeholder="Symptoms"
                         className="h-[79px]"
+                        maxLength={100}
                         error={errors?.symptoms}
                     />
                 </div>

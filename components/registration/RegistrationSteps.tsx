@@ -9,12 +9,15 @@ interface RegistrationStepsProps {
     steps: Step[];
     currentStep: number; // 0-based index
     className?: string;
+    /** Wraps each step column (circle + labels). Default matches old compact registration layout. */
+    stepColumnClassName?: string;
 }
 
 export default function RegistrationSteps({
     steps,
     currentStep,
     className = "",
+    stepColumnClassName = "w-[70px]",
 }: RegistrationStepsProps) {
     return (
         <div 
@@ -25,19 +28,30 @@ export default function RegistrationSteps({
         >
             <div className="w-full flex items-start relative" style={{ paddingLeft: '16px', paddingRight: '16px' }}>
                 {steps.map((step, index) => {
-                    const isActive = index <= currentStep;
+                    const isCompleted = index < currentStep;
+                    const isCurrent = index === currentStep;
                     const isLast = index === steps.length - 1;
                     
                     return (
                         <React.Fragment key={index}>
                             {/* Step Circle and Labels */}
                             <div 
-                                className={`flex flex-col items-center relative z-10 w-[70px] ${isLast ? 'mr-4' : ''}`}
+                                className={`flex flex-col items-center relative z-10 min-w-0 ${stepColumnClassName} ${isLast ? 'mr-4' : ''}`}
                             >
                                 {/* Circle */}
-                                <div className="w-8 h-8 rounded-full border border-[#0B8C00] flex items-center justify-center bg-white">
-                                    {isActive ? (
-                                        <div className="w-5 h-5 bg-[#0B8C00] rounded-full"></div>
+                                <div
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                        isCurrent
+                                            ? "border border-[#D6A15A] bg-[#FFF9F2]"
+                                            : "border border-[#0B8C00] bg-white"
+                                    }`}
+                                >
+                                    {isCompleted || isCurrent ? (
+                                        <div
+                                            className={`w-5 h-5 rounded-full ${
+                                                isCurrent ? "bg-[#C98935]" : "bg-[#0B8C00]"
+                                            }`}
+                                        ></div>
                                     ) : null}
                                 </div>
                                 

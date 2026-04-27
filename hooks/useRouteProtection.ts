@@ -3,7 +3,189 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAppSelector } from "@/store/hooks";
-import { selectLoginType } from "@/store/slices/authSlice";
+import {
+    selectLoginType,
+    selectPermissionsMap,
+    selectSelectedBranch,
+    selectUserGroupName,
+    selectUserEmail,
+} from "@/store/slices/authSlice";
+import type { NormalizedPermissionsMap } from "@/utils/permission";
+
+// Email-based registration route restrictions for special admin accounts.
+// Key: lowercase email  →  Value: the ONLY registration page they may access.
+const EMAIL_REGISTRATION_RESTRICTION: Record<string, string> = {
+    "superadminhiims@dikonia.in": "/registration",
+    "superadminhiims2@dikonia.in": "/registration/hospital",
+};
+
+const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
+    dashboard: ["/dashboard"],
+    settings: ["/settings"],
+    registration: ["/registration"],
+    patient: ["/registration/registrationList", "/patient", "/discharge-pending"],
+    patients: ["/registration/registrationList", "/patient", "/discharge-pending"],
+    reports: ["/reports"],
+    token: ["/token"],
+    tokens: ["/token"],
+    "pre-booking": ["/pre-booking"],
+    "lead-request": ["/lead-request"],
+    infrastructure: ["/infrastructure", "/hospital-infrastructure"],
+    /** `slugify("Roles And Permissions")` in permission.ts */
+    "roles-and-permissions": ["/roles&permission"],
+    "roles-permission": ["/roles&permission"],
+    "roles-permissions": ["/roles&permission"],
+    gate: ["/gate"],
+};
+
+const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
+    /** Matches login `moduleName` / `subModule.moduleName` "Tokens" → slug `tokens` */
+    tokens: ["/token"],
+    dashboard: ["/dashboard"],
+    "add-hospital-clinic": ["/infrastructure"],
+    "pre-booking": ["/pre-booking"],
+    "lead-request": ["/lead-request"],
+    // "add-hospital-clinic": ["/infrastructure", "/hospital-infrastructure"],
+    configuration: ["/settings/configuration"],
+    "branch-ip-network": ["/settings/branch-ip-network"],
+    "duplicate-number-exceptions": ["/settings/duplicate-number-exceptions"],
+    "manage-contact-updates": ["/settings/manage-contact-updates"],
+    "discount-approval": ["/settings/discount-approval"],
+    "refund-approval": ["/settings/refund-approval"],
+    users: ["/settings/users"],
+    panel: ["/settings/panel"],
+    therapy: ["/settings/therapy"],
+    "lab-tests": ["/settings/lab-tests"],
+    "diet-category": ["/settings/diet-category"],
+    "diagnosis-diet": ["/settings/diet"],
+    diagnosis: ["/settings/diagnosis"],
+    "sub-diagnosis": ["/settings/sub-diagnosis"],
+    "health-card-management": ["/settings/health-card-management"],
+    support: ["/settings/support"],
+    "misc-settings": ["/settings/misc-settings"],
+    facilities: ["/settings/facilities"],
+    hardware: ["/settings/hardware"],
+    "room-type-master": ["/settings/room-type"],
+    "consultancy-service": ["/settings/consultancy-service"],
+    "role-master": ["/roles&permission/role-master"],
+    "branch-role-master": ["/roles&permission/banch-role-master"],
+    "approval-level-setup": ["/roles&permission/approval-level-setup"],
+    "approval-level-assignment": ["/roles&permission/approval-level-assignment"],
+    registration: ["/registration", "/registration/hospital"],
+    "registration-report": ["/reports"],
+    opd: ["/registration/registrationList", "/patient/opd", "/patient/ipd", "/patient/daycare"],
+    ipd: ["/registration/hospital", "/patient/ipd"],
+    daycare: [
+        "/registration/daycare-registration-cli",
+        "/registration/daycare-registration-hos",
+        "/patient/daycare",
+    ],
+    "new-patient": ["/gate/new-patient"],
+    "revisit-patient": ["/gate/revisit-patient"],
+    "opd-visitor": ["/gate/patient-visitor"],
+    "ipd-visitor": ["/gate/ipd-visitor"],
+    "other-visitor": ["/gate/other"],
+    "patient-medicine-type": ["/gate/patient-medicine-type"],
+    "view-daily-reports": ["/gate/reports"],
+};
+
+const RESTRICTED_ROOT_PREFIXES = [
+    "/dashboard",
+    "/settings",
+    "/profile",
+    "/registration",
+    "/patient",
+    "/reports",
+    "/token",
+    "/pre-booking",
+    "/lead-request",
+    "/roles&permission",
+    "/infrastructure",
+    "/hospital-infrastructure",
+    // "/discharge-pending",
+];
+
+const getAllowedRoutePrefixesFromPermissions = (
+    permissionsMap: NormalizedPermissionsMap,
+    selectedBranchType: string | null
+): string[] => {
+    const prefixes = new Set<string>(["/settings/profile", "/profile"]);
+
+    Object.values(permissionsMap).forEach((modulePermission) => {
+        if (!modulePermission?.isActive) return;
+
+        if (modulePermission.canView) {
+            (MODULE_ROUTE_PREFIXES[modulePermission.key] ?? []).forEach((prefix) =>
+                prefixes.add(prefix)
+            );
+        }
+
+        Object.values(modulePermission.subModules ?? {}).forEach((subModulePermission) => {
+            if (!subModulePermission?.isActive || !subModulePermission.canView) return;
+            (SUB_MODULE_ROUTE_PREFIXES[subModulePermission.key] ?? []).forEach((prefix) =>
+                prefixes.add(prefix)
+            );
+        });
+    });
+
+    // Branch-based registration route narrowing
+    if (selectedBranchType === "clinic") {
+        prefixes.delete("/registration/hospital");
+    } else if (selectedBranchType === "hospital") {
+        prefixes.delete("/registration");
+        prefixes.add("/registration/hospital");
+    }
+
+    return Array.from(prefixes);
+};
+
+const pathMatchesPrefix = (pathname: string, prefix: string): boolean =>
+    pathname === prefix || pathname?.startsWith(prefix + "/");
+
+const getFirstAccessibleRouteFromPermissions = (
+    permissionsMap: NormalizedPermissionsMap,
+    selectedBranchType: string | null
+): string | null => {
+    for (const modulePermission of Object.values(permissionsMap)) {
+        if (!modulePermission?.isActive) continue;
+
+        const moduleRoutePrefixes = MODULE_ROUTE_PREFIXES[modulePermission.key] ?? [];
+        const filteredModuleRoutePrefixes = moduleRoutePrefixes.filter((prefix) => {
+            if (selectedBranchType === "clinic" && prefix === "/registration/hospital") {
+                return false;
+            }
+            if (selectedBranchType === "hospital" && prefix === "/registration") {
+                return false;
+            }
+            return true;
+        });
+
+        const orderedSubModules = Object.values(modulePermission.subModules ?? {});
+        for (const subModulePermission of orderedSubModules) {
+            if (!subModulePermission?.isActive || !subModulePermission.canView) continue;
+
+            const subModulePrefixes = SUB_MODULE_ROUTE_PREFIXES[subModulePermission.key] ?? [];
+            const filteredSubModulePrefixes = subModulePrefixes.filter((prefix) => {
+                if (selectedBranchType === "clinic" && prefix === "/registration/hospital") {
+                    return false;
+                }
+                if (selectedBranchType === "hospital" && prefix === "/registration") {
+                    return false;
+                }
+                return true;
+            });
+            if (filteredSubModulePrefixes.length > 0) {
+                return filteredSubModulePrefixes[0];
+            }
+        }
+
+        if (modulePermission.canView && filteredModuleRoutePrefixes.length > 0) {
+            return filteredModuleRoutePrefixes[0];
+        }
+    }
+
+    return null;
+};
 
 /**
  * Hook to protect routes based on user role
@@ -31,8 +213,14 @@ export const useRouteProtection = () => {
     const router = useRouter();
     const pathname = usePathname();
     const loginType = useAppSelector(selectLoginType);
+    const permissionsMapFromState = useAppSelector(selectPermissionsMap);
+    const selectedBranchFromState = useAppSelector(selectSelectedBranch);
+    const groupNameFromState = useAppSelector(selectUserGroupName);
+    const userEmailFromState = useAppSelector(selectUserEmail);
 
     useEffect(() => {
+        if (pathname == null) return;
+
         // Skip protection on public routes
         const publicRoutes = ["/", "/forgot-password", "/reset-password"];
         if (publicRoutes.includes(pathname)) {
@@ -41,74 +229,160 @@ export const useRouteProtection = () => {
 
         // Get login type from Redux store or localStorage as fallback
         let userLoginType = loginType;
+        let userGroupName = groupNameFromState;
+        let userEmail = userEmailFromState;
+        let userPermissionsMap: NormalizedPermissionsMap = permissionsMapFromState ?? {};
+        let selectedBranchType = selectedBranchFromState?.type?.toLowerCase() ?? null;
 
-        if (!userLoginType && typeof window !== "undefined") {
-            userLoginType = localStorage.getItem("loginType") || null;
+        if (typeof window !== "undefined") {
+            if (!userLoginType) {
+                userLoginType = localStorage.getItem("loginType") || null;
+            }
+            if (!userGroupName) {
+                try {
+                    const rawLoginData = localStorage.getItem("loginData");
+                    if (rawLoginData) {
+                        const parsed = JSON.parse(rawLoginData);
+                        userGroupName = parsed?.user?.groupName ?? null;
+                        if (!selectedBranchType) {
+                            const persistedSelectedBranch = localStorage.getItem("selectedBranch");
+                            if (persistedSelectedBranch) {
+                                try {
+                                    selectedBranchType = JSON.parse(persistedSelectedBranch)?.type?.toLowerCase() ?? null;
+                                } catch {
+                                    selectedBranchType = null;
+                                }
+                            } else {
+                                selectedBranchType =
+                                    parsed?.branch_access?.find(
+                                        (branch: { id?: number; type?: string }) => branch?.id === parsed?.user?.branchId
+                                    )?.type?.toLowerCase() ??
+                                    parsed?.branch_access?.[0]?.type?.toLowerCase() ??
+                                    null;
+                            }
+                        }
+                        if (!userPermissionsMap || Object.keys(userPermissionsMap).length === 0) {
+                            try {
+                                const persistedPermissions = localStorage.getItem("permissions");
+                                if (persistedPermissions) {
+                                    userPermissionsMap = JSON.parse(persistedPermissions) as NormalizedPermissionsMap;
+                                }
+                            } catch {
+                                userPermissionsMap = {};
+                            }
+                        }
+                        if (!userEmail) {
+                            userEmail = parsed?.user?.email ?? null;
+                        }
+                    }
+                } catch {
+                    userGroupName = null;
+                }
+            }
         }
 
-        // Only protect routes if user is logged in
+        // Only protect routes if we have a login type
         if (!userLoginType) {
             return;
         }
 
-        const normalizedLoginType = userLoginType.toLowerCase();
+        // Gate user: restrict to /gate/* and /profile only
+        if (userLoginType.toLowerCase().includes("gate")) {
+            const isGateRoute =
+                pathname === "/gate" || pathname?.startsWith("/gate/");
+            const isProfileRoute =
+                pathname === "/profile" || pathname?.startsWith("/profile/");
 
-        // Check if user is a nurse
-        if (normalizedLoginType === "nurse") {
-            // Check if current path matches allowed routes for nurses
-            const isAllowedRoute =
-                // Exact match for registration list
-                pathname === "/registration/registrationList" ||
-                // Match vitals-medical route: /registration/registrationList/vitals-medical/[patientId]
-                /^\/registration\/registrationList\/vitals-medical\/\d+$/.test(pathname) ||
-                // Match view route: /registration/registrationList/[patientId]/view
-                /^\/registration\/registrationList\/\d+\/view$/.test(pathname) 
-                // Match edit route: /registration/registrationList/[patientId]/edit
-                // /^\/registration\/registrationList\/\d+\/edit$/.test(pathname);
+            if (!isGateRoute && !isProfileRoute) {
+                router.push("/gate");
+            }
+            return;
+        }
 
-            // If not on an allowed route, redirect to login
-            if (!isAllowedRoute) {
-                router.push("/");
+        const hasPermissionData =
+            userPermissionsMap && Object.keys(userPermissionsMap).length > 0;
+        const isRestrictedPath = RESTRICTED_ROOT_PREFIXES.some((prefix) =>
+            pathMatchesPrefix(pathname, prefix)
+        );
+        if (hasPermissionData && isRestrictedPath) {
+            const allowedPrefixes = getAllowedRoutePrefixesFromPermissions(
+                userPermissionsMap,
+                selectedBranchType
+            );
+            const canAccessCurrentRoute = allowedPrefixes.some((prefix) =>
+                pathMatchesPrefix(pathname, prefix)
+            );
+            if (!canAccessCurrentRoute) {
+                const fallbackRoute =
+                    getFirstAccessibleRouteFromPermissions(
+                        userPermissionsMap,
+                        selectedBranchType
+                    ) ??
+                    allowedPrefixes[0] ??
+                    "/dashboard";
+                router.push(fallbackRoute);
+                return;
             }
         }
-        // Check if user is a hospital user
-        else if (normalizedLoginType === "hospital user") {
-            // Check if current path matches allowed routes for hospital users
-            const isAllowedRoute =
-                // Exact match for hospital registration page
-                pathname === "/registration/hospital" ||
-                // Exact match for registration list
-                pathname === "/registration/registrationList" ||
-                // Match vitals-medical route: /registration/registrationList/vitals-medical/[patientId]
-                /^\/registration\/registrationList\/vitals-medical\/\d+$/.test(pathname) ||
-                // Match view route: /registration/registrationList/[patientId]/view
-                /^\/registration\/registrationList\/\d+\/view$/.test(pathname) ||
-                // Match edit route: /registration/registrationList/[patientId]/edit
-                /^\/registration\/registrationList\/\d+\/edit$/.test(pathname);
 
-            // If not on an allowed route, redirect to login
-            if (!isAllowedRoute) {
-                router.push("/");
+        // --- Email-based registration restriction (special admin accounts) ---
+        if (userEmail) {
+            const allowedRoute = EMAIL_REGISTRATION_RESTRICTION[userEmail.toLowerCase()];
+            if (allowedRoute) {
+                // Routes shared by ALL special admin accounts (always accessible).
+                const sharedRoutes = ["/registration/registrationList"];
+                const isOnSharedRoute = sharedRoutes.some(
+                    (r) => pathname === r || pathname?.startsWith(r + "/")
+                );
+
+                if (!isOnSharedRoute) {
+                    // These users must NOT access the other registration page.
+                    const otherRegistrationRoutes = Object.values(EMAIL_REGISTRATION_RESTRICTION).filter(
+                        (r) => r !== allowedRoute
+                    );
+                    const isOnForbiddenRoute = otherRegistrationRoutes.some(
+                        (r) => pathname === r || pathname?.startsWith(r + "/")
+                    );
+                    if (isOnForbiddenRoute) {
+                        router.push(allowedRoute);
+                    }
+                }
+                return; // No further checks needed for these accounts
             }
         }
-        // Check if user is a clinic user
-        else if (normalizedLoginType === "clinic user") {
-            // Check if current path matches allowed routes for clinic users
-            const isAllowedRoute =
-                // Exact match for registration page
-                pathname === "/registration" ||
-                // Exact match for registration list
-                pathname === "/registration/registrationList" ||
-                // Match view route: /registration/registrationList/[patientId]/view
-                /^\/registration\/registrationList\/\d+\/view$/.test(pathname) ||
-                // Match vitals-medical route: /registration/registrationList/vitals-medical/[patientId]
-                /^\/registration\/registrationList\/vitals-medical\/\d+$/.test(pathname);
 
-            // If not on an allowed route, redirect to login
-            if (!isAllowedRoute) {
-                router.push("/");
+        // --- Branch-type based restriction for registration flows ---
+        // clinic branch  -> only /registration (plus shared registration-list routes)
+        // hospital branch-> only /registration/hospital (plus shared registration-list routes)
+        if (selectedBranchType === "clinic" || selectedBranchType === "hospital") {
+            const isSharedRegistrationRoute =
+                pathname === "/registration/registrationList" ||
+                pathname?.startsWith("/registration/registrationList/");
+            if (!isSharedRegistrationRoute) {
+                const clinicRoute = "/registration";
+                const hospitalRoute = "/registration/hospital";
+                const forbiddenRoute =
+                    selectedBranchType === "clinic" ? hospitalRoute : clinicRoute;
+                const targetRoute =
+                    selectedBranchType === "clinic" ? clinicRoute : hospitalRoute;
+
+                const isOnForbiddenRoute =
+                    pathname === forbiddenRoute || pathname?.startsWith(forbiddenRoute + "/");
+                if (isOnForbiddenRoute) {
+                    router.push(targetRoute);
+                    return;
+                }
             }
         }
-    }, [loginType, pathname, router]);
+
+    }, [
+        loginType,
+        permissionsMapFromState,
+        selectedBranchFromState,
+        groupNameFromState,
+        userEmailFromState,
+        pathname,
+        router,
+    ]);
 };
 

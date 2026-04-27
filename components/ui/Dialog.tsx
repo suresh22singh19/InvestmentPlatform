@@ -15,6 +15,8 @@ type DialogProps = {
   children?: ReactNode;
   customHeader?: ReactNode;
   contentPadding?: string; // Optional custom padding for content area (e.g., "px-6 py-2")
+  /** When "hidden", the body does not scroll (use an inner ScrollableContainer). Default scrolls the whole body. */
+  contentOverflow?: "auto" | "hidden";
   closeOnOutsideClick?: boolean; // Whether to close dialog when clicking outside (default: true)
   closeOnEscape?: boolean; // Whether to close dialog when pressing Escape key (default: true)
 };
@@ -31,6 +33,31 @@ const normalizeSize = (value: DialogSize | undefined) => {
   return value;
 };
 
+let dialogScrollLockCount = 0;
+
+function lockBodyScrollForDialog() {
+  dialogScrollLockCount += 1;
+  if (dialogScrollLockCount !== 1) {
+    return;
+  }
+  const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+  document.documentElement.classList.add("dialog-scroll-lock");
+  document.body.classList.add("dialog-scroll-lock");
+  if (scrollbarWidth > 0) {
+    document.body.style.paddingRight = `${scrollbarWidth}px`;
+  }
+}
+
+function unlockBodyScrollForDialog() {
+  dialogScrollLockCount = Math.max(0, dialogScrollLockCount - 1);
+  if (dialogScrollLockCount !== 0) {
+    return;
+  }
+  document.documentElement.classList.remove("dialog-scroll-lock");
+  document.body.classList.remove("dialog-scroll-lock");
+  document.body.style.paddingRight = "";
+}
+
 export const Dialog = ({
   open,
   onClose,
@@ -40,6 +67,7 @@ export const Dialog = ({
   children,
   customHeader,
   contentPadding = "px-6 py-6",
+  contentOverflow = "auto",
   closeOnOutsideClick = true,
   closeOnEscape = true,
 }: DialogProps) => {
@@ -62,15 +90,21 @@ export const Dialog = ({
     };
 
     if (open) {
+      const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
       document.body.style.overflow = "hidden";
+      if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
       document.addEventListener("keydown", handleKeyDown);
     } else {
       document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
       document.removeEventListener("keydown", handleKeyDown);
     }
 
     return () => {
       document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [mounted, onClose, open, closeOnEscape]);
@@ -88,11 +122,11 @@ export const Dialog = ({
 
   return createPortal(
     <div
-      className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-[#0B1323]/70 px-4"
+      className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center overscroll-none bg-[#0B1323]/70 px-4"
       onClick={closeOnOutsideClick ? onClose : undefined}
     >
       <div
-        className="dialog-container relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-[12px] bg-white shadow-[0px_32px_80px_rgba(47,72,61,0.18)]"
+        className="dialog-container relative flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden rounded-[12px] bg-white shadow-[0px_32px_80px_rgba(47,72,61,0.18)]"
         style={dialogStyles}
         role="dialog"
         aria-modal="true"
@@ -119,7 +153,15 @@ export const Dialog = ({
           </div>
         )}
 
-        <div className={`flex flex-1 flex-col overflow-y-auto custom-scroll ${contentPadding}`}>{children}</div>
+        <div
+          className={
+            contentOverflow === "hidden"
+              ? `flex min-h-0 flex-1 flex-col overflow-hidden overscroll-y-contain ${contentPadding}`
+              : `custom-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain ${contentPadding}`
+          }
+        >
+          {children}
+        </div>
       </div>
     </div>,
     document.body

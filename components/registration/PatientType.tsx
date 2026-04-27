@@ -6,6 +6,14 @@ import { FormInputField, FormSelectField } from "@/components/ui";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useGetPanelsQuery } from "@/store/api/settingsApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserBranchId, selectSelectedBranch } from "@/store/slices/authSlice";
+import {
+    isPanelNameHiddenFromPanelTypeDropdown,
+    DEFAULT_PANEL_NAME_FOR_PRIVATE,
+    DEFAULT_PANEL_NAME_FOR_TPA_TYPE,
+    findActivePanelIdStringByName,
+} from "@/lib/registration/panelDropdownFilter";
 
 export interface PatientTypeFormData {
     patientType: string;
@@ -17,6 +25,12 @@ export interface PatientTypeFormData {
 }
 
 interface PatientTypeProps {
+    /**
+     * Scope panel options to this branch (`GET /admin/settings/panel?branchId=`).
+     * Pass from the page when it knows the active branch (e.g. registration `registrationBranchId`, pre-booking `effectivePreBookingBranchId`).
+     * If omitted, falls back to header selected branch / user branch from auth.
+     */
+    panelsBranchId?: number;
     formData: PatientTypeFormData;
     onChange: (field: keyof PatientTypeFormData, value: string) => void;
     onBlur?: (field: keyof PatientTypeFormData) => void;
@@ -34,6 +48,7 @@ interface PatientTypeProps {
 }
 
 export default function PatientType({
+    panelsBranchId,
     formData,
     onChange,
     onBlur,
@@ -49,28 +64,43 @@ export default function PatientType({
     const patientTypeOptions = ["Private", "Panel", "TPA"];
     const ayushCoveredOptions = ["Yes", "No"];
 
+    const authUserBranchId = useAppSelector(selectUserBranchId);
+    const headerSelectedBranch = useAppSelector(selectSelectedBranch);
+    const fallbackPanelsBranchId = useMemo(() => {
+        const raw = headerSelectedBranch?.id ?? authUserBranchId;
+        if (raw == null) return undefined;
+        const n = typeof raw === "number" ? raw : Number(raw);
+        return Number.isFinite(n) && n >= 1 ? n : undefined;
+    }, [headerSelectedBranch?.id, authUserBranchId]);
+
+    const effectivePanelsBranchId = panelsBranchId ?? fallbackPanelsBranchId;
+
     const isPrivate = formData.patientType.toLowerCase() === "private";
     const isPanel = formData.patientType.toLowerCase() === "panel";
     const isTPA = formData.patientType.toLowerCase() === "tpa";
 
-    // Fetch panels by default to have them available for all patient types
-    const { data: panelsData } = useGetPanelsQuery({ page: 1, limit: 100 });
+    // Fetch panels for the active branch (required by API)
+    const { data: panelsData } = useGetPanelsQuery(
+        effectivePanelsBranchId != null
+            ? { page: 1, limit: 100, branchId: effectivePanelsBranchId }
+            : undefined,
+        {
+            skip:
+                effectivePanelsBranchId == null ||
+                !Number.isFinite(effectivePanelsBranchId) ||
+                effectivePanelsBranchId < 1,
+        }
+    );
 
     // Transform panels to SelectOption format
-    // When Panel is selected, exclude "Normal" (id: 1) and "TPA (Private Insurance)" (id: 2)
+    // When "Panel" patient type is selected, omit default rows named "Normal" and "TPA" (IDs vary by env)
     const panelOptions: SelectOption[] = useMemo(() => {
         if (!panelsData?.data) return [];
         return panelsData.data
             .filter((panel) => {
-                // Filter by status
                 const isActive = panel.status === "active" || panel.status === "Active";
                 if (!isActive) return false;
-                
-                // When Panel patient type is selected, exclude id 1 (Normal) and id 2 (TPA Private Insurance)
-                if (isPanel) {
-                    return panel.id !== 1 && panel.id !== 2;
-                }
-                
+                if (isPanel && isPanelNameHiddenFromPanelTypeDropdown(panel.name)) return false;
                 return true;
             })
             .map((panel) => ({
@@ -79,30 +109,32 @@ export default function PatientType({
             }));
     }, [panelsData, isPanel]);
 
-    // Auto-set panelId when patientType is set to Private or TPA
-    // Always ensure Private has panelId=1 and TPA has panelId=2
+    const privateDefaultPanelId = useMemo(
+        () => findActivePanelIdStringByName(panelsData?.data, DEFAULT_PANEL_NAME_FOR_PRIVATE),
+        [panelsData?.data]
+    );
+    const tpaDefaultPanelId = useMemo(
+        () => findActivePanelIdStringByName(panelsData?.data, DEFAULT_PANEL_NAME_FOR_TPA_TYPE),
+        [panelsData?.data]
+    );
+
+    // Auto-set panelId when patientType is Private/TPA — ids come from GET /admin/settings/panel (Normal + TPA rows)
     useEffect(() => {
         const patientTypeLower = formData.patientType.toLowerCase();
         const currentPanelId = formData.panelId?.trim() || "";
-        
-        // For Private, always set panelId to 1 (unless it's already 1)
-        if (patientTypeLower === "private" && currentPanelId !== "1") {
-            onChange("panelId", "1");
+
+        if (patientTypeLower === "private" && privateDefaultPanelId && currentPanelId !== privateDefaultPanelId) {
+            onChange("panelId", privateDefaultPanelId);
+        } else if (patientTypeLower === "tpa" && tpaDefaultPanelId && currentPanelId !== tpaDefaultPanelId) {
+            onChange("panelId", tpaDefaultPanelId);
         }
-        // For TPA, always set panelId to 2 (unless it's already 2)
-        else if (patientTypeLower === "tpa" && currentPanelId !== "2") {
-            onChange("panelId", "2");
-        }
-        // If patientType is Panel, don't auto-set (user will select from dropdown)
-        // If patientType is empty, don't set anything
-    }, [formData.patientType, formData.panelId, onChange]);
+    }, [formData.patientType, formData.panelId, onChange, privateDefaultPanelId, tpaDefaultPanelId]);
 
     const handlePatientTypeChange = (value: string) => {
         onChange("patientType", value);
         // Set panelId based on patient type and clear fields that shouldn't be visible
         if (value.toLowerCase() === "private") {
-            // Set panelId to 1 (Normal) for Private
-            onChange("panelId", "1");
+            onChange("panelId", privateDefaultPanelId ?? "");
             onChange("patientSubType", "");
             onChange("benificiaryId", "");
             onChange("insuranceCompany", "");
@@ -113,8 +145,7 @@ export default function PatientType({
             onChange("insuranceCompany", "");
             onChange("ayushCovered", "");
         } else if (value.toLowerCase() === "tpa") {
-            // Set panelId to 2 (TPA Private Insurance) for TPA
-            onChange("panelId", "2");
+            onChange("panelId", tpaDefaultPanelId ?? "");
             onChange("patientSubType", "");
             onChange("benificiaryId", "");
         }
@@ -130,7 +161,7 @@ export default function PatientType({
             </h2>
 
             {/* Patient Type selection */}
-            <div className="mb-4 w-1/3">
+            <div className="mb-4 lg:w-1/3 md:w-1/2 w-full">
                 <PatientTypeButtonGroup
                     options={patientTypeOptions}
                     value={formData.patientType}
@@ -145,7 +176,7 @@ export default function PatientType({
 
             {/* Panel fields: Panel + Patient Sub Type + Beneficiary ID */}
             {isPanel && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                     <div data-field="panelId" className="scroll-mt-4" ref={fieldRefs?.panelId}>
                         <FormSelectField
                             label="Panel *"
@@ -200,8 +231,8 @@ export default function PatientType({
                             label="Beneficiary ID"
                             value={formData.benificiaryId}
                             onChange={(e) => {
-                                // Only allow alphanumeric characters, no spaces, max 15 characters
-                                const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 15);
+                                // Only allow digits, max 15 characters
+                                const value = e.target.value.replace(/\D/g, "").slice(0, 15);
                                 onChange("benificiaryId", value);
                             }}
                             onKeyDown={(e) => {
@@ -220,21 +251,21 @@ export default function PatientType({
                                 }
                                 
                                 // If at max length, prevent typing new characters
-                                if (formData.benificiaryId.length >= 15 && e.key.match(/^[a-zA-Z0-9]$/)) {
+                                if (formData.benificiaryId.length >= 15 && e.key.match(/^\d$/)) {
                                     e.preventDefault();
                                     return;
                                 }
                                 
-                                // Block spaces and special characters (only allow alphanumeric)
-                                if (!e.key.match(/^[a-zA-Z0-9]$/)) {
+                                // Block non-digits (only allow 0-9)
+                                if (!e.key.match(/^\d$/)) {
                                     e.preventDefault();
                                 }
                             }}
                             onPaste={(e) => {
                                 e.preventDefault();
                                 const pastedText = e.clipboardData.getData("text");
-                                // Only allow alphanumeric characters, max 15
-                                const cleanedText = pastedText.replace(/[^a-zA-Z0-9]/g, "").slice(0, 15);
+                                // Only allow digits, max 15
+                                const cleanedText = pastedText.replace(/\D/g, "").slice(0, 15);
                                 onChange("benificiaryId", cleanedText);
                             }}
                             onBlur={() => onBlur?.("benificiaryId")}
@@ -255,7 +286,16 @@ export default function PatientType({
                             ref={fieldRefs?.insuranceCompany as React.RefObject<HTMLInputElement>}
                             label="Insurance Company"
                             value={formData.insuranceCompany}
-                            onChange={(e) => onChange("insuranceCompany", e.target.value)}
+                            onChange={(e) => {
+                                // Allow only alphabet characters and spaces, max 100 characters
+                                let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                // Ensure first character is uppercase
+                                if (value.length > 0) {
+                                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                                }
+                                value = value.slice(0, 100);
+                                onChange("insuranceCompany", value);
+                            }}
                             onBlur={() => onBlur?.("insuranceCompany")}
                             placeholder="Insurance Company"
                             type="text"

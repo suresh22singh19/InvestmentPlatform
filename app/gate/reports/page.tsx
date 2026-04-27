@@ -19,12 +19,14 @@ import {
   TableData,
   Pagination,
   Dialog,
+  Tooltip,
 } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useAppSelector } from "@/store/hooks";
-import { selectUserBranchName } from "@/store/slices/authSlice";
-import { useLazyGetPatientEntriesQuery, useLazyGetVisitorsQuery } from "@/store/api/gateApi";
-import type { PatientEntryItem, VisitorItem } from "@/store/api/gateApi";
+import { selectSelectedBranch } from "@/store/slices/authSlice";
+import { usePermission } from "@/hooks/usePermission";
+import { useLazyGetGatePatientEntriesQuery, useLazyGetVisitorsQuery } from "@/store/api/gateApi";
+import type { PatientEntryItem, GroupedVisitorItem, RawVisitorDetail } from "@/store/api/gateApi";
 import { useExport, type ExportColumn } from "@/hooks/useExport";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 
@@ -102,9 +104,9 @@ const tabOptions = [
   { value: "all", label: "All" },
   { value: "patient", label: "New Patient" },
   { value: "revisit-patient", label: "Revisit Patient" },
-  { value: "patient-visitor", label: "Patient Visitor" },
+  { value: "patient-visitor", label: "OPD/IPD Visitor" },
+  { value: "others", label: "Other Visitor" },
   { value: "patient-medicine-type", label: "Patient Medicine Type" },
-  { value: "others", label: "Others" },
 ];
 
 // Table column configurations
@@ -157,8 +159,8 @@ const getTableColumns = (activeTab: string, selectedPatientVisitor?: string): Ta
       return [
         ...baseColumns,
         { key: "uhid", label: "UHID", sortable: true },
-        { key: "visitorName", label: "Visitor Name", sortable: true },
         { key: "patientName", label: "Patient Name", sortable: true },
+        { key: "visitorName", label: "Visitor Name", sortable: true },
         { key: "contactNumber", label: "Contact Number", sortable: true },
         { key: "created", label: "Created", sortable: true },
         { key: "action", label: "Action", sortable: false },
@@ -234,6 +236,11 @@ const getDialogFields = (activeTab: string, selectedPatientVisitor?: string): Di
         { label: "Visitor contact Number", key: "visitorContactNumber", column: 3 },
         { label: "Pin Code", key: "pinCode", column: 3 },
         { label: "Visitor Purpose", key: "visitorPurpose", column: 3 },
+        { label: "Patient Phone No.", key: "patientPhoneOrUhid", column: 3 },
+        // IPD‑specific bed information (shown only when values exist; keys already present from visitors API)
+        { label: "Patient Room No", key: "patientRoomNo", column: 1 },
+        { label: "Patient Bed No", key: "patientBedNo", column: 2 },
+        { label: "Patient Building No", key: "patientBuilding", column: 3 },
       ];
 
     case "patient-medicine-type":
@@ -270,8 +277,10 @@ const getDialogFields = (activeTab: string, selectedPatientVisitor?: string): Di
         { label: "State", key: "state", column: 2 },
         { label: "Tehsil/Area", key: "tehsil", column: 2 },
         { label: "Post Office", key: "area", column: 2 },
-        // Column 3: Identification & City
+        // Column 3: Identification, Company & City
         { label: "Aadhar Number", key: "aadharNumber", column: 3 },
+        { label: "Visitor Company Name", key: "visitorCompanyName", column: 3 },
+        { label: "Whom To Meet", key: "visitorPurpose", column: 3 },
         { label: "City", key: "city", column: 3 },
       ];
 
@@ -292,8 +301,10 @@ const getDialogFields = (activeTab: string, selectedPatientVisitor?: string): Di
           { label: "State", key: "state", column: 2 },
           { label: "Tehsil/Area", key: "tehsil", column: 2 },
           { label: "Post Office", key: "area", column: 2 },
-          // Column 3: Identification & City
+          // Column 3: Identification, Company & City
           { label: "Aadhar Number", key: "aadharNumber", column: 3 },
+          { label: "Visitor Company Name", key: "visitorCompanyName", column: 3 },
+          { label: "Visitor Purpose", key: "visitorPurpose", column: 3 },
           { label: "City", key: "city", column: 3 },
         ];
       }
@@ -418,6 +429,16 @@ const formatVisitorType = (type: string | undefined): string => {
   return type;
 };
 
+// Helper function to mask phone number (show last 4 digits, mask first 6 with 'x')
+const maskPhoneNumber = (phoneNumber: string | null | undefined): string => {
+  if (!phoneNumber) return "N/A";
+  const cleaned = phoneNumber.replace(/\D/g, ""); // Remove non-digits
+  if (cleaned.length < 4) return phoneNumber; // If less than 4 digits, return as is
+  const last4 = cleaned.slice(-4);
+  const masked = "XXXXXX" + last4;
+  return masked;
+};
+
 // Helper function to format name with title
 const formatNameWithTitle = (name: string | undefined | null, title: string | undefined | null): string => {
   if (!name || name === "N/A") return "N/A";
@@ -481,8 +502,164 @@ const getVisitorTitle = (report: DailyReport): string | undefined => {
   return (report as any).visitorTitle;
 };
 
+// Build field rows (arrays of 3 label/value pairs) for a single raw visitor, used in view dialog
+function buildVisitorFieldRows(
+  visitor: RawVisitorDetail,
+  maskPhone: (p: string | null | undefined) => string,
+  fmtName: (name: string | null | undefined, title: string | null | undefined) => string
+): Array<Array<{ label: string; value: string }>> {
+  const visitorName = fmtName(visitor.visitor_name, visitor.visitor_title) || "N/A";
+  const patientName = fmtName(visitor.patient_name, visitor.patient_title) || "N/A";
+
+  const hasAddrLine1 = !!(visitor.visitor_address_line1 && visitor.visitor_address_line1.trim());
+  const address = hasAddrLine1
+    ? [visitor.visitor_address_line1, visitor.visitor_address_line2].filter(Boolean).join(", ")
+    : (visitor.visitor_address || "N/A");
+  const addrLabel = hasAddrLine1 ? "Address Line 1" : "Address";
+  const pinLabel = hasAddrLine1 ? "ZIP/Postal Code" : "Pin Code";
+
+  const nationality = visitor.visitor_nationality || "Indian";
+  let idLabel = "Visitor Aadhar Number";
+  let idValue: string = visitor.visitor_aadhar_card_no || "N/A";
+  if (nationality === "Foreigner") {
+    idLabel = "Visitor Passport Number";
+    idValue = visitor.visitor_passport_number || "N/A";
+  } else if (nationality === "Nepal") {
+    idLabel = "Visitor National ID";
+    idValue = visitor.visitor_national_id || "N/A";
+  }
+
+  const country = visitor.visitor_country || "N/A";
+  const isIndia = country === "India" || country === "6";
+  const cityLabel = isIndia ? "District" : "City";
+
+  switch (visitor.visitor_type) {
+    case "OPD":
+    case "IPD": {
+      const rows: Array<Array<{ label: string; value: string }>> = [
+        [
+          { label: "Patient Name", value: patientName },
+          { label: "Patient Phone No.", value: maskPhone(visitor.patient_phone_number) },
+          { label: "Visitor Type", value: visitor.visitor_type },
+        ],
+        [
+          { label: "Visitor Name", value: visitorName },
+          { label: "Visitor Contact Number", value: maskPhone(visitor.visitor_contact_number) },
+          { label: idLabel, value: idValue },
+        ],
+        [
+          { label: addrLabel, value: address },
+          { label: "State", value: visitor.visitor_state || "N/A" },
+          { label: cityLabel, value: visitor.visitor_city || "N/A" },
+        ],
+        [
+          { label: "Tehsil/Area", value: visitor.visitor_tehsil || "N/A" },
+          { label: "Post Office", value: visitor.visitor_area || "N/A" },
+          { label: pinLabel, value: visitor.visitor_pin_code || "N/A" },
+        ],
+        ...(visitor.visitor_type === "IPD"
+          ? [
+              [
+                { label: "Patient Room No", value: visitor.patient_room_no || "N/A" },
+                { label: "Patient Bed No", value: visitor.patient_bed_no || "N/A" },
+                { label: "Patient Building", value: visitor.patient_building || "N/A" },
+              ],
+              [
+                { label: "Country", value: country },
+                { label: "Visitor Purpose", value: visitor.visitor_purpose || "N/A" },
+              ],
+            ]
+          : [
+              [
+                { label: "Country", value: country },
+                { label: "Visitor Purpose", value: visitor.visitor_purpose || "N/A" },
+              ],
+            ]),
+      ];
+      // if (visitor.visitor_purpose?.trim()) {
+      //   rows.push([{ label: "Visitor Purpose", value: visitor.visitor_purpose! }]);
+      // }
+      return rows;
+    }
+
+    case "OTHER": {
+      const rows: Array<Array<{ label: string; value: string }>> = [
+        [
+          { label: "Visitor Name", value: visitorName },
+          { label: pinLabel, value: visitor.visitor_pin_code || "N/A" },
+          { label: "Country", value: country },
+        ],
+        [
+          { label: "Visitor contact Number", value: maskPhone(visitor.visitor_contact_number) },
+          { label: addrLabel, value: address },
+          { label: "State", value: visitor.visitor_state || "N/A" },
+        ],
+        [
+          { label: "Tehsil/Area", value: visitor.visitor_tehsil || "N/A" },
+          { label: "Post Office", value: visitor.visitor_area || "N/A" },
+          { label: idLabel, value: idValue },
+        ],
+        [
+          { label: cityLabel, value: visitor.visitor_city || "N/A" },
+          { label: "Whom To Meet", value: visitor.visitor_purpose || "N/A" },
+        ],
+      ];
+      if (visitor.visitor_company_name?.trim()) {
+        rows.push([{ label: "Visitor Company Name", value: visitor.visitor_company_name! }]);
+      }
+      // if (visitor.visitor_purpose?.trim()) {
+      //   rows.push([{ label: "Whom To Meet", value: visitor.visitor_purpose! }]);
+      // }
+      return rows;
+    }
+
+    case "MEDICINE":
+    default: {
+      return [
+        [
+          { label: "Patient UHID", value: visitor.patient_uhid || "N/A" },
+          { label: "Patient Name", value: patientName },
+          { label: "Contact Number", value: maskPhone(visitor.patient_phone_number) },
+        ],
+        [
+          { label: "Country", value: country },
+          { label: pinLabel, value: visitor.visitor_pin_code || "N/A" },
+          { label: addrLabel, value: address },
+        ],
+        [
+          { label: "State", value: visitor.visitor_state || "N/A" },
+          { label: cityLabel, value: visitor.visitor_city || "N/A" },
+          { label: "Tehsil/Area", value: visitor.visitor_tehsil || "N/A" },
+        ],
+        [
+          { label: "Post Office", value: visitor.visitor_area || "N/A" },
+          { label: "Visitor Name", value: visitorName },
+          { label: "Visitor Nationality", value: visitor.visitor_nationality || "N/A" },
+        ],
+        [
+          { label: idLabel, value: idValue },
+          {
+            label: "Who Visited for Medicine",
+            value:
+              visitor.is_patient_visit_for_medicine === true
+                ? "Patient"
+                : visitor.is_patient_visit_for_medicine === false
+                  ? "Visitor"
+                  : "N/A",
+          },
+        ],
+      ];
+    }
+  }
+}
+
 export default function GateReportsPage() {
   const router = useRouter();
+  const viewDailyReportsPerm = usePermission("Gate", { subModule: "View Daily Reports" });
+  const selectedBranch = useAppSelector(selectSelectedBranch);
+  const branchId = selectedBranch?.id ?? 1;
+  const branchName = selectedBranch?.name ?? "";
+
   const [activeTab, setActiveTab] = useState("all"); // Default to "All" tab
   const [searchInput, setSearchInput] = useState(""); // Immediate input value
   const [searchTerm, setSearchTerm] = useState(""); // Debounced search term for API calls
@@ -538,6 +715,9 @@ export default function GateReportsPage() {
   };
 
   const handleFilter = (filterFromDate: string, filterToDate: string) => {
+    if (filterFromDate && filterToDate && filterToDate < filterFromDate) {
+      return;
+    }
     setFromDate(filterFromDate);
     setToDate(filterToDate);
     setCurrentPage(1); // Reset to first page when filter is applied
@@ -560,7 +740,7 @@ export default function GateReportsPage() {
   };
 
   // API hooks - use different endpoints based on selectedPatientVisitor
-  const [getPatientEntries, { data: patientEntriesData, isLoading: isLoadingPatients, isError: isErrorPatients }] = useLazyGetPatientEntriesQuery();
+  const [getPatientEntries, { data: patientEntriesData, isLoading: isLoadingPatients, isError: isErrorPatients }] = useLazyGetGatePatientEntriesQuery();
   const [getVisitors, { data: visitorsData, isLoading: isLoadingVisitors, isError: isErrorVisitors }] = useLazyGetVisitorsQuery();
 
   // Determine which API data to use
@@ -624,26 +804,26 @@ export default function GateReportsPage() {
     // 3. "Others" tab is active → visitorType: "Other"
     // 4. On "All" tab and "Only Visitor" is selected
     if (activeTab === "patient-visitor") {
-      // Patient Visitor tab → use visitors API with visitorType: "opd_ipd"
       getVisitors({
         page: currentPage,
         limit: itemsPerPage,
-        visitorType: "opd_ipd", // "opd_ipd" for Patient Visitor tab
+        visitorType: "opd_ipd",
         startDate: startDateFormatted,
         endDate: endDateFormatted,
         search: searchTerm || undefined,
+        branchId,
         sort: sortField,
         order: sortOrder,
       });
     } else if (activeTab === "patient-medicine-type") {
-      // Patient Medicine type tab → use visitors API with visitorType: "MEDICINE"
       getVisitors({
         page: currentPage,
         limit: itemsPerPage,
-        visitorType: "MEDICINE", // "MEDICINE" for Patient Medicine type tab
+        visitorType: "MEDICINE",
         startDate: startDateFormatted,
         endDate: endDateFormatted,
         search: searchTerm || undefined,
+        branchId,
         sort: sortField,
         order: sortOrder,
       });
@@ -651,16 +831,15 @@ export default function GateReportsPage() {
       getVisitors({
         page: currentPage,
         limit: itemsPerPage,
-        visitorType: "Other", // "Other" for Others tab
+        visitorType: "Other",
         startDate: startDateFormatted,
         endDate: endDateFormatted,
         search: searchTerm || undefined,
+        branchId,
         sort: sortField,
         order: sortOrder,
       });
     } else if (activeTab === "all" && selectedPatientVisitor === "only-visitor") {
-      // On "All" tab with "Only Visitor" selected → use visitors API with combined visitorType
-      // "opd_ipd_medicine_other" = OPD, IPD, MEDICINE, and OTHER visitors
       getVisitors({
         page: currentPage,
         limit: itemsPerPage,
@@ -668,6 +847,7 @@ export default function GateReportsPage() {
         startDate: startDateFormatted,
         endDate: endDateFormatted,
         search: searchTerm || undefined,
+        branchId,
         sort: sortField,
         order: sortOrder,
       });
@@ -685,19 +865,19 @@ export default function GateReportsPage() {
         startDate: startDateFormatted,
         endDate: endDateFormatted,
         search: searchTerm || undefined,
-        branchId: 1, // TODO: Get from context/state
+        branchId,
         sort: sortField,
         order: sortOrder,
       });
     }
-  }, [activeTab, currentPage, itemsPerPage, fromDate, toDate, searchTerm, selectedPatientVisitor, sortField, sortOrder, getPatientEntries, getVisitors]);
+  }, [activeTab, currentPage, itemsPerPage, fromDate, toDate, searchTerm, selectedPatientVisitor, sortField, sortOrder, branchId, getPatientEntries, getVisitors]);
 
   const handleGoToHome = () => {
     router.push("/gate");
   };
 
   const handleBack = () => {
-    router.back();
+    router.push("/gate");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -744,143 +924,107 @@ export default function GateReportsPage() {
       }
     };
 
+    // Helper: map a GroupedVisitorItem to a DailyReport row for export
+    const mapGroupedVisitorForExport = (item: unknown, tabType: string): DailyReport => {
+      const grouped = item as unknown as GroupedVisitorItem;
+      const visitors = grouped.visitors || [];
+      const first = visitors[0];
+      if (!first) return { id: 0, type: "N/A", createdAt: "", created: "N/A", patientName: "N/A", visitorName: "N/A" } as unknown as DailyReport;
+
+      const patientName = formatNameWithTitle(first.patient_name, first.patient_title);
+      // All visitor names joined for export
+      const allVisitorNames = visitors
+        .map(v => formatNameWithTitle(v.visitor_name, v.visitor_title))
+        .filter(n => n && n !== "N/A")
+        .join(", ");
+      const created = first.created_at ? formatDate(first.created_at) : (grouped.createdAt || "N/A");
+// debugger
+      if (tabType === "medicine") {
+        return {
+          id: first.id,
+          patientName,
+          uhid: first.patient_uhid || "N/A",
+          contactNumber: first.patient_phone_number || first.visitor_contact_number || "N/A",
+          country: first.visitor_country || "N/A",
+          pinCode: first.visitor_pin_code || "N/A",
+          address: first.visitor_address || "N/A",
+          state: first.visitor_state || "N/A",
+          city: first.visitor_city || "N/A",
+          visitorName: allVisitorNames || "N/A",
+          visitorAadharCardNo: first.visitor_aadhar_card_no || "N/A",
+          type: "Patient Medicine Type",
+          created,
+        } as unknown as DailyReport;
+      }
+
+      return {
+        id: first.id,
+        patientName,
+        visitorName: allVisitorNames || "N/A",
+        type: formatVisitorType(first.visitor_type),
+        created,
+        contactNumber: first.visitor_contact_number || "N/A",
+        address: first.visitor_address || "N/A",
+      } as unknown as DailyReport;
+    };
+
     try {
       if (activeTab === "patient-visitor") {
-        // Patient Visitor tab → use visitors API with visitorType: "opd_ipd"
         const result = await getVisitors({
           page: 1,
-          limit: "", // Empty string to fetch all data
-          visitorType: "opd_ipd", // "opd_ipd" for Patient Visitor tab
+          limit: "",
+          visitorType: "opd_ipd",
           startDate: startDateFormatted,
           endDate: endDateFormatted,
           search: searchTerm || undefined,
+          branchId,
           sort: sortField,
           order: sortOrder,
         });
-
         if (!result.data) return [];
-
-        return result.data.data.map((item) => {
-          const visitorItem = item as VisitorItem;
-          const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-          const visitorTitle = (visitorItem as any).visitorTitle;
-          return {
-            ...visitorItem,
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            visitorName: formatNameWithTitle(visitorItem.visitorName, visitorTitle),
-            type: visitorItem.visitorType || "N/A",
-            registrationNo: undefined,
-            tokenNo: visitorItem.patientToken || null,
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-            contactNumber: visitorItem.visitorContactNumber,
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-          } as DailyReport;
-        });
+        return result.data.data.map(item => mapGroupedVisitorForExport(item, "opd_ipd"));
       } else if (activeTab === "patient-medicine-type") {
-        // Patient Medicine type tab → use visitors API with visitorType: "MEDICINE"
         const result = await getVisitors({
           page: 1,
-          limit: "", // Empty string to fetch all data
-          visitorType: "MEDICINE", // "MEDICINE" for Patient Medicine type tab
+          limit: "",
+          visitorType: "MEDICINE",
           startDate: startDateFormatted,
           endDate: endDateFormatted,
           search: searchTerm || undefined,
+          branchId,
           sort: sortField,
           order: sortOrder,
         });
-
         if (!result.data) return [];
-
-        return result.data.data.map((item) => {
-          const visitorItem = item as VisitorItem;
-          const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-          const visitorTitle = (visitorItem as any).visitorTitle;
-          return {
-            ...visitorItem,
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            uhid: visitorItem.patientUhid || "N/A",
-            contactNumber: visitorItem.patientPhoneNumber || visitorItem.visitorContactNumber || "N/A",
-            country: visitorItem.visitorCountry || "N/A",
-            pinCode: visitorItem.visitorPinCode || "N/A",
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-            state: visitorItem.visitorState || "N/A",
-            city: visitorItem.visitorCity || "N/A",
-            visitorName: formatNameWithTitle(visitorItem.visitorName, visitorTitle),
-            visitorAadharCardNo: visitorItem.visitorAadharCardNo || "N/A",
-            type: "Patient Medicine Type",
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-          } as DailyReport;
-        });
+        return result.data.data.map(item => mapGroupedVisitorForExport(item, "medicine"));
       } else if (activeTab === "others") {
         const result = await getVisitors({
           page: 1,
-          limit: "", // Empty string to fetch all data
+          limit: "",
           visitorType: "Other",
           startDate: startDateFormatted,
           endDate: endDateFormatted,
           search: searchTerm || undefined,
+          branchId,
           sort: sortField,
           order: sortOrder,
         });
-
         if (!result.data) return [];
-
-        return result.data.data.map((item) => {
-          const visitorItem = item as VisitorItem;
-          const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-          const visitorTitle = (visitorItem as any).visitorTitle;
-          return {
-            ...visitorItem,
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            visitorName: formatNameWithTitle(visitorItem.visitorName, visitorTitle),
-            type: visitorItem.visitorType || "N/A",
-            registrationNo: undefined,
-            tokenNo: visitorItem.patientToken || null,
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-            contactNumber: visitorItem.visitorContactNumber,
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-          } as DailyReport;
-        });
+        return result.data.data.map(item => mapGroupedVisitorForExport(item, "other"));
       } else if (activeTab === "all" && selectedPatientVisitor === "only-visitor") {
-        // On "All" tab with "Only Visitor" selected → use visitors API with combined visitorType
-        // "opd_ipd_medicine_other" = OPD, IPD, MEDICINE, and OTHER visitors
         const result = await getVisitors({
           page: 1,
-          limit: "", // Empty string to fetch all data
+          limit: "",
           visitorType: "opd_ipd_medicine_other",
           startDate: startDateFormatted,
           endDate: endDateFormatted,
           search: searchTerm || undefined,
+          branchId,
           sort: sortField,
           order: sortOrder,
         });
-
         if (!result.data) return [];
-
-        return result.data.data.map((item) => {
-          const visitorItem = item as VisitorItem;
-          const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-          const visitorTitle = (visitorItem as any).visitorTitle;
-          return {
-            ...visitorItem,
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            visitorName: formatNameWithTitle(visitorItem.visitorName, visitorTitle),
-            type: visitorItem.visitorType || "N/A",
-            registrationNo: undefined,
-            tokenNo: visitorItem.patientToken || null,
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-            contactNumber: visitorItem.visitorContactNumber,
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-          } as DailyReport;
-        });
+        return result.data.data.map(item => mapGroupedVisitorForExport(item, "all"));
       } else {
         // Use patient-entries API for:
         // 1. "All" tab (with "Patient Visitor" selected - default)
@@ -896,7 +1040,7 @@ export default function GateReportsPage() {
           startDate: startDateFormatted,
           endDate: endDateFormatted,
           search: searchTerm || undefined,
-          branchId: 1,
+          branchId,
           sort: sortField,
           order: sortOrder,
         });
@@ -979,8 +1123,6 @@ export default function GateReportsPage() {
     return exportTitle.toLowerCase().replace(/\s+/g, "_");
   }, [exportTitle]);
 
-  const branchName = useAppSelector(selectUserBranchName);
-
   // Use export hook - columns, title, and fileName are reactive
   const { handleExportPDF, handleExportCSV, isLoadingPDF, isLoadingCSV } = useExport({
     title: exportTitle,
@@ -1040,12 +1182,43 @@ export default function GateReportsPage() {
     } else {
       fields = dialogFields;
     }
+
+    // For OPD or any non‑IPD visitor, hide IPD‑specific room/bed/building fields
+    const isIpdVisitor = (selectedReport as any)?.type === "IPD";
+    if (!isIpdVisitor) {
+      fields = fields.filter(
+        (f) =>
+          f.key !== "patientRoomNo" &&
+          f.key !== "patientBedNo" &&
+          f.key !== "patientBuilding"
+      );
+    }
+
     const addr1 = selectedReport?.addressLine1 ?? (selectedReport as any)?.visitorAddressLine1;
     const hasAddressLine1 = addr1 != null && String(addr1).trim() !== "";
+    let finalFields = fields;
+
     if (hasAddressLine1) {
-      return fields.filter((f) => f.key !== "address");
+      finalFields = finalFields.filter((f) => f.key !== "address");
+    } else {
+      finalFields = finalFields.filter((f) => f.key !== "addressLine1" && f.key !== "addressLine2");
     }
-    return fields.filter((f) => f.key !== "addressLine1" && f.key !== "addressLine2");
+
+    // For "Others" tab (or corresponding visitor rows), show Visitor Company Name only when it exists
+    const company = (selectedReport as any)?.visitorCompanyName;
+    const hasCompanyName = company != null && String(company).trim() !== "";
+    if (!hasCompanyName) {
+      finalFields = finalFields.filter((f) => f.key !== "visitorCompanyName");
+    }
+
+    // Show Visitor Purpose only when it has a non-empty value
+    const purpose = (selectedReport as any)?.visitorPurpose;
+    const hasVisitorPurpose = purpose != null && String(purpose).trim() !== "";
+    if (!hasVisitorPurpose) {
+      finalFields = finalFields.filter((f) => f.key !== "visitorPurpose");
+    }
+
+    return finalFields;
   }, [isOnlyVisitorAllTab, selectedReport, dialogFields]);
 
   // Get data from API response and map fields
@@ -1068,129 +1241,112 @@ export default function GateReportsPage() {
     };
 
     return apiData.data.map((item) => {
-      // If it's a visitor item, map it to match PatientEntryItem structure
-      // Check if using visitors API (Patient Visitor tab, Patient Medicine type tab, Others tab, or select dropdown)
-      if (useVisitorsAPI && "visitorName" in item && "visitorType" in item) {
-        const visitorItem = item as VisitorItem;
-
-        // Special handling for Patient Medicine type tab
-        if (activeTab === "patient-medicine-type") {
-          const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-          const visitorTitle = (visitorItem as any).visitorTitle;
-          const rawVisitorName = visitorItem.visitorName; // Preserve raw visitor name
+      if (useVisitorsAPI) {
+        // New grouped API format: each item is a GroupedVisitorItem
+        const groupedItem = item as unknown as GroupedVisitorItem;
+        const visitors = groupedItem.visitors || [];
+        const firstVisitor = visitors[0];
+// debugger
+        if (!firstVisitor) {
           return {
-            ...visitorItem,
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            uhid: visitorItem.patientUhid || "N/A",
-            contactNumber:
-              visitorItem.patientPhoneNumber || visitorItem.visitorContactNumber || "N/A",
-            country: visitorItem.visitorCountry || "N/A",
-            pinCode: visitorItem.visitorPinCode || "N/A",
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-            state: visitorItem.visitorState || "N/A",
-            city: visitorItem.visitorCity || "N/A",
-            tehsil: visitorItem.visitorTehsil || undefined,
-            area: visitorItem.visitorArea || undefined,
-            visitorName: formatNameWithTitle(rawVisitorName, visitorTitle),
-            // Preserve raw visitor name for proper formatting
-            rawVisitorName: rawVisitorName,
-            visitorAadharCardNo: visitorItem.visitorAadharCardNo || undefined,
-            visitorPassportNumber: visitorItem.visitorPassportNumber || undefined,
-            visitorNationalId: visitorItem.visitorNationalId || undefined,
-            visitorNationality: visitorItem.visitorNationality || "N/A",
-            type: "Patient Medicine Type",
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-            // Preserve title fields for later use
-            patientTitle,
-            visitorTitle,
-            title: patientTitle,
+            id: 0,
+            type: "N/A",
+            createdAt: groupedItem.createdAt || "",
+            created: groupedItem.createdAt || "N/A",
+            patientName: "N/A",
+            visitorName: "N/A",
+            allVisitors: [],
+            visitorCount: 0,
           } as unknown as DailyReport;
         }
 
-        // Special handling for "All" tab + "Only Visitor" + MEDICINE visitors:
-        // treat them like Patient Medicine Type in terms of fields and show Type as "MEDICINE".
-        if (isOnlyVisitorAllTab && visitorItem.visitorType === "MEDICINE") {
-          const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-          const visitorTitle = (visitorItem as any).visitorTitle;
-          const rawVisitorName = visitorItem.visitorName;
+        const visitorType = firstVisitor.visitor_type;
+        const createdFormatted = groupedItem.createdAt
+          ? formatDate(groupedItem.createdAt)
+          : (groupedItem.createdAt || "N/A");
+        const patientName = formatNameWithTitle(firstVisitor.patient_name, firstVisitor.patient_title);
+        const firstVisitorName = formatNameWithTitle(firstVisitor.visitor_name, firstVisitor.visitor_title);
+// debugger
+        // Patient Medicine Type tab or MEDICINE visitor on "All" + "Only Visitor"
+        if (activeTab === "patient-medicine-type" || (isOnlyVisitorAllTab && visitorType === "MEDICINE")) {
           return {
-            ...visitorItem,
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            uhid: visitorItem.patientUhid || "N/A",
-            contactNumber:
-              visitorItem.patientPhoneNumber || visitorItem.visitorContactNumber || "N/A",
-            country: visitorItem.visitorCountry || "N/A",
-            pinCode: visitorItem.visitorPinCode || "N/A",
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-            state: visitorItem.visitorState || "N/A",
-            city: visitorItem.visitorCity || "N/A",
-            tehsil: visitorItem.visitorTehsil || undefined,
-            area: visitorItem.visitorArea || undefined,
-            visitorName: formatNameWithTitle(rawVisitorName, visitorTitle),
-            // Preserve raw visitor name for proper formatting
-            rawVisitorName: rawVisitorName,
-            visitorAadharCardNo: visitorItem.visitorAadharCardNo || undefined,
-            visitorPassportNumber: visitorItem.visitorPassportNumber || undefined,
-            visitorNationalId: visitorItem.visitorNationalId || undefined,
-            visitorNationality: visitorItem.visitorNationality || "N/A",
-            // show raw MEDICINE type in the Type column for this case
-            type: "MEDICINE",
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-            // Preserve title fields for later use
-            patientTitle,
-            visitorTitle,
-            title: patientTitle,
+            id: firstVisitor.id,
+            patientName,
+            uhid: firstVisitor.patient_uhid || "N/A",
+            contactNumber: firstVisitor.patient_phone_number || firstVisitor.visitor_contact_number || "N/A",
+            country: firstVisitor.visitor_country || "N/A",
+            pinCode: firstVisitor.visitor_pin_code || "N/A",
+            address: firstVisitor.visitor_address || "N/A",
+            addressLine1: firstVisitor.visitor_address_line1 ?? undefined,
+            addressLine2: firstVisitor.visitor_address_line2 ?? undefined,
+            state: firstVisitor.visitor_state || "N/A",
+            city: firstVisitor.visitor_city || "N/A",
+            tehsil: firstVisitor.visitor_tehsil || undefined,
+            area: firstVisitor.visitor_area || undefined,
+            visitorName: firstVisitorName,
+            visitorAadharCardNo: firstVisitor.visitor_aadhar_card_no || undefined,
+            visitorPassportNumber: firstVisitor.visitor_passport_number || undefined,
+            visitorNationalId: firstVisitor.visitor_national_id || undefined,
+            visitorNationality: firstVisitor.visitor_nationality || "N/A",
+            type: isOnlyVisitorAllTab ? "MEDICINE" : "Patient Medicine Type",
+            created: createdFormatted,
+            patientTitle: firstVisitor.patient_title,
+            visitorTitle: firstVisitor.visitor_title,
+            title: firstVisitor.patient_title,
+            allVisitors: visitors,
+            visitorCount: groupedItem.visitorCount,
           } as unknown as DailyReport;
         }
 
-        const patientTitle = (visitorItem as any).patientTitle || (visitorItem as any).title;
-        const visitorTitle = (visitorItem as any).visitorTitle;
-          return {
-            ...visitorItem,
-            // Override with mapped fields for table display
-            patientName: formatNameWithTitle(visitorItem.patientName, patientTitle),
-            visitorName: formatNameWithTitle(visitorItem.visitorName, visitorTitle),
-            // Preserve raw visitor name for proper formatting in renderVisitorNames
-            rawVisitorName: visitorItem.visitorName,
-            // Format visitorType to title case (OTHER -> Other, etc.)
-            type: formatVisitorType(visitorItem.visitorType),
-            registrationNo: undefined,
-            tokenNo: visitorItem.patientToken || null,
-            created: visitorItem.createdAt ? formatDate(visitorItem.createdAt) : "N/A",
-            contactNumber: visitorItem.visitorContactNumber,
-            aadharNumber: visitorItem.visitorAadharCardNo,
-            pinCode: visitorItem.visitorPinCode,
-            address: getVisitorDisplayAddress(visitorItem as any),
-            addressLine1: (visitorItem as any).visitorAddressLine1 ?? undefined,
-            addressLine2: (visitorItem as any).visitorAddressLine2 ?? undefined,
-            city: visitorItem.visitorCity,
-            state: visitorItem.visitorState,
-            tehsil: visitorItem.visitorTehsil || undefined,
-            area: visitorItem.visitorArea || undefined,
-            country: visitorItem.visitorCountry,
-            visitorPurpose: visitorItem.visitorPurpose,
-            // Preserve title fields for later use
-            patientTitle,
-            visitorTitle,
-            title: patientTitle,
-          } as DailyReport;
+        // OPD / IPD / OTHER (and unrecognised types)
+        return {
+          id: firstVisitor.id,
+          patientName,
+          visitorName: firstVisitorName,
+          type: formatVisitorType(visitorType),
+          created: createdFormatted,
+          visitorContactNumber: firstVisitor.visitor_contact_number,
+          pinCode: firstVisitor.visitor_pin_code,
+          address: firstVisitor.visitor_address || "N/A",
+          addressLine1: firstVisitor.visitor_address_line1 ?? undefined,
+          addressLine2: firstVisitor.visitor_address_line2 ?? undefined,
+          city: firstVisitor.visitor_city,
+          state: firstVisitor.visitor_state,
+          country: firstVisitor.visitor_country,
+          tehsil: firstVisitor.visitor_tehsil || undefined,
+          area: firstVisitor.visitor_area || undefined,
+          aadharNumber: firstVisitor.visitor_aadhar_card_no || undefined,
+          visitorAadharCardNo: firstVisitor.visitor_aadhar_card_no || undefined,
+          visitorPassportNumber: firstVisitor.visitor_passport_number || undefined,
+          visitorNationalId: firstVisitor.visitor_national_id || undefined,
+          visitorNationality: firstVisitor.visitor_nationality || undefined,
+          visitorPurpose: firstVisitor.visitor_purpose || undefined,
+          visitorCompanyName: firstVisitor.visitor_company_name || undefined,
+          patientUhid: firstVisitor.patient_uhid || undefined,
+          patientPhoneNumber: firstVisitor.patient_phone_number || undefined,
+          patientRoomNo: firstVisitor.patient_room_no || undefined,
+          patientBedNo: firstVisitor.patient_bed_no || undefined,
+          patientBuilding: firstVisitor.patient_building || undefined,
+          aadharPhoto: firstVisitor.aadhar_photo || undefined,
+          vehiclePhoto: firstVisitor.vehicle_photo || undefined,
+          patientTitle: firstVisitor.patient_title,
+          visitorTitle: firstVisitor.visitor_title,
+          title: firstVisitor.patient_title,
+          allVisitors: visitors,
+          visitorCount: groupedItem.visitorCount,
+        } as unknown as DailyReport;
       } else {
         // Patient entry item - map fields from API response
-        const patientItem = item as any; // Use any to access all fields from API
-        const patientTitle = patientItem.title; // For patient-entries API, title is patient title
+        // debugger
+        const patientItem = item as any;
+        const patientTitle = patientItem.title;
         const visitorTitle = patientItem.visitorTitle;
         const rawPatientName = patientItem.name || patientItem.patientName;
         const rawVisitorName = patientItem.visitorName;
         return {
           ...patientItem,
-          // Map field names for display with titles
           patientName: formatNameWithTitle(rawPatientName, patientTitle),
           visitorName: formatNameWithTitle(rawVisitorName, visitorTitle),
-          // Preserve raw visitor name for proper formatting in renderVisitorNames
           rawVisitorName: rawVisitorName,
           registrationNo: patientItem.registerToken || patientItem.registrationNo || undefined,
           tokenNo: patientItem.opdToken || patientItem.tokenNo || null,
@@ -1212,14 +1368,13 @@ export default function GateReportsPage() {
           addressLine1: patientItem.addressLine1 ?? undefined,
           addressLine2: patientItem.addressLine2 ?? undefined,
           indianForeignerNepal: patientItem.nationality || patientItem.indianForeignerNepal,
-          // Preserve title fields for later use
           patientTitle,
           visitorTitle,
           title: patientTitle,
         } as DailyReport;
       }
     });
-  }, [apiData, activeTab, selectedPatientVisitor, useVisitorsAPI]);
+  }, [apiData, activeTab, selectedPatientVisitor, useVisitorsAPI, isOnlyVisitorAllTab]);
 
   const totalItems = useMemo(() => {
     return apiData?.total || 0;
@@ -1277,81 +1432,81 @@ export default function GateReportsPage() {
     setViewAllDialogOpen(true);
   };
 
-  // Render visitor names with "View all" button if multiple
+  // Render visitor names with "+Count" button if multiple visitors
   const renderVisitorNames = (report: DailyReport): React.ReactNode => {
-    // Get raw visitor name and title from report (before formatting)
-    const rawVisitorName = (report as any).rawVisitorName || (report as any).visitorName;
+    // New grouped format: use allVisitors array when available
+    const allVisitors = (report as any).allVisitors as RawVisitorDetail[] | undefined;
+
+    if (allVisitors && allVisitors.length > 0) {
+      const names = allVisitors
+        .map(v => formatNameWithTitle(v.visitor_name, v.visitor_title))
+        .filter((n): n is string => !!n && n !== "N/A");
+
+      if (names.length === 0) return "N/A";
+      if (names.length === 1) {
+        return (
+          <Tooltip content={names[0]} position="top" delay={0}>
+            <span className="inline-block max-w-[200px] truncate align-top text-left">
+              {names[0]}
+            </span>
+          </Tooltip>
+        );
+      }
+
+      const remainingCount = names.length - 1;
+      const allNamesTooltip = names.join(", ");
+      return (
+        <div className="flex items-center gap-2">
+          <Tooltip content={allNamesTooltip} position="top" delay={0}>
+            <span className="inline-block max-w-[140px] truncate align-top text-left">
+              {names[0]}
+            </span>
+          </Tooltip>
+          <button
+            type="button"
+            onClick={() => handleOpenViewAllVisitors(names)}
+            className="inline-flex shrink-0 h-[30px] cursor-pointer items-center justify-center gap-2 rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FDC70F]/10"
+          >
+            +{remainingCount}
+          </button>
+        </div>
+      );
+    }
+
+    // Fallback for patient-entries API (comma-separated names)
+    const rawVisitorName = (report as any).rawVisitorName || report.visitorName;
     const rawVisitorTitle = (report as any).visitorTitle;
-    
-    // If we can't find raw data, fall back to formatted visitorName
-    let visitorName = rawVisitorName;
-    let visitorTitle = rawVisitorTitle;
-    
-    // If raw data not available, try to extract from formatted name
-    if (!visitorName && report.visitorName && report.visitorName !== "N/A") {
-      visitorName = report.visitorName;
-    } else if (!visitorName || visitorName === "N/A") {
-      return "N/A";
-    }
 
-    // Format names with titles properly
-    const formatVisitorNameWithTitle = (name: string, title: string | undefined | null): string => {
-      if (!name || name === "N/A") return "N/A";
-      const trimmedName = name.trim();
-      const trimmedTitle = title && title.trim() ? title.trim() : null;
-      
-      if (!trimmedTitle) {
-        return trimmedName;
-      }
-      
-      // Handle comma-separated names and titles
-      if (trimmedName.includes(",")) {
-        const names = trimmedName.split(",").map(n => n.trim()).filter(n => n.length > 0);
-        const titles = trimmedTitle.includes(",") 
-          ? trimmedTitle.split(",").map(t => t.trim()).filter(t => t.length > 0)
-          : [trimmedTitle];
-        
-        // Match each name with its corresponding title
-        return names.map((n, index) => {
-          const matchedTitle = titles[index] || titles[0] || "";
-          return matchedTitle ? `${matchedTitle} ${n}` : n;
-        }).join(", ");
-      }
-      
-      // For single name, use first title if multiple titles provided
-      const firstTitle = trimmedTitle.includes(",") 
-        ? trimmedTitle.split(",")[0].trim()
-        : trimmedTitle;
-      
-      return firstTitle ? `${firstTitle} ${trimmedName}` : trimmedName;
-    };
+    if (!rawVisitorName || rawVisitorName === "N/A") return "N/A";
 
-    // Format the visitor names
-    const formattedNames = formatVisitorNameWithTitle(visitorName, visitorTitle);
-    
-    // Split formatted names by comma to check count
-    const names = formattedNames.split(",").map(name => name.trim()).filter(name => name.length > 0);
+    const formattedName = formatNameWithTitle(rawVisitorName, rawVisitorTitle);
+    if (!formattedName || formattedName === "N/A") return "N/A";
 
-    if (names.length === 0) {
-      return "N/A";
-    }
-
+    const names = formattedName.split(",").map(n => n.trim()).filter(n => n.length > 0);
+    if (names.length === 0) return "N/A";
     if (names.length === 1) {
-      // Single name - show as normal text
-      return names[0];
+      return (
+        <Tooltip content={names[0]} position="top" delay={0}>
+          <span className="inline-block max-w-[200px] truncate align-top text-left">
+            {names[0]}
+          </span>
+        </Tooltip>
+      );
     }
 
-    // Multiple names - show first name and "View all" button
-    const firstName = names[0];
     const remainingCount = names.length - 1;
-
+    const allNamesTooltip = names.join(", ");
     return (
       <div className="flex items-center gap-2">
-        <span>{firstName}</span>
+        <Tooltip content={allNamesTooltip} position="top" delay={0}>
+          <span className="inline-block max-w-[140px] truncate align-top text-left">
+            {names[0]}
+          </span>
+        </Tooltip>
         <button
           type="button"
           onClick={() => handleOpenViewAllVisitors(names)}
-          className="inline-flex h-[30px] items-center justify-center gap-2 rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FDC70F]/10"
+          className="inline-flex shrink-0 h-[30px] cursor-pointer items-center justify-center gap-2 rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FDC70F]/10"
         >
           +{remainingCount}
         </button>
@@ -1366,7 +1521,9 @@ export default function GateReportsPage() {
     }
     if (column.key === "action") {
       return (
+        <Tooltip content="View" >
         <button
+      
           type="button"
           onClick={() => handleView(report)}
           className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
@@ -1374,12 +1531,28 @@ export default function GateReportsPage() {
         >
           <Image src="/icons/ViewEyeIcon.svg" alt="View" width={20} height={20} />
         </button>
+          </Tooltip>
       );
     }
     if (column.key === "visitorName") {
       return renderVisitorNames(report);
     }
     const value = report[column.key as keyof DailyReport];
+    // Apply masking for contact number fields in table
+    if (column.key === "contactNumber" && value !== undefined && value !== null) {
+      return maskPhoneNumber(String(value));
+    }
+    if (column.key === "patientName") {
+      const strValue = value !== undefined && value !== null ? String(value) : "N/A";
+      if (strValue === "N/A") return strValue;
+      return (
+        <Tooltip content={strValue} position="top" delay={0}>
+          <span className="inline-block max-w-[200px] truncate align-top text-left">
+            {strValue}
+          </span>
+        </Tooltip>
+      );
+    }
     return value !== undefined && value !== null ? String(value) : "N/A";
   };
 
@@ -1395,9 +1568,9 @@ export default function GateReportsPage() {
   }, [detailDialogFields]);
 
   return (
-    <GateEntryLayout title="">
+    <GateEntryLayout title="" subModuleName="View Daily Reports">
       {!isViewDialogOpen && !selectedReport && (
-        <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5">
+        <div className="w-full overflow-hidden rounded-[20px] lg:border border-0 border-[#E3EEE1] p-0 lg:p-5">
           {/* Header */}
           <div className="mb-6 flex items-center justify-between">
             <h1 className="text-[32px] font-semibold leading-[120%] text-[#262D3B]">Daily Reports</h1>
@@ -1414,9 +1587,9 @@ export default function GateReportsPage() {
 
           <div className="mb-6 rounded-[20px] bg-white p-4">
             {/* Search and Filter Section */}
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]">
-                {activeTab === "all" ? "All" : tabOptions.find((t) => t.value === activeTab)?.label || "All"}
+            <div className="mb-6 flex items-center lg:justify-between justify-end">
+              <h2 className="text-lg font-semibold leading-[120%] text-[#434956] text-hide">
+                {/* {activeTab === "all" ? "All" : tabOptions.find((t) => t.value === activeTab)?.label || "All"} */}
               </h2>
               <form onSubmit={handleSubmit} className="flex items-center gap-2">
                 <TableSearchInput
@@ -1454,7 +1627,7 @@ export default function GateReportsPage() {
                   >
                     <div className="flex items-center justify-center gap-2">
                       <Image src="/icons/FilterIcon.svg" alt="filter" width={24} height={24} />
-                      <span className="font-inter font-medium text-sm leading-[120%] text-[#0B8C00]">Filter</span>
+                      <span className="font-inter font-medium text-sm leading-[120%] text-[#0B8C00] text-hide">Filter</span>
                     </div>
                   </button>
                   {isFilterOpen && (
@@ -1468,12 +1641,14 @@ export default function GateReportsPage() {
                     </div>
                   )}
                 </div>
-                <ExportButton
-                  onExportPDF={handleExportPDF}
-                  onExportCSV={handleExportCSV}
-                  isLoadingPDF={isLoadingPDF}
-                  isLoadingCSV={isLoadingCSV}
-                />
+                {viewDailyReportsPerm.canDownload && (
+                  <ExportButton
+                    onExportPDF={handleExportPDF}
+                    onExportCSV={handleExportCSV}
+                    isLoadingPDF={isLoadingPDF}
+                    isLoadingCSV={isLoadingCSV}
+                  />
+                )}
               </form>
             </div>
 
@@ -1533,7 +1708,13 @@ export default function GateReportsPage() {
                             key={column.key}
                             position={column.key === "action" ? "last" : column.key === "sr" ? "first" : undefined}
                             variant={column.key === "sr" ? "primary" : undefined}
-                            className={column.key === "sr" ? "!w-14 !min-w-0 !max-w-14 !px-2 !whitespace-nowrap" : column.key === "action" ? "!w-14 !min-w-0 !max-w-14 !px-2" : undefined}
+                            className={
+                              column.key === "sr"
+                                ? "!w-14 !min-w-0 !max-w-14 !px-2 !whitespace-nowrap"
+                                : column.key === "action"
+                                  ? "!w-14 !min-w-0 !max-w-14 !px-2"
+                                  : undefined
+                            }
                           >
                             {renderTableCell(column, report, index)}
                           </TableData>
@@ -1566,7 +1747,7 @@ export default function GateReportsPage() {
       {isViewDialogOpen && selectedReport && (
         <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 ">
           {/* Header */}
-          <div className="mb-6 flex items-center justify-between">
+          <div className="mb-6 flex items-center lg:justify-between justify-end">
             <h1 className="text-[32px] font-semibold leading-[120%] text-[#262D3B]">
               {isOnlyVisitorAllTab && selectedReport?.type === "MEDICINE"
                 ? "Patient Medicine Type"
@@ -1578,364 +1759,415 @@ export default function GateReportsPage() {
                 ? "Other Visitor"
                 : getDialogTitle(activeTab, selectedPatientVisitor, selectedReport)}
             </h1>
-            <BackToPreviousPageButton onClick={()=>{
+            <BackToPreviousPageButton onClick={() => {
               setIsViewDialogOpen(false);
               setSelectedReport(null);
             }} />
           </div>
-          <div className="grid grid-cols-12 gap-4">
-            {/* Show details full-width for:
-                - Patient Medicine Type tab
-                - Patient Visitor tab when selected record is IPD (no image)
-                - All tab + Only Visitor filter when selected record is MEDICINE or IPD (no image)
-             */}
-            <div
-              className={
-                activeTab === "patient-medicine-type" ||
-                (activeTab === "patient-visitor" && selectedReport?.type === "IPD") ||
-                (isOnlyVisitorAllTab &&
-                  (selectedReport?.type === "MEDICINE" || selectedReport?.type === "IPD"))
-                  ? "col-span-12"
-                  : "col-span-8"
-              }
-            >
-              <div id="view-user-details-section" className="w-full h-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white">
-                {/* Header */}
-                <div className="mb-5 flex items-center justify-between">
-                  <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
-                    {isOnlyVisitorAllTab && selectedReport?.type === "MEDICINE"
-                      ? "Patient Medicine Type Information"
-                      : isOnlyVisitorAllTab && selectedReport?.type === "OPD"
-                      ? "OPD Visitor Information"
-                      : isOnlyVisitorAllTab && selectedReport?.type === "IPD"
-                      ? "IPD Visitor Information"
-                      : isOnlyVisitorAllTab && (selectedReport?.type === "OTHER" || selectedReport?.type === "Other")
-                      ? "Other Visitor Information"
-                      : getInnerInformationText(activeTab, selectedPatientVisitor, selectedReport)}
-                  </h1>
-                </div>
+          {/* ---- Visitor API: multi-visitor view (new grouped response format) ---- */}
+          {useVisitorsAPI && (() => {
+            const allVis = (selectedReport as any).allVisitors as RawVisitorDetail[] | undefined;
+            if (!allVis || allVis.length === 0) return null;
 
-                {/* Details Content */}
-                <div className="space-y-4">
-                  {Array.from({ length: Math.ceil(detailDialogFields.length / 3) }, (_, rowIndex) => {
-                    const rowFields = detailDialogFields.slice(rowIndex * 3, rowIndex * 3 + 3);
-                    return (
-                      <div key={rowIndex} className="grid grid-cols-3 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                        {rowFields.map((field) => {
-                          // Special handling for visitorIdentification - show dynamic label and value based on nationality
-                          if (field.key === "visitorIdentification") {
-                            const visitorNationality = (selectedReport as any).visitorNationality;
-                            let identificationLabel = "Visitor Aadhar Card Number";
-                            let identificationValue = (selectedReport as any).visitorAadharCardNo;
-                            
-                            if (visitorNationality === "Nepal") {
-                              identificationLabel = "Visitor National Id";
-                              identificationValue = (selectedReport as any).visitorNationalId;
-                            } else if (visitorNationality === "Foreigner") {
-                              identificationLabel = "Visitor Passport Number";
-                              identificationValue = (selectedReport as any).visitorPassportNumber;
-                            } else {
-                              // Default to Indian - show Aadhar Card Number
-                              identificationLabel = "Visitor Aadhar Card Number";
-                              identificationValue = (selectedReport as any).visitorAadharCardNo;
-                            }
-                            
-                            return (
-                              <div key={field.key} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
-                                <p className="text-xs font-medium text-[#7B8089]">{identificationLabel}</p>
-                                <p className="text-sm font-medium text-[#262D3B]">
-                                  {identificationValue ? String(identificationValue) : "N/A"}
-                                </p>
-                              </div>
-                            );
-                          }
-                          
-                          // Special handling for Patient Type - show panelName if available, otherwise show patientType
-                          let displayValue = selectedReport[field.key];
-                          if (field.key === "patientType") {
-                            const panelName = (selectedReport as any).panelName;
-                            if (panelName && panelName !== "N/A" && panelName.trim() !== "") {
-                              displayValue = panelName;
-                            }
-                          }
-                          // For visitor rows (e.g. Other Visitor), use visitorAddressLine1/2 when addressLine1/2 not set
-                          if (field.key === "addressLine1") {
-                            displayValue = displayValue ?? (selectedReport as any)?.visitorAddressLine1;
-                          } else if (field.key === "addressLine2") {
-                            displayValue = displayValue ?? (selectedReport as any)?.visitorAddressLine2;
-                          }
-                          // When addressLine1 has value, show "ZIP/Postal Code" instead of "Pin Code" (label only)
-                          const addr1ForLabel = selectedReport?.addressLine1 ?? (selectedReport as any)?.visitorAddressLine1;
-                          const hasAddressLine1 = addr1ForLabel != null && String(addr1ForLabel).trim() !== "";
-                          // When country is India, show "District" for city field; otherwise show "City"
-                          const isIndiaCountry = selectedReport?.country === "India" || selectedReport?.country === "6";
-                          const label =
-                            field.key === "pinCode" && hasAddressLine1
-                              ? "ZIP/Postal Code"
-                              : field.key === "city"
-                                ? (isIndiaCountry ? "District" : "City")
-                                : field.label;
-                          
+            const firstVisitor = allVis[0];
+            const isMedicineVisitorLayout = firstVisitor.visitor_type === "MEDICINE";
+
+            const getVisitorSectionTitle = (visitor: RawVisitorDetail, idx: number) => {
+              if (allVis.length > 1 && !isMedicineVisitorLayout) return `Visitor ${idx + 1} Information`;
+              switch (visitor.visitor_type) {
+                case "OPD": return "OPD Visitor Information";
+                case "IPD": return "IPD Visitor Information";
+                case "MEDICINE": return "Patient Medicine Type Information";
+                case "OTHER": return "Other Visitor Information";
+                default: return getInnerInformationText(activeTab, selectedPatientVisitor, selectedReport);
+              }
+            };
+
+            const resolvePhotoSrc = (raw: string | null | undefined): string | null => {
+              if (!raw) return null;
+              return raw.startsWith("http://") || raw.startsWith("https://") ? raw : `/api/files/${raw}`;
+            };
+
+            // MEDICINE (single or multiple visitors): one address block (incl. Who Visited for Medicine once) + Visitor Information with Visitor 1, Visitor 2, ...
+            if (isMedicineVisitorLayout) {
+              const sharedRows = buildVisitorFieldRows(firstVisitor, maskPhoneNumber, formatNameWithTitle);
+              const whoVisitedValues = [...new Set(
+                allVis.map((v) =>
+                  v.is_patient_visit_for_medicine === true
+                    ? "Patient"
+                    : v.is_patient_visit_for_medicine === false
+                      ? "Visitor"
+                      : "N/A"
+                )
+              )];
+              const whoVisitedDisplay = whoVisitedValues.filter((x) => x !== "N/A").length > 0
+                ? whoVisitedValues.join(", ")
+                : "N/A";
+              const patientAddressRows = [
+                ...sharedRows.slice(0, 3),
+                [sharedRows[3][0], { label: "Who Visited for Medicine", value: whoVisitedDisplay }],
+              ];
+              const getIdValue = (v: RawVisitorDetail) => {
+                const n = v.visitor_nationality || "Indian";
+                if (n === "Foreigner") return v.visitor_passport_number?.trim() || "";
+                if (n === "Nepal") return v.visitor_national_id?.trim() || "";
+                return v.visitor_aadhar_card_no?.trim() || "";
+              };
+              const hasRealValue = (s: string | undefined | null) => {
+                const t = (s ?? "").trim();
+                return t.length > 0 && t.toUpperCase() !== "N/A";
+              };
+              const hasVisitorData = (v: RawVisitorDetail) =>
+                hasRealValue(formatNameWithTitle(v.visitor_name, v.visitor_title)) ||
+                hasRealValue(v.visitor_nationality) ||
+                hasRealValue(getIdValue(v));
+              const visitorsWithData = allVis.filter(hasVisitorData);
+              return (
+                <div className="space-y-6">
+                  <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white">
+                    <div className="mb-5">
+                      <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
+                        Medicine Type Information
+                      </h1>
+                    </div>
+                    <div>
+                      {patientAddressRows.map((row, rowIdx) => (
+                        <div key={rowIdx} className="grid grid-cols-3 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                          {row.map((field, fieldIdx) => (
+                            <div key={fieldIdx} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
+                              <p className="text-xs font-medium text-[#7B8089]">{field.label}</p>
+                              <p className="text-sm font-medium text-[#262D3B] break-words">{field.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    {visitorsWithData.length > 0 && (
+                      <div className="mt-6">
+                        <h2 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B] mb-4">
+                          Visitor Information
+                        </h2>
+                        {visitorsWithData.map((visitor, idx) => {
+                          const nameVal = formatNameWithTitle(visitor.visitor_name, visitor.visitor_title)?.trim() || "";
+                          const nationalityVal = visitor.visitor_nationality?.trim() || "";
+                          const idVal = getIdValue(visitor);
+                          const cells: Array<{ label: string; value: string }> = [];
+                          if (hasRealValue(nameVal)) cells.push({ label: "Visitor Name", value: nameVal });
+                          if (hasRealValue(nationalityVal)) cells.push({ label: "Visitor Nationality", value: nationalityVal });
+                          if (hasRealValue(idVal)) cells.push({ label: "Visitor Aadhar Number", value: idVal });
+                          if (cells.length === 0) return null;
                           return (
-                            <div key={field.key} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
-                              <p className="text-xs font-medium text-[#7B8089]">{label}</p>
-                              <p className="text-sm font-medium text-[#262D3B]">
-                                {displayValue ? String(displayValue) : "N/A"}
-                              </p>
+                            <div key={visitor.id ?? idx} className={idx > 0 ? "mt-4" : ""}>
+                              <h3 className="font-inter font-medium text-[16px] leading-[1.2] text-[#262D3B] mb-2">
+                                Visitor {idx + 1}
+                              </h3>
+                              <div
+                                className="grid gap-4 border-t border-b border-[#DFE0E2] mb-4"
+                                style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}
+                              >
+                                {cells.map((cell, cellIdx) => (
+                                  <div
+                                    key={cellIdx}
+                                    className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4"
+                                  >
+                                    <p className="text-xs font-medium text-[#7B8089]">{cell.label}</p>
+                                    <p className="text-sm font-medium text-[#262D3B] break-words">{cell.value}</p>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           );
                         })}
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
-              </div>
-            </div>
-            {/* Right-side image column:
-                - Shown for visitor-based views (OPD/IPD/etc.)
-                - Hidden when details are full-width (Patient Medicine Type or MEDICINE-only visitors)
-             */}
-            {!(
-              activeTab === "patient-medicine-type" ||
-              selectedReport?.type === "IPD" ||
-              (isOnlyVisitorAllTab && selectedReport?.type === "MEDICINE")
-            ) && (
-              <div className="col-span-4">
-                {useVisitorsAPI ? (
-                  // Visitors API (OPD / IPD / MEDICINE) → show only Aadhar card image
-                  <div
-                    id="view-user-details-section"
-                    className="w-full h-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white flex flex-col"
-                  >
-                    {/* Header */}
-                    <div className="mb-5 flex items-center justify-between flex-shrink-0">
-                      <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
-                        Aadhar Card Photo
-                      </h1>
-                    </div>
-                    <div className="flex flex-1 items-center justify-center min-h-0">
-                      {(() => {
-                        const rawPhoto = (selectedReport as any)?.aadharPhoto as string | undefined;
-                        let aadharSrc: string | null = null;
+              );
+            }
 
-                        if (rawPhoto) {
-                          // If backend already returns a full URL (e.g. S3 signed URL), use it directly.
-                          if (rawPhoto.startsWith("http://") || rawPhoto.startsWith("https://")) {
-                            aadharSrc = rawPhoto;
-                          } else {
-                            // Otherwise assume it's a file key served by our API.
-                            aadharSrc = `/api/files/${rawPhoto}`;
-                          }
-                        }
+            return allVis.map((visitor, visIdx) => {
+              const isIpdOrMedicine = visitor.visitor_type === "IPD" || visitor.visitor_type === "MEDICINE";
+              const fieldRows = buildVisitorFieldRows(visitor, maskPhoneNumber, formatNameWithTitle);
+              const aadharSrc = resolvePhotoSrc(visitor.aadhar_photo);
 
-                        return aadharSrc ? (
-                          <img
-                            src={aadharSrc}
-                            alt="Aadhar Card"
-                            className="w-full max-w-[400px] h-[185px] object-cover"
-                          />
-                        ) : (
-                          <p className="text-sm font-medium text-[#7B8089]">No Data Available</p>
-                        );
-                      })()}
+              return (
+                <div key={visitor.id ?? visIdx} className={`grid grid-cols-12 gap-4 ${visIdx > 0 ? "mt-4" : ""}`}>
+                  <div className={isIpdOrMedicine ? "col-span-12" : "col-span-8"}>
+                    <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white">
+                      <div className="mb-5">
+                        <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
+                          {getVisitorSectionTitle(visitor, visIdx)}
+                        </h1>
+                      </div>
+                      <div>
+                        {fieldRows.map((row, rowIdx) => (
+                          <div key={rowIdx} className="grid grid-cols-3 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                            {row.map((field, fieldIdx) => (
+                              <div key={fieldIdx} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
+                                <p className="text-xs font-medium text-[#7B8089]">{field.label}</p>
+                                <p className="text-sm font-medium text-[#262D3B] break-words">{field.value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                ) : (
-                  <>
-                    <div
-                      id="view-user-details-section"
-                      className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white "
-                    >
-                      {/* Header */}
+                  {!isIpdOrMedicine && (
+                    <div className="col-span-4">
+                      <div className="w-full h-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white flex flex-col">
+                        <div className="mb-5 flex-shrink-0">
+                          <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
+                            Aadhar Card Photo
+                          </h1>
+                        </div>
+                        <div className="flex flex-1 items-center justify-center min-h-0">
+                          {aadharSrc ? (
+                            <img src={aadharSrc} alt="Aadhar Card" className="w-full max-w-[400px] h-[185px] object-cover" />
+                          ) : (
+                            <p className="text-sm font-medium text-[#7B8089]">No Data Available</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+
+          {/* ---- Patient-entries API: existing detail layout ---- */}
+          {!useVisitorsAPI && (
+            <>
+              <div className="grid grid-cols-12 gap-4">
+                <div
+                  className={
+                    activeTab === "patient-medicine-type" ||
+                    (activeTab === "patient-visitor" && selectedReport?.type === "IPD")
+                      ? "col-span-12"
+                      : "col-span-8"
+                  }
+                >
+                  <div id="view-user-details-section" className="w-full h-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white">
+                    <div className="mb-5 flex items-center justify-between">
+                      <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
+                        {getInnerInformationText(activeTab, selectedPatientVisitor, selectedReport)}
+                      </h1>
+                    </div>
+                    <div className="space-y-4">
+                      {Array.from({ length: Math.ceil(detailDialogFields.length / 3) }, (_, rowIndex) => {
+                        const rowFields = detailDialogFields.slice(rowIndex * 3, rowIndex * 3 + 3);
+                        return (
+                          <div key={rowIndex} className="grid grid-cols-3 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                            {rowFields.map((field) => {
+                              if (field.key === "visitorIdentification") {
+                                const visitorNationality = (selectedReport as any).visitorNationality;
+                                let identificationLabel = "Visitor Aadhar Card Number";
+                                let identificationValue = (selectedReport as any).visitorAadharCardNo;
+                                if (visitorNationality === "Nepal") {
+                                  identificationLabel = "Visitor National Id";
+                                  identificationValue = (selectedReport as any).visitorNationalId;
+                                } else if (visitorNationality === "Foreigner") {
+                                  identificationLabel = "Visitor Passport Number";
+                                  identificationValue = (selectedReport as any).visitorPassportNumber;
+                                }
+                                return (
+                                  <div key={field.key} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
+                                    <p className="text-xs font-medium text-[#7B8089]">{identificationLabel}</p>
+                                    <p className="text-sm font-medium text-[#262D3B]">
+                                      {identificationValue ? String(identificationValue) : "N/A"}
+                                    </p>
+                                  </div>
+                                );
+                              }
+                              if (field.key === "patientPhoneOrUhid") {
+                                const phone = (selectedReport as any).patientPhoneNumber;
+                                const uhid = (selectedReport as any).patientUhid;
+                                const hasPhone = phone != null && String(phone).trim() !== "";
+                                const hasUhid = uhid != null && String(uhid).trim() !== "";
+                                const label = hasPhone ? "Patient Phone No." : hasUhid ? "Patient UHID" : "Patient Phone No.";
+                                const value = hasPhone ? maskPhoneNumber(String(phone).trim()) : hasUhid ? String(uhid).trim() : "N/A";
+                                return (
+                                  <div key={field.key} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
+                                    <p className="text-xs font-medium text-[#7B8089]">{label}</p>
+                                    <p className="text-sm font-medium text-[#262D3B]">{value}</p>
+                                  </div>
+                                );
+                              }
+                              let displayValue = selectedReport[field.key];
+                              if (field.key === "patientType") {
+                                const panelName = (selectedReport as any).panelName;
+                                if (panelName && panelName !== "N/A" && panelName.trim() !== "") {
+                                  displayValue = panelName;
+                                }
+                              }
+                              if (field.key === "addressLine1") {
+                                displayValue = displayValue ?? (selectedReport as any)?.visitorAddressLine1;
+                              } else if (field.key === "addressLine2") {
+                                displayValue = displayValue ?? (selectedReport as any)?.visitorAddressLine2;
+                              }
+                              const addr1ForLabel = selectedReport?.addressLine1 ?? (selectedReport as any)?.visitorAddressLine1;
+                              const hasAddressLine1 = addr1ForLabel != null && String(addr1ForLabel).trim() !== "";
+                              const isIndiaCountry = selectedReport?.country === "India" || selectedReport?.country === "6";
+                              const label =
+                                field.key === "pinCode" && hasAddressLine1
+                                  ? "ZIP/Postal Code"
+                                  : field.key === "city"
+                                    ? (isIndiaCountry ? "District" : "City")
+                                    : field.label;
+                              const isContactNumberField = field.key === "contactNumber" || field.key === "visitorContactNumber";
+                              const finalDisplayValue = field.key === "visitorPurpose"
+                                ? ((displayValue != null && String(displayValue).trim() !== "") ? String(displayValue).trim() : "N/A")
+                                : isContactNumberField && displayValue
+                                ? maskPhoneNumber(String(displayValue))
+                                : displayValue
+                                  ? String(displayValue)
+                                  : "N/A";
+                              return (
+                                <div key={field.key} className="space-y-1 border-r last:border-0 border-[#DFE0E2] py-[10px] px-4">
+                                  <p className="text-xs font-medium text-[#7B8089]">{label}</p>
+                                  <p className="text-sm font-medium text-[#262D3B] break-words">{finalDisplayValue}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+                {!(activeTab === "patient-medicine-type" || (activeTab === "patient-visitor" && selectedReport?.type === "IPD")) && (
+                  <div className="col-span-4">
+                    <div id="view-user-details-section" className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white">
                       <div className="mb-5 flex items-center justify-between">
-                        <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
-                          Vehicle Number Photo
-                        </h1>
+                        <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">Vehicle Number Photo</h1>
                       </div>
                       <div className="flex justify-center">
                         {(() => {
                           const vehiclePhoto = (selectedReport as any)?.vehiclePhoto as string | undefined;
-                          const vehicleSrc = vehiclePhoto && (vehiclePhoto.startsWith("http://") || vehiclePhoto.startsWith("https://"))
-                            ? vehiclePhoto
-                            : null;
-
+                          const vehicleSrc = vehiclePhoto && (vehiclePhoto.startsWith("http://") || vehiclePhoto.startsWith("https://")) ? vehiclePhoto : null;
                           return vehicleSrc ? (
-                            <img
-                              src={vehicleSrc}
-                              alt="Vehicle Number"
-                              className="w-full max-w-[280px] h-[185px] object-cover"
-                            />
+                            <img src={vehicleSrc} alt="Vehicle Number" className="w-full max-w-[280px] h-[185px] object-cover" />
                           ) : (
                             <p className="text-sm font-medium text-[#7B8089]">No Data Available</p>
                           );
                         })()}
                       </div>
                     </div>
-
-                    <div
-                      id="view-user-details-section"
-                      className="mt-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white"
-                    >
-                      {/* Header */}
+                    <div id="view-user-details-section" className="mt-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white">
                       <div className="mb-5 flex items-center justify-between">
-                        <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
-                          Aadhar Card Photo
-                        </h1>
+                        <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">Aadhar Card Photo</h1>
                       </div>
                       <div className="flex justify-center">
                         {(() => {
                           const aadharPhoto = (selectedReport as any)?.aadharPhoto as string | undefined;
-                          const aadharSrc = aadharPhoto && (aadharPhoto.startsWith("http://") || aadharPhoto.startsWith("https://"))
-                            ? aadharPhoto
-                            : null;
-
+                          const aadharSrc = aadharPhoto && (aadharPhoto.startsWith("http://") || aadharPhoto.startsWith("https://")) ? aadharPhoto : null;
                           return aadharSrc ? (
-                            <img
-                              src={aadharSrc}
-                              alt="Aadhar Card"
-                              className="w-full max-w-[280px] h-[185px] object-cover"
-                            />
+                            <img src={aadharSrc} alt="Aadhar Card" className="w-full max-w-[280px] h-[185px] object-cover" />
                           ) : (
                             <p className="text-sm font-medium text-[#7B8089]">No Data Available</p>
                           );
                         })()}
                       </div>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Visitor Information Section - Separate Container */}
-          <div className="grid grid-cols-12 gap-4">
-            {!useVisitorsAPI && (() => {
-            // Parse visitor data from patient-entries API
-            const rawVisitorName = (selectedReport as any).rawVisitorName || (selectedReport as any).visitorName;
-            const rawVisitorTitle = (selectedReport as any).visitorTitle;
-            const visitorAadharCardNo = (selectedReport as any).visitorAadharCardNo;
-            const visitorPassportNumber = (selectedReport as any).visitorPassportNumber;
-            const visitorNationalId = (selectedReport as any).visitorNationalId;
-            const visitorNationality = (selectedReport as any).visitorNationality;
+              {/* Visitor Information Section for patient-entries API */}
+              <div className="grid grid-cols-12 gap-4">
+                {(() => {
+                  const rawVisitorName = (selectedReport as any).rawVisitorName || (selectedReport as any).visitorName;
+                  const rawVisitorTitle = (selectedReport as any).visitorTitle;
+                  const visitorAadharCardNo = (selectedReport as any).visitorAadharCardNo;
+                  const visitorPassportNumber = (selectedReport as any).visitorPassportNumber;
+                  const visitorNationalId = (selectedReport as any).visitorNationalId;
+                  const visitorNationality = (selectedReport as any).visitorNationality;
 
-            if (!rawVisitorName || rawVisitorName === "N/A") {
-              return null;
-            }
+                  if (!rawVisitorName || rawVisitorName === "N/A") return null;
 
-            // Parse comma-separated visitor data
-            const visitorNames = rawVisitorName.split(",").map((n: string) => n.trim()).filter((n: string) => n.length > 0);
-            const visitorTitles = rawVisitorTitle && rawVisitorTitle !== "N/A"
-              ? rawVisitorTitle.split(",").map((t: string) => t.trim()).filter((t: string) => t.length > 0)
-              : [];
-            const visitorNationalities = visitorNationality && visitorNationality !== "N/A"
-              ? visitorNationality.split(",").map((n: string) => n.trim()).filter((n: string) => n.length > 0)
-              : [];
+                  const visitorNames = rawVisitorName.split(",").map((n: string) => n.trim()).filter((n: string) => n.length > 0);
+                  const visitorTitles = rawVisitorTitle && rawVisitorTitle !== "N/A"
+                    ? rawVisitorTitle.split(",").map((t: string) => t.trim()).filter((t: string) => t.length > 0)
+                    : [];
+                  const visitorNationalities = visitorNationality && visitorNationality !== "N/A"
+                    ? visitorNationality.split(",").map((n: string) => n.trim()).filter((n: string) => n.length > 0)
+                    : [];
 
-            // Parse identification fields - handle both comma-separated and single values
-            const parseIdentificationField = (fieldValue: string | undefined): string[] => {
-              if (!fieldValue || fieldValue === "N/A") return [];
-              // Check if it's comma-separated
-              if (fieldValue.includes(",")) {
-                return fieldValue.split(",").map((v: string) => v.trim()).filter((v: string) => v.length > 0 && v !== "N/A");
-              }
-              // Single value - return as array with one element
-              return [fieldValue.trim()];
-            };
+                  const parseIdField = (v: string | undefined): string[] => {
+                    if (!v || v === "N/A") return [];
+                    return v.includes(",")
+                      ? v.split(",").map(s => s.trim()).filter(s => s.length > 0 && s !== "N/A")
+                      : [v.trim()];
+                  };
 
-            const visitorAadhars = parseIdentificationField(visitorAadharCardNo);
-            const visitorPassports = parseIdentificationField(visitorPassportNumber);
-            const visitorNationalIds = parseIdentificationField(visitorNationalId);
+                  const aadhars = parseIdField(visitorAadharCardNo);
+                  const passports = parseIdField(visitorPassportNumber);
+                  const nationalIds = parseIdField(visitorNationalId);
 
-            // Create visitor objects
-            const visitors = visitorNames.map((name: string, index: number) => {
-              const title = visitorTitles[index] || visitorTitles[0] || "";
-              const formattedName = title ? `${title} ${name}` : name;
-              const nationality = visitorNationalities[index] || visitorNationalities[0] || "N/A";
-              
-              // Get identification label and value based on nationality
-              let identificationLabel = "Visitor Aadhar Number";
-              let identification = "N/A";
-              
-              if (nationality === "Indian") {
-                identificationLabel = "Visitor Aadhar Number";
-                // Count how many Indian visitors have appeared before this one
-                const indianCount = visitorNationalities.slice(0, index).filter((n: string) => n === "Indian").length;
-                identification = visitorAadhars[indianCount] || "N/A";
-              } else if (nationality === "Foreigner") {
-                identificationLabel = "Visitor Passport Number";
-                // Count how many Foreigner visitors have appeared before this one
-                const foreignerCount = visitorNationalities.slice(0, index).filter((n: string) => n === "Foreigner").length;
-                identification = visitorPassports[foreignerCount] || "N/A";
-              } else if (nationality === "Nepal") {
-                identificationLabel = "Visitor National Id";
-                // Count how many Nepal visitors have appeared before this one
-                const nepalCount = visitorNationalities.slice(0, index).filter((n: string) => n === "Nepal").length;
-                identification = visitorNationalIds[nepalCount] || "N/A";
-              } else {
-                // Fallback: try to find any available identification by index
-                if (visitorAadhars[index] && visitorAadhars[index] !== "N/A") {
-                  identificationLabel = "Visitor Aadhar Number";
-                  identification = visitorAadhars[index];
-                } else if (visitorPassports[index] && visitorPassports[index] !== "N/A") {
-                  identificationLabel = "Visitor Passport Number";
-                  identification = visitorPassports[index];
-                } else if (visitorNationalIds[index] && visitorNationalIds[index] !== "N/A") {
-                  identificationLabel = "Visitor National Id";
-                  identification = visitorNationalIds[index];
-                }
-              }
+                  const visitors = visitorNames.map((name: string, idx: number) => {
+                    const title = visitorTitles[idx] || visitorTitles[0] || "";
+                    const formattedName = title ? `${title} ${name}` : name;
+                    const nat = visitorNationalities[idx] || visitorNationalities[0] || "N/A";
+                    let identificationLabel = "Visitor Aadhar Number";
+                    let identification = "N/A";
+                    if (nat === "Indian") {
+                      const cnt = visitorNationalities.slice(0, idx).filter((n: string) => n === "Indian").length;
+                      identification = aadhars[cnt] || "N/A";
+                    } else if (nat === "Foreigner") {
+                      identificationLabel = "Visitor Passport Number";
+                      const cnt = visitorNationalities.slice(0, idx).filter((n: string) => n === "Foreigner").length;
+                      identification = passports[cnt] || "N/A";
+                    } else if (nat === "Nepal") {
+                      identificationLabel = "Visitor National Id";
+                      const cnt = visitorNationalities.slice(0, idx).filter((n: string) => n === "Nepal").length;
+                      identification = nationalIds[cnt] || "N/A";
+                    } else {
+                      if (aadhars[idx]) { identification = aadhars[idx]; }
+                      else if (passports[idx]) { identificationLabel = "Visitor Passport Number"; identification = passports[idx]; }
+                      else if (nationalIds[idx]) { identificationLabel = "Visitor National Id"; identification = nationalIds[idx]; }
+                    }
+                    return { name: formattedName, nationality: nat, identification, identificationLabel };
+                  });
 
-              return {
-                name: formattedName,
-                nationality,
-                identification,
-                identificationLabel,
-              };
-            });
+                  if (visitors.length === 0) return null;
 
-            if (visitors.length === 0) {
-              return null;
-            }
-
-            return (
-              <div className="col-span-8 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white mt-4">
-                <div className="mb-5 flex items-center justify-between">
-                  <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">
-                    Visitor Information
-                  </h1>
-                </div>
-                <div className="space-y-4">
-                  {visitors.map((visitor: { name: string; nationality: string; identification: string; identificationLabel: string }, index: number) => (
-                    <div key={index}>
-                     <div className="mb-2">
-                        <p className="text-sm font-medium text-[#262D3B]">Visitor {index + 1}</p>
+                  return (
+                    <div className="col-span-8 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] px-5 pb-5 pt-5 bg-white mt-4">
+                      <div className="mb-5">
+                        <h1 className="font-inter font-medium text-[18px] leading-[1.2] text-[#262D3B]">Visitor Information</h1>
                       </div>
-                    <div className="border-t border-b border-[#DFE0E2] mb-4">
-                     
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4">
-                          <p className="text-xs font-medium text-[#7B8089]">Visitor Name</p>
-                          <p className="text-sm font-medium text-[#262D3B]">{visitor.name}</p>
-                        </div>
-                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4">
-                          <p className="text-xs font-medium text-[#7B8089]">Visitor Nationality</p>
-                          <p className="text-sm font-medium text-[#262D3B]">{visitor.nationality}</p>
-                        </div>
-                        <div className="space-y-1 py-[10px] px-4">
-                          <p className="text-xs font-medium text-[#7B8089]">
-                            {visitor.identificationLabel}
-                          </p>
-                          <p className="text-sm font-medium text-[#262D3B]">{visitor.identification}</p>
-                        </div>
+                      <div className="space-y-4">
+                        {visitors.map((visitor: { name: string; nationality: string; identification: string; identificationLabel: string }, idx: number) => (
+                          <div key={idx}>
+                            <div className="mb-2">
+                              <p className="text-sm font-medium text-[#262D3B]">Visitor {idx + 1}</p>
+                            </div>
+                            <div className="border-t border-b border-[#DFE0E2] mb-4">
+                              <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4">
+                                  <p className="text-xs font-medium text-[#7B8089]">Visitor Name</p>
+                                  <p className="text-sm font-medium text-[#262D3B] break-words">{visitor.name}</p>
+                                </div>
+                                <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4">
+                                  <p className="text-xs font-medium text-[#7B8089]">Visitor Nationality</p>
+                                  <p className="text-sm font-medium text-[#262D3B] break-words">{visitor.nationality}</p>
+                                </div>
+                                <div className="space-y-1 py-[10px] px-4">
+                                  <p className="text-xs font-medium text-[#7B8089]">{visitor.identificationLabel}</p>
+                                  <p className="text-sm font-medium text-[#262D3B] break-words">{visitor.identification}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    </div>
-                  ))}
-                </div>
+                  );
+                })()}
               </div>
-            );
-          })()}
-          </div>
+            </>
+          )}
         </div>
       )}
 

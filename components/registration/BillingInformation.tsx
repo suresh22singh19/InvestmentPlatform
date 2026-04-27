@@ -51,11 +51,10 @@ export default function BillingInformation({
     const { data: statesData, isLoading: statesLoading } = useGetStatesQuery(
         { countryId },
         {
-            skip: !countryId,
+            skip: !countryId || !isIndia,
         }
     );
 
-    // Fetch cities only when a state is selected
     const { data: citiesData, isLoading: citiesLoading } = useGetCitiesQuery(
         formData.billingState
             ? {
@@ -63,7 +62,7 @@ export default function BillingInformation({
             }
             : undefined,
         {
-            skip: !formData.billingState,
+            skip: !formData.billingState || !isIndia,
             refetchOnMountOrArgChange: true,
         }
     );
@@ -125,13 +124,14 @@ export default function BillingInformation({
                         label="Company Name *"
                         value={formData.companyName}
                         onChange={(e) => {
-                            const value = e.target.value.replace(/[^a-zA-Z0-9\s&-]/g, "");
+                            const value = e.target.value.replace(/[^a-zA-Z\s&-]/g, "").slice(0, 100);
                             onChange("companyName", value);
                         }}
                         onBlur={() => onBlur?.("companyName")}
                         placeholder="Company Name"
                         required
                         type="text"
+                        maxLength={100}
                         error={errors?.companyName}
                     />
                 </div>
@@ -143,15 +143,14 @@ export default function BillingInformation({
                         label="Billing Address *"
                         value={formData.billingAddress}
                         onChange={(e) => {
-                            // Allow only alphanumeric characters, spaces, and common address characters (comma, period, dash, slash)
-                            // Block special characters like $, %, &, *, #, etc.
-                            const value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "");
+                            const value = e.target.value.replace(/[^a-zA-Z\s&-]/g, "").slice(0, 100);
                             onChange("billingAddress", value);
                         }}
                         onBlur={() => onBlur?.("billingAddress")}
                         placeholder="Billing Address"
                         required
                         type="text"
+                        maxLength={100}
                         error={errors?.billingAddress}
                     />
                 </div>
@@ -159,54 +158,105 @@ export default function BillingInformation({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                 <div data-field="billingState" className="scroll-mt-4" ref={fieldRefs?.billingState}>
-                    <FormSelectField
-                        label="State *"
-                        options={stateSelectOptions}
-                        disabled={statesLoading}
-                        value={formData.billingState || null}
-                        onChange={(value) => {
-                            const selectedValue = Array.isArray(value) ? value[0] : value;
-                            onChange("billingState", selectedValue || "");
-                            // Clear city when state changes
-                            if (selectedValue) {
-                                onChange("billingCity", "");
-                                setTimeout(() => {
-                                    onBlur?.("billingState");
-                                }, 0);
-                            }
-                        }}
-                        onBlur={() => onBlur?.("billingState")}
-                        placeholder="Select"
-                        mode="single"
-                        background="white"
-                    />
-                    {errors?.billingState && (
-                        <p className="mt-1 text-xs text-[#F6776E]">{errors.billingState}</p>
+                    {isIndia ? (
+                        <>
+                            <FormSelectField
+                                label="State *"
+                                options={stateSelectOptions}
+                                disabled={statesLoading}
+                                value={formData.billingState || null}
+                                onChange={(value) => {
+                                    const selectedValue = Array.isArray(value) ? value[0] : value;
+                                    onChange("billingState", selectedValue || "");
+                                    if (selectedValue) {
+                                        onChange("billingCity", "");
+                                        setTimeout(() => {
+                                            onBlur?.("billingState");
+                                        }, 0);
+                                    }
+                                }}
+                                onBlur={() => onBlur?.("billingState")}
+                                placeholder="Select"
+                                mode="single"
+                                background="white"
+                            />
+                            {errors?.billingState && (
+                                <p className="mt-1 text-xs text-[#F6776E]">{errors.billingState}</p>
+                            )}
+                        </>
+                    ) : (
+                        <FormInputField
+                            label="State *"
+                            value={formData.billingState}
+                            onChange={(e) => {
+                                let v = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                v = v.replace(/^\s+/, "");
+                                v = v.replace(/(.)\1{2,}/g, "$1$1");
+                                if (v.length > 0) v = v.charAt(0).toUpperCase() + v.slice(1);
+                                onChange("billingState", v.slice(0, 100));
+                            }}
+                            onBlur={(e) => {
+                                const t = e.target.value.trim();
+                                if (t !== e.target.value) onChange("billingState", t);
+                                onBlur?.("billingState");
+                            }}
+                            placeholder="State / province / region"
+                            type="text"
+                            maxLength={100}
+                            required
+                            error={errors?.billingState}
+                        />
                     )}
                 </div>
 
                 <div data-field="billingCity" className="scroll-mt-4" ref={fieldRefs?.billingCity}>
-                    <FormSelectField
-                        label={isIndia ? "District *" : "City *"}
-                        options={citySelectOptions}
-                        disabled={citiesLoading || !formData.billingState}
-                        value={formData.billingCity || null}
-                        onChange={(value) => {
-                            const selectedValue = Array.isArray(value) ? value[0] : value;
-                            onChange("billingCity", selectedValue || "");
-                            if (selectedValue) {
-                                setTimeout(() => {
-                                    onBlur?.("billingCity");
-                                }, 0);
-                            }
-                        }}
-                        onBlur={() => onBlur?.("billingCity")}
-                        placeholder="Select"
-                        mode="single"
-                        background="white"
-                    />
-                    {errors?.billingCity && (
-                        <p className="mt-1 text-xs text-[#F6776E]">{errors.billingCity}</p>
+                    {isIndia ? (
+                        <>
+                            <FormSelectField
+                                label="District *"
+                                options={citySelectOptions}
+                                disabled={citiesLoading || !formData.billingState}
+                                value={formData.billingCity || null}
+                                onChange={(value) => {
+                                    const selectedValue = Array.isArray(value) ? value[0] : value;
+                                    onChange("billingCity", selectedValue || "");
+                                    if (selectedValue) {
+                                        setTimeout(() => {
+                                            onBlur?.("billingCity");
+                                        }, 0);
+                                    }
+                                }}
+                                onBlur={() => onBlur?.("billingCity")}
+                                placeholder="Select"
+                                mode="single"
+                                background="white"
+                            />
+                            {errors?.billingCity && (
+                                <p className="mt-1 text-xs text-[#F6776E]">{errors.billingCity}</p>
+                            )}
+                        </>
+                    ) : (
+                        <FormInputField
+                            label="City *"
+                            value={formData.billingCity}
+                            onChange={(e) => {
+                                let v = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                v = v.replace(/^\s+/, "");
+                                v = v.replace(/(.)\1{2,}/g, "$1$1");
+                                if (v.length > 0) v = v.charAt(0).toUpperCase() + v.slice(1);
+                                onChange("billingCity", v.slice(0, 100));
+                            }}
+                            onBlur={(e) => {
+                                const t = e.target.value.trim();
+                                if (t !== e.target.value) onChange("billingCity", t);
+                                onBlur?.("billingCity");
+                            }}
+                            placeholder="City"
+                            type="text"
+                            maxLength={100}
+                            required
+                            error={errors?.billingCity}
+                        />
                     )}
                 </div>
 

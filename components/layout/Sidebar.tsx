@@ -19,7 +19,7 @@ const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => 
   }
 
   if (item.children) {
-    return item.children.some((child) => !!child.href && pathname.startsWith(child.href));
+    return item.children.some((child) => !!child.href && pathname?.startsWith(child.href));
   }
 
   return false;

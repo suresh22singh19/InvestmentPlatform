@@ -240,7 +240,7 @@ export default function MedicalReportCategoryPage() {
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Medical Report Category
+                 <span className="text-hide">Add Medical Report Category</span>
                 </button>
               </div>
             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./Button";
 
@@ -10,6 +10,8 @@ type MessageDialogProps = {
   onClose: () => void;
   icon?: string; // Path to icon SVG
   iconBgColor?: string; // Background color for icon circle
+  /** When set, replaces the default circular image icon (e.g. custom illustration). */
+  iconSlot?: ReactNode;
   message: string;
   onConfirm?: () => void;
   onCancel?: () => void;
@@ -17,6 +19,8 @@ type MessageDialogProps = {
   cancelText?: string;
   showCancel?: boolean; // Show cancel button or not
   width?: number;
+  /** When true, confirm shows a loader and both actions are disabled (e.g. async confirm). */
+  isActionLoading?: boolean;
 };
 
 export const MessageDialog = ({
@@ -24,6 +28,7 @@ export const MessageDialog = ({
   onClose,
   icon = "/icons/SuccessCheck.svg",
   iconBgColor = "#E8F5E9",
+  iconSlot,
   message,
   onConfirm,
   onCancel,
@@ -31,6 +36,7 @@ export const MessageDialog = ({
   cancelText = "No",
   showCancel = true,
   width = 400,
+  isActionLoading = false,
 }: MessageDialogProps) => {
   const [mounted, setMounted] = useState(false);
 
@@ -99,7 +105,8 @@ export const MessageDialog = ({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-[#F2F8F2]"
+          disabled={isActionLoading}
+          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-[#F2F8F2] disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Close dialog"
         >
           <Image src="/icons/CrossIcon.svg" alt="Close dialog" width={24} height={24} />
@@ -108,12 +115,16 @@ export const MessageDialog = ({
         {/* Content */}
         <div className="flex flex-col items-center px-6 pt-6 pb-4">
           {/* Icon */}
-          <div
-            className="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-            style={{ backgroundColor: iconBgColor }}
-          >
-            <Image src={icon} width={30} height={30} alt="Icon" />
-          </div>
+          {iconSlot != null ? (
+            <div className="mb-4 flex justify-center">{iconSlot}</div>
+          ) : (
+            <div
+              className="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+              style={{ backgroundColor: iconBgColor }}
+            >
+              <Image src={icon} width={36} height={36} alt="Icon" />
+            </div>
+          )}
 
           {/* Message */}
           <p className="text-center text-base font-medium leading-[150%] text-[#000000]">{message}</p>
@@ -132,6 +143,7 @@ export const MessageDialog = ({
               size="large"
               fullWidth
               onClick={handleCancel}
+              disabled={isActionLoading}
               className="flex-1"
             >
               {cancelText}
@@ -142,6 +154,8 @@ export const MessageDialog = ({
             size="large"
             fullWidth
             onClick={handleConfirm}
+            disabled={isActionLoading}
+            isLoading={isActionLoading}
             className="flex-1"
           >
             {confirmText}

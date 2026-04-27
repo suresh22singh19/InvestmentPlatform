@@ -1,45 +1,73 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { GateHeaderBar } from "@/components/layout/GateHeaderBar";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
-import { selectUser, logout, setCredentials } from "@/store/slices/authSlice";
+import {
+  selectUser,
+  selectLoginType,
+  selectPermissionsMap,
+  logout,
+  setCredentials,
+} from "@/store/slices/authSlice";
+import { getSubModulePermissions, hasOnlyGateModuleViewAccess } from "@/utils/permission";
+import type { PermissionAction } from "@/utils/permission";
 
-type GateEntryLayoutProps = {
+const GATE_MODULE = "Gate";
+
+export type GateEntryLayoutProps = {
   title: string;
-  children?: ReactNode;
+  subModuleName: string;
+  children?: ReactNode | ((permissions: PermissionAction) => ReactNode);
 };
 
-export default function GateEntryLayout({ title, children }: GateEntryLayoutProps) {
+export default function GateEntryLayout({ title, subModuleName, children }: GateEntryLayoutProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectUser);
+  const loginType = useAppSelector(selectLoginType);
+  const permissionsMap = useAppSelector(selectPermissionsMap);
   const [isChecking, setIsChecking] = useState(true);
 
+  const isGateOnlyUser = useMemo(() => hasOnlyGateModuleViewAccess(permissionsMap), [permissionsMap]);
+  const isGateUser =
+    Boolean(loginType && loginType.toLowerCase().includes("gate")) || isGateOnlyUser;
+
+  const permissions = useMemo(
+    () => getSubModulePermissions(permissionsMap, GATE_MODULE, subModuleName),
+    [permissionsMap, subModuleName]
+  );
+
+  /** Daily reports: read-only → `canView`. All other Gate screens (new entry): `canAdd`. */
+  const isViewDailyReports = useMemo(
+    () => subModuleName.trim().toLowerCase() === "view daily reports",
+    [subModuleName]
+  );
+  const hasSubmoduleAccess = useMemo(
+    () => (isViewDailyReports ? permissions.canView : permissions.canAdd),
+    [isViewDailyReports, permissions.canView, permissions.canAdd]
+  );
+
   useEffect(() => {
-    // Restore user from localStorage if not in Redux store
     if (!user && typeof window !== "undefined") {
-      // First try to get the full loginData
       const storedLoginData = localStorage.getItem("loginData");
-      
+
       if (storedLoginData) {
         try {
           const loginData = JSON.parse(storedLoginData);
           dispatch(setCredentials(loginData));
-        } catch (error) {
-          console.error("Failed to parse stored loginData", error);
+        } catch {
           router.push("/");
           return;
         }
       } else {
-        // Fallback: reconstruct from individual localStorage items
         const storedUser = localStorage.getItem("user");
         const storedToken = localStorage.getItem("authToken");
         const storedTokenType = localStorage.getItem("tokenType");
         const storedLoginType = localStorage.getItem("loginType");
         const storedExpiresIn = localStorage.getItem("expiresIn");
-        
+
         if (storedUser && storedToken) {
           try {
             const parsedUser = JSON.parse(storedUser);
@@ -50,8 +78,7 @@ export default function GateEntryLayout({ title, children }: GateEntryLayoutProp
               login_type: storedLoginType || "admin",
               expires_in: storedExpiresIn ? parseInt(storedExpiresIn, 10) : 3600,
             }));
-          } catch (error) {
-            console.error("Failed to parse stored user", error);
+          } catch {
             router.push("/");
             return;
           }
@@ -66,44 +93,40 @@ export default function GateEntryLayout({ title, children }: GateEntryLayoutProp
   }, [user, dispatch, router]);
 
   useEffect(() => {
-    if (!isChecking && user) {
-      // If user is not a Gate user, redirect to dashboard
-      if (user.groupName !== "Gate") {
-        router.push("/dashboard");
-        return;
-      }
+    if (isChecking) return;
+    if (!user || !isGateUser) {
+      router.push("/dashboard");
+      return;
     }
-  }, [user, router, isChecking]);
+    if (!hasSubmoduleAccess) {
+      router.push("/gate");
+    }
+  }, [user, router, isChecking, isGateUser, hasSubmoduleAccess]);
 
-  // Show nothing while checking authentication
-  if (isChecking || !user || user.groupName !== "Gate") {
+  if (isChecking || !user || !isGateUser || !hasSubmoduleAccess) {
     return null;
   }
 
   const handleLogout = () => {
-    // Dispatch logout action to clear Redux state
     dispatch(logout());
-    // Redirect to login
     router.push("/");
   };
 
   return (
     <div className="min-h-screen gradient-bg w-full">
       <div className="flex flex-col min-h-screen w-full">
-        {/* Top Header Bar - Logo left, User right */}
         <GateHeaderBar
-          userName={user.name || user.email}
-          userRole={user.groupName}
+          userName={user.userName || user.email}
+          userRole={user.role?.name || "Gate"}
           onLogout={handleLogout}
         />
 
-        {/* Main Content Area */}
-        <main className="flex-1 flex justify-center px-20 py-0">
-          <div className="w-full ">
+        <main className="flex-1 flex justify-center px-5 lg:px-20 py-0">
+          <div className="w-full">
             <h1 className="text-[24px] font-semibold leading-[130%] text-[#434956] mb-4">
               {title}
             </h1>
-            {children}
+            {typeof children === "function" ? children(permissions) : children}
           </div>
         </main>
       </div>

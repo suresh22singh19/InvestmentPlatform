@@ -5,9 +5,15 @@ import { useSelector } from "react-redux";
 import moment from "moment";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ScrollableContainer } from "@/components/ui";
-import { selectLoginData, selectUserId } from "@/store/slices/authSlice";
-import { useGetAllNotificationsQuery, useMarkNotificationAsReadMutation } from "@/store/api/notificationApi";
+import { selectLoginData } from "@/store/slices/authSlice";
+import {
+  useGetBellNotificationsQuery,
+  useMarkBellNotificationAsReadMutation,
+} from "@/store/api/notificationApi";
 import { useSocket } from "@/hooks/useSocket";
+
+/** Toggle when POST …/markNotificationAsRead is ready */
+const ENABLE_BELL_MARK_READ_API = false;
 
 type Notification = {
   notification_id: number;
@@ -15,6 +21,54 @@ type Notification = {
   is_read: boolean;
   created_date: string;
 };
+
+/**
+ * Real-time merge for `duplicate-number-permission-update` into the bell list (API-backed rows).
+ * Updates pending "Duplicate number approval requested for …" rows matching `contactNo`.
+ * If none match, prepends a new row so the status still appears immediately.
+ */
+function applyDuplicatePermissionUpdateToNotificationList(
+  prev: Notification[],
+  contactNo: string,
+  newMessage: string
+): { next: Notification[]; didUpdateExisting: boolean } {
+  const normalized = String(contactNo).trim();
+  if (!normalized) {
+    return { next: prev, didUpdateExisting: false };
+  }
+
+  const looksLikePendingDuplicateRequest = (msg: string) =>
+    msg.includes(normalized) &&
+    (msg.includes("Duplicate number approval requested") || msg.includes("approval requested for"));
+
+  let hit = false;
+  const mapped = prev.map((item) => {
+    if (!looksLikePendingDuplicateRequest(item.message)) return item;
+    hit = true;
+    return {
+      ...item,
+      message: newMessage,
+      created_date: new Date().toISOString(),
+    };
+  });
+
+  if (hit) {
+    return { next: mapped, didUpdateExisting: true };
+  }
+
+  return {
+    next: [
+      {
+        notification_id: -Date.now(),
+        message: newMessage,
+        is_read: false,
+        created_date: new Date().toISOString(),
+      },
+      ...prev,
+    ],
+    didUpdateExisting: false,
+  };
+}
 
 // Duplicate number notification type
 type DuplicateNumberNotification = {
@@ -77,16 +131,11 @@ export function NotificationDropdown({
   onNotificationCountChange,
 }: NotificationDropdownProps) {
   const loginData = useSelector(selectLoginData);
-  const userId = useSelector(selectUserId);
   const [notificationList, setNotificationList] = useState<Notification[]>([]);
   const [duplicateNumberNotificationList, setDuplicateNumberNotificationList] = useState<DuplicateNumberNotification[]>([]);
   const [contactChangeRequestNotificationList, setContactChangeRequestNotificationList] = useState<ContactChangeRequestNotification[]>([]);
-  const [isFetching, setIsFetching] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [limit, setLimit] = useState(15);
-  const [scrollThreshold, setScrollThreshold] = useState(155);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastProcessedContactChangeRequestRef = useRef<{ id?: number; timestamp: number } | null>(null);
 
@@ -259,23 +308,21 @@ export function NotificationDropdown({
 
   const userData = getUserData();
 
-  // Fetch notifications using RTK Query
+  // Bell list: shared with AppShell prefetch — fetched whenever user is logged in (incl. full page refresh), not when opening the dropdown.
   const {
     data: notificationsData,
     isLoading: isLoadingNotifications,
+    isFetching: isFetchingBellNotifications,
     refetch: refetchNotifications,
-  } = useGetAllNotificationsQuery(
+  } = useGetBellNotificationsQuery(
+    { userId: userData?.user_id || 0 },
     {
-      role_name: userData?.login_type || "admin",
-      user_id: userData?.user_id || 0,
-      limit,
-    },
-    {
-      skip: !userData?.user_id || !isOpen,
+      skip: !userData?.user_id,
+      refetchOnMountOrArgChange: true,
     }
   );
 
-  const [markAsReadMutation] = useMarkNotificationAsReadMutation();
+  const [markBellNotificationAsReadMutation] = useMarkBellNotificationAsReadMutation();
 
   // Load duplicate number notifications from localStorage on mount
   useEffect(() => {
@@ -290,39 +337,36 @@ export function NotificationDropdown({
     }
   }, [unreadCount, onNotificationCountChange]);
 
-  // Initialize notifications from API and calculate total unread count
+  // Initialize from GET getDashboardNotifications — `unreadCount` / list come from API when successful (same shape as real API response).
   useEffect(() => {
     if (notificationsData?.success && notificationsData.data) {
-      setNotificationList(notificationsData.data.rows);
-      setTotalCount(notificationsData.data.count);
-      
-      // Calculate total unread count including duplicate number and contact change request notifications
-      const duplicateUnreadCount = duplicateNumberNotificationList.filter((n) => !n.is_read).length;
-      const contactChangeUnreadCount = contactChangeRequestNotificationList.filter((n) => !n.is_read).length;
-      const apiUnreadCount = notificationsData.data.unreadCount || 0;
-      const totalUnread = apiUnreadCount + duplicateUnreadCount + contactChangeUnreadCount;
-      
-      setUnreadCount(totalUnread);
+      const d = notificationsData.data;
+      const rows: Notification[] = (d.notifications ?? []).map((n) => ({
+        notification_id: n.id,
+        message: n.message,
+        is_read: n.isRead,
+        created_date: n.createdAt,
+      }));
+      setNotificationList(rows);
+      setTotalCount(d.total);
+      setUnreadCount(d.unreadCount ?? 0);
     } else {
-      // If no API notifications, only count duplicate number and contact change request notifications
       const duplicateUnreadCount = duplicateNumberNotificationList.filter((n) => !n.is_read).length;
       const contactChangeUnreadCount = contactChangeRequestNotificationList.filter((n) => !n.is_read).length;
       setUnreadCount(duplicateUnreadCount + contactChangeUnreadCount);
     }
   }, [notificationsData, duplicateNumberNotificationList, contactChangeRequestNotificationList]);
 
-  // Listen to socket notifications
+  // Listen to socket notifications — list is owned by GET getBellNotifications; refresh instead of local prepend
   useEffect(() => {
-    const unsubscribe = onNotification((notification: { notificationData: Notification }) => {
-      if (notification?.notificationData) {
-        setNotificationList((prev) => [notification.notificationData, ...prev]);
-        setUnreadCount((prev) => prev + 1);
-        setTotalCount((prev) => prev + 1);
+    const unsubscribe = onNotification(() => {
+      if (userData?.user_id) {
+        void refetchNotifications();
       }
     });
 
     return unsubscribe;
-  }, [onNotification]);
+  }, [onNotification, refetchNotifications, userData?.user_id]);
 
   // Listen to duplicate-number-request socket event
   useEffect(() => {
@@ -348,14 +392,21 @@ export function NotificationDropdown({
         // Reload from localStorage to get the saved notification with id
         const updatedNotifications = getDuplicateNumberNotifications();
         setDuplicateNumberNotificationList(updatedNotifications);
-        
-        // Update unread count
-        setUnreadCount((prev) => prev + 1);
+
+        if (userData?.user_id) {
+          void refetchNotifications();
+        }
       }
     });
 
     return unsubscribe;
-  }, [onDuplicateNumberRequest, saveDuplicateNumberNotification, getDuplicateNumberNotifications]);
+  }, [
+    onDuplicateNumberRequest,
+    saveDuplicateNumberNotification,
+    getDuplicateNumberNotifications,
+    userData?.user_id,
+    refetchNotifications,
+  ]);
 
   // LocalStorage functions for contact change request notifications
   const getContactChangeRequestNotifications = useCallback((): ContactChangeRequestNotification[] => {
@@ -500,27 +551,13 @@ export function NotificationDropdown({
             // Reload from localStorage to get the saved notification with id
             const updatedNotifications = getContactChangeRequestNotifications();
             setContactChangeRequestNotificationList(updatedNotifications);
-            
-            // Update unread count
-            setUnreadCount((prev) => prev + 1);
           }
         } else {
           console.warn("[Notification] ⚠️ Missing required data in contact change request:", data);
         }
 
-        // Refetch notifications from API only if query is enabled (not skipped)
-        if (userData?.user_id && isOpen) {
-          refetchNotifications()
-            .then((result) => {
-              if (result?.data?.success) {
-                // Notifications refetched successfully
-              } else {
-                console.warn("[Notification] ⚠️ Refetch returned unsuccessful result:", result);
-              }
-            })
-            .catch((error) => {
-              console.error("[Notification] ❌ Error refetching notifications:", error);
-            });
+        if (userData?.user_id) {
+          void refetchNotifications();
         }
       } catch (error) {
         console.error("[Notification] ❌ Error handling contact-change-request event:", error);
@@ -528,26 +565,28 @@ export function NotificationDropdown({
     });
 
     return unsubscribe;
-  }, [onContactChangeRequest, refetchNotifications, userData, isOpen, saveContactChangeRequestNotification, getContactChangeRequestNotifications]);
+  }, [onContactChangeRequest, refetchNotifications, userData?.user_id, saveContactChangeRequestNotification, getContactChangeRequestNotifications]);
 
   // Listen to duplicate-number-permission-update socket event
   useEffect(() => {
     const unsubscribe = onDuplicateNumberPermissionUpdate((socketData: any) => {
       // Extract data from socket event
       const data = socketData?.data || socketData;
-      const message = socketData?.message || `Duplicate number ${data?.contactNo || ""} ${data?.status || "updated"}`;
-      
+      const message =
+        socketData?.message ||
+        `Duplicate number ${data?.contactNo || ""} ${data?.status || "updated"}`;
+
       if (data?.contactNo && data?.patientName) {
         // Update duplicate exception patient status in localStorage (for both hospital and clinic)
         // This ensures that when approval happens on any page, the localStorage is updated
         if (data?.status && (data.status.toLowerCase() === "approved" || data.status.toLowerCase() === "rejected")) {
           updateDuplicateExceptionPatientStatus(
-            data.contactNo, 
-            data.patientName, 
+            data.contactNo,
+            data.patientName,
             data.status.toLowerCase() as "approved" | "rejected"
           );
         }
-        
+
         const notification: Omit<DuplicateNumberNotification, "id" | "created_date"> = {
           message,
           contactNo: data.contactNo,
@@ -556,21 +595,40 @@ export function NotificationDropdown({
           is_read: false,
           type: "duplicate-number-permission-update",
         };
-        
-        // Save to localStorage (this will generate id and created_date)
+
         saveDuplicateNumberNotification(notification);
-        
-        // Reload from localStorage to get the saved notification with id
+
         const updatedNotifications = getDuplicateNumberNotifications();
         setDuplicateNumberNotificationList(updatedNotifications);
-        
-        // Update unread count
-        setUnreadCount((prev) => prev + 1);
+
+        // Real-time: merge into API-backed bell rows immediately (refetch still syncs server state)
+        setNotificationList((prev) => {
+          const { next, didUpdateExisting } = applyDuplicatePermissionUpdateToNotificationList(
+            prev,
+            data.contactNo,
+            message
+          );
+          if (!didUpdateExisting) {
+            queueMicrotask(() => setUnreadCount((c) => c + 1));
+          }
+          return next;
+        });
+
+        if (userData?.user_id) {
+          void refetchNotifications();
+        }
       }
     });
 
     return unsubscribe;
-  }, [onDuplicateNumberPermissionUpdate, saveDuplicateNumberNotification, getDuplicateNumberNotifications, updateDuplicateExceptionPatientStatus]);
+  }, [
+    onDuplicateNumberPermissionUpdate,
+    saveDuplicateNumberNotification,
+    getDuplicateNumberNotifications,
+    updateDuplicateExceptionPatientStatus,
+    userData?.user_id,
+    refetchNotifications,
+  ]);
 
   // Listen to manage-contact-settings-update socket event (for approve/reject actions)
   useEffect(() => {
@@ -613,27 +671,13 @@ export function NotificationDropdown({
             // Reload from localStorage to get the saved notification with id
             const updatedNotifications = getContactChangeRequestNotifications();
             setContactChangeRequestNotificationList(updatedNotifications);
-            
-            // Update unread count
-            setUnreadCount((prev) => prev + 1);
           }
         } else {
           console.warn("[Notification] ⚠️ Missing required data in manage contact settings update:", data);
         }
 
-        // Refetch notifications from API only if query is enabled (not skipped)
-        if (userData?.user_id && isOpen) {
-          refetchNotifications()
-            .then((result) => {
-              if (result?.data?.success) {
-                // Notifications refetched successfully
-              } else {
-                console.warn("[Notification] ⚠️ Refetch returned unsuccessful result:", result);
-              }
-            })
-            .catch((error) => {
-              console.error("[Notification] ❌ Error refetching notifications:", error);
-            });
+        if (userData?.user_id) {
+          void refetchNotifications();
         }
       } catch (error) {
         console.error("[Notification] ❌ Error handling manage-contact-settings-update event:", error);
@@ -641,11 +685,15 @@ export function NotificationDropdown({
     });
 
     return unsubscribe;
-  }, [onManageContactSettingsUpdate, refetchNotifications, userData, isOpen, saveContactChangeRequestNotification, getContactChangeRequestNotifications]);
+  }, [onManageContactSettingsUpdate, refetchNotifications, userData?.user_id, saveContactChangeRequestNotification, getContactChangeRequestNotifications]);
 
-  // Mark notification as read (for API notifications)
+  // Mark notification as read (bell API list). Backend optional — keep flow for when POST is enabled.
   const onMarkAsRead = useCallback(
     async (notification_id: number) => {
+      if (!ENABLE_BELL_MARK_READ_API) {
+        return;
+      }
+
       setNotificationList((prevList) => {
         const updatedList = prevList.map((item) => {
           if (item.notification_id === notification_id && !item.is_read) {
@@ -658,17 +706,21 @@ export function NotificationDropdown({
 
       setUnreadCount((prevCount) => Math.max(0, prevCount - 1));
 
-      // Emit to socket
       socketMarkAsRead(notification_id);
 
-      // Call API
       try {
-        await markAsReadMutation({ notification_id }).unwrap();
+        const uid = userData?.user_id;
+        if (uid) {
+          await markBellNotificationAsReadMutation({
+            userId: uid,
+            notificationId: notification_id,
+          }).unwrap();
+        }
       } catch (error) {
         console.error("Error marking notification as read:", error);
       }
     },
-    [markAsReadMutation, socketMarkAsRead]
+    [markBellNotificationAsReadMutation, socketMarkAsRead, userData?.user_id]
   );
 
   // Mark duplicate number notification as read
@@ -716,19 +768,13 @@ export function NotificationDropdown({
   // Mark all as read
   const handleMarkAllAsRead = useCallback(async () => {
     const unreadNotifications = notificationList.filter((item) => !item.is_read);
-    const unreadDuplicateNotifications = duplicateNumberNotificationList.filter((item) => !item.is_read);
-    const unreadContactChangeNotifications = contactChangeRequestNotificationList.filter((item) => !item.is_read);
-    
-    setNotificationList((prevList) =>
-      prevList.map((item) => ({ ...item, is_read: true }))
-    );
+
     setDuplicateNumberNotificationList((prevList) =>
       prevList.map((item) => ({ ...item, is_read: true }))
     );
     setContactChangeRequestNotificationList((prevList) =>
       prevList.map((item) => ({ ...item, is_read: true }))
     );
-    setUnreadCount(0);
 
     // Mark all duplicate number notifications as read in localStorage
     markAllDuplicateNumberNotificationsAsRead();
@@ -744,76 +790,81 @@ export function NotificationDropdown({
       }
     }
 
-    // Emit to socket for all unread API notifications
-    unreadNotifications.forEach((item) => {
-      socketMarkAsRead(item.notification_id);
-    });
-
-    // Call API for all API notifications
-    try {
-      await Promise.all(
-        unreadNotifications.map((item) =>
-          markAsReadMutation({ notification_id: item.notification_id }).unwrap()
-        )
+    if (ENABLE_BELL_MARK_READ_API) {
+      setNotificationList((prevList) =>
+        prevList.map((item) => ({ ...item, is_read: true }))
       );
-    } catch (error) {
-      console.error("Error marking all notifications as read:", error);
+      setUnreadCount(0);
+
+      unreadNotifications.forEach((item) => {
+        socketMarkAsRead(item.notification_id);
+      });
+
+      try {
+        const uid = userData?.user_id;
+        if (uid) {
+          await Promise.all(
+            unreadNotifications.map((item) =>
+              markBellNotificationAsReadMutation({
+                userId: uid,
+                notificationId: item.notification_id,
+              }).unwrap()
+            )
+          );
+        }
+      } catch (error) {
+        console.error("Error marking all notifications as read:", error);
+      }
     }
 
     onMarkAllAsRead?.();
-  }, [notificationList, duplicateNumberNotificationList, markAsReadMutation, onMarkAllAsRead, markAllDuplicateNumberNotificationsAsRead, socketMarkAsRead]);
+  }, [
+    notificationList,
+    userData?.user_id,
+    markBellNotificationAsReadMutation,
+    onMarkAllAsRead,
+    markAllDuplicateNumberNotificationsAsRead,
+    socketMarkAsRead,
+    getContactChangeRequestNotifications,
+  ]);
 
-  // Infinite scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollContainer = scrollContainerRef.current;
-      if (
-        scrollContainer &&
-        scrollContainer.scrollTop >= scrollThreshold &&
-        !isFetching &&
-        notificationList.length < totalCount
-      ) {
-        setLimit((prevLimit) => prevLimit + 15);
-        setScrollThreshold((prevThreshold) => prevThreshold + 155);
-      }
-    };
-
-    const scrollContainer = scrollContainerRef.current;
-    scrollContainer?.addEventListener("scroll", handleScroll);
-
-    return () => {
-      scrollContainer?.removeEventListener("scroll", handleScroll);
-    };
-  }, [isFetching, notificationList.length, totalCount, scrollThreshold]);
-
-  // Combine API notifications and duplicate number notifications
-  // Convert duplicate number notifications to match Notification format for display
+  // When the API returns rows (e.g. total > 0 or notifications.length > 0), show that list only — it already includes duplicate/contact items; merging localStorage would duplicate.
   const allNotifications = useMemo(() => {
-    const duplicateAsNotifications: (Notification & { duplicateId?: string; contactChangeId?: string })[] = duplicateNumberNotificationList.map((dup) => ({
-      notification_id: parseInt(dup.id.replace(/\D/g, "")) || 0, // Convert id to number
-      message: dup.message,
-      is_read: dup.is_read,
-      created_date: dup.created_date,
-      // Store duplicate notification ID for marking as read
-      duplicateId: dup.id,
-    }));
+    const apiData = notificationsData?.success ? notificationsData.data : undefined;
+    const hasApiRows =
+      !!apiData &&
+      ((apiData.total ?? 0) > 0 || (apiData.notifications?.length ?? 0) > 0);
 
-    const contactChangeAsNotifications: (Notification & { duplicateId?: string; contactChangeId?: string })[] = contactChangeRequestNotificationList.map((contact) => ({
-      notification_id: parseInt(contact.id.replace(/\D/g, "")) || 0, // Convert id to number
-      message: contact.message,
-      is_read: contact.is_read,
-      created_date: contact.created_date,
-      // Store contact change notification ID for marking as read
-      contactChangeId: contact.id,
-    }));
-    
-    // Combine and sort by date (most recent first)
-    const combined = [...notificationList, ...duplicateAsNotifications, ...contactChangeAsNotifications].sort((a, b) => {
-      return new Date(b.created_date).getTime() - new Date(a.created_date).getTime();
-    });
-    
+    if (hasApiRows) {
+      return [...notificationList].sort(
+        (a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
+      );
+    }
+
+    const duplicateAsNotifications: (Notification & { duplicateId?: string; contactChangeId?: string })[] =
+      duplicateNumberNotificationList.map((dup) => ({
+        notification_id: parseInt(dup.id.replace(/\D/g, ""), 10) || 0,
+        message: dup.message,
+        is_read: dup.is_read,
+        created_date: dup.created_date,
+        duplicateId: dup.id,
+      }));
+
+    const contactChangeAsNotifications: (Notification & { duplicateId?: string; contactChangeId?: string })[] =
+      contactChangeRequestNotificationList.map((contact) => ({
+        notification_id: parseInt(contact.id.replace(/\D/g, ""), 10) || 0,
+        message: contact.message,
+        is_read: contact.is_read,
+        created_date: contact.created_date,
+        contactChangeId: contact.id,
+      }));
+
+    const combined = [...notificationList, ...duplicateAsNotifications, ...contactChangeAsNotifications].sort(
+      (a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
+    );
+
     return combined;
-  }, [notificationList, duplicateNumberNotificationList, contactChangeRequestNotificationList]);
+  }, [notificationsData, notificationList, duplicateNumberNotificationList, contactChangeRequestNotificationList]);
 
   // Group notifications by time
   const today = moment().startOf("day");
@@ -870,13 +921,13 @@ export function NotificationDropdown({
         <h3 className="text-[18px] font-medium leading-[150%] text-[#344054]">
           Notification
         </h3>
-        <button
+        {/* <button
           type="button"
           onClick={handleMarkAllAsRead}
           className="text-[14px] font-medium leading-[150%] text-[#0B8C00] hover:underline cursor-pointer"
         >
           Mark all as read
-        </button>
+        </button> */}
       </div>
 
       {/* Notification Content */}
@@ -885,7 +936,7 @@ export function NotificationDropdown({
         maxHeight="449px"
         showScrollbar={true}
       >
-        {loading || isLoadingNotifications ? (
+        {isLoadingNotifications ? (
           <div className="text-center p-4">Loading...</div>
         ) : allNotifications.length === 0 ? (
           <div className="text-center p-4">No data available</div>
@@ -1183,13 +1234,15 @@ export function NotificationDropdown({
         )}
       </ScrollableContainer>
 
-      {isFetching && (
+      {isFetchingBellNotifications && (
         <div className="flex justify-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-[#0B8C00]"></div>
         </div>
       )}
 
-      {!isFetching && allNotifications.length > 0 && notificationList.length >= totalCount && (
+      {!isFetchingBellNotifications &&
+        allNotifications.length > 0 &&
+        notificationList.length >= totalCount && (
         <div className="flex justify-center border-t border-[#EAECF0] px-4 py-2">
           <div className="font-bold cursor-pointer text-sm text-[#C0C0C0]">The End</div>
         </div>

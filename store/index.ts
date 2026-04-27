@@ -11,6 +11,8 @@ import { combineReducers } from "@reduxjs/toolkit";
 
 import authReducer from "./slices/authSlice";
 import { baseApi } from "./api/baseApi";
+import { authRefreshApi } from "./api/authRefreshApi";
+import "./api/doctorApi";
 
 // Redux Persist config - only persist auth slice
 const persistConfig = {
@@ -23,6 +25,7 @@ const persistConfig = {
 const rootReducer = combineReducers({
   auth: authReducer,
   [baseApi.reducerPath]: baseApi.reducer,
+  [authRefreshApi.reducerPath]: authRefreshApi.reducer,
 });
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);
@@ -34,7 +37,7 @@ export const store = configureStore({
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
       },
-    }).concat(baseApi.middleware),
+    }).concat(baseApi.middleware, authRefreshApi.middleware),
   devTools: process.env.NODE_ENV !== "production",
 });
 

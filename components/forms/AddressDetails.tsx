@@ -22,10 +22,23 @@ export interface AddressFormData {
   companyName?: string;
 }
 
+/** Same rules as Patient Name on registration/hospital (`RegistrationPersonalDetails`): letters and spaces only, no leading spaces, collapse 3+ repeated characters to 2, capitalize first letter, max 100. */
+function sanitizePatientNameStyleInput(raw: string): string {
+  let value = raw.replace(/[^a-zA-Z\s]/g, "");
+  value = value.replace(/^\s+/, "");
+  value = value.replace(/(.)\1{2,}/g, "$1$1");
+  if (value.length > 0) {
+    value = value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  return value.slice(0, 100);
+}
+
 interface AddressDetailsProps {
   formData: AddressFormData;
   onChange: (field: keyof AddressFormData, value: string) => void;
   onBlur?: (field: keyof AddressFormData) => void;
+  /** Prefix for `data-field` attributes (e.g. `address.` → `address.pinCode`) when multiple address blocks exist on one page. */
+  dataFieldPrefix?: string;
   /** When "Foreigner" or "Nepal", show non-India address fields (ZIP/Postal Code, Address Line 1/2). When "Indian", show India fields (Pin Code, Tehsil, Post Office, Address). */
   nationality?: string; // "Indian" | "Foreigner" | "Nepal"
   title?: string;
@@ -44,7 +57,7 @@ interface AddressDetailsProps {
     addressLine2?: React.Ref<HTMLInputElement | null>;
     companyName?: React.Ref<HTMLInputElement | null>;
   };
-  errors?: Record<string, string>;
+  errors?: Record<string, string | undefined>;
   readOnly?: boolean;
 }
 
@@ -52,6 +65,7 @@ export default function AddressDetails({
   formData,
   onChange,
   onBlur,
+  dataFieldPrefix = "",
   nationality,
   title = "Address Details",
   iconSrc,
@@ -61,31 +75,40 @@ export default function AddressDetails({
   errors,
   readOnly = false,
 }: AddressDetailsProps) {
+  const df = (name: string) => (dataFieldPrefix ? `${dataFieldPrefix}${name}` : name);
+
+  // When nationality is "Foreigner" or "Nepal", show non-India layout. When "Indian", show India layout. When not passed, use country only.
+  const isIndiaSelected = useMemo(() => {
+    if (nationality === "Foreigner" || nationality === "Nepal") return false;
+    if (nationality === "Indian") return !formData.country || formData.country === "6";
+    return formData.country === "6"; // No nationality prop: decide by country only (e.g. registration pages)
+  }, [nationality, formData.country]);
+
   // Fetch countries from public API (always fetch)
   const { data: countriesData, isLoading: countriesLoading } = useGetCountriesQuery();
 
-  // Fetch states only when a country is selected
+  // Fetch states only when India is selected and a country is chosen (cascading IDs)
   const { data: statesData, isLoading: statesLoading } = useGetStatesQuery(
-    formData.country
+    formData.country && isIndiaSelected
       ? {
-        countryId: formData.country,
-      }
+          countryId: formData.country,
+        }
       : undefined,
     {
-      skip: !formData.country, // Skip query if no country is selected
+      skip: !formData.country || !isIndiaSelected,
     }
   );
 
-  // Fetch cities only when a state is selected
+  // Fetch cities (districts) only when India is selected and a state is chosen
   const { data: citiesData, isLoading: citiesLoading } = useGetCitiesQuery(
-    formData.state
+    formData.state && isIndiaSelected
       ? {
-        stateId: formData.state,
-      }
+          stateId: formData.state,
+        }
       : undefined,
     {
-      skip: !formData.state, // Skip query if no state is selected
-      refetchOnMountOrArgChange: true, // Refetch when state_id changes
+      skip: !formData.state || !isIndiaSelected,
+      refetchOnMountOrArgChange: true,
     }
   );
 
@@ -98,6 +121,7 @@ export default function AddressDetails({
   // State to store pincode options for dropdown
   const [pincodeOptions, setPincodeOptions] = useState<SelectOption[]>([]);
   const [pincodeSearchValue, setPincodeSearchValue] = useState<string>("");
+  const [isPincodeLoading, setIsPincodeLoading] = useState(false);
   const [showPincodeDropdown, setShowPincodeDropdown] = useState<boolean>(false);
   const [areaOptionsFromPincode, setAreaOptionsFromPincode] = useState<SelectOption[]>([]);
   const [pendingTehsilId, setPendingTehsilId] = useState<string | null>(null);
@@ -105,6 +129,7 @@ export default function AddressDetails({
   const hasAutoSelectedTehsilRef = useRef<boolean>(false);
   const hasAutoSelectedAreaRef = useRef<boolean>(false);
   const lastSetTehsilValueRef = useRef<string | null>(null); // Track last successfully set tehsil value
+  const lastSetAreaValueRef = useRef<string | null>(null); // Track last Post Office id (revisit / API can beat options load)
   const pincodeSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pincodeDropdownRef = useRef<HTMLDivElement>(null);
   const [showPincodeDialog, setShowPincodeDialog] = useState<boolean>(false);
@@ -211,7 +236,9 @@ export default function AddressDetails({
     if (searchValue.length >= 3 && formData.country === "6") {
       // Debounce API call
       pincodeSearchTimeoutRef.current = setTimeout(() => {
+        setIsPincodeLoading(true);
         getPincode(searchValue).then((result) => {
+          setIsPincodeLoading(false);
           if (result.data?.success && result.data?.data) {
             const pincodeData = result.data.data;
             const dataArray = Array.isArray(pincodeData) ? pincodeData : [pincodeData];
@@ -233,6 +260,7 @@ export default function AddressDetails({
             }
           }
         }).catch((error) => {
+          setIsPincodeLoading(false);
           console.error("Error fetching pincode data:", error);
           setPincodeOptions([]);
           setShowPincodeDropdown(false);
@@ -243,6 +271,7 @@ export default function AddressDetails({
         });
       }, 300); // 300ms debounce
     } else {
+      setIsPincodeLoading(false);
       setPincodeOptions([]);
       setShowPincodeDropdown(false);
       if (searchValue.length === 0) {
@@ -760,22 +789,16 @@ export default function AddressDetails({
     };
   }, [showPincodeDropdown]);
   
-  // Update pincode search when formData.pinCode changes (from external source)
+  // Update pincode search when formData.pinCode changes (from external source) — India only
   useEffect(() => {
+    if (!isIndiaSelected) return;
     if (formData.pinCode !== pincodeSearchValue) {
       const digitsOnly = formData.pinCode.replace(/\D/g, "").slice(0, 6);
       if (digitsOnly !== pincodeSearchValue) {
         setPincodeSearchValue(digitsOnly);
       }
     }
-  }, [formData.pinCode]);
-
-  // When nationality is "Foreigner" or "Nepal", show non-India layout. When "Indian", show India layout. When not passed, use country only.
-  const isIndiaSelected = useMemo(() => {
-    if (nationality === "Foreigner" || nationality === "Nepal") return false;
-    if (nationality === "Indian") return !formData.country || formData.country === "6";
-    return formData.country === "6"; // No nationality prop: decide by country only (e.g. registration pages)
-  }, [nationality, formData.country]);
+  }, [formData.pinCode, isIndiaSelected, pincodeSearchValue]);
 
   const handleCountryChange = (value: string | string[], selection?: any) => {
     if (readOnly) return;
@@ -899,6 +922,9 @@ export default function AddressDetails({
   const handleAreaChange = (value: string | string[]) => {
     if (readOnly) return;
     const areaValue = Array.isArray(value) ? value[0] : value;
+    if (areaValue) {
+      lastSetAreaValueRef.current = areaValue;
+    }
     onChange("area", areaValue);
     
     // If a value is selected, immediately mark as touched and validate
@@ -913,7 +939,12 @@ export default function AddressDetails({
     if (readOnly) return;
     // Allow only alphanumeric characters, spaces, and common address characters (comma, period, dash, slash)
     // Block special characters like $, %, &, *, #, etc.
-    const value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "");
+    let value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "");
+    // Ensure first character is uppercase if present
+    if (value.length > 0) {
+      value = value.charAt(0).toUpperCase() + value.slice(1);
+    }
+    value = value.slice(0, 100);
     onChange("address", value);
   };
 
@@ -926,14 +957,31 @@ export default function AddressDetails({
 
   const handleAddressLine1Change = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (readOnly) return;
-    const value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "");
+    let value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "");
+    // Ensure first character is uppercase if present
+    if (value.length > 0) {
+      value = value.charAt(0).toUpperCase() + value.slice(1);
+    }
+    value = value.slice(0, 100);
     onChange("addressLine1", value);
   };
 
   const handleAddressLine2Change = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (readOnly) return;
-    const value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "");
+    const value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-\/]/g, "").slice(0, 100);
     onChange("addressLine2", value);
+  };
+
+  /** Non-India: free-text state — same input rules as Patient Name * on registration/hospital */
+  const handleNonIndiaStateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
+    onChange("state", sanitizePatientNameStyleInput(e.target.value));
+  };
+
+  /** Non-India: free-text city — same input rules as Patient Name * on registration/hospital */
+  const handleNonIndiaCityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
+    onChange("city", sanitizePatientNameStyleInput(e.target.value));
   };
 
   return (
@@ -948,7 +996,7 @@ export default function AddressDetails({
         {showCompanyName && (
           <div
             ref={fieldRefs?.companyName}
-            data-field="companyName"
+            data-field={df("companyName")}
             className="scroll-mt-4"
           >
             <FormInputField
@@ -956,11 +1004,19 @@ export default function AddressDetails({
               value={formData.companyName || ""}
               onChange={(e) => {
                 if (readOnly) return;
-                onChange("companyName", e.target.value);
+                // Only allow letters, spaces, and "&" – no numbers or other special characters
+                let value = e.target.value.replace(/[^a-zA-Z\s&]/g, "");
+                // Ensure first character is uppercase if present
+                if (value.length > 0) {
+                  value = value.charAt(0).toUpperCase() + value.slice(1);
+                }
+                value = value.slice(0, 100);
+                onChange("companyName", value);
               }}
               onBlur={() => onBlur?.("companyName")}
               placeholder="Company Name"
               error={errors?.companyName}
+              maxLength={100}
               readOnly={readOnly}
               disabled={readOnly}
             />
@@ -969,7 +1025,7 @@ export default function AddressDetails({
 
         <div
           ref={fieldRefs?.country}
-          data-field="country"
+          data-field={df("country")}
           className="scroll-mt-4"
         >
           <FormSelectField
@@ -991,15 +1047,19 @@ export default function AddressDetails({
         {isIndiaSelected && (
           <div
             ref={fieldRefs?.pinCode}
-            data-field="pinCode"
+            data-field={df("pinCode")}
             className="scroll-mt-4"
           >
             <div className="relative" ref={pincodeDropdownRef}>
               <FormInputField
                 label="Pin Code *"
                 value={pincodeSearchValue}
+                className="!pr-12"
                 onChange={(e) => {
-                  const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  let digitsOnly = e.target.value.replace(/\D/g, "");
+                  // Disallow leading zeros – remove them while allowing zeros after first non-zero digit
+                  digitsOnly = digitsOnly.replace(/^0+/, "");
+                  digitsOnly = digitsOnly.slice(0, 6);
                   setPincodeSearchValue(digitsOnly);
                   onChange("pinCode", digitsOnly);
                   if (digitsOnly.length >= 3) {
@@ -1026,6 +1086,19 @@ export default function AddressDetails({
                 type="tel"
                 error={pincodeApiError || errors?.pinCode}
               />
+              {isPincodeLoading && (
+                <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                  <svg
+                    className="h-5 w-5 animate-spin text-[#0B8C00]"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                </div>
+              )}
               {showPincodeDropdown && pincodeOptions.length > 0 && (
                 <div className="absolute z-50 mt-1 w-full rounded-md border border-[#D0D5DD] bg-white shadow-lg max-h-60 overflow-auto">
                   {/* Show more option at the top */}
@@ -1063,7 +1136,7 @@ export default function AddressDetails({
         {!isIndiaSelected && (
           <div
             ref={fieldRefs?.pinCode}
-            data-field="pinCode"
+            data-field={df("pinCode")}
             className="scroll-mt-4"
           >
             <FormInputField
@@ -1083,53 +1156,103 @@ export default function AddressDetails({
 
         <div
           ref={fieldRefs?.state}
-          data-field="state"
+          data-field={df("state")}
           className="scroll-mt-4"
         >
-          <FormSelectField
-            label="State *"
-            options={stateOptions}
-            placeholder={
-              !formData.country
-                ? "Select Country First"
-                : statesLoading
-                  ? "Loading..."
-                  : "Select"
-            }
-            background="white"
-            value={formData.state}
-            onChange={handleStateChange}
-            onBlur={() => onBlur?.("state")}
-            disabled={statesLoading || !formData.country || readOnly}
-          />
-          {errors?.state && (
-            <p className="mt-1 text-xs text-[#F6776E]">{errors.state}</p>
+          {isIndiaSelected ? (
+            <>
+              <FormSelectField
+                label="State *"
+                options={stateOptions}
+                placeholder={
+                  !formData.country
+                    ? "Select Country First"
+                    : statesLoading
+                      ? "Loading..."
+                      : "Select"
+                }
+                background="white"
+                value={formData.state}
+                onChange={handleStateChange}
+                onBlur={() => onBlur?.("state")}
+                disabled={statesLoading || !formData.country || readOnly}
+              />
+              {errors?.state && (
+                <p className="mt-1 text-xs text-[#F6776E]">{errors.state}</p>
+              )}
+            </>
+          ) : (
+            <FormInputField
+              label="State *"
+              value={formData.state || ""}
+              onChange={handleNonIndiaStateChange}
+              onBlur={(e) => {
+                if (readOnly) return;
+                const trimmed = e.target.value.trim();
+                if (trimmed !== e.target.value) {
+                  onChange("state", trimmed);
+                }
+                onBlur?.("state");
+              }}
+              placeholder="Enter state / province / region"
+              type="text"
+              readOnly={readOnly}
+              disabled={readOnly || !formData.country}
+              required
+              maxLength={100}
+              error={errors?.state}
+            />
           )}
         </div>
 
         <div
           ref={fieldRefs?.city}
-          data-field="city"
+          data-field={df("city")}
           className="scroll-mt-4"
         >
-          <FormSelectField
-            label={isIndiaSelected ? "District *" : "City *"}
-            options={cityOptions}
-            placeholder={
-              !formData.state
-                ? "Select State First"
-                : citiesLoading
-                  ? "Loading..."
-                  : "Select"
-            }
-            background="white"
-            value={formData.city}
-            onChange={handleCityChange}
-            onBlur={() => onBlur?.("city")}
-            disabled={citiesLoading || !formData.state || readOnly}
-          />
-          {errors?.city && (
-            <p className="mt-1 text-xs text-[#F6776E]">{errors.city}</p>
+          {isIndiaSelected ? (
+            <>
+              <FormSelectField
+                label="District *"
+                options={cityOptions}
+                placeholder={
+                  !formData.state
+                    ? "Select State First"
+                    : citiesLoading
+                      ? "Loading..."
+                      : "Select"
+                }
+                background="white"
+                value={formData.city}
+                onChange={handleCityChange}
+                onBlur={() => onBlur?.("city")}
+                disabled={citiesLoading || !formData.state || readOnly}
+              />
+              {errors?.city && (
+                <p className="mt-1 text-xs text-[#F6776E]">{errors.city}</p>
+              )}
+            </>
+          ) : (
+            <FormInputField
+              label="City *"
+              value={formData.city || ""}
+              onChange={handleNonIndiaCityChange}
+              onBlur={(e) => {
+                if (readOnly) return;
+                const trimmed = e.target.value.trim();
+                if (trimmed !== e.target.value) {
+                  onChange("city", trimmed);
+                }
+                onBlur?.("city");
+              }}
+              placeholder="Enter city"
+              type="text"
+              readOnly={readOnly}
+              disabled={readOnly || !formData.country}
+              required
+              maxLength={100}
+              error={errors?.city}
+            />
           )}
         </div>
         
@@ -1137,7 +1260,7 @@ export default function AddressDetails({
         {isIndiaSelected && (
           <div
             ref={fieldRefs?.tehsil}
-            data-field="tehsil"
+            data-field={df("tehsil")}
             className="scroll-mt-4"
           >
             <FormSelectField
@@ -1222,7 +1345,7 @@ export default function AddressDetails({
         {isIndiaSelected && (
           <div
             ref={fieldRefs?.area}
-            data-field="area"
+            data-field={df("area")}
             className="scroll-mt-4"
           >
             <FormSelectField
@@ -1238,10 +1361,59 @@ export default function AddressDetails({
                       : "Select"
               }
               background="white"
-              value={formData.area}
+              value={(() => {
+                if (formData.area) {
+                  lastSetAreaValueRef.current = formData.area;
+                }
+                if (formData.area && pendingAreaId && String(formData.area) === String(pendingAreaId)) {
+                  return formData.area;
+                }
+                if (formData.area && areasLoading) {
+                  return formData.area;
+                }
+                if (formData.area && areaOptions.length > 0) {
+                  const optionExists = areaOptions.some(
+                    (opt) => String(opt.value) === String(formData.area)
+                  );
+                  if (optionExists) {
+                    return formData.area;
+                  }
+                  if (
+                    pendingAreaId &&
+                    String(formData.area) === String(pendingAreaId)
+                  ) {
+                    return formData.area;
+                  }
+                  if (
+                    lastSetAreaValueRef.current &&
+                    String(formData.area) === String(lastSetAreaValueRef.current)
+                  ) {
+                    return formData.area;
+                  }
+                  return formData.area;
+                }
+                if (formData.area && !areasLoading && areaOptions.length === 0) {
+                  if (pendingAreaId && String(formData.area) === String(pendingAreaId)) {
+                    return formData.area;
+                  }
+                  if (
+                    lastSetAreaValueRef.current &&
+                    String(formData.area) === String(lastSetAreaValueRef.current)
+                  ) {
+                    return formData.area;
+                  }
+                  return formData.area;
+                }
+                return formData.area || null;
+              })()}
               onChange={handleAreaChange}
               onBlur={() => onBlur?.("area")}
-              disabled={areasLoading || !formData.tehsil || areaOptions.length === 0 || readOnly}
+              disabled={
+                readOnly ||
+                areasLoading ||
+                !formData.tehsil ||
+                (areaOptions.length === 0 && !String(formData.area || "").trim())
+              }
             />
             {errors?.area && (
               <p className="mt-1 text-xs text-[#F6776E]">{errors.area}</p>
@@ -1255,7 +1427,7 @@ export default function AddressDetails({
               ? "" 
               : "md:col-span-2 lg:col-span-3"
           }>
-            <div data-field="address" className="scroll-mt-4">
+            <div data-field={df("address")} className="scroll-mt-4">
               <FormInputField
                 ref={fieldRefs?.address}
                 label="Address *"
@@ -1264,6 +1436,7 @@ export default function AddressDetails({
                 onBlur={() => onBlur?.("address")}
                 placeholder="Address"
                 required
+                maxLength={100}
                 error={errors?.address}
                 readOnly={readOnly}
                 disabled={readOnly}
@@ -1275,7 +1448,7 @@ export default function AddressDetails({
         {/* For non-India: Address Line 1 * and Address Line 2 (optional) in same row - 2nd row positions 2 and 3 */}
         {!isIndiaSelected && (
           <>
-            <div data-field="addressLine1" className="scroll-mt-4">
+            <div data-field={df("addressLine1")} className="scroll-mt-4">
               <FormInputField
                 ref={fieldRefs?.addressLine1}
                 label="Address Line 1 *"
@@ -1284,19 +1457,21 @@ export default function AddressDetails({
                 onBlur={() => onBlur?.("addressLine1")}
                 placeholder="House/Building Number, Street Name"
                 required
+                maxLength={100}
                 error={errors?.addressLine1}
                 readOnly={readOnly}
                 disabled={readOnly}
               />
             </div>
-            <div data-field="addressLine2" className="scroll-mt-4">
+            <div data-field={df("addressLine2")} className="scroll-mt-4">
               <FormInputField
                 ref={fieldRefs?.addressLine2}
-                label="Address Line 2"
+                label="Address Line 2 "
                 value={formData.addressLine2 || ""}
                 onChange={handleAddressLine2Change}
                 onBlur={() => onBlur?.("addressLine2")}
                 placeholder="Apartment / Unit"
+                maxLength={100}
                 error={errors?.addressLine2}
                 readOnly={readOnly}
                 disabled={readOnly}

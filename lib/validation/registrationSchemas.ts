@@ -1,7 +1,67 @@
 import * as Yup from "yup";
+import { isValidEmailAddress } from "@/lib/utils/emailValidation";
+
+// Aadhaar validation helpers: first digit not 0/1, not sequential, not repeating
+function isAadharFirstDigitValid(value: string): boolean {
+  if (!value || value.length === 0) return true;
+  const first = value.trim().charAt(0);
+  return first >= "2" && first <= "9";
+}
+
+function isAadharSequential(value: string): boolean {
+  if (!value || value.length !== 12) return false;
+  const digits = value.replace(/\D/g, "").split("").map(Number);
+  const ascending = digits.every((d, i) => i === 0 || d === (digits[i - 1] + 1) % 10);
+  const descending = digits.every((d, i) => i === 0 || d === (digits[i - 1] + 9) % 10);
+  return ascending || descending;
+}
+
+function isAadharRepeatingOrSame(value: string): boolean {
+  if (!value || value.length !== 12) return false;
+  const s = value.replace(/\D/g, "");
+  if (/^(\d)\1{11}$/.test(s)) return true; // all same digit
+  if (/^(\d{2})\1{5}$/.test(s)) return true; // pattern length 2
+  if (/^(\d{3})\1{3}$/.test(s)) return true; // pattern length 3
+  if (/^(\d{4})\1{2}$/.test(s)) return true; // pattern length 4
+  if (/^(\d{6})\1{1}$/.test(s)) return true; // pattern length 6
+  return false;
+}
+
+/** Fallback until Arogya series API returns */
+export const DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH = 12;
+
+function jsHealthCardNoFieldSchema(digitLength: number) {
+  const len = digitLength > 0 ? digitLength : DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH;
+  const lengthMsg = `JS Health Card No. must be exactly ${len} digits`;
+  return Yup.string()
+    .trim()
+    .when("patientType", {
+      is: (val: string) => val?.toLowerCase() === "private",
+      then: (schema) =>
+        schema
+          .required("JS Health Card No. is required")
+          .matches(/^\d+$/, "JS Health Card No. must contain only digits")
+          .test(
+            "js-health-card-length-private",
+            lengthMsg,
+            (value) => (value || "").replace(/\D/g, "").length === len,
+          ),
+      otherwise: (schema) =>
+        schema
+          .optional()
+          .matches(/^\d*$/, "JS Health Card No. must contain only digits")
+          .test("js-health-card-length", lengthMsg, (value) => {
+            const d = (value || "").replace(/\D/g, "");
+            return d.length === 0 || d.length === len;
+          }),
+    });
+}
 
 // Registration Personal Details validation schema
-export const registrationPersonalDetailsSchema = Yup.object().shape({
+function buildRegistrationPersonalDetailsSchema(
+  jsHealthCardDigitLength: number = DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH,
+) {
+  return Yup.object().shape({
   contactNumber: Yup.string()
     .trim()
     .required("Contact Number is required")
@@ -18,7 +78,10 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
     .trim()
     .optional()
     .test("len-or-empty", "Aadhar Card Number must be exactly 12 digits", (value) => !value || value.length === 12)
-    .matches(/^\d*$/, "Aadhar Card Number must contain only digits"),
+    .matches(/^\d*$/, "Aadhar Card Number must contain only digits")
+    .test("aadhar-first-digit", "First digit cannot be 0 or 1", (value) => !value || value.trim().length === 0 || isAadharFirstDigitValid(value))
+    .test("aadhar-sequential", "Aadhar cannot be a sequential pattern", (value) => !value || !isAadharSequential(value))
+    .test("aadhar-repeating", "Aadhar cannot be a repeating or same-digit pattern", (value) => !value || !isAadharRepeatingOrSame(value)),
   
   patientNameSelect: Yup.string()
     .trim()
@@ -27,6 +90,7 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   patientName: Yup.string()
     .trim()
     .required("Patient Name is required")
+    .max(100, "Patient Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
   
   gender: Yup.string()
@@ -54,17 +118,18 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   fathersHusbandsName: Yup.string()
     .trim()
     .required("Father's/Husband's Name is required")
+    .max(100, "Father's/Husband's Name cannot exceed 100 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
   
   religion: Yup.string()
     .trim()
     .required("Religion is required")
-    .oneOf(["hindu", "muslim", "sikh", "buddhists", "jain", "other"], "Please select a valid religion"),
+    .oneOf(["hindu", "muslim", "sikh", "buddhists", "jain", "other", "Hindu", "Muslim", "Sikh", "Buddhists", "Jain", "Other"], "Please select a valid religion"),
   
   specificReligion: Yup.string()
     .trim()
     .when("religion", {
-      is: "other",
+      is: (val: string) => val?.toLowerCase() === "other",
       then: (schema) => schema
         .required("Specific Religion is required")
         .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
@@ -73,26 +138,30 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   
   occupation: Yup.string()
     .trim()
-    .required("Occupation is required"),
+    .required("Occupation is required")
+    .max(100, "Occupation cannot exceed 100 characters")
+    .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
   
   emailAddress: Yup.string()
     .trim()
-    .test("email-format", "Please enter a valid email address", (value) => {
-      // If empty, it's valid (field is optional)
-      if (!value || value.trim() === "") {
-        return true;
-      }
-      // If value exists, validate email format
-      // Check for basic email pattern: something@something.something
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return emailRegex.test(value.trim());
+    .max(100, "Email Address cannot exceed 100 characters")
+    .when("country", {
+      is: "6", // India — optional; validate format when provided
+      then: (schema) =>
+        schema.test("email-format", "Please enter a valid email address", (value) => isValidEmailAddress(value)),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("Email Address is required")
+              .test("email-format", "Please enter a valid email address", (value) => isValidEmailAddress(value)),
+          otherwise: (s) =>
+            s.test("email-format", "Please enter a valid email address", (value) => isValidEmailAddress(value)),
+        }),
     }),
   
-  jsHealthCardNo: Yup.string()
-    .trim()
-    .optional()
-    .matches(/^[a-zA-Z0-9]*$/, "JS Health Card No. must contain only numbers and letters (no spaces)")
-    .max(20, "JS Health Card No. must be at most 20 characters"),
+  jsHealthCardNo: jsHealthCardNoFieldSchema(jsHealthCardDigitLength),
   
   // Address Details
   pinCode: Yup.string()
@@ -110,10 +179,38 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
     .required("Country is required"),
   
   state: Yup.string()
-    .required("State is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("State is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("State is required"),
+        }),
+    }),
   
   city: Yup.string()
-    .required("District is required"),
+    .trim()
+    .when("country", {
+      is: "6",
+      then: (schema) => schema.required("District is required"),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.required("District is required"),
+        }),
+    }),
   
   tehsil: Yup.string()
     .trim()
@@ -215,7 +312,11 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   socialMediaSpecificField: Yup.string()
     .trim()
     .when(["referral", "source"], {
-      is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "social-media",
+      is: (referral: string, source: string) => {
+        if (referral?.toLowerCase() !== "yes") return false;
+        const normalized = (source || "").toLowerCase().replace(/\s+/g, "-");
+        return normalized === "social-media";
+      },
       then: (schema) => schema.required("Social Media Specific field is required"),
       otherwise: (schema) => schema.optional(),
     }),
@@ -232,7 +333,11 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
     .trim()
     .matches(/^[a-zA-Z\s]*$/, "Referral Name must contain only letters and spaces")
     .when(["referral", "source"], {
-      is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "other",
+      is: (referral: string, source: string) => {
+        if (referral?.toLowerCase() !== "yes") return false;
+        const normalized = (source || "").toLowerCase();
+        return normalized === "other" || normalized === "referral";
+      },
       then: (schema) => schema.required("Referral Name is required").min(1, "Referral Name is required"),
       otherwise: (schema) => schema.optional(),
     }),
@@ -240,7 +345,11 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   referralMobile: Yup.string()
     .trim()
     .when(["referral", "source"], {
-      is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "other",
+      is: (referral: string, source: string) => {
+        if (referral?.toLowerCase() !== "yes") return false;
+        const normalized = (source || "").toLowerCase();
+        return normalized === "other" || normalized === "referral";
+      },
       then: (schema) => schema
         .required("Referral Mobile is required")
         .length(10, "Referral Mobile must be 10 digits")
@@ -268,7 +377,19 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   timeSlot: Yup.string()
     .trim()
     .required("Time Slot is required")
-    .oneOf(["10-12", "11-13", "12-14", "13-15", "14-16", "15-17", "16-18"], "Please select a time slot"),
+    // Must match one of the configured UI options in AppointmentInformation.tsx
+    .oneOf(
+      [
+        "10:00am - 12:00pm",
+        "11:00am - 01:00pm",
+        "12:00pm - 02:00pm",
+        "01:00pm - 03:00pm",
+        "02:00pm - 04:00pm",
+        "03:00pm - 05:00pm",
+        "04:00pm - 06:00pm",
+      ],
+      "Please select a time slot"
+    ),
   
   // Payment Details
   consultationCharges: Yup.string()
@@ -287,7 +408,7 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
       is: (value: string) => value && parseFloat(value) > 0,
       then: (schema) => schema
         .required("Payment Mode is required")
-        .oneOf(["cash", "credit", "Cash", "Credit"], "Please select Cash or Credit"),
+        .oneOf(["cash", "credit", "Cash", "Credit"], "Please select Cash or Online Payment"),
       otherwise: (schema) => schema.optional(),
     }),
   
@@ -397,19 +518,39 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   
   bloodGroup: Yup.string()
     .trim()
-    .optional()
+    .required("Blood Group is required")
     .oneOf(["a-positive", "a-negative", "b-positive", "b-negative", "ab-positive", "ab-negative", "o-positive", "o-negative"], "Please select a valid blood group"),
   
   allergies: Yup.string()
     .trim()
     .required("Allergies is required")
     .oneOf(["yes", "no", "Yes", "No"], "Please select Yes or No"),
-  
+
+  /** Free-text details captured when Allergies = "Yes" (dialog input) */
+  allergiesDetails: Yup.string()
+    .trim()
+    .optional()
+    .when("allergies", {
+      is: (val: string) => typeof val === "string" && val.toLowerCase() === "yes",
+      then: (schema) => schema.required("Please enter allergies details"),
+      otherwise: (schema) => schema.optional(),
+    }),
+
   surgeries: Yup.string()
     .trim()
     .required("Surgeries is required")
     .oneOf(["yes", "no", "Yes", "No"], "Please select Yes or No"),
-  
+
+  /** Free-text details captured when Surgeries = "Yes" (dialog input) */
+  surgeriesDetails: Yup.string()
+    .trim()
+    .optional()
+    .when("surgeries", {
+      is: (val: string) => typeof val === "string" && val.toLowerCase() === "yes",
+      then: (schema) => schema.required("Please enter surgeries details"),
+      otherwise: (schema) => schema.optional(),
+    }),
+
   dietType: Yup.string()
     .trim()
     .required("Diet Type is required"),
@@ -525,22 +666,33 @@ export const registrationPersonalDetailsSchema = Yup.object().shape({
   // Diagnosis Information
   diagnosis: Yup.string()
     .trim()
-    .required("Please select a diagnosis")
-    .test("not-empty", "Please select a diagnosis", (value) => {
+    .required("Please select a primary disease")
+    .test("not-empty", "Please select a primary disease", (value) => {
       return value !== undefined && value !== null && value.trim() !== "";
     }),
   
   subDiagnosis: Yup.string()
     .trim()
-    .required("Please select a sub diagnosis")
-    .test("not-empty", "Please select a sub diagnosis", (value) => {
+    .required("Please select a secondary disease")
+    .test("not-empty", "Please select a secondary disease", (value) => {
       return value !== undefined && value !== null && value.trim() !== "";
     }),
   
   symptoms: Yup.string()
     .trim()
     .optional(),
-});
+  });
+}
+
+export const registrationPersonalDetailsSchema = buildRegistrationPersonalDetailsSchema();
+
+export function createRegistrationPersonalDetailsSchema(options?: {
+  jsHealthCardDigitLength?: number;
+}) {
+  return buildRegistrationPersonalDetailsSchema(
+    options?.jsHealthCardDigitLength ?? DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH,
+  );
+}
 
 export type RegistrationPersonalDetailsFormValues = Yup.InferType<typeof registrationPersonalDetailsSchema>;
 
@@ -611,17 +763,31 @@ export const ipdRegistrationClinicSchema = registrationPersonalDetailsSchema.sha
   
   occupation: Yup.string()
     .trim()
-    .optional(),
+    .optional()
+    .max(100, "Occupation cannot exceed 100 characters")
+    .matches(/^[a-zA-Z\s]*$/, "Only letters and spaces are allowed"),
   
   emailAddress: Yup.string()
     .trim()
-    .optional()
-    .email("Please enter a valid email address"),
+    .max(100, "Email Address cannot exceed 100 characters")
+    .when("country", {
+      is: "6",
+      then: (schema) =>
+        schema.test("email-format", "Please enter a valid email address", (value) => isValidEmailAddress(value)),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("Email Address is required")
+              .test("email-format", "Please enter a valid email address", (value) => isValidEmailAddress(value)),
+          otherwise: (s) =>
+            s.test("email-format", "Please enter a valid email address", (value) => isValidEmailAddress(value)),
+        }),
+    }),
   
-  jsHealthCardNo: Yup.string()
-    .trim()
-    .optional(),
-  
+  jsHealthCardNo: jsHealthCardNoFieldSchema(DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH),
+
   pinCode: Yup.string()
     .trim()
     .when("country", {
@@ -640,17 +806,40 @@ export const ipdRegistrationClinicSchema = registrationPersonalDetailsSchema.sha
   state: Yup.string()
     .trim()
     .when("country", {
-      is: (value: string) => value && value.trim() !== "",
+      is: "6",
       then: (schema) => schema.required("State is required"),
-      otherwise: (schema) => schema.optional(),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("State is required")
+              .max(100, "State cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.optional(),
+        }),
     }),
   
   city: Yup.string()
     .trim()
-    .when("state", {
-      is: (value: string) => value && value.trim() !== "",
-      then: (schema) => schema.required("District is required"),
-      otherwise: (schema) => schema.optional(),
+    .when("country", {
+      is: "6",
+      then: (schema) =>
+        schema.when("state", {
+          is: (value: string) => Boolean(value && value.trim() !== ""),
+          then: (s) => s.required("District is required"),
+          otherwise: (s) => s.optional(),
+        }),
+      otherwise: (schema) =>
+        schema.when("country", {
+          is: (val: string) => Boolean(val && val !== "6"),
+          then: (s) =>
+            s
+              .required("City is required")
+              .max(100, "City cannot exceed 100 characters")
+              .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
+          otherwise: (s) => s.optional(),
+        }),
     }),
   
   address: Yup.string()
@@ -821,11 +1010,17 @@ export const ipdRegistrationClinicSchema = registrationPersonalDetailsSchema.sha
     .trim()
     .optional()
     .oneOf(["yes", "no", "Yes", "No", ""], "Please select Yes or No"),
-  
+
+  /** Free-text details captured when Allergies = "Yes" (dialog input) */
+  allergiesDetails: Yup.string().trim().optional(),
+
   surgeries: Yup.string()
     .trim()
     .optional()
     .oneOf(["yes", "no", "Yes", "No", ""], "Please select Yes or No"),
+
+  /** Free-text details captured when Surgeries = "Yes" (dialog input) */
+  surgeriesDetails: Yup.string().trim().optional(),
   
   dietType: Yup.string()
     .trim()

@@ -4,17 +4,36 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useMemo, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, FormSelectField, Button, Dialog, FormInputField, BackToPreviousPageButton, MessageDialog } from "@/components/ui";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, FormSelectField, Button, Dialog, FormInputField, BackToPreviousPageButton, MessageDialog, Tooltip } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
-import { useGetDoctorsQuery, useGetAppointmentsListQuery, useUpdateAppointmentDoctorMutation, type AppointmentRegistration } from "@/store/api/registrationApi";
+import {
+    useGetDoctorsByBranchQuery,
+    useGetAppointmentsListQuery,
+    useUpdateAppointmentDoctorMutation,
+    type AppointmentRegistration,
+} from "@/store/api/registrationApi";
+import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/usePermission";
+import { useBranchFilter, REGISTRATION_LIST_BRANCH_STORAGE_KEY } from "@/hooks/useBranchFilter";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useAppSelector } from "@/store/hooks";
-import { selectLoginType } from "@/store/slices/authSlice";
-import { generatePatientReportPDF } from "@/lib/utils/generatePatientReportPDF";
+import { selectLoginType, selectUser } from "@/store/slices/authSlice";
+import PatientCGHS, {
+    DEFAULT_STATIC_BRANCH_INFO,
+    type PatientCGHSHandle,
+    type PatientCGHSProps,
+    type BranchInfo,
+} from "@/lib/utils/patientForm";
+import { PaymentReceiptCapture } from "@/components/registration/PaymentReceiptCapture";
+import { buildListInvoiceReceiptProps } from "@/lib/registration/buildListInvoiceReceiptProps";
+import { downloadPaymentReceiptPdfFromElement } from "@/lib/utils/downloadPaymentReceiptPdf";
+
+const REGISTRATION_LIST_FILTERS_STORAGE_KEY = "registrationList_filters_state";
 
 type PatientRegistration = {
     id: number;
@@ -30,7 +49,41 @@ type PatientRegistration = {
     vitalsStatus: "add" | "done";
     patientStatus: "OPD Waiting" | "OPD In Progress" | "Pharmacy Pending" | "IPD Recommended" | "IPD Admission In Progress" | "Medicine Taken" | "Admitted";
     gender?: string; // Patient gender for conditional field display
+    /** Appointment createdAt (ISO) — invoice download UI only for first 24h after this */
+    createdAt?: string;
 };
+
+const INVOICE_DOWNLOAD_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isWithinInvoiceDownloadWindow(createdAt: string | undefined | null): boolean {
+    if (createdAt == null || String(createdAt).trim() === "") return false;
+    const createdMs = new Date(createdAt).getTime();
+    if (!Number.isFinite(createdMs)) return false;
+    const now = Date.now();
+    if (now < createdMs) return false;
+    return now - createdMs <= INVOICE_DOWNLOAD_WINDOW_MS;
+}
+
+/**
+ * Appointments-list sometimes omits `createdAt` on the first fetch after a new registration;
+ * other timestamps are equivalent for the 24h invoice window and check-in display.
+ */
+function resolveAppointmentAnchorDate(appointment: AppointmentRegistration): string | undefined {
+    const reg = appointment.registration as { createdAt?: string } | null | undefined;
+    const candidates: unknown[] = [
+        appointment.createdAt,
+        appointment.updatedAt,
+        reg?.createdAt,
+        appointment.appointmentDate,
+        appointment.payment?.transactionDate,
+    ];
+    for (const c of candidates) {
+        if (c != null && String(c).trim() !== "") {
+            return String(c);
+        }
+    }
+    return undefined;
+}
 
 // Helper function to format timeSlot (e.g., "10-12" to "10:00am - 12:00pm")
 const formatTimeSlot = (timeSlot: string | undefined | null): string => {
@@ -83,13 +136,75 @@ const formatNameWithTitle = (name: string | undefined | null, title: string | un
     if (!name) return "";
     const trimmedName = name.trim();
     const trimmedTitle = title && title.trim() ? title.trim() : null;
-    
+
     if (!trimmedTitle) {
         return trimmedName;
     }
-    
+
     return `${trimmedTitle} ${trimmedName}`;
 };
+
+function capitalizeFirst(str: string | null | undefined): string {
+    if (str == null || str === "") return "";
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+function branchSelectLabel(name: string, typeRaw: string | null | undefined): string {
+    const t = (typeRaw ?? "").trim();
+    if (!t) return name;
+    return `${name} (${capitalizeFirst(t)})`;
+}
+
+function buildPatientFormDownloadProps(
+    patient: PatientRegistration,
+    appointment: AppointmentRegistration | undefined,
+    loginType: string | null | undefined,
+): PatientCGHSProps {
+    const reg = appointment?.registration;
+
+    const toDisplayString = (v: unknown): string => {
+        if (v == null) return "";
+        return String(v).trim();
+    };
+
+    const branchType: BranchInfo["type"] = loginType?.toLowerCase().includes("hospital")
+        ? "hospital"
+        : "clinic";
+
+    const branch: BranchInfo = {
+        ...DEFAULT_STATIC_BRANCH_INFO,
+        type: branchType,
+    };
+
+    const guardianDisplay = formatNameWithTitle(reg?.guardianName ?? null, reg?.guardianTitle ?? null);
+    const createdRaw = appointment?.createdAt
+        ? String(appointment.createdAt)
+        : new Date().toISOString();
+
+    return {
+        branch,
+        patient: {
+            patient: patient.patientName || "",
+            parent_name: guardianDisplay || "—",
+            bp: toDisplayString(appointment?.bloodPressure),
+            sl: toDisplayString(appointment?.sugarLevel) || "—",
+            weight: toDisplayString(reg?.weight),
+            height: toDisplayString(reg?.height),
+            uhid: patient.uhid || "",
+            opdId: String(appointment?.id ?? patient.id ?? ""),
+            age: toDisplayString(reg?.age) || "—",
+            gender: patient.gender || toDisplayString(reg?.gender) || "—",
+        },
+        doctor: {
+            name: patient.doctorName || "",
+            education: ["BAMS"],
+            reg_no: "",
+        },
+        appointment: { created_at: createdRaw },
+        diagnosis: patient.diagnosis || "",
+        showDownloadButton: false,
+    };
+}
 
 // Patient status options for filter
 const patientStatusOptions: SelectOption[] = [
@@ -128,78 +243,166 @@ const getStatusBadgeClasses = (status: PatientRegistration["patientStatus"]) => 
 
 export default function RegistrationListPage() {
     const router = useRouter();
+    const patientPermission = usePermission("Patient");
+    const opdPermission = usePermission("Patient", { subModule: "Opd" });
+    const canView = patientPermission.canView || opdPermission.canView;
+    const canAdd = patientPermission.canAdd || opdPermission.canAdd;
+    const canEdit = patientPermission.canEdit || opdPermission.canEdit;
+    const canDownload = patientPermission.canDownload || opdPermission.canDownload;
     const loginType = useAppSelector(selectLoginType);
+    const authUser = useAppSelector(selectUser);
+    const patientFormRef = useRef<PatientCGHSHandle>(null);
+    const [patientFormDownloadProps, setPatientFormDownloadProps] = useState<PatientCGHSProps | null>(null);
+    /** Row id while html2pdf is generating (shows spinner on that row; other PDF buttons disabled). */
+    const [pdfDownloadingPatientId, setPdfDownloadingPatientId] = useState<number | null>(null);
+    /** Row id while invoice receipt PDF is generating. */
+    const [invoiceDownloadingPatientId, setInvoiceDownloadingPatientId] = useState<number | null>(null);
+    /** Appointment row used to render off-screen receipt for html2pdf. */
+    const [invoicePdfAppointment, setInvoicePdfAppointment] = useState<AppointmentRegistration | null>(null);
+    /** Sync guard so double-clicks before React re-renders cannot start two downloads. */
+    const pdfDownloadBusyRef = useRef(false);
+    const invoiceDownloadBusyRef = useRef(false);
     const isNurse = loginType?.toLowerCase() === "nurse";
-    const [filters, setFilters] = useState({
-        searchTerm: "",
-        patientStatus: "",
-        currentPage: 1,
-        itemsPerPage: 10,
-        sortField: "",
-        sortOrder: "asc" as "asc" | "desc",
-    });
-    const prevSearchTermRef = useRef(filters.searchTerm);
-
-    // Date filter state - load from sessionStorage or default to today
     const getTodayDate = () => {
         const today = new Date();
         const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const day = String(today.getDate()).padStart(2, "0");
         return `${year}-${month}-${day}`;
     };
 
-    // Initialize dates from sessionStorage or default to today
-    // Only use stored dates if there's a navigation flag (meaning user navigated back, not refreshed)
-    const initializeDates = () => {
-        if (typeof window === "undefined") {
-            const today = getTodayDate();
-            return { fromDate: today, toDate: today };
-        }
-        
-        // Check if this is a navigation back (not a page refresh)
-        const navigationFlag = sessionStorage.getItem("registrationList_navigationFlag");
-        const navigationTimestamp = sessionStorage.getItem("registrationList_navigationTimestamp");
-        
-        // If navigation flag exists and timestamp is recent (within last 5 seconds), use stored dates
-        // Otherwise, treat as page refresh and reset to today
-        const isNavigationBack = navigationFlag === "true" && navigationTimestamp;
-        if (isNavigationBack) {
-            const timestamp = parseInt(navigationTimestamp || "0", 10);
-            const now = Date.now();
-            // If timestamp is within last 5 seconds, it's likely a navigation back
-            if (now - timestamp < 5000) {
-                const storedFromDate = sessionStorage.getItem("registrationList_fromDate");
-                const storedToDate = sessionStorage.getItem("registrationList_toDate");
-                // Clear the flag after using it
-                sessionStorage.removeItem("registrationList_navigationFlag");
-                sessionStorage.removeItem("registrationList_navigationTimestamp");
-                // If dates are stored (even if empty string), use them. Otherwise default to today.
-                return {
-                    fromDate: storedFromDate !== null ? storedFromDate : getTodayDate(),
-                    toDate: storedToDate !== null ? storedToDate : getTodayDate(),
-                };
-            }
-        }
-        
-        // Page refresh or first visit - reset to today
+    const getDefaultState = () => {
         const today = getTodayDate();
-        return { fromDate: today, toDate: today };
+        return {
+            filters: {
+                searchTerm: "",
+                patientStatus: "",
+                currentPage: 1,
+                itemsPerPage: 10,
+                sortField: "",
+                sortOrder: "asc" as "asc" | "desc",
+            },
+            fromDate: today,
+            toDate: today,
+        };
     };
 
-    const initialDates = initializeDates();
-    const [fromDate, setFromDate] = useState<string>(initialDates.fromDate);
-    const [toDate, setToDate] = useState<string>(initialDates.toDate);
+    const getInitialState = () => {
+        const defaultState = getDefaultState();
+        if (typeof window === "undefined") {
+            return defaultState;
+        }
+
+        const storedState = sessionStorage.getItem(REGISTRATION_LIST_FILTERS_STORAGE_KEY);
+        if (!storedState) {
+            return defaultState;
+        }
+
+        try {
+            const parsedState = JSON.parse(storedState) as {
+                filters?: Partial<typeof defaultState.filters>;
+                fromDate?: string;
+                toDate?: string;
+            };
+
+            return {
+                filters: {
+                    ...defaultState.filters,
+                    ...parsedState.filters,
+                },
+                fromDate: parsedState.fromDate ?? defaultState.fromDate,
+                toDate: parsedState.toDate ?? defaultState.toDate,
+            };
+        } catch {
+            return defaultState;
+        }
+    };
+
+    const initialState = getInitialState();
+    const [filters, setFilters] = useState(initialState.filters);
+    const prevSearchTermRef = useRef(filters.searchTerm);
+    const [fromDate, setFromDate] = useState<string>(initialState.fromDate);
+    const [toDate, setToDate] = useState<string>(initialState.toDate);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const {
+        selectedBranchFilter,
+        setSelectedBranchFilter,
+        branchFilterOptions,
+        isLoadingBranches,
+        isBranchFilterDisabled,
+        filterBranchId,
+        isSuperAdmin: isBranchFilterSuperAdmin,
+        branchFilterPersistReady,
+    } = useBranchFilter({
+        persistSuperAdminSelectionKey: REGISTRATION_LIST_BRANCH_STORAGE_KEY,
+    });
+    const { data: branchesListData } = useGetBranchesQuery(undefined);
+
+    /** Superadmin: no "All Branches"; labels include facility type. */
+    const registrationListBranchOptions = useMemo((): SelectOption[] => {
+        const rows = branchesListData?.data;
+        if (!isBranchFilterSuperAdmin) {
+            if (!Array.isArray(rows) || rows.length === 0) return branchFilterOptions;
+            return branchFilterOptions.map((opt) => {
+                const id = parseInt(String(opt.value), 10);
+                if (!Number.isFinite(id)) return opt;
+                const b = rows.find((x) => Number(x.id) === id) as { name?: string; type?: string } | undefined;
+                if (!b?.name) return opt;
+                return {
+                    value: opt.value,
+                    label: branchSelectLabel(String(b.name), b.type),
+                };
+            });
+        }
+        if (!Array.isArray(rows) || rows.length === 0) return [];
+        return rows.map((b) => {
+            const row = b as { id: number; name?: string; type?: string };
+            return {
+                value: String(row.id),
+                label: branchSelectLabel(String(row.name ?? ""), row.type),
+            };
+        });
+    }, [isBranchFilterSuperAdmin, branchesListData, branchFilterOptions]);
+
+    // Super admin: default branch, or re-align if persisted id no longer exists; wait for session restore first
+    useEffect(() => {
+        if (!branchFilterPersistReady) return;
+        if (!isBranchFilterSuperAdmin) return;
+        if (isLoadingBranches) return;
+        const rows = branchesListData?.data;
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        if (selectedBranchFilter !== "") {
+            const valid = rows.some((b) => String(b.id) === selectedBranchFilter);
+            if (!valid) {
+                setSelectedBranchFilter(String(rows[0].id));
+            }
+            return;
+        }
+        setSelectedBranchFilter(String(rows[0].id));
+    }, [
+        branchFilterPersistReady,
+        isBranchFilterSuperAdmin,
+        isLoadingBranches,
+        branchesListData,
+        selectedBranchFilter,
+        setSelectedBranchFilter,
+    ]);
+
     const filterRef = useRef<HTMLDivElement>(null);
 
-    // Save dates to sessionStorage whenever they change
+    // Persist filters and dates so list state survives navigation to view/edit pages
     useEffect(() => {
         if (typeof window !== "undefined") {
-            sessionStorage.setItem("registrationList_fromDate", fromDate);
-            sessionStorage.setItem("registrationList_toDate", toDate);
+            sessionStorage.setItem(
+                REGISTRATION_LIST_FILTERS_STORAGE_KEY,
+                JSON.stringify({
+                    filters,
+                    fromDate,
+                    toDate,
+                })
+            );
         }
-    }, [fromDate, toDate]);
+    }, [filters, fromDate, toDate]);
 
     // Dialog state for Doctor Exchange
     const [isDoctorDialogOpen, setIsDoctorDialogOpen] = useState(false);
@@ -253,11 +456,6 @@ export default function RegistrationListPage() {
     const handleFilter = (filterFromDate: string, filterToDate: string) => {
         setFromDate(filterFromDate);
         setToDate(filterToDate);
-        // Save to sessionStorage immediately
-        if (typeof window !== "undefined") {
-            sessionStorage.setItem("registrationList_fromDate", filterFromDate);
-            sessionStorage.setItem("registrationList_toDate", filterToDate);
-        }
         setFilters((prev) => ({ ...prev, currentPage: 1 })); // Reset to first page when filter is applied
         setIsFilterOpen(false);
     };
@@ -267,11 +465,6 @@ export default function RegistrationListPage() {
         // Empty strings will be converted to undefined in API call, which means no date filter
         setFromDate("");
         setToDate("");
-        // Save empty strings to sessionStorage to preserve cleared state
-        if (typeof window !== "undefined") {
-            sessionStorage.setItem("registrationList_fromDate", "");
-            sessionStorage.setItem("registrationList_toDate", "");
-        }
         setFilters((prev) => ({ ...prev, currentPage: 1 })); // Reset to first page when filter is cleared
     };
 
@@ -291,11 +484,16 @@ export default function RegistrationListPage() {
         return fieldMap[field] || undefined;
     };
 
+    const appointmentsListSkip =
+        !canView ||
+        (isBranchFilterSuperAdmin &&
+            (filterBranchId === undefined || !Number.isFinite(filterBranchId) || filterBranchId < 1));
+
     // Fetch appointments list from API
     // Convert empty strings to undefined for API (empty string means no filter, undefined means no date filter)
     const { data: appointmentsData, isLoading, isError, refetch: refetchAppointments } = useGetAppointmentsListQuery(
         {
-            branchId: 1,
+            branchId: filterBranchId,
             search: searchParam,
             page: filters.currentPage,
             limit: filters.itemsPerPage,
@@ -308,29 +506,110 @@ export default function RegistrationListPage() {
             // Always refetch when this page mounts or filters change,
             // so the list reflects latest vitals/medical updates
             refetchOnMountOrArgChange: true,
+            skip: appointmentsListSkip,
         }
     );
+
+    useEffect(() => {
+        if (!patientFormDownloadProps) return;
+        let cancelled = false;
+        let raf2Id = 0;
+        let timeoutId: number | null = null;
+        // Double rAF + setTimeout(0) so React commits and the browser paints the spinner before
+        // html2canvas blocks the main thread (otherwise the loader never appears).
+        const raf1Id = requestAnimationFrame(() => {
+            raf2Id = requestAnimationFrame(() => {
+                timeoutId = window.setTimeout(() => {
+                    if (cancelled) return;
+                    const downloadPromise = patientFormRef.current?.downloadPdf();
+                    if (downloadPromise) {
+                        void downloadPromise.finally(() => {
+                            if (!cancelled) {
+                                setPatientFormDownloadProps(null);
+                                setPdfDownloadingPatientId(null);
+                                pdfDownloadBusyRef.current = false;
+                            }
+                        });
+                    } else if (!cancelled) {
+                        setPatientFormDownloadProps(null);
+                        setPdfDownloadingPatientId(null);
+                        pdfDownloadBusyRef.current = false;
+                    }
+                }, 0);
+            });
+        });
+
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf1Id);
+            cancelAnimationFrame(raf2Id);
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+        };
+    }, [patientFormDownloadProps]);
+
+    useEffect(() => {
+        if (!invoicePdfAppointment) return;
+        let cancelled = false;
+        let raf2Id = 0;
+        let timeoutId: number | null = null;
+        const raf1Id = requestAnimationFrame(() => {
+            raf2Id = requestAnimationFrame(() => {
+                timeoutId = window.setTimeout(() => {
+                    if (cancelled) return;
+                    const apt = invoicePdfAppointment;
+                    const uhid = apt.uhid || apt.registration?.uhid || "receipt";
+                    void (async () => {
+                        try {
+                            await downloadPaymentReceiptPdfFromElement(
+                                "registration-list-invoice-capture",
+                                String(uhid),
+                            );
+                        } catch (err) {
+                            console.error("Invoice PDF download failed:", err);
+                            setErrorMessage("Could not download invoice. Please try again.");
+                            setShowErrorDialog(true);
+                        } finally {
+                            if (!cancelled) {
+                                setInvoicePdfAppointment(null);
+                                setInvoiceDownloadingPatientId(null);
+                                invoiceDownloadBusyRef.current = false;
+                            }
+                        }
+                    })();
+                }, 0);
+            });
+        });
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf1Id);
+            cancelAnimationFrame(raf2Id);
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+        };
+    }, [invoicePdfAppointment]);
 
     // Mutation for updating doctor
     const [updateAppointmentDoctor, { isLoading: isUpdatingDoctor }] = useUpdateAppointmentDoctorMutation();
 
-    // Fetch doctors list
-    const { data: doctorsData } = useGetDoctorsQuery();
+    const doctorsQuerySkip =
+        !canView ||
+        filterBranchId === undefined ||
+        !Number.isFinite(filterBranchId) ||
+        filterBranchId < 1;
 
-    // Transform doctors to SelectOption format
+    // Fetch doctors list for the selected branch (required for superadmin multi-branch)
+    const { data: doctorsData } = useGetDoctorsByBranchQuery(
+        { branchId: filterBranchId },
+        { skip: doctorsQuerySkip },
+    );
+
+    // Transform doctors to SelectOption format (label: name only; value remains doctor user id)
     const doctorOptions: SelectOption[] = useMemo(() => {
         return doctorsData?.data?.map((doctor) => {
-            const userName = doctor.userName || "";
-            const groupName = doctor.group?.name || "";
-            const groupId = doctor.group?.id || "";
-            const email = doctor.email || "";
-            const id = doctor.id || "";
-
+            const id = doctor.id ?? "";
+            const doctorName = (doctor.name || doctor.userName || "").trim();
             return {
                 value: String(id),
-                label: email
-                    ? `${userName} (${groupId || id}) - ${email}`
-                    : `${userName}${groupName ? ` (${groupName})` : ""}`,
+                label: doctorName || `Doctor ${id}`,
             };
         }) || [];
     }, [doctorsData]);
@@ -368,8 +647,9 @@ export default function RegistrationListPage() {
             // Format appointment time from timeSlot (e.g., "10-12" to "10:00am - 12:00pm")
             const appointmentTime = formatTimeSlot(appointment.timeSlot);
 
-            // Format check-in time from createdAt
-            const checkInTime = formatTimeFromDate(appointment.createdAt);
+            const anchorDate = resolveAppointmentAnchorDate(appointment);
+            // Format check-in time from best available timestamp (see resolveAppointmentAnchorDate)
+            const checkInTime = formatTimeFromDate(anchorDate);
 
             // Get patient name and title from registration
             const rawPatientName = appointment.registration?.patientName || appointment.registration?.patient || "";
@@ -385,13 +665,14 @@ export default function RegistrationListPage() {
                 uhid: appointment.uhid || appointment.registration?.uhid || "",
                 patientName: formattedPatientName,
                 diagnosis: appointment.diagnosis?.name || "",
-                doctorName: appointment.doctor?.userName || appointment.doctor?.name || `Dr. User ${appointment.doctorUserId}`,
+                doctorName: appointment.doctor?.name || appointment.doctor?.userName || `Dr. User ${appointment.doctorUserId}`,
                 token: appointment.token || "-",
                 appointmentTime: appointmentTime,
                 checkInTime: checkInTime,
                 vitalsStatus: vitalsStatus,
                 patientStatus: patientStatus,
                 gender: gender,
+                createdAt: anchorDate,
             };
         });
     }, [appointmentsData, filters.currentPage, filters.itemsPerPage]);
@@ -436,17 +717,15 @@ export default function RegistrationListPage() {
     };
 
     const handleVitalsAction = (patientId: number, currentStatus: "add" | "done", patientName: string, gender?: string) => {
-        // Set navigation flag before navigating away
-        if (typeof window !== "undefined") {
-            sessionStorage.setItem("registrationList_navigationFlag", "true");
-            sessionStorage.setItem("registrationList_navigationTimestamp", Date.now().toString());
-        }
+        if (!canAdd) return;
         // Navigate to vitals & medical info page if status is "add"
         // patientId here is actually the appointment ID
         if (currentStatus === "add") {
-            // Include gender as query parameter if available
-            const genderParam = gender ? `?gender=${encodeURIComponent(gender)}` : "";
-            router.push(`/registration/registrationList/vitals-medical/${patientId}${genderParam}`);
+            const queryParams = new URLSearchParams();
+            if (gender) queryParams.set("gender", gender);
+            if (patientName) queryParams.set("patientName", patientName);
+            const queryString = queryParams.toString();
+            router.push(`/registration/registrationList/vitals-medical/${patientId}${queryString ? `?${queryString}` : ""}`);
         } else {
             // If "done", maybe show view/edit page or do nothing
             console.log(`Viewing vitals for patient ${patientId}`);
@@ -454,6 +733,7 @@ export default function RegistrationListPage() {
     };
 
     const handleDoctorAction = (patientId: number) => {
+        if (!canEdit) return;
         // Find the appointment from the original API data
         const appointment = appointmentsData?.data?.find((apt: AppointmentRegistration) => Number(apt.id) === patientId);
         // Find the patient data from transformed data
@@ -520,11 +800,7 @@ export default function RegistrationListPage() {
     };
 
     const handleView = (patient: PatientRegistration) => {
-        // Set navigation flag before navigating away
-        if (typeof window !== "undefined") {
-            sessionStorage.setItem("registrationList_navigationFlag", "true");
-            sessionStorage.setItem("registrationList_navigationTimestamp", Date.now().toString());
-        }
+        if (!canView) return;
         // Use appointmentId (patient.id) instead of registrationId
         if (!patient.id) {
             console.error("Appointment ID not found for patient:", patient);
@@ -534,11 +810,7 @@ export default function RegistrationListPage() {
     };
 
     const handleEdit = (patient: PatientRegistration) => {
-        // Set navigation flag before navigating away
-        if (typeof window !== "undefined") {
-            sessionStorage.setItem("registrationList_navigationFlag", "true");
-            sessionStorage.setItem("registrationList_navigationTimestamp", Date.now().toString());
-        }
+        if (!canEdit) return;
         if (!patient.registrationId) {
             console.error("Registration ID not found for patient:", patient);
             return;
@@ -546,44 +818,66 @@ export default function RegistrationListPage() {
         router.push(`/registration/registrationList/${patient.registrationId}/edit`);
     };
 
+    const handleDownloadListInvoice = (patient: PatientRegistration) => {
+        if (!canDownload) return;
+        if (
+            invoiceDownloadBusyRef.current ||
+            invoiceDownloadingPatientId !== null ||
+            pdfDownloadingPatientId !== null
+        ) {
+            return;
+        }
+        const apt = appointmentsData?.data?.find((a: AppointmentRegistration) => Number(a.id) === patient.id);
+        if (!apt) {
+            setErrorMessage("Appointment not found for this row.");
+            setShowErrorDialog(true);
+            return;
+        }
+        const createdRaw =
+            patient.createdAt ?? resolveAppointmentAnchorDate(apt) ?? (apt.createdAt != null ? String(apt.createdAt) : "");
+        if (!isWithinInvoiceDownloadWindow(createdRaw)) {
+            setErrorMessage("Invoice download is only available within 24 hours of the appointment creation time.");
+            setShowErrorDialog(true);
+            return;
+        }
+        invoiceDownloadBusyRef.current = true;
+        flushSync(() => {
+            setInvoiceDownloadingPatientId(patient.id);
+        });
+        setInvoicePdfAppointment(apt);
+    };
+
     const handleDownloadPDF = (patient: PatientRegistration) => {
-        // Find the raw appointment data from the API response
+        if (!canDownload) return;
+        if (
+            pdfDownloadBusyRef.current ||
+            pdfDownloadingPatientId !== null ||
+            invoiceDownloadingPatientId !== null
+        ) {
+            return;
+        }
+        pdfDownloadBusyRef.current = true;
         const appointment = appointmentsData?.data?.find(
             (apt: AppointmentRegistration) => Number(apt.id) === patient.id
         );
-
-        const now = new Date();
-        const day = String(now.getDate()).padStart(2, "0");
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const year = now.getFullYear();
-        const hours = String(now.getHours()).padStart(2, "0");
-        const minutes = String(now.getMinutes()).padStart(2, "0");
-        const seconds = String(now.getSeconds()).padStart(2, "0");
-        const dateStr = `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
-
-        generatePatientReportPDF({
-            patientName: patient.patientName || "",
-            guardianLabel: "W/o,D/o,S/o",
-            guardianName: "",
-            chiefComplaint: "",
-            history: "",
-            menstrualHistory: "",
-            diagnosis: patient.diagnosis || "",
-            doctorName: patient.doctorName || "",
-            doctorQualification: "BAMS",
-            doctorRegNo: "",
-            uhid: patient.uhid || "",
-            opdNo: String(appointment?.id || patient.id || ""),
-            age: appointment?.registration?.age || "",
-            gender: patient.gender || appointment?.registration?.gender || "",
-            date: dateStr,
-            bloodPressure: appointment?.bloodPressure ? String(appointment.bloodPressure) : "",
-            sugarLevel: appointment?.sugarLevel ? String(appointment.sugarLevel) : "",
-            weight: "",
-            height: "",
-            rbs: "",
+        // Commit loading state immediately so the button disables before the next click can fire
+        flushSync(() => {
+            setPdfDownloadingPatientId(patient.id);
         });
+        setPatientFormDownloadProps(
+            buildPatientFormDownloadProps(patient, appointment, loginType)
+        );
     };
+
+    if (!canView) {
+        return (
+            <AppShell>
+                <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                    You don&apos;t have permission to view patient registration list.
+                </div>
+            </AppShell>
+        );
+    }
 
     return (
         <AppShell>
@@ -607,7 +901,21 @@ export default function RegistrationListPage() {
                             <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                             <div className="flex items-center gap-3 relative">
-                                {/* Date Filter - Left side of Select Patient Status */}
+                                <FormSelectField
+                                    label=""
+                                    hideLabel
+                                    options={registrationListBranchOptions}
+                                    value={selectedBranchFilter}
+                                    onChange={(value) => {
+                                        setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                                        setFilters((prev) => ({ ...prev, currentPage: 1 }));
+                                    }}
+                                    placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                                    mode="single"
+                                    background="normal"
+                                    width={300}
+                                    disabled={isBranchFilterDisabled || isLoadingBranches}
+                                />
                                 <div className="relative" ref={filterRef}>
                                     <button
                                         onClick={handleFilterClick}
@@ -709,14 +1017,16 @@ export default function RegistrationListPage() {
                                     <TableHead>
                                         Patient Status
                                     </TableHead>
-                                    <TableHead position="last">Action</TableHead>
+                                    {canView || canAdd || canEdit || canDownload ? (
+                                        <TableHead position="last">Action</TableHead>
+                                    ) : null}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={11}
+                                            colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             Loading appointments...
@@ -725,7 +1035,7 @@ export default function RegistrationListPage() {
                                 ) : isError ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={11}
+                                            colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             Error loading appointments
@@ -734,7 +1044,7 @@ export default function RegistrationListPage() {
                                 ) : filteredData.length === 0 ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={11}
+                                            colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             No patient registrations found
@@ -749,8 +1059,14 @@ export default function RegistrationListPage() {
                                             <TableData variant="primary">
                                                 {patient.srNo}
                                             </TableData>
-                                            <TableData onClick={() => handleView(patient)}>{patient.uhid}</TableData>
-                                            <TableData onClick={() => handleView(patient)}>{patient.patientName}</TableData>
+                                            <TableData onClick={canView ? () => handleView(patient) : undefined}><span className="text-[#0B8C00] font-medium">{patient.uhid}</span></TableData>
+                                            <TableData onClick={canView ? () => handleView(patient) : undefined}>
+                                                <Tooltip content={patient.patientName} position="top" delay={0}>
+                                                    <div className="max-w-[200px] truncate inline-block align-top">
+                                                        {patient.patientName}
+                                                    </div>
+                                                </Tooltip>
+                                            </TableData>
                                             <TableData>
                                                 {patient.token && patient.token !== "-" ? (
                                                     <span className="inline-flex items-center justify-center h-6 px-5 py-2 rounded-[30px] bg-white border border-[#0B8C00]/20 text-xs font-normal text-[#0B8C00] leading-[120%] whitespace-nowrap">
@@ -761,11 +1077,41 @@ export default function RegistrationListPage() {
                                                 )}
                                             </TableData>
                                             <TableData>
-                                                {patient.vitalsStatus === "add" ? (
+                                                {patient.vitalsStatus === "done" ? (
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleVitalsAction(patient.id, patient.vitalsStatus, patient.patientName, patient.gender)}
-                                                        className="flex items-center justify-center gap-1 h-6 px-3 py-2 rounded-[32px] text-xs font-medium text-white bg-[#0B8C00] border border-[#0B8C00] hover:bg-[#0A7F00] transition-colors"
+                                                        disabled={!canAdd}
+                                                        onClick={
+                                                            canAdd
+                                                                ? () =>
+                                                                      handleVitalsAction(
+                                                                          patient.id,
+                                                                          patient.vitalsStatus,
+                                                                          patient.patientName,
+                                                                          patient.gender
+                                                                      )
+                                                                : undefined
+                                                        }
+                                                        className={`flex items-center justify-center h-6 px-5 py-2 rounded-[30px] text-xs font-medium border transition-colors ${
+                                                            canAdd
+                                                                ? "text-[#0B8C00] bg-white border-[#0B8C00]/20 hover:bg-[#F2F8F2]"
+                                                                : "text-[#9CA3AF] bg-[#F9FAFB] border-[#E5E7EB] cursor-not-allowed"
+                                                        }`}
+                                                    >
+                                                        Done
+                                                    </button>
+                                                ) : canAdd ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            handleVitalsAction(
+                                                                patient.id,
+                                                                patient.vitalsStatus,
+                                                                patient.patientName,
+                                                                patient.gender,
+                                                            )
+                                                        }
+                                                        className="flex items-center justify-center gap-1 h-6 px-3 py-2 rounded-[32px] text-xs font-medium text-white bg-[#0B8C00] border border-[#0B8C00] cursor-pointer hover:opacity-90"
                                                     >
                                                         <Image
                                                             src="/icons/AddIconWhite.svg"
@@ -777,13 +1123,7 @@ export default function RegistrationListPage() {
                                                         <span>Add</span>
                                                     </button>
                                                 ) : (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleVitalsAction(patient.id, patient.vitalsStatus, patient.patientName, patient.gender)}
-                                                        className="flex items-center justify-center h-6 px-5 py-2 rounded-[30px] text-xs font-medium text-[#0B8C00] bg-white border border-[#0B8C00]/20 hover:bg-[#F2F8F2] transition-colors"
-                                                    >
-                                                        Done
-                                                    </button>
+                                                    <span className="text-xs font-normal text-[#434956]">-</span>
                                                 )}
                                             </TableData>
                                             <TableData>{patient.doctorName}</TableData>
@@ -795,67 +1135,193 @@ export default function RegistrationListPage() {
                                                     {patient.patientStatus}
                                                 </span>
                                             </TableData>
-                                            <TableData className="">
-                                                <div className="flex items-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleView(patient)}
-                                                        className="cursor-pointer flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                        aria-label="View"
-                                                    >
-                                                        <Image
-                                                            src="/icons/ViewEyeIcon.svg"
-                                                            alt="View"
-                                                            width={20}
-                                                            height={20}
-                                                        />
-                                                    </button>
-                                                    {/* Only show Edit and Doctor Change buttons if user is NOT a nurse */}
-                                                    {!isNurse && (
-                                                        <>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleEdit(patient)}
-                                                                className="cursor-pointer flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                                aria-label="Edit"
-                                                            >
-                                                                <Image
-                                                                    src="/icons/EditIconBlack.svg"
-                                                                    alt="Edit"
-                                                                    width={20}
-                                                                    height={20}
-                                                                />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDoctorAction(patient.id)}
-                                                                className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-[8px] hover:bg-[#F2F8F2] transition-colors"
-                                                                aria-label="Doctor Action"
-                                                            >
-                                                                <Image
-                                                                    src="/icons/doctorIcon.svg"
-                                                                    alt="Doctor"
-                                                                    width={20}
-                                                                    height={20}
-                                                                    className="text-[#434956]"
-                                                                />
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                    <button
-                                                        onClick={() => handleDownloadPDF(patient)}
-                                                        className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-[8px] hover:bg-[#F2F8F2] transition-colors"
-                                                        aria-label="Download PDF"
-                                                        title="Download PDF"
-                                                    >
-                                                        <Image
-                                                            src="/icons/DownloadExport.svg"
-                                                            alt="Download PDF"
-                                                            width={20}
-                                                            height={20}
-                                                        />
-                                                    </button>
-                                                </div>
-                                            </TableData>
+                                            {canView || canAdd || canEdit || canDownload ? (
+                                                <TableData className="">
+                                                    <div className="flex items-center gap-3">
+                                                        {canView ? (
+                                                            <Tooltip content="View" position="top">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleView(patient)}
+                                                                    className="cursor-pointer flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                                    aria-label="View"
+                                                                >
+                                                                    <Image
+                                                                        src="/icons/ViewEyeIcon.svg"
+                                                                        alt="View"
+                                                                        width={20}
+                                                                        height={20}
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
+                                                        ) : null}
+                                                        {!isNurse && canEdit ? (
+                                                            <>
+                                                                <Tooltip content="Edit" position="top" delay={0}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleEdit(patient)}
+                                                                        className="cursor-pointer flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                                        aria-label="Edit"
+                                                                    >
+                                                                        <Image
+                                                                            src="/icons/EditIconBlack.svg"
+                                                                            alt="Edit"
+                                                                            width={20}
+                                                                            height={20}
+                                                                        />
+                                                                    </button>
+                                                                </Tooltip>
+                                                                <Tooltip content="Doctor Change" position="top" delay={0}>
+                                                                    <button
+                                                                        onClick={() => handleDoctorAction(patient.id)}
+                                                                        className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-[8px] hover:bg-[#F2F8F2] transition-colors"
+                                                                        aria-label="Doctor Action"
+                                                                    >
+                                                                    <Image
+                                                                        src="/icons/doctorIcon.svg"
+                                                                        alt="Doctor"
+                                                                        width={20}
+                                                                        height={20}
+                                                                        className="text-[#434956]"
+                                                                    />
+                                                                </button>
+                                                                </Tooltip>
+                                                            </>
+                                                        ) : null}
+                                                        {canDownload ? (
+                                                            <>
+                                                                <Tooltip
+                                                                    content="Patient form"
+                                                                    position="top"
+                                                                    delay={0}
+                                                                    disabled={
+                                                                        pdfDownloadingPatientId !== null ||
+                                                                        invoiceDownloadingPatientId !== null
+                                                                    }
+                                                                >
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={
+                                                                            pdfDownloadingPatientId !== null ||
+                                                                            invoiceDownloadingPatientId !== null
+                                                                        }
+                                                                        onClick={() => handleDownloadPDF(patient)}
+                                                                        className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${
+                                                                            pdfDownloadingPatientId === patient.id
+                                                                                ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
+                                                                                : pdfDownloadingPatientId !== null ||
+                                                                                    invoiceDownloadingPatientId !== null
+                                                                                  ? "cursor-not-allowed opacity-50"
+                                                                                  : "cursor-pointer hover:bg-[#F2F8F2]"
+                                                                        }`}
+                                                                        aria-label={
+                                                                            pdfDownloadingPatientId === patient.id
+                                                                                ? "Generating patient form PDF"
+                                                                                : "Download patient form"
+                                                                        }
+                                                                    >
+                                                                        {pdfDownloadingPatientId === patient.id ? (
+                                                                            <svg
+                                                                                className="h-5 w-5 shrink-0 animate-spin text-[#0B8C00]"
+                                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                                fill="none"
+                                                                                viewBox="0 0 24 24"
+                                                                                aria-hidden
+                                                                            >
+                                                                                <circle
+                                                                                    className="opacity-25"
+                                                                                    cx="12"
+                                                                                    cy="12"
+                                                                                    r="10"
+                                                                                    stroke="currentColor"
+                                                                                    strokeWidth="4"
+                                                                                />
+                                                                                <path
+                                                                                    className="opacity-75"
+                                                                                    fill="currentColor"
+                                                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                                                />
+                                                                            </svg>
+                                                                        ) : (
+                                                                            <Image
+                                                                                src="/icons/DownloadExport.svg"
+                                                                                alt=""
+                                                                                width={20}
+                                                                                height={20}
+                                                                            />
+                                                                        )}
+                                                                    </button>
+                                                                </Tooltip>
+                                                                {isWithinInvoiceDownloadWindow(patient.createdAt) ? (
+                                                                    <Tooltip
+                                                                        content="Download invoice"
+                                                                        position="top"
+                                                                        delay={0}
+                                                                        disabled={
+                                                                            pdfDownloadingPatientId !== null ||
+                                                                            invoiceDownloadingPatientId !== null
+                                                                        }
+                                                                    >
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={
+                                                                                pdfDownloadingPatientId !== null ||
+                                                                                invoiceDownloadingPatientId !== null
+                                                                            }
+                                                                            onClick={() => handleDownloadListInvoice(patient)}
+                                                                            className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${
+                                                                                invoiceDownloadingPatientId === patient.id
+                                                                                    ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
+                                                                                    : pdfDownloadingPatientId !== null ||
+                                                                                        invoiceDownloadingPatientId !== null
+                                                                                      ? "cursor-not-allowed opacity-50"
+                                                                                      : "cursor-pointer hover:bg-[#F2F8F2]"
+                                                                            }`}
+                                                                            aria-label={
+                                                                                invoiceDownloadingPatientId === patient.id
+                                                                                    ? "Generating invoice PDF"
+                                                                                    : "Download patient invoice"
+                                                                            }
+                                                                        >
+                                                                            {invoiceDownloadingPatientId === patient.id ? (
+                                                                                <svg
+                                                                                    className="h-5 w-5 shrink-0 animate-spin text-[#0B8C00]"
+                                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                                    fill="none"
+                                                                                    viewBox="0 0 24 24"
+                                                                                    aria-hidden
+                                                                                >
+                                                                                    <circle
+                                                                                        className="opacity-25"
+                                                                                        cx="12"
+                                                                                        cy="12"
+                                                                                        r="10"
+                                                                                        stroke="currentColor"
+                                                                                        strokeWidth="4"
+                                                                                    />
+                                                                                    <path
+                                                                                        className="opacity-75"
+                                                                                        fill="currentColor"
+                                                                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                                                    />
+                                                                                </svg>
+                                                                            ) : (
+                                                                                <Image
+                                                                                    src="/icons/InvoiceDownloadIcon.svg"
+                                                                                    alt=""
+                                                                                    width={15}
+                                                                                    height={15}
+                                                                                />
+                                                                            )}
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                ) : null}
+                                                            </>
+                                                        ) : null}
+                                                    </div>
+                                                </TableData>
+                                            ) : null}
                                         </TableRow>
                                     ))
                                 )}
@@ -877,7 +1343,7 @@ export default function RegistrationListPage() {
 
             {/* Doctor Exchange Dialog */}
             <Dialog
-                open={isDoctorDialogOpen}
+                open={isDoctorDialogOpen && canEdit}
                 onClose={handleDoctorDialogCancel}
                 title="Doctor Exchange"
                 width={577}
@@ -956,6 +1422,21 @@ export default function RegistrationListPage() {
                 showCancel={false}
                 onConfirm={() => setShowErrorDialog(false)}
             />
+
+            {patientFormDownloadProps ? (
+                <PatientCGHS ref={patientFormRef} {...patientFormDownloadProps} />
+            ) : null}
+
+            {invoicePdfAppointment ? (
+                <div
+                    className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] w-[min(720px,100vw)] overflow-visible"
+                    aria-hidden
+                >
+                    <div className="invoice-content flex w-full min-w-0 flex-col gap-[16px]">
+                        <PaymentReceiptCapture {...buildListInvoiceReceiptProps(invoicePdfAppointment)} />
+                    </div>
+                </div>
+            ) : null}
         </AppShell>
     );
 }

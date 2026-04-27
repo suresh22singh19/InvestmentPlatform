@@ -11,6 +11,7 @@ import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSocket } from "@/hooks/useSocket";
 import { usePathname } from "next/navigation";
+import { usePermission } from "@/hooks/usePermission";
 
 type MemberRegistration = {
     id: number;
@@ -30,6 +31,11 @@ const tabOptions = [
 
 
 export default function AddMemberPage() {
+    const duplicateNumberPermission = usePermission("settings", { subModule: "duplicate-number-exceptions" });
+    const canView = duplicateNumberPermission.canView;
+    const canAdd = duplicateNumberPermission.canAdd;
+    const canEdit = duplicateNumberPermission.canEdit;
+
     const pathname = usePathname();
     const { onDuplicateNumberRequest } = useSocket();
     const [activeTab, setActiveTab] = useState("pending");
@@ -63,7 +69,9 @@ export default function AddMemberPage() {
         setFilters((prev) => ({ ...prev, currentPage: 1 }));
     }, [activeTab]);
 
-    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery();
+    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
+        skip: !canView || !canAdd,
+    });
     const { data: duplicateNumberExceptionsData, isLoading: isLoadingExceptions, refetch: refetchExceptions } = useGetDuplicateNumberExceptionsQuery({
         page: filters.currentPage,
         limit: filters.itemsPerPage,
@@ -71,7 +79,7 @@ export default function AddMemberPage() {
         order: filters.sortField ? filters.sortOrder : undefined,
         search: searchParam,
         status: activeTab === "pending" ? "pending" : activeTab === "approved" ? "approved" : undefined,
-    });
+    }, { skip: !canView });
     const [createDuplicateNumberException, { isLoading: isCreating }] = useCreateDuplicateNumberExceptionMutation();
     const [approveRejectException, { isLoading: isProcessingAction }] = useApproveRejectDuplicateNumberExceptionMutation();
     
@@ -196,6 +204,7 @@ export default function AddMemberPage() {
     }, [memberRegistrations, filters.searchTerm]);
 
     const totalItems = duplicateNumberExceptionsData?.total || 0;
+    const showActionColumn = activeTab === "pending" && canEdit;
 
     const getSortDirection = (field: string): "asc" | "desc" | null => {
         if (filters.sortField === field) {
@@ -218,6 +227,7 @@ export default function AddMemberPage() {
     };
 
     const handleApprove = async (id: number) => {
+        if (!canEdit) return;
         try {
             const result = await approveRejectException({
                 id,
@@ -245,6 +255,7 @@ export default function AddMemberPage() {
     };
 
     const handleReject = async (id: number) => {
+        if (!canEdit) return;
         try {
             const result = await approveRejectException({
                 id,
@@ -272,6 +283,7 @@ export default function AddMemberPage() {
     };
 
     const handleAddNew = () => {
+        if (!canAdd) return;
         setFormValues({
             branchId: "",
             phoneNumber: "",
@@ -284,6 +296,7 @@ export default function AddMemberPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!canAdd) return;
 
         // Clear previous errors
         setBranchError("");
@@ -385,6 +398,11 @@ export default function AddMemberPage() {
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
+                    {!canView ? (
+                        <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                            You don&apos;t have permission to view duplicate number exceptions.
+                        </div>
+                    ) : (
                     <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
                         <div className="mb-6 flex items-center justify-between">
                             <h2 className="text-lg font-semibold text-[#434956]">
@@ -399,14 +417,16 @@ export default function AddMemberPage() {
                                         placeholder="Search Here..."
                                     />
                                 </div>
-                                <button
-                                    type="button"
-                                    className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
-                                    onClick={handleAddNew}
-                                >
-                                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
-                                    Add Member Permission List
-                                </button>
+                                {/* {canAdd ? (
+                                    <button
+                                        type="button"
+                                        className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                                        onClick={handleAddNew}
+                                    >
+                                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
+                                        <span className="text-hide">Add Member Permission List</span>
+                                    </button>
+                                ) : null} */}
                             </div>
                         </div>
 
@@ -460,7 +480,7 @@ export default function AddMemberPage() {
                                             Status
                                         </TableHead>
                                     )}
-                                    {activeTab === "pending" && (
+                                    {showActionColumn && (
                                         <TableHead position="last">
                                             Action
                                         </TableHead>
@@ -471,7 +491,7 @@ export default function AddMemberPage() {
                                 {isLoadingExceptions ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={activeTab === "pending" ? 7 : 7}
+                                            colSpan={showActionColumn ? 7 : 6}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             Loading...
@@ -480,7 +500,7 @@ export default function AddMemberPage() {
                                 ) : filteredRegistrations.length === 0 ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={activeTab === "pending" ? 7 : 7}
+                                            colSpan={showActionColumn ? 7 : 6}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             No member registrations found
@@ -523,7 +543,7 @@ export default function AddMemberPage() {
                                                     </span>
                                                 </TableData>
                                             )}
-                                            {activeTab === "pending" && (
+                                            {showActionColumn && (
                                                 <TableData>
                                                     <div className="flex items-center gap-2">
                                                         <button
@@ -565,11 +585,12 @@ export default function AddMemberPage() {
                             />
                         )}
                     </div>
+                    )}
                 </ListBorder>
             </div>
 
             <Dialog
-                open={isDialogOpen}
+                open={isDialogOpen && canAdd}
                 onClose={() => {
                     setIsDialogOpen(false);
                     setBranchError("");

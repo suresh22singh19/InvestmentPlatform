@@ -3,6 +3,7 @@
 import { FormInputField, FormSelectField } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
+import { sanitizePatientNameInput } from "@/lib/utils/common";
 
 export interface PatientDetailsFormData {
   mobileNumber: string;
@@ -28,6 +29,10 @@ interface PatientDetailsProps {
   errors?: Record<string, string>;
   readOnly?: boolean;
   isMobileNumberLoading?: boolean; // Show loading spinner on mobile number field
+  /** When true, lock Title, Patient Name, and UHID fields (used on patient-medicine-type page where these are filled from dialog). */
+  lockIdentityFields?: boolean;
+  /** Optional message to show below mobile number field (e.g. "No patient found for the provided phone number"). */
+  mobileNumberMessage?: string;
 }
 
 export default function PatientDetails({
@@ -47,7 +52,10 @@ export default function PatientDetails({
   errors,
   readOnly = false,
   isMobileNumberLoading = false,
+  lockIdentityFields = false,
+  mobileNumberMessage,
 }: PatientDetailsProps) {
+  const identityLocked = readOnly || lockIdentityFields;
   return (
     <div className="space-y-6 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]">
       <h2 className="text-base font-medium leading-[120%] text-[#262D3B]">{title}</h2>
@@ -66,7 +74,10 @@ export default function PatientDetails({
               value={formData.mobileNumber}
               onChange={(e) => {
                 if (readOnly) return;
-                const value = e.target.value.replace(/\D/g, "").slice(0, 10); // Only allow digits, max 10
+                let value = e.target.value.replace(/\D/g, "");
+                // Disallow leading zeros – remove them while allowing zeros after the first non-zero digit
+                value = value.replace(/^0+/, "");
+                value = value.slice(0, 10); // Only allow digits, max 10
                 onChange("mobileNumber", value);
               }}
               onBlur={() => onBlur?.("mobileNumber")}
@@ -91,6 +102,9 @@ export default function PatientDetails({
                 </svg>
               </div>
             )}
+            {mobileNumberMessage && (
+              <p className="mt-1 text-xs text-[#F6776E]">{mobileNumberMessage}</p>
+            )}
           </div>
 
           {/* Title + Patient Name - 50% width together */}
@@ -109,7 +123,7 @@ export default function PatientDetails({
                 dropdownWidth={160}
                 value={formData.title || null}
                 onChange={(value) => {
-                  if (readOnly) return;
+                  if (identityLocked) return;
                   const selectedValue = Array.isArray(value) ? value[0] : value;
                   onChange("title", selectedValue || "");
                   if (selectedValue) {
@@ -120,11 +134,8 @@ export default function PatientDetails({
                 }}
                 onBlur={() => onBlur?.("title")}
                 error={errors?.title}
-                disabled={readOnly}
+                disabled={identityLocked}
               />
-              {errors?.title && (
-                <p className="mt-1 text-xs text-[#F6776E]">{errors.title}</p>
-              )}
             </div>
 
             <div
@@ -136,17 +147,22 @@ export default function PatientDetails({
                 label="Patient Name *"
                 value={formData.patientName}
                 onChange={(e) => {
-                  if (readOnly) return;
-                  // Only allow letters and spaces
-                  const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
-                  onChange("patientName", value);
+                  if (identityLocked) return;
+                  onChange("patientName", sanitizePatientNameInput(e.target.value));
                 }}
-                onBlur={() => onBlur?.("patientName")}
+                onBlur={(e) => {
+                  const trimmed = e.target.value.trim();
+                  if (trimmed !== e.target.value) {
+                    onChange("patientName", trimmed);
+                  }
+                  onBlur?.("patientName");
+                }}
                 placeholder="Patient Name"
                 required
+                maxLength={100}
                 error={errors?.patientName}
-                readOnly={readOnly}
-                disabled={readOnly}
+                readOnly={identityLocked}
+                disabled={identityLocked}
               />
             </div>
           </div>
@@ -159,13 +175,18 @@ export default function PatientDetails({
           data-field="uhid"
           className="scroll-mt-4 md:col-span-2"
         >
-          <FormInputField
+        <FormInputField
             label="UHID"
             value={formData.uhid}
             onChange={(e) => {
-              if (readOnly) return;
-              // Remove spaces, allow alphanumeric characters, limit to 15 characters
-              const value = e.target.value.replace(/\s/g, "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 15).toUpperCase();
+              if (identityLocked) return;
+              // Remove spaces, allow alphanumeric characters, disallow leading zeros, limit to 15 characters
+              let value = e.target.value
+                .replace(/\s/g, "")
+                .replace(/[^a-zA-Z0-9]/g, "")
+                .toUpperCase();
+              value = value.replace(/^0+/, "");
+              value = value.slice(0, 15);
               onChange("uhid", value);
             }}
             onBlur={() => onBlur?.("uhid")}
@@ -173,8 +194,8 @@ export default function PatientDetails({
             type="text"
             maxLength={15}
             error={errors?.uhid}
-            readOnly={readOnly}
-            disabled={readOnly}
+            readOnly={identityLocked}
+            disabled={identityLocked}
           />
         </div>
         

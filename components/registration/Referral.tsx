@@ -60,14 +60,20 @@ export default function Referral({
     const referralOptions = ["Yes", "No"];
     const showSourceFields = formData.referral?.toLowerCase() === "yes";
     const sourceLower = formData.source?.toLowerCase();
-    // Show referral name and mobile fields when source is "patient" (Referral) or "other"
-    const showReferralNameMobile = showSourceFields && (sourceLower === "patient" || sourceLower === "other");
-    const showSpecificField = showSourceFields && 
-        (sourceLower === "tv" || sourceLower === "newspaper" || 
-         sourceLower === "social-media" || sourceLower === "doctor");
+    const sourceSlug = sourceLower?.replace(/\s+/g, "-"); // Normalize values like "Social Media" -> "social-media"
+    // Show referral name and mobile fields when source is Referral/Other
+    const showReferralNameMobile =
+        showSourceFields && (sourceSlug === "referral" || sourceSlug === "other");
+    const showSpecificField =
+        showSourceFields &&
+        (sourceSlug === "tv" ||
+            sourceSlug === "newspaper" ||
+            sourceSlug === "social-media" ||
+            sourceSlug === "doctor");
 
     const getSpecificFieldOptions = () => {
-        switch (formData.source) {
+        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
+        switch (slug) {
             case "tv":
                 return tvSpecificFieldOptions;
             case "newspaper":
@@ -82,7 +88,8 @@ export default function Referral({
     };
 
     const getSpecificFieldLabel = () => {
-        switch (formData.source) {
+        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
+        switch (slug) {
             case "tv":
                 return "TV Specific";
             case "newspaper":
@@ -97,7 +104,8 @@ export default function Referral({
     };
 
     const getSpecificFieldRef = () => {
-        switch (formData.source) {
+        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
+        switch (slug) {
             case "tv":
                 return fieldRefs?.tvSpecificField;
             case "newspaper":
@@ -112,7 +120,8 @@ export default function Referral({
     };
 
     const getSpecificFieldValue = () => {
-        switch (formData.source) {
+        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
+        switch (slug) {
             case "tv":
                 return formData.tvSpecificField || null;
             case "newspaper":
@@ -131,8 +140,8 @@ export default function Referral({
         _selection: SelectOption | SelectOption[] | null
     ) => {
         const selectedValue = Array.isArray(value) ? value[0] : value;
-        const sourceLower = formData.source?.toLowerCase();
-        switch (sourceLower) {
+        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
+        switch (slug) {
             case "tv":
                 onChange("tvSpecificField" as keyof ReferralFormData, selectedValue || "");
                 break;
@@ -148,10 +157,14 @@ export default function Referral({
         }
         if (selectedValue) {
             setTimeout(() => {
-                const fieldName = sourceLower === "tv" ? "tvSpecificField" :
-                                 sourceLower === "newspaper" ? "newspaperSpecificField" :
-                                 sourceLower === "social-media" ? "socialMediaSpecificField" :
-                                 "doctorSpecificField";
+                const fieldName =
+                    slug === "tv"
+                        ? "tvSpecificField"
+                        : slug === "newspaper"
+                        ? "newspaperSpecificField"
+                        : slug === "social-media"
+                        ? "socialMediaSpecificField"
+                        : "doctorSpecificField";
                 onBlur?.(fieldName as keyof ReferralFormData);
             }, 0);
         }
@@ -168,8 +181,9 @@ export default function Referral({
         onChange("newspaperSpecificField" as keyof ReferralFormData, "");
         onChange("socialMediaSpecificField" as keyof ReferralFormData, "");
         onChange("doctorSpecificField" as keyof ReferralFormData, "");
-        // Clear referral name and mobile when switching to "other" or "patient" (Referral) (they will be filled fresh)
-        if (selectedValue === "other" || selectedValue?.toLowerCase() === "patient") {
+        // Clear referral name and mobile when switching to Referral/Other (they will be filled fresh)
+        const normalized = selectedValue?.toLowerCase();
+        if (normalized === "other" || normalized === "referral" || normalized === "patient") {
             onChange("referralName", "");
             onChange("referralMobile", "");
         }
@@ -181,13 +195,13 @@ export default function Referral({
     };
 
     return (
-        <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 mb-4">
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 mb-4 mt-4">
             <h2 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
                 <Image src="/icons/Referral.svg" alt="Referral" width={20} height={20} /> Referral
             </h2>
 
             {/* Referral Yes/No */}
-            <div className="mb-4 w-1/3">
+            <div className="mb-4 lg:w-1/3 md:w-1/2 w-full">
                 <PatientTypeButtonGroup
                     options={referralOptions}
                     value={formData.referral}
@@ -339,8 +353,10 @@ export default function Referral({
                                     placeholder="Referral Name"
                                     type="text"
                                     error={errors?.referralName}
-                                    disabled={isFieldReadOnly("referralName")}
-                                    readOnly={isFieldReadOnly("referralName")}
+                                    // disabled={isFieldReadOnly("referralName")}
+                                    disabled={true}
+                                    // readOnly={isFieldReadOnly("referralName")}
+                                    readOnly={true}
                                 />
                             </div>
                         </div>

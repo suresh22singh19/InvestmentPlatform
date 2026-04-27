@@ -12,6 +12,8 @@ type FileUploadFieldProps = {
   className?: string;
   icon?: string; // Custom icon path, defaults to UploadIcon
   error?: string;
+  /** When set, runs before `onChange`; return an error message to reject the file (input is cleared). */
+  validateFile?: (file: File) => Promise<string | null>;
 };
 
 export const FileUploadField = ({
@@ -23,12 +25,15 @@ export const FileUploadField = ({
   className = "",
   icon = "/icons/UploadIcon.svg",
   error,
+  validateFile,
 }: FileUploadFieldProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>(value || "");
+  const [validationError, setValidationError] = useState("");
 
   useEffect(() => {
     setFileName(value || "");
+    if (!value) setValidationError("");
   }, [value]);
 
   // Clear fileName when error is shown and value is empty (invalid file rejected)
@@ -42,14 +47,27 @@ export const FileUploadField = ({
   }, [error, value]);
 
   const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0] || null;
-      if (file) {
-        setFileName(file.name);
-        onChange?.(file, file.name);
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const input = e.target;
+      const file = input.files?.[0] || null;
+      if (!file) {
+        return;
       }
+      if (validateFile) {
+        const msg = await validateFile(file);
+        if (msg) {
+          setValidationError(msg);
+          setFileName("");
+          input.value = "";
+          onChange?.(null, "");
+          return;
+        }
+      }
+      setValidationError("");
+      setFileName(file.name);
+      onChange?.(file, file.name);
     },
-    [onChange]
+    [onChange, validateFile]
   );
 
   const handleBrowseClick = () => {
@@ -60,6 +78,7 @@ export const FileUploadField = ({
     e.preventDefault();
     e.stopPropagation();
     setFileName("");
+    setValidationError("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -126,7 +145,9 @@ export const FileUploadField = ({
         </div>
       </div>
 
-      {error && <span className="text-xs text-[#F87171]">{error}</span>}
+      {(error || validationError) && (
+        <span className="text-xs text-[#F87171]">{error || validationError}</span>
+      )}
     </div>
   );
 };

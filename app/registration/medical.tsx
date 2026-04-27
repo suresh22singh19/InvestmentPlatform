@@ -51,6 +51,8 @@ export default function MedicalForm({
     const { data: diagnosisCategoriesData } = useGetDiagnosisCategoriesQuery({
         page: 1,
         limit: 100,
+        sort: "createdAt",
+        order: "desc",
     });
 
     // Map diagnosis categories to options (only active ones)
@@ -81,9 +83,9 @@ export default function MedicalForm({
             return [];
         }
         
-        // Filter only active sub-diagnoses and map to options
+        // Include sub-diagnoses that are active OR have no status set (null/undefined)
         return selectedCategory.subDiagnoses
-            .filter((subItem: any) => subItem.status === "active")
+            .filter((subItem: any) => subItem.status === "active" || subItem.status == null)
             .map((subItem: any) => ({
                 value: String(subItem.id),
                 label: subItem.name,
@@ -139,6 +141,10 @@ export default function MedicalForm({
     const symptomsRef = useRef<HTMLTextAreaElement>(null);
 
     const handleSubmit = async () => {
+        // Prevent multiple submissions while a request is already in progress
+        if (formik.isSubmitting || isSubmitting) {
+            return;
+        }
         if (isSubmitting) return;
 
         // Define fields for Medical Information - all optional but validate if filled
@@ -172,11 +178,11 @@ export default function MedicalForm({
         // Explicitly validate required diagnosis fields first
         const diagnosisErrors: Record<string, string> = {};
         if (!formik.values.diagnosis || formik.values.diagnosis.trim() === "") {
-            diagnosisErrors.diagnosis = "Please select a diagnosis";
+            diagnosisErrors.diagnosis = "Please select a primary disease";
         }
         
         if (!formik.values.subDiagnosis || formik.values.subDiagnosis.trim() === "") {
-            diagnosisErrors.subDiagnosis = "Please select a sub diagnosis";
+            diagnosisErrors.subDiagnosis = "Please select a secondary disease";
         }
         
         // Validate all fields
@@ -217,14 +223,47 @@ export default function MedicalForm({
             // Force a re-render by updating formik state
             await new Promise(resolve => setTimeout(resolve, 0));
             
-            // Scroll to first error
-            const firstErrorKey = Object.keys(allErrors)[0];
-            const element = document.querySelector(`[data-field="${firstErrorKey}"]`);
-            if (element instanceof HTMLElement) {
-                setTimeout(() => {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 100);
-            }
+            // Focus order: Primary Disease * first, then Secondary Disease *, then rest in series
+            const MEDICAL_FIELD_ORDER: readonly string[] = [
+                'diagnosis',      // 1. Primary Disease *
+                'subDiagnosis',  // 2. Secondary Disease *
+                'symptoms',
+                'diabetes', 'diabetesRemarks', 'htn', 'htnRemarks',
+                'coronaryArteryDisease', 'coronaryArteryDiseaseRemarks', 'thyroid', 'thyroidRemarks',
+                'menstrual', 'menstrualRemarks',
+                'addictionSpecify',
+            ];
+            const firstErrorKey = MEDICAL_FIELD_ORDER.find((key) => allErrors[key]) ?? Object.keys(allErrors)[0];
+            const scrollToAndFocus = (key: string) => {
+                if (key === 'diagnosis' && diagnosisRef.current) {
+                    diagnosisRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const btn = diagnosisRef.current.querySelector('button[type="button"]');
+                    if (btn instanceof HTMLElement) setTimeout(() => btn.focus(), 150);
+                    return;
+                }
+                if (key === 'subDiagnosis' && subDiagnosisRef.current) {
+                    subDiagnosisRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const btn = subDiagnosisRef.current.querySelector('button[type="button"]');
+                    if (btn instanceof HTMLElement) setTimeout(() => btn.focus(), 150);
+                    return;
+                }
+                const el = document.querySelector(`[data-field="${key}"]`);
+                if (el instanceof HTMLElement) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                        setTimeout(() => el.focus(), 150);
+                    } else {
+                        const input = el.querySelector('input, textarea');
+                        const btn = el.querySelector('button[type="button"]');
+                        if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+                            setTimeout(() => input.focus(), 150);
+                        } else if (btn instanceof HTMLElement) {
+                            setTimeout(() => btn.focus(), 150);
+                        }
+                    }
+                }
+            };
+            setTimeout(() => scrollToAndFocus(firstErrorKey), 150);
             return;
         }
         

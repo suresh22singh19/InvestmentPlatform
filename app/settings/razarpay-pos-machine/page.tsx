@@ -472,7 +472,7 @@ export default function RazarpayPosMachinePage() {
                 
               </h2>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-nowrap lg:flex-wrap items-center gap-3">
                 {showPaymentLogTable ? (
                   <>
                     <div className="w-[300px]">
@@ -547,7 +547,7 @@ export default function RazarpayPosMachinePage() {
                         onClick={handleAdd}
                       >
                         <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                        Add Razarpay Pos Machine
+                        <span className="text-hide">Add Razarpay Pos Machine</span>
                       </button>
                     </div>
 

@@ -4,12 +4,24 @@
  */
 
 import { baseApi } from "./baseApi";
+import type { RootState } from "../index";
+
+function getBranchIdFromAuthState(api: { getState: () => unknown }): number | undefined {
+  const state = api.getState() as RootState;
+  const raw = state.auth?.loginData?.user?.branchId;
+  if (raw === undefined || raw === null) return undefined;
+  const asNumber = typeof raw === "string" ? parseInt(raw, 10) : raw;
+  return Number.isFinite(asNumber) ? asNumber : undefined;
+}
 
 export interface Doctor {
   id: number | string;
-  userName: string;
+  name: string;
   email?: string | null;
   branchId?: number | string;
+  branchName?: string | null;
+  /** @deprecated Use `name` instead. Kept for backward compatibility. */
+  userName?: string;
   group?: {
     id: number | string;
     name: string;
@@ -20,6 +32,10 @@ export interface Doctor {
 export interface DoctorsResponse {
   success: boolean;
   data: Doctor[];
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
   message: string;
   timestamp: string;
   statusCode: number;
@@ -159,7 +175,7 @@ export interface HospitalPatientRequest {
   maritalStatus: string;
   isReferral?: string; // "yes" | "no"
   referral?: {
-    referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other (from sourceOptions)
+    referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other | Referral (from sourceOptions)
     doctorUserId?: number | string | null;
     referralRegistrationId?: number;
     referralSourceInfo?: string; // Specific value: tvSpecificField, newspaperSpecificField, etc. or referralName for "other"
@@ -197,12 +213,21 @@ export interface HospitalPatientRequest {
     pincode?: number | string;
   };
   appointment: {
+    patientTokenSource?: "gate" | "reception"; // Source of patient token: gate (from token panel) or reception (direct registration without token)
+
     token?: string;
     appointmentDate: string;
     timeSlot: string;
     doctorUserId: number | string;
     isPreBooking: boolean;
     preBookingId?: number | string | null;
+  };
+  /** Root-level consultancy voucher (registration/hospital submit) */
+  isConsultancyVoucherApplied?: "yes" | "no" | "null";
+  voucher?: {
+    voucherType: string;
+    voucher: string;
+    benefitMessage: string;
   };
 }
 
@@ -218,7 +243,7 @@ export interface HospitalPatientResponse {
 export interface ClinicPatientRequest {
   branchId: number;
   patientEntryId?: number | string;
-  patientTitle: string;
+  patientTitle: string;            
   patientName: string;
   contactNumber: string;
   whatsappNo: string;
@@ -236,9 +261,11 @@ export interface ClinicPatientRequest {
   benificiaryId?: string; // Note: API uses "benificiaryId" (typo in API)
   insuranceCompany?: string;
   isReferral?: string; // "yes" | "no"
+
+ 
   maritalStatus: string;
   referral?: {
-    referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other
+    referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other | Referral
     doctorUserId?: number | string | null;
     referralRegistrationId?: number;
     referralSourceInfo?: string;
@@ -253,12 +280,16 @@ export interface ClinicPatientRequest {
   addictionType?: string[]; // Array of addiction types: ["alcohol", "smoking", "tobacco", "drugs", "others"]
   addictionSpecify?: string; // Specify addiction details if "others" is selected
   appointment: {
+    patientTokenSource?: "gate" | "reception"; // Source: gate (from pre-booking/token panel) or reception (direct registration)
+
     isPreBooked?: boolean;
     appointmentDate: string;
     timeSlot: string;
     doctorUserId: number | string;
     bloodPressure?: string;
     sugarLevel?: string;
+//  remove from here 
+
     temperature?: string;
     spo2?: string;
     pulse?: string;
@@ -279,12 +310,16 @@ export interface ClinicPatientRequest {
     isMenstrual?: boolean;
     menstrualRemarks?: string;
     preBookingId?: number | string;
-    // lastDayFullDiet?: string;
-    // dietType?: string;
-    // height?: string;
-    // weight?: string;
-    // bloodGroup?: string;
+
   };
+  // set here 
+  lastDayFullDiet?: string;
+  dietType?: string;
+  height?: string;
+  weight?: string;
+  bloodGroup?: string;
+  allergies?: string;
+  surgeries?: string;
   payment: {
     doctorFee: number;
     paymentMode: string;
@@ -309,6 +344,13 @@ export interface ClinicPatientRequest {
     areaId?: number | string; // Area ID from areas API
     addressLine1?: string;
     addressLine2?: string;
+  };
+  /** Root-level consultancy voucher (clinic-patient submit) */
+  isConsultancyVoucherApplied?: "yes" | "no" | "null";
+  voucher?: {
+    voucherType: string;
+    voucher: string;
+    benefitMessage: string;
   };
 }
 
@@ -343,6 +385,7 @@ export interface CreateAppointmentAndUpdateRegistrationRequest {
     referralName?: string;
     referralMobile?: string;
     patientTitle: string;
+    panelId?: number;
     patientName: string;
     contactNumber: string;
     whatsappNo: string;
@@ -364,6 +407,14 @@ export interface CreateAppointmentAndUpdateRegistrationRequest {
     patientType: string;
     addictionSpecify?: string;
     addictionType?: string[];
+    /** Optional vitals (4-step): sent when available from Step 03 Vitals */
+    lastDayFullDiet?: string;
+    dietType?: string;
+    height?: string;
+    weight?: string;
+    bloodGroup?: string;
+    allergies?: string;
+    surgeries?: string;
   };
   address: {
     address: string;
@@ -378,6 +429,7 @@ export interface CreateAppointmentAndUpdateRegistrationRequest {
     addressLine2?: string;
   };
   appointment: {
+    patientTokenSource?: "gate" | "reception"; // Source: gate (from pre-booking/token panel) or reception (direct registration)
     isPreBooking: boolean;
     preBookingId?: number;
     appointmentDate: string;
@@ -417,6 +469,13 @@ export interface CreateAppointmentAndUpdateRegistrationRequest {
     state?: string;
     city?: string;
     pincode?: number;
+  };
+  /** Root-level consultancy voucher (CreateAppointmentAndUpdateRegistration) */
+  isConsultancyVoucherApplied?: "yes" | "no" | "null";
+  voucher?: {
+    voucherType: string;
+    voucher: string;
+    benefitMessage: string;
   };
 }
 
@@ -461,11 +520,42 @@ export interface AppointmentRegistration {
     patient?: string; // Keep for backward compatibility
     patientName?: string;
     patientTitle?: string | null;
+    guardianName?: string | null;
+    guardianTitle?: string | null;
+    height?: string | number | null;
+    weight?: string | number | null;
+    bloodGroup?: string | null;
+    allergies?: string | null;
     gender?: string;
     age?: string;
     contactNumber?: string;
     emailAddress?: string;
+    /** From appointments-list / registration detail */
+    address?: {
+      id?: number;
+      address?: string;
+      city?: string;
+      pinCode?: string;
+      state?: string;
+      country?: string;
+      tehsil?: string;
+      area?: string;
+      areaId?: number;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      addressableType?: string;
+      addressableId?: number;
+      addressType?: string;
+      isActive?: number | boolean;
+      createdAt?: string;
+      updatedAt?: string;
+    } | null;
   };
+  subDiagnosis?: {
+    id?: number | string;
+    name?: string;
+  } | null;
+  diagnosisSymptoms?: string | null;
   diagnosis?: {
     id?: number | string;
     name?: string;
@@ -479,6 +569,26 @@ export interface AppointmentRegistration {
     group?: {
       id: number | string;
       name: string;
+    } | null;
+  } | null;
+  /** From appointments-list — null means no payment yet; PDF amounts should be ₹0 */
+  payment?: {
+    id?: number;
+    price?: string;
+    mode?: string;
+    paymentMethod?: string | null;
+    transactionId?: string | null;
+    transactionDate?: string | null;
+    status?: string;
+    invoiceId?: number;
+    orderId?: number;
+    invoice?: {
+      id?: number;
+      invoiceNumber?: string;
+      amountWithTax?: string;
+      amountWithoutTax?: string;
+      gstAmount?: string;
+      paymentStatus?: string;
     } | null;
   } | null;
   [key: string]: unknown;
@@ -620,6 +730,19 @@ export interface PatientRegistrationDetails {
   agentId?: number | null;
   createdAt?: string;
   updatedAt?: string;
+  patientReferral:{
+    createdAt?: string;
+    doctorUserId?: number | null;
+    id?: number | null;
+    referralMobile?: string | null;
+    referralName?: string | null;
+    referralRegistrationId?: number | null;
+    registrationId?: number | null;
+    source?: string | null;
+    sourceSelected?: string | null;
+    uhid?: string | null;
+    updatedAt?: string;
+  },
   address?: {
     id: number;
     address: string;
@@ -697,6 +820,8 @@ export interface AppointmentWithRegistration {
   diagnosisId?: number | null;
   subDiagnosisId?: number | null;
   doctorFee?: string | number;
+  /** Present when registration used a consultancy (OPD) voucher */
+  isConsultancyVoucherApplied?: "yes" | "no" | "null" | string;
   appointmentDate?: string;
   timeSlot?: string;
   bloodPressure?: string | null;
@@ -744,6 +869,7 @@ export interface AppointmentWithRegistration {
   } | null;
   doctor?: {
     id: number;
+    name?: string;
     userName?: string;
     email?: string;
   } | null;
@@ -763,15 +889,56 @@ export const registrationApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     /**
      * Get list of doctors for a branch
-     * Uses static branchId = 1 as requested.
      */
     getDoctors: builder.query<DoctorsResponse, void>({
-      query: () => ({
-        url: "/admin/registration/users-list?branchId=1",
-        method: "GET",
-      }),
-      // If you want cache invalidation later, you can add tags like:
-      // providesTags: ["Registration"],
+      queryFn: async (_arg, api, extraOptions, baseQuery) => {
+        const branchId = getBranchIdFromAuthState(api);
+        if (branchId == null) {
+          return {
+            error: {
+              status: 400,
+              data: { message: "Branch ID is required to fetch doctors." },
+            } as any,
+          };
+        }
+        const result = await baseQuery({
+          url: "/admin/registration/getDoctorsList",
+          method: "GET",
+          params: { branchId, page: 1, limit: 100 },
+        });
+        return result as any;
+      },
+    }),
+    /**
+     * Get list of doctors by branch ID (for pre-booking and other flows)
+     */
+    getDoctorsByBranch: builder.query<DoctorsResponse, { branchId?: number | string }>({
+      queryFn: async (params, api, extraOptions, baseQuery) => {
+        const paramBranchIdRaw = params?.branchId;
+        const paramBranchId =
+          paramBranchIdRaw != null
+            ? typeof paramBranchIdRaw === "string"
+              ? parseInt(paramBranchIdRaw, 10)
+              : paramBranchIdRaw
+            : undefined;
+        const branchId = Number.isFinite(paramBranchId as number)
+          ? (paramBranchId as number)
+          : getBranchIdFromAuthState(api);
+        if (branchId == null) {
+          return {
+            error: {
+              status: 400,
+              data: { message: "Branch ID is required to fetch doctors." },
+            } as any,
+          };
+        }
+        const result = await baseQuery({
+          url: "/admin/registration/getDoctorsList",
+          method: "GET",
+          params: { branchId, page: 1, limit: 100 },
+        });
+        return result as any;
+      },
     }),
     /**
      * Get services by branch and payment modes
@@ -793,14 +960,21 @@ export const registrationApi = baseApi.injectEndpoints({
       },
     }),
     /**
-     * Get list of diet types for Vitals/Medical information
+     * Get list of diet types for Vitals/Medical information (scoped by branch)
      * Returns an array of diet items
      */
-    getDietList: builder.query<DietListResponse, void>({
-      query: () => ({
-        url: "/admin/registration/diet-list",
-        method: "GET",
-      }),
+    getDietList: builder.query<DietListResponse, { branchId: number }>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", String(params.branchId));
+        }
+        const qs = queryParams.toString();
+        return {
+          url: `/admin/registration/diet-list${qs ? `?${qs}` : ""}`,
+          method: "GET",
+        };
+      },
     }),
     /**
      * Get list of patient entries (tokens) for a branch
@@ -809,18 +983,25 @@ export const registrationApi = baseApi.injectEndpoints({
       PatientEntriesResponse,
       { branchId?: number | string; search?: string; page?: number; limit?: number }
     >({
-      query: (params) => {
-        const { branchId = 1, search = "", page = 1, limit = 100 } = params;
+      queryFn: async (params, api, extraOptions, baseQuery) => {
+        const branchId =
+          (params.branchId != null ? (typeof params.branchId === "string" ? parseInt(params.branchId, 10) : params.branchId) : undefined) ??
+          getBranchIdFromAuthState(api) ??
+          1;
+        const search = params.search ?? "";
+        const page = params.page ?? 1;
+        const limit = params.limit ?? 100;
         const queryParams = new URLSearchParams({
           branchId: String(branchId),
           search: String(search),
           page: String(page),
           limit: String(limit),
         });
-        return {
+        const result = await baseQuery({
           url: `/admin/registration/patient-entries?${queryParams.toString()}`,
           method: "GET",
-        };
+        });
+        return result as any;
       },
     }),
     /**
@@ -943,15 +1124,20 @@ export const registrationApi = baseApi.injectEndpoints({
       },
       { entryId: number | string; branchId?: number | string }
     >({
-      query: (params) => {
-        const { entryId, branchId = 1 } = params;
+      queryFn: async (params, api, extraOptions, baseQuery) => {
+        const entryId = params.entryId;
+        const branchId =
+          (params.branchId != null ? (typeof params.branchId === "string" ? parseInt(params.branchId, 10) : params.branchId) : undefined) ??
+          getBranchIdFromAuthState(api) ??
+          1;
         const queryParams = new URLSearchParams({
           branchId: String(branchId),
         });
-        return {
+        const result = await baseQuery({
           url: `/admin/registration/patient-entries/${entryId}?${queryParams.toString()}`,
           method: "GET",
-        };
+        });
+        return result as any;
       },
     }),
     /**
@@ -980,30 +1166,37 @@ export const registrationApi = baseApi.injectEndpoints({
         toDate?: string;
       }
     >({
-      query: (params) => {
-        const { branchId = 1, search = "", page = 1, limit = 20, sortBy, sortOrder, fromDate = "", toDate = "" } = params;
+      queryFn: async (params, api, extraOptions, baseQuery) => {
+        const branchId =
+          (params.branchId != null ? (typeof params.branchId === "string" ? parseInt(params.branchId, 10) : params.branchId) : undefined) ??
+          getBranchIdFromAuthState(api) ??
+          1;
+        const search = params.search ?? "";
+        const page = params.page ?? 1;
+        const limit = params.limit ?? 20;
+        const sortBy = params.sortBy ?? "createdAt";
+        const sortOrder = params.sortOrder ?? "DESC";
+        const fromDate = params.fromDate ?? "";
+        const toDate = params.toDate ?? "";
         const queryParams = new URLSearchParams({
           branchId: String(branchId),
           search: String(search),
           page: String(page),
           limit: String(limit),
+          sortBy: String(sortBy),
+          sortOrder: String(sortOrder),
         });
-        if (sortBy) {
-          queryParams.append("sortBy", sortBy);
-        }
-        if (sortOrder) {
-          queryParams.append("sortOrder", sortOrder);
-        }
         if (fromDate) {
           queryParams.append("fromDate", fromDate);
         }
         if (toDate) {
           queryParams.append("toDate", toDate);
         }
-        return {
+        const result = await baseQuery({
           url: `/admin/registration/appointments-list?${queryParams.toString()}`,
           method: "GET",
-        };
+        });
+        return result as any;
       },
     }),
     /**
@@ -1028,15 +1221,20 @@ export const registrationApi = baseApi.injectEndpoints({
       },
       { appointmentId: number | string; branchId?: number | string }
     >({
-      query: (params) => {
-        const { appointmentId, branchId = 1 } = params;
+      queryFn: async (params, api, extraOptions, baseQuery) => {
+        const appointmentId = params.appointmentId;
+        const branchId =
+          (params.branchId != null ? (typeof params.branchId === "string" ? parseInt(params.branchId, 10) : params.branchId) : undefined) ??
+          getBranchIdFromAuthState(api) ??
+          1;
         const queryParams = new URLSearchParams({
           branchId: String(branchId),
         });
-        return {
+        const result = await baseQuery({
           url: `/admin/registration/appointments/${appointmentId}?${queryParams.toString()}`,
           method: "GET",
-        };
+        });
+        return result as any;
       },
     }),
     /**
@@ -1129,6 +1327,8 @@ export const registrationApi = baseApi.injectEndpoints({
         method: "POST",
         body: data,
       }),
+      /** Refresh pre-bookings panel list (/registration) without calling refetch on an unmounted query */
+      invalidatesTags: ["Prebookings"],
     }),
     /**
      * Request duplicate number permission
@@ -1164,16 +1364,17 @@ export const registrationApi = baseApi.injectEndpoints({
         dateFilter?: "present" | "past" | "future" | "";
       }
     >({
-      query: (params) => {
-        const {
-          branchId = 1,
-          page = 1,
-          limit = 25,
-          search = "",
-          fromDate = "",
-          toDate = "",
-          dateFilter = "present",
-        } = params;
+      queryFn: async (params, api, extraOptions, baseQuery) => {
+        const branchId =
+          (params.branchId != null ? (typeof params.branchId === "string" ? parseInt(params.branchId, 10) : params.branchId) : undefined) ??
+          getBranchIdFromAuthState(api) ??
+          1;
+        const page = params.page ?? 1;
+        const limit = params.limit ?? 25;
+        const search = params.search ?? "";
+        const fromDate = params.fromDate ?? "";
+        const toDate = params.toDate ?? "";
+        const dateFilter = params.dateFilter ?? "present";
         const queryParams = new URLSearchParams({
           branchId: String(branchId),
           page: String(page),
@@ -1186,10 +1387,11 @@ export const registrationApi = baseApi.injectEndpoints({
         if (dateFilter && dateFilter.trim() !== "") {
           queryParams.append("dateFilter", String(dateFilter));
         }
-        return {
+        const result = await baseQuery({
           url: `/admin/registration/pre-bookings-list?${queryParams.toString()}`,
           method: "GET",
-        };
+        });
+        return result as any;
       },
     }),
     /**
@@ -1446,6 +1648,7 @@ export const registrationApi = baseApi.injectEndpoints({
         method: "POST",
         body: data,
       }),
+      invalidatesTags: ["Prebookings"],
     }),
     /**
      * Get all registrations for referral by phone number
@@ -1478,12 +1681,135 @@ export const registrationApi = baseApi.injectEndpoints({
         };
       },
     }),
+    /**
+     * Global patient search endpoint
+     * Used for searching patients globally by UHID, phone, or pre-booking
+     */
+    globalPatientSearch: builder.query<
+      GlobalPatientSearchResponse,
+      { searchType: string; search: string; branchId?: number }
+    >({
+      query: (params) => {
+        const { searchType, search, branchId } = params;
+        const queryParams = new URLSearchParams({
+          searchType,
+          search,
+        });
+        if (branchId != null && branchId > 0) {
+          queryParams.set("branchId", String(branchId));
+        }
+        return {
+          url: `/admin/global/globelPatientSearch?${queryParams.toString()}`,
+          method: "GET",
+        };
+      },
+    }),
+    /** Public: allowed JS Health Card number range (id=1 = JS Health Card). */
+    getArogyaCardSeries: builder.query<
+      {
+        success: boolean;
+        data: {
+          id: number;
+          cardName: string;
+          seriesStart: string;
+          seriesEnd: string;
+        };
+        message: string;
+        timestamp: string;
+        statusCode: number;
+      },
+      { id?: number }
+    >({
+      query: (params) => ({
+        url: `/public/getArogyaCardSeries?id=${params?.id ?? 1}`,
+        method: "GET",
+      }),
+    }),
+    checkJsHealthCardAssignment: builder.query<
+      {
+        success: boolean;
+        data: {
+          patient: {
+            id: number;
+            uhid: string;
+            patientName: string;
+            patientTitle?: string;
+            contactNumber: string;
+            jsHealthCardNo: string;
+          } | null;
+        };
+        message: string;
+        timestamp: string;
+        statusCode: number;
+      },
+      { cardNumber: string }
+    >({
+      query: (params) => ({
+        url: `/admin/registration/checkJsHealthCardAssignment?cardNumber=${encodeURIComponent(params.cardNumber)}`,
+        method: "GET",
+      }),
+    }),
+    getJSHealthCardByUhid: builder.query<
+      {
+        success: boolean;
+        data: {
+          uhid: string;
+          cardNumber: string;
+          assignDate: string;
+          contactNumber: string;
+          totalCoins: number;
+          transactions: {
+            id: number;
+            coins: number;
+            entryType: "credit" | "debit";
+            transactionType?: string | null;
+            createdAt?: string | null;
+          }[];
+        };
+        message: string;
+        timestamp: string;
+        statusCode: number;
+      },
+      { uhid: string }
+    >({
+      query: (params) => ({
+        url: `/admin/registration/jsHealthCardPointsByUhid?uhid=${encodeURIComponent(params.uhid)}`,
+        method: "GET",
+      }),
+    }),
   }),
 });
 
+// Global Patient Search Response interfaces
+export interface GlobalPatientSearchAppointment {
+  appointmentId: number;
+  uhid: string;
+  appointmentToken: string;
+  status: string;
+  appointmentDate: string;
+  timeSlot: string;
+  branchId: number;
+  registrationId: number;
+  patientName: string;
+  contactNumber: string;
+  doctorName: string;
+  branchName: string;
+  patientType: string;
+}
+
+export interface GlobalPatientSearchResponse {
+  success: boolean;
+  data: GlobalPatientSearchAppointment[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 export const { 
-  useGetDoctorsQuery, 
+  useGetDoctorsQuery,
   useLazyGetDoctorsQuery,
+  useGetDoctorsByBranchQuery,
+  useLazyGetDoctorsByBranchQuery,
   useGetServicesByBranchAndPaymentModesQuery,
   useLazyGetServicesByBranchAndPaymentModesQuery,
   useGetDietListQuery,
@@ -1516,7 +1842,14 @@ export const {
   useCancelRazorpayPosPaymentMutation,
   useCreateAppointmentAndUpdateRegistrationMutation,
   useGetAllRegistrationForReferralByPhoneQuery,
-  useLazyGetAllRegistrationForReferralByPhoneQuery
+  useLazyGetAllRegistrationForReferralByPhoneQuery,
+  useGlobalPatientSearchQuery,
+  useLazyGlobalPatientSearchQuery,
+  useGetJSHealthCardByUhidQuery,
+  useLazyGetJSHealthCardByUhidQuery,
+  useLazyCheckJsHealthCardAssignmentQuery,
+  useLazyGetArogyaCardSeriesQuery,
+  useGetArogyaCardSeriesQuery,
 } = registrationApi;
 
 

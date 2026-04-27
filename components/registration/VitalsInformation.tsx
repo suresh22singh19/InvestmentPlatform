@@ -26,6 +26,8 @@ interface VitalsInformationProps {
     onBlur?: (field: keyof VitalsInformationFormData) => void;
     bloodGroupOptions?: SelectOption[];
     dietTypeOptions?: SelectOption[];
+    /** When Diet Type select opens; e.g. refetch diet list if API returned no rows. */
+    onDietTypeSelectOpen?: () => void;
     fieldRefs?: {
         heightFeet?: React.RefObject<HTMLInputElement | null>;
         heightInch?: React.RefObject<HTMLInputElement | null>;
@@ -68,6 +70,7 @@ export default function VitalsInformation({
     ],
     fieldRefs,
     errors,
+    onDietTypeSelectOpen,
 }: VitalsInformationProps) {
     const yesNoOptions = ["Yes", "No"];
 
@@ -189,7 +192,7 @@ export default function VitalsInformation({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div data-field="bloodGroup" className="scroll-mt-4" ref={fieldRefs?.bloodGroup}>
                     <FormSelectField
-                        label="Blood Group"
+                        label="Blood Group *"
                         options={bloodGroupOptions}
                         value={formData.bloodGroup || null}
                         onChange={(value) => {
@@ -221,7 +224,7 @@ export default function VitalsInformation({
                                 onBlur?.("allergies");
                             }, 0);
                         }}
-                        label={allFieldsOptional ? "Allergies" : "Allergies *"}
+                        label={allFieldsOptional ? "Allergies" : "Allergies"}
                         required={!allFieldsOptional}
                         error={errors?.allergies}
                         fieldRef={fieldRefs?.allergies}
@@ -242,7 +245,7 @@ export default function VitalsInformation({
                                 onBlur?.("surgeries");
                             }, 0);
                         }}
-                        label={allFieldsOptional ? "Surgeries" : "Surgeries *"}
+                        label={allFieldsOptional ? "Surgeries" : "Surgeries"}
                         required={!allFieldsOptional}
                         error={errors?.surgeries}
                         fieldRef={fieldRefs?.surgeries}
@@ -255,6 +258,7 @@ export default function VitalsInformation({
                         label={allFieldsOptional ? "Diet Type" : "Diet Type *"}
                         options={dietTypeOptions}
                         value={formData.dietType || null}
+                        onOpen={onDietTypeSelectOpen}
                         onChange={(value) => {
                             const selectedValue = Array.isArray(value) ? value[0] : value;
                             onChange("dietType", selectedValue || "");

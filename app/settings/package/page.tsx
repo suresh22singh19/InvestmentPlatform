@@ -276,7 +276,7 @@ export default function PackagePage() {
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add Package
+                  <span className="text-hide">Add Package</span>
                 </button>
               </div>
             </div>

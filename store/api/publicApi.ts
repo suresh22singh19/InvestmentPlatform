@@ -71,8 +71,10 @@ interface GetCitiesParams {
 
 interface User {
   id: number;
-  name: string;
+  name?: string;
+  userName?: string;
   email: string;
+  canDownload?: boolean;
 }
 
 interface UsersResponse {
@@ -85,6 +87,29 @@ interface UsersResponse {
 
 interface GetUsersParams {
   search?: string;
+  branchId?: number | string;
+}
+
+/** GET /admin/settings/getUsersList?branchId= — branch-scoped user picker. */
+export interface GetUsersListParams {
+  branchId: number;
+}
+
+/** Single row from GET /admin/settings/getUsersList (no top-level email in current API). */
+export interface GetUsersListUser {
+  id: number;
+  userName?: string;
+  email?: string;
+  name?: string;
+  branch?: { id: number; name: string };
+}
+
+/** Wrapper for getUsersList — uses `message` (not `success`) like other v2 admin endpoints. */
+export interface GetUsersListResponse {
+  message: string;
+  statusCode: number;
+  timestamp: string;
+  data: GetUsersListUser[];
 }
 
 interface PincodeDataItem {
@@ -230,10 +255,13 @@ export const publicApi = baseApi.injectEndpoints({
         };
       },
     }),
-    getUsers: builder.query<UsersResponse, GetUsersParams | void>({
+    /** GET /admin/settings/users — branch/search picker (distinct from settingsApi getUsers → /getUsers). */
+    getAdminSettingsUsers: builder.query<UsersResponse, GetUsersParams | void>({
       query: (params) => {
         const queryParams = new URLSearchParams();
         if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && params.branchId !== "")
+          queryParams.append("branchId", String(params.branchId));
 
         const queryString = queryParams.toString();
         return {
@@ -241,6 +269,12 @@ export const publicApi = baseApi.injectEndpoints({
           method: "GET",
         };
       },
+    }),
+    getUsersList: builder.query<GetUsersListResponse, GetUsersListParams>({
+      query: ({ branchId }) => ({
+        url: `/admin/settings/getUsersList?branchId=${encodeURIComponent(String(branchId))}`,
+        method: "GET",
+      }),
     }),
   }),
 });
@@ -252,13 +286,15 @@ export const {
   useGetCitiesQuery,
   useGetTehsilsQuery,
   useGetAreasQuery,
-  useGetUsersQuery,
+  useGetAdminSettingsUsersQuery,
+  useGetUsersListQuery,
   useLazyGetCountriesQuery,
   useLazyGetStatesQuery,
   useLazyGetCitiesQuery,
   useLazyGetTehsilsQuery,
   useLazyGetAreasQuery,
-  useLazyGetUsersQuery,
+  useLazyGetAdminSettingsUsersQuery,
+  useLazyGetUsersListQuery,
   useLazyGetPincodeQuery,
 } = publicApi;
 

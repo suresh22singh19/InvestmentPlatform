@@ -3,7 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  
+
   /* Design Tokens from Figma */
   --primary-green: #1AC00C;
   --white: #FFFFFF;
@@ -29,6 +29,17 @@ body {
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* When a modal is open, stop the shell main area (and page) from scrolling behind it */
+html.dialog-scroll-lock,
+body.dialog-scroll-lock {
+  overflow: hidden !important;
+}
+
+body.dialog-scroll-lock [data-app-shell-scroll] {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
 @layer utilities {
   .gradient-bg {
     /* Layered background: soft yellow glow (left), soft green glow (right), plus base gradient */
@@ -36,15 +47,15 @@ body {
      radial-gradient(1500px 1500px at 10% 5%, #ebca5926 0%, rgba(235, 202, 89, 0) 70%),
      radial-gradient(1600px 1600px at 85% 75%, #1ac00c26 0%, rgba(26, 192, 12, 0) 70%),
      linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-mid) 50%, var(--gradient-end) 100%); */
-     background:url('/images/background.png') no-repeat center center fixed;
-     /* background:
+    background: url('/images/background.png') no-repeat center center fixed;
+    /* background:
     radial-gradient(1400px 1400px at 10% 5%, #FDC70F30 0%, #FDC70F00 70%),
     radial-gradient(1500px 1500px at 85% 75%, #0B8C0030 0%, #0B8C0000 70%),
     linear-gradient(135deg, #F4F7FA 0%, #F4F7FA 50%, #F4F7FA 100%); */
     min-height: 100vh;
     width: 100%;
     background-size: cover;
-   }
+  }
 
   .scrollbar-hidden {
     -ms-overflow-style: none;
@@ -76,10 +87,13 @@ body {
 }
 
 @keyframes pulse-border {
-  0%, 100% {
+
+  0%,
+  100% {
     border-color: rgba(12, 145, 1, 0.93);
     box-shadow: 0 0 14.6113px rgba(11, 140, 0, 0.553), 0 0 26.1485px rgba(11, 140, 0, 0.28);
   }
+
   50% {
     border-color: rgba(11, 140, 0, 1);
     box-shadow: 0 0 20px rgba(11, 140, 0, 0.7), 0 0 35px rgba(11, 140, 0, 0.4), 0 0 50px rgba(11, 140, 0, 0.2);
@@ -87,20 +101,205 @@ body {
 }
 
 @keyframes circularProcessingPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.3;
     transform: translate(-50%, -50%) scale(1);
   }
+
   50% {
     opacity: 1;
     transform: translate(-50%, -50%) scale(1.2);
   }
 }
 
-@media (max-width: 1439px) { 
-  .prebooking-media { 
-    padding-inline: 12px !important; 
-    padding-block: 8px !important;  
-    font-size: 13px !important; 
-  } 
+
+@media (max-width: 1439px) {
+  .prebooking-media {
+    padding-inline: 12px !important;
+    padding-block: 8px !important;
+    font-size: 13px !important;
+  }
+}
+
+.right-toggle {
+  display: none;
+}
+
+.right-screen {
+  display: block;
+}
+
+.web-hide {
+  display: none;
+}
+
+.web-hide {
+  display: none;
+}
+
+@media (max-width: 1280px) {
+  .small-screens {
+    overflow: visible;
+    height: 100vh;
+    border-radius: 0%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 400px;
+    z-index: 99;
+    background: #fff;
+    padding: 12px;
+    box-shadow: 2px 2px 12px 0px #e6e6e6;
+    overflow-y: scroll;
+  }
+
+  .right-screen {
+    display: none;
+  }
+
+  .right-toggle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .booking-div {
+    height: 100vh;
+    border-top-left-radius: 0%;
+    border-bottom-left-radius: 0%;
+    border-bottom-right-radius: 0%;
+
+  }
+
+  .overlay-div::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: -1;
+  }
+
+  .right-screen {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 350px;
+    z-index: 99;
+  }
+
+  .form-screen {
+    width: 100% !important;
+  }
+}
+
+@media (max-width:991px) {
+  .text-hide {
+    display: none;
+  }
+
+  .right-toggle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .col-cstm {
+    flex-direction: column;
+  }
+
+  .custom-scrollbar {
+    padding: 0 !important;
+    scrollbar-width: thin;
+    /* overflow: visible; */
+  }
+
+  .cstm-link {
+    height: 48px;
+    gap: 8px;
+  }
+
+  .cstm-link img {
+    width: 20px;
+  }
+
+  .cstm-link span {
+    font-size: 14px;
+  }
+
+  /* .whitespace-nowrap {
+    white-space: normal;
+  } */
+
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 280px;
+    background: white;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+  }
+
+  nav.nav-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+  }
+
+  nav.nav-close {
+    transform: translateX(-100%);
+  }
+
+  nav>div {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-top: 16px;
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  .cstm-width,
+  .cstm-width a,
+  .cstm-width button {
+    width: 100%;
+  }
+
+  .web-hide {
+    display: flex;
+  }
+
+  .dialog-container {
+    width: 100% !important;
+  }
+
+  .w-cstm {
+    width: 80% !important;
+  }
+}
+
+@media (max-width:992px) {
+  #notificationbell {
+    transform: translateX(20%);
+    top: 50px;
+  }
+
+  #notishape {
+    right: 113px;
+  }
+}
+@media (max-width:1280px) {
+  .hide-text-overflow {
+    display: none;
+  }
+}
+.yesnotab button{
+  height: 24px;
+}
+.yesnotab div{
+  height: 24px;
+  border: 0;
+  padding: 0;
 }

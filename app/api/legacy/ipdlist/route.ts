@@ -1,0 +1,53 @@
+import { NextRequest } from "next/server";
+import {
+    LEGACY_PROJECT_API_BASE_URL,
+    LEGACY_PROJECT_API_TOKEN,
+    LEGACY_PROJECT_ENDPOINTS,
+} from "@/lib/legacyProjectApi";
+import { parseLegacyResponse, sendLegacyGetWithBody } from "@/lib/legacyHttp";
+
+export const runtime = "nodejs";
+
+export async function GET(request: NextRequest) {
+    try {
+        const incoming = request.nextUrl.searchParams;
+
+        const pick = (key: string, fallback: string): string => {
+            const raw = incoming.get(key);
+            return raw != null && raw.trim() !== "" ? raw : fallback;
+        };
+
+        const doctorIdRaw = pick("doctorId", "");
+        const doctorIdParsed = Number(doctorIdRaw);
+
+        const body = {
+            branchId: Number(pick("branchId", pick("branchName", "1"))) || 1,
+            uhid: pick("uhid", ""),
+            doctorId: doctorIdRaw === "" || Number.isNaN(doctorIdParsed) ? "" : doctorIdParsed,
+            contactNumber: pick("contactNumber", ""),
+            patientName: pick("patientName", ""),
+            startDate: pick("startDate", "2026-03-08"),
+            endDate: pick("endDate", "2026-04-08"),
+            page: Number(pick("page", "1")) || 1,
+            limit: Number(pick("limit", "10")) || 10,
+        };
+
+        const url = `${LEGACY_PROJECT_API_BASE_URL}${LEGACY_PROJECT_ENDPOINTS.ipdList}`;
+        const upstream = await sendLegacyGetWithBody(
+            url,
+            JSON.stringify(body),
+            LEGACY_PROJECT_API_TOKEN
+        );
+
+        return Response.json(parseLegacyResponse(upstream.text), { status: upstream.status });
+    } catch (error) {
+        return Response.json(
+            {
+                status: false,
+                message: "Failed to fetch legacy IPD list",
+                error: error instanceof Error ? error.message : "Unknown error",
+            },
+            { status: 500 }
+        );
+    }
+}

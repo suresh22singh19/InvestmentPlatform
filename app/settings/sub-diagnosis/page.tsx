@@ -18,6 +18,7 @@ import {
   TableSearchInput,
   Pagination,
   MessageDialog,
+  Tooltip,
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
@@ -27,6 +28,7 @@ import {
   useUpdateSubDiagnosisMutation
 } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/usePermission";
 
 type SubDiagnosisItem = {
   id?: number;
@@ -43,7 +45,162 @@ type SubDiagnosis = {
   subDiagnoses: SubDiagnosisItem[];
 };
 
+/** Fixed column width so chip layout / search does not resize the table. */
+const SUB_DIAGNOSIS_COL_PX = 780;
+
+type DynamicSubDiagnosisItemsProps = {
+  items: SubDiagnosisItem[];
+  onViewAll: (items: SubDiagnosisItem[]) => void;
+};
+
+/** Module-scoped so parent re-renders (e.g. opening “View all” dialog) do not remount rows and reset layout. */
+function DynamicSubDiagnosisItems({ items, onViewAll }: DynamicSubDiagnosisItemsProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemsRef = useRef<(HTMLSpanElement | null)[]>([]);
+  const [visibleCount, setVisibleCount] = useState(items.length);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  const calculateVisibleItems = useCallback(() => {
+    if (!containerRef.current || items.length === 0) {
+      setVisibleCount(items.length);
+      setIsOverflowing(false);
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+
+        const container = containerRef.current;
+        const containerWidth = container.clientWidth;
+        const gap = 8;
+        const basePadding = 32;
+        const charWidth = 7;
+        const viewAllButtonBaseWidth = 90;
+
+        let totalWidth = 0;
+        let count = 0;
+
+        for (let i = 0; i < items.length; i++) {
+          const itemElement = itemsRef.current[i];
+          let itemWidth: number;
+
+          if (itemElement && itemElement.offsetWidth > 0) {
+            itemWidth = itemElement.offsetWidth + gap;
+          } else {
+            const textWidth = items[i].name.length * charWidth;
+            itemWidth = Math.max(60, textWidth + basePadding) + gap;
+          }
+
+          const needsViewAllButton = i < items.length - 1;
+          const viewAllButtonWidth = needsViewAllButton
+            ? viewAllButtonBaseWidth + (items.length - i - 1).toString().length * charWidth + gap
+            : 0;
+
+          const requiredWidth = totalWidth + itemWidth + viewAllButtonWidth;
+
+          if (requiredWidth > containerWidth && i > 0) {
+            count = i;
+            setIsOverflowing(true);
+            break;
+          }
+
+          totalWidth += itemWidth;
+          count = i + 1;
+        }
+
+        if (count === items.length) {
+          setIsOverflowing(false);
+        } else if (count === 0 && items.length > 0) {
+          count = 1;
+          setIsOverflowing(true);
+        }
+
+        setVisibleCount(count);
+      });
+    });
+  }, [items]);
+
+  useEffect(() => {
+    itemsRef.current = new Array(items.length).fill(null);
+
+    const timeoutId = setTimeout(() => {
+      calculateVisibleItems();
+    }, 50);
+
+    let resizeTimeout: NodeJS.Timeout;
+    const handleResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        calculateVisibleItems();
+      }, 100);
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    let roDebounce: ReturnType<typeof setTimeout> | null = null;
+    const observedEl = containerRef.current;
+    if (observedEl) {
+      resizeObserver = new ResizeObserver(() => {
+        if (roDebounce) clearTimeout(roDebounce);
+        roDebounce = setTimeout(() => {
+          roDebounce = null;
+          calculateVisibleItems();
+        }, 80);
+      });
+      resizeObserver.observe(observedEl);
+    }
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(resizeTimeout);
+      if (roDebounce) clearTimeout(roDebounce);
+      window.removeEventListener("resize", handleResize);
+      if (resizeObserver && observedEl) {
+        resizeObserver.unobserve(observedEl);
+      }
+    };
+  }, [calculateVisibleItems, items]);
+
+  const visibleItems = items.slice(0, visibleCount);
+  const remainingCount = items.length - visibleCount;
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex h-[30px] w-full min-w-0 flex-nowrap items-center gap-2 overflow-hidden"
+    >
+      {visibleItems.map((item, index) => (
+        <span
+          key={`${item.id || item.name}-${index}`}
+          ref={(el) => {
+            itemsRef.current[index] = el;
+          }}
+          className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
+        >
+          {item.name}
+        </span>
+      ))}
+      {isOverflowing && remainingCount > 0 && (
+        <button
+          type="button"
+          onClick={() => onViewAll(items)}
+          className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
+        >
+          View all +{remainingCount}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SubDiagnosisPage() {
+  const subDiagnosisPermission = usePermission("settings", { subModule: "sub-diagnosis" });
+  const canView = subDiagnosisPermission.canView;
+  const canAdd = subDiagnosisPermission.canAdd;
+  const canEdit = subDiagnosisPermission.canEdit;
+
   const [searchTerm, setSearchTerm] = useState("");
   const [diagnosisFilter, setDiagnosisFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -80,9 +237,9 @@ export default function SubDiagnosisPage() {
     page: currentPage,
     limit: itemsPerPage,
     search: searchParam,
-    sort: sortBy || undefined,
-    order: sortBy ? sortOrder : undefined,
-  });
+    sort: sortBy || "createdAt",
+    order: sortBy ? sortOrder : "desc",
+  }, { skip: !canView && !canAdd && !canEdit });
 
   // Create sub-diagnosis mutation
   const [createSubDiagnosis, { isLoading: isCreating }] = useCreateSubDiagnosisMutation();
@@ -156,11 +313,13 @@ export default function SubDiagnosisPage() {
   const paginatedSubDiagnoses = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
   const handleOpenViewAll = (items: SubDiagnosisItem[]) => {
+    if (!canView) return;
     setChipsDialogItems(items.map(item => item.name));
     setViewAllDialogOpen(true);
   };
 
   const handleAdd = () => {
+    if (!canAdd) return;
     setSelectedSubDiagnosis(null);
     setFormValues({ 
       diagnosis: "", 
@@ -176,6 +335,7 @@ export default function SubDiagnosisPage() {
   };
 
   const handleEdit = (entry: SubDiagnosis) => {
+    if (!canEdit) return;
     setSelectedSubDiagnosis(entry);
     setFormValues({ 
       diagnosis: entry.diagnosis, 
@@ -222,6 +382,8 @@ export default function SubDiagnosisPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!selectedSubDiagnosis && !canAdd) return;
+    if (selectedSubDiagnosis && !canEdit) return;
     if (!validateForm()) return;
 
     try {
@@ -317,150 +479,6 @@ export default function SubDiagnosisPage() {
     return null;
   };
 
-  // Dynamic component to display sub-diagnosis items based on available space
-  const DynamicSubDiagnosisItems = ({ items }: { items: SubDiagnosisItem[] }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const itemsRef = useRef<(HTMLSpanElement | null)[]>([]);
-    const [visibleCount, setVisibleCount] = useState(items.length);
-    const [isOverflowing, setIsOverflowing] = useState(false);
-
-    const calculateVisibleItems = useCallback(() => {
-      if (!containerRef.current || items.length === 0) {
-        setVisibleCount(items.length);
-        setIsOverflowing(false);
-        return;
-      }
-
-      // Use double RAF to ensure DOM is fully updated
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!containerRef.current) return;
-
-          const container = containerRef.current;
-          const containerWidth = container.offsetWidth;
-          const gap = 8; // gap-2 = 8px
-          const basePadding = 32; // px-4 = 16px on each side
-          const charWidth = 7; // Approximate character width for text-xs
-          const viewAllButtonBaseWidth = 90; // Base width for "View all" button
-
-          let totalWidth = 0;
-          let count = 0;
-
-          // Calculate how many items can fit
-          for (let i = 0; i < items.length; i++) {
-            const itemElement = itemsRef.current[i];
-            let itemWidth: number;
-            
-            if (itemElement && itemElement.offsetWidth > 0) {
-              // Use actual measured width
-              itemWidth = itemElement.offsetWidth + gap;
-            } else {
-              // Estimate width based on text length
-              const textWidth = items[i].name.length * charWidth;
-              itemWidth = Math.max(60, textWidth + basePadding) + gap;
-            }
-
-            // Check if we need to show "View all" button
-            const needsViewAllButton = i < items.length - 1;
-            const viewAllButtonWidth = needsViewAllButton 
-              ? viewAllButtonBaseWidth + (items.length - i - 1).toString().length * charWidth + gap
-              : 0;
-
-            const requiredWidth = totalWidth + itemWidth + viewAllButtonWidth;
-
-            if (requiredWidth > containerWidth && i > 0) {
-              // We need to show "View all" button, so stop here
-              count = i;
-              setIsOverflowing(true);
-              break;
-            }
-
-            totalWidth += itemWidth;
-            count = i + 1;
-          }
-
-          // If all items fit, no overflow
-          if (count === items.length) {
-            setIsOverflowing(false);
-          } else if (count === 0 && items.length > 0) {
-            // Even first item doesn't fit, show at least one with "View all"
-            count = 1;
-            setIsOverflowing(true);
-          }
-
-          setVisibleCount(count);
-        });
-      });
-    }, [items]);
-
-    useEffect(() => {
-      // Reset refs array when items change
-      itemsRef.current = new Array(items.length).fill(null);
-      
-      // Initial calculation
-      const timeoutId = setTimeout(() => {
-        calculateVisibleItems();
-      }, 50); // Small delay to ensure container is rendered
-
-      // Recalculate on window resize with debounce
-      let resizeTimeout: NodeJS.Timeout;
-      const handleResize = () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-          calculateVisibleItems();
-        }, 100);
-      };
-      
-      window.addEventListener('resize', handleResize);
-      
-      // Use ResizeObserver to detect container size changes
-      let resizeObserver: ResizeObserver | null = null;
-      if (containerRef.current) {
-        resizeObserver = new ResizeObserver(() => {
-          calculateVisibleItems();
-        });
-        resizeObserver.observe(containerRef.current);
-      }
-
-      return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(resizeTimeout);
-        window.removeEventListener('resize', handleResize);
-        if (resizeObserver && containerRef.current) {
-          resizeObserver.unobserve(containerRef.current);
-        }
-      };
-    }, [calculateVisibleItems, items]);
-
-    const visibleItems = items.slice(0, visibleCount);
-    const remainingCount = items.length - visibleCount;
-
-    return (
-      <div ref={containerRef} className="flex flex-wrap items-center gap-2 w-full min-w-0">
-        {visibleItems.map((item, index) => (
-          <span
-            key={`${item.id || item.name}-${index}`}
-            ref={(el) => {
-              itemsRef.current[index] = el;
-            }}
-            className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
-          >
-            {item.name}
-          </span>
-        ))}
-        {isOverflowing && remainingCount > 0 && (
-          <button
-            type="button"
-            onClick={() => handleOpenViewAll(items)}
-            className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
-          >
-            View all +{remainingCount}
-          </button>
-        )}
-      </div>
-    );
-  };
-
   return (
     <AppShell>
       <div className="space-y-8">
@@ -469,6 +487,11 @@ export default function SubDiagnosisPage() {
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
+          {!canView ? (
+            <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+              You don&apos;t have permission to view sub diagnosis.
+            </div>
+          ) : (
           <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
@@ -497,70 +520,94 @@ export default function SubDiagnosisPage() {
                   />
                 </div>
 
-                    <div className="w-full lg:w-auto lg:flex-shrink-0">
-                  <button
-                    type="button"
-                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
-                    onClick={handleAdd}
-                  >
-                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    Add Sub Diagnosis
-                  </button>
-                </div>
+                {canAdd ? (
+                  <div className="w-full lg:w-auto lg:flex-shrink-0">
+                    <button
+                      type="button"
+                      className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                      onClick={handleAdd}
+                    >
+                      <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                      <span className="text-hide">Add Sub Diagnosis</span>
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
 
             {isLoadingDiagnosis ? (
               <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
             ) : (
-              <Table>
+              <Table tableClassName="table-fixed min-w-0 w-full">
+                <colgroup>
+                  <col style={{ width: 56 }} />
+                  <col />
+                  <col style={{ width: SUB_DIAGNOSIS_COL_PX }} />
+                  <col style={{ width: 88 }} />
+                </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead position="first">Sr no.</TableHead>
-                    <TableHead 
-                      sortable 
-                      sortDirection={getSortDirection("diagnosis")} 
+                    <TableHead position="first" className="whitespace-nowrap">
+                      Sr no.
+                    </TableHead>
+                    <TableHead
+                      className="min-w-0"
+                      sortable
+                      sortDirection={getSortDirection("diagnosis")}
                       onSort={() => handleSort("diagnosis")}
                     >
                       Diagnosis
                     </TableHead>
-                    <TableHead 
-                      sortable 
-                      sortDirection={getSortDirection("subDiagnoses")} 
+                    <TableHead
+                      className="overflow-hidden"
+                      sortable
+                      sortDirection={getSortDirection("subDiagnoses")}
                       onSort={() => handleSort("subDiagnoses")}
                     >
                       Sub Diagnosis
                     </TableHead>
-                    <TableHead position="last">Action</TableHead>
+                    {canEdit ? (
+                      <TableHead position="last" className="whitespace-nowrap">
+                        Action
+                      </TableHead>
+                    ) : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedSubDiagnoses.length === 0 ? (
                     <TableRow>
-                      <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
+                      <TableData colSpan={canEdit ? 4 : 3} className="py-12 text-center text-sm text-[#9CA3AF]">
                         No sub diagnoses found
                       </TableData>
                     </TableRow>
                   ) : (
                     paginatedSubDiagnoses.map((entry, index) => (
                       <TableRow key={entry.id}>
-                        <TableData position="first">{startIndex + index + 1}</TableData>
-                        <TableData>{entry.diagnosis}</TableData>
-                        <TableData>
-                          <DynamicSubDiagnosisItems items={entry.subDiagnoses} />
+                        <TableData position="first" className="whitespace-nowrap">
+                          {startIndex + index + 1}
                         </TableData>
-                        <TableData position="last">
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => handleEdit(entry)}
-                              className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                              aria-label="Edit sub diagnosis"
-                            >
-                              <Image src="/icons/EditIconBlack.svg" alt="Edit" width={20} height={20} />
-                            </button>
-                          </div>
+                        <TableData className="min-w-0 align-middle break-words">
+                          {entry.diagnosis}
                         </TableData>
+                        <TableData className="h-auto min-h-[46px] min-w-0 overflow-hidden align-middle py-2">
+                          <DynamicSubDiagnosisItems items={entry.subDiagnoses} onViewAll={handleOpenViewAll} />
+                        </TableData>
+                        {canEdit ? (
+                          <TableData position="last" className="whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <Tooltip content="Edit" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(entry)}
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                  aria-label="Edit sub diagnosis"
+                                >
+                                  <Image src="/icons/EditIconBlack.svg" alt="Edit" width={20} height={20} />
+                                </button>
+                              </Tooltip>
+                            </div>
+                          </TableData>
+                        ) : null}
                       </TableRow>
                     ))
                   )}
@@ -582,11 +629,12 @@ export default function SubDiagnosisPage() {
               />
             )}
           </div>
+          )}
         </ListBorder>
       </div>
 
       <Dialog
-        open={viewAllDialogOpen}
+        open={viewAllDialogOpen && canView}
         onClose={() => {
           setViewAllDialogOpen(false);
           setChipsDialogItems([]);
@@ -607,7 +655,7 @@ export default function SubDiagnosisPage() {
       </Dialog>
 
       <Dialog
-        open={addDialogOpen}
+        open={addDialogOpen && canAdd}
         onClose={() => {
           setAddDialogOpen(false);
           setFormErrors({});
@@ -654,11 +702,14 @@ export default function SubDiagnosisPage() {
                   label="Sub Diagnosis"
                   value={subDiagnosisInput}
                   onChange={(event) => {
-                    setSubDiagnosisInput(event.target.value);
+                    let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                    value = value.slice(0, 100);
+                    setSubDiagnosisInput(value);
                     setFormErrors((prev) => ({ ...prev, subDiagnoses: "" }));
                   }}
                   height={44}
                   placeholder="Sub Diagnosis"
+                  maxLength={100}
                 />
               </div>
               <button
@@ -729,7 +780,7 @@ export default function SubDiagnosisPage() {
       </Dialog>
 
       <Dialog
-        open={editDialogOpen}
+        open={editDialogOpen && canEdit}
         onClose={() => {
           setEditDialogOpen(false);
           setSelectedSubDiagnosis(null);
@@ -770,11 +821,14 @@ export default function SubDiagnosisPage() {
                   label="Sub Diagnosis"
                   value={subDiagnosisInput}
                   onChange={(event) => {
-                    setSubDiagnosisInput(event.target.value);
+                    let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                    value = value.slice(0, 100);
+                    setSubDiagnosisInput(value);
                     setFormErrors((prev) => ({ ...prev, subDiagnoses: "" }));
                   }}
                   height={44}
                   placeholder="Sub Diagnosis"
+                  maxLength={100}
                   disabled={isUpdating}
                 />
               </div>

@@ -29,6 +29,43 @@ export interface GetAllNotificationsResponse {
   message?: string;
 }
 
+/** Matches GET /dashboard/getDashboardNotifications `data.notifications[]` items */
+export interface BellNotificationMetadata {
+  requestId: number;
+  branchId?: number;
+  newContactNo?: string;
+  oldContactNo?: string;
+}
+
+/** Bell / in-app list from GET /dashboard/getDashboardNotifications (not tied to the dashboard page module) */
+export interface BellNotificationItem {
+  id: number;
+  branchId?: number;
+  userId: number;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  metadata?: BellNotificationMetadata;
+  sentBy?: number;
+  updatedBy?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GetBellNotificationsResponse {
+  success: boolean;
+  data: {
+    total: number;
+    unreadCount: number;
+    readCount: number;
+    notifications: BellNotificationItem[];
+  };
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
 export const notificationApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     /**
@@ -64,9 +101,36 @@ export const notificationApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Notifications"],
     }),
+    /**
+     * Global bell notifications for the logged-in user (runs on app load; not dashboard-page specific).
+     * GET /dashboard/getDashboardNotifications?userId=
+     */
+    getBellNotifications: builder.query<GetBellNotificationsResponse, { userId: number }>({
+      query: ({ userId }) => ({
+        url: "/dashboard/getDashboardNotifications",
+        method: "GET",
+        params: { userId },
+      }),
+      providesTags: ["AppBellNotifications"],
+    }),
+    markBellNotificationAsRead: builder.mutation<
+      { success: boolean; message?: string; statusCode?: number },
+      { userId: number; notificationId: number }
+    >({
+      query: (body) => ({
+        url: "/dashboard/markNotificationAsRead",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["AppBellNotifications"],
+    }),
   }),
 });
 
-export const { useGetAllNotificationsQuery, useMarkNotificationAsReadMutation } =
-  notificationApi;
+export const {
+  useGetAllNotificationsQuery,
+  useMarkNotificationAsReadMutation,
+  useGetBellNotificationsQuery,
+  useMarkBellNotificationAsReadMutation,
+} = notificationApi;
 

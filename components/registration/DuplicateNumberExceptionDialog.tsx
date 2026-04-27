@@ -61,12 +61,25 @@ export default function DuplicateNumberExceptionDialog({
                         label="Name"
                         value={name}
                         onChange={(e) => {
-                            // Only allow letters and spaces (like other name fields)
-                            const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                            // Same validation as Father's/Husband's Name on registration/hospital
+                            let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                            value = value.replace(/^\s+/, "");
+                            // Collapse consecutive repeated characters to max 2 (e.g. "sddddddssssssss" -> "sdds")
+                            value = value.replace(/(.)\1{2,}/g, "$1$1");
+                            value = value.slice(0, 100);
+                            // First letter of each word capital (title case)
+                            value = value
+                                .toLowerCase()
+                                .replace(/(?:^|\s)\S/g, (c) => c.toUpperCase());
                             setName(value);
+                        }}
+                        onBlur={(e) => {
+                            const trimmed = e.target.value.trim();
+                            if (trimmed !== e.target.value) setName(trimmed);
                         }}
                         placeholder="Name"
                         type="text"
+                        maxLength={100}
                     />
                 </div>
                 

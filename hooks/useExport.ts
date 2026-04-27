@@ -335,16 +335,55 @@ export const useExport = (config: ExportConfig) => {
       drawHeader(currentY);
       currentY += headerHeight;
 
-      // Helper function to wrap text and calculate lines
+      // Helper function to wrap text and calculate lines.
+      // Handles both normal text with spaces and very long words (no spaces) by splitting them into chunks.
       const wrapText = (text: string, maxWidth: number): string[] => {
-        const words = text.split(' ');
+        if (!text) return [""];
+
+        // First, split on spaces
+        const rawWords = text.split(" ").filter((w) => w.length > 0);
+
+        // Further split any overly-long "word" (no spaces) into smaller chunks that fit maxWidth
+        const words: string[] = [];
+
+        const splitLongWord = (word: string) => {
+          let currentChunk = "";
+          for (const char of word) {
+            const testChunk = currentChunk + char;
+            const testWidth = doc.getTextWidth(testChunk);
+            if (testWidth > maxWidth && currentChunk) {
+              words.push(currentChunk);
+              currentChunk = char;
+            } else {
+              currentChunk = testChunk;
+            }
+          }
+          if (currentChunk) {
+            words.push(currentChunk);
+          }
+        };
+
+        rawWords.forEach((word) => {
+          const wordWidth = doc.getTextWidth(word);
+          if (wordWidth > maxWidth) {
+            splitLongWord(word);
+          } else {
+            words.push(word);
+          }
+        });
+
+        if (words.length === 0) {
+          return [text];
+        }
+
+        // Now build lines from the processed word list
         const lines: string[] = [];
-        let currentLine = '';
-        
+        let currentLine = "";
+
         words.forEach((word) => {
           const testLine = currentLine ? `${currentLine} ${word}` : word;
           const testWidth = doc.getTextWidth(testLine);
-          
+
           if (testWidth > maxWidth && currentLine) {
             lines.push(currentLine);
             currentLine = word;
@@ -352,11 +391,11 @@ export const useExport = (config: ExportConfig) => {
             currentLine = testLine;
           }
         });
-        
+
         if (currentLine) {
           lines.push(currentLine);
         }
-        
+
         return lines.length > 0 ? lines : [text];
       };
 

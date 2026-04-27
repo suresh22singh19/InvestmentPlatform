@@ -20,6 +20,8 @@ export type SelectOption = {
   value: string;
   description?: string;
   icon?: ReactNode;
+  /** When true, the option cannot be toggled (multi-select) or chosen (single). */
+  disabled?: boolean;
 };
 
 export type FormSelectFieldProps = {
@@ -30,6 +32,8 @@ export type FormSelectFieldProps = {
   defaultValue?: string | string[];
   onChange?: (value: string | string[], selection: SelectOption | SelectOption[] | null) => void;
   onBlur?: () => void;
+  /** Fires when the dropdown opens (click, keyboard, etc.). */
+  onOpen?: () => void;
   width?: SizeValue;
   dropdownWidth?: SizeValue; // Separate width for dropdown panel (if not provided, uses input width)
   height?: SizeValue;
@@ -39,6 +43,7 @@ export type FormSelectFieldProps = {
   background?: "normal" | "white";
   error?: string;
   emptyMessage?: string; // Custom message when no options are available
+  hideLabel?: boolean; // When true, do not render label (e.g. for compact header use)
 };
 
 const normalizeSize = (value: SizeValue | undefined) => {
@@ -112,7 +117,9 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       background = "normal",
       error,
       emptyMessage = "No results found",
+      hideLabel = false,
       onBlur,
+      onOpen,
       ...props
     }: FormSelectFieldProps,
     ref
@@ -318,6 +325,14 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
     }
   }, [open, searchTerm]);
 
+  const prevOpenRef = useRef(false);
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      onOpen?.();
+    }
+    prevOpenRef.current = open;
+  }, [open, onOpen]);
+
   // Clear keyboard search after timeout
   useEffect(() => {
     if (keyboardSearchTimeout) {
@@ -362,7 +377,10 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
 
   const handleSingleSelect = useCallback(
     (value: string) => {
-      const option = options.find((item) => item.value === value) ?? null;
+      const option = options.find((item) => String(item.value) === String(value)) ?? null;
+      if (option?.disabled) {
+        return;
+      }
 
       if (props.value === undefined || !(typeof props.value === "string" || props.value === null)) {
         setInternalSingle(value);
@@ -384,6 +402,10 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
 
   const handleMultiToggle = useCallback(
     (value: string) => {
+      const option = options.find((item) => String(item.value) === String(value));
+      if (option?.disabled) {
+        return;
+      }
       const currentValues = Array.isArray(props.value) ? props.value : internalMultiple;
       const nextValues = currentValues.includes(value)
         ? currentValues.filter((item) => item !== value)
@@ -398,14 +420,6 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
     },
     [internalMultiple, options, props]
   );
-
-  const handleClearAll = useCallback(() => {
-    if (!Array.isArray(props.value)) {
-      setInternalMultiple([]);
-    }
-
-    props.onChange?.([], []);
-  }, [props]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -737,12 +751,19 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       return placeholder;
     }
 
-    return options.find((opt) => opt.value === value)?.label ?? placeholder;
+    const match = options.find((opt) => String(opt.value) === String(value));
+    return match?.label ?? placeholder;
   }, [isMultiple, options, placeholder, selectedValue]);
 
   const wrapperStyles = useMemo(() => {
+    if (width === undefined) {
+      return {} as React.CSSProperties;
+    }
+    const w = normalizeSize(width);
     return {
-      width: normalizeSize(width),
+      width: w,
+      minWidth: w,
+      flexShrink: 0,
     } as React.CSSProperties;
   }, [width]);
 
@@ -753,24 +774,36 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
   }, [height]);
 
   const selectedCount = isMultiple ? ((selectedValue as string[]) ?? []).length : 0;
-  const allValues = useMemo(() => options.map((opt) => opt.value), [options]);
+  const selectableValues = useMemo(
+    () => options.filter((opt) => !opt.disabled).map((opt) => opt.value),
+    [options]
+  );
+  const lockedValues = useMemo(
+    () => options.filter((opt) => opt.disabled).map((opt) => opt.value),
+    [options]
+  );
   const areAllSelected = useMemo(() => {
     if (!isMultiple) {
       return false;
     }
     const values = (selectedValue as string[]) ?? [];
-    return allValues.length > 0 && allValues.every((value) => values.includes(value));
-  }, [allValues, isMultiple, selectedValue]);
+    return (
+      selectableValues.length > 0 &&
+      selectableValues.every((value) => values.includes(value))
+    );
+  }, [isMultiple, selectableValues, selectedValue]);
 
   const handleSelectAllToggle = useCallback(() => {
     if (!isMultiple) {
       return;
     }
     const currentValues = Array.isArray(props.value) ? props.value : internalMultiple;
-    const shouldSelect = !(
-      allValues.length > 0 && allValues.every((value) => currentValues.includes(value))
-    );
-    const nextValues = shouldSelect ? allValues : [];
+    const allSelectableSelected =
+      selectableValues.length > 0 &&
+      selectableValues.every((value) => currentValues.includes(value));
+    const nextValues = allSelectableSelected
+      ? [...lockedValues]
+      : [...new Set([...lockedValues, ...selectableValues])];
 
     if (!Array.isArray(props.value)) {
       setInternalMultiple(nextValues);
@@ -778,7 +811,21 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
 
     const selectedOptions = options.filter((item) => nextValues.includes(item.value));
     props.onChange?.(nextValues, selectedOptions);
-  }, [allValues, internalMultiple, isMultiple, options, props]);
+  }, [internalMultiple, isMultiple, lockedValues, options, props, selectableValues]);
+
+  const handleClearAll = useCallback(() => {
+    if (!isMultiple) {
+      return;
+    }
+    const nextValues = [...lockedValues];
+
+    if (!Array.isArray(props.value)) {
+      setInternalMultiple(nextValues);
+    }
+
+    const selectedOptions = options.filter((item) => nextValues.includes(item.value));
+    props.onChange?.(nextValues, selectedOptions);
+  }, [isMultiple, lockedValues, options, props]);
 
   const dropdownContent =
     mounted && open && dropdownStyle
@@ -1159,6 +1206,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                     </div>
                   ) : (
                     filteredOptions.map((option, index) => {
+                      const isOptionDisabled = Boolean(option.disabled);
                       const isSelected = isMultiple
                         ? ((selectedValue as string[]) ?? []).includes(option.value)
                         : (selectedValue as string | null) === option.value;
@@ -1168,13 +1216,20 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                         <button
                           key={option.value}
                           type="button"
-                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-3 text-sm font-medium text-[#434956] transition-colors ${
-                            isHighlighted ? "bg-[#0B8C00]/10" : "hover:bg-[#F7FAF7]"
+                          disabled={isOptionDisabled}
+                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-3 text-sm font-medium transition-colors ${
+                            isOptionDisabled
+                              ? "cursor-not-allowed text-[#9CA3AF]"
+                              : `text-[#434956] ${
+                                  isHighlighted ? "bg-[#0B8C00]/10" : "hover:bg-[#F7FAF7]"
+                                }`
                           }`}
                           onClick={() =>
-                            isMultiple
-                              ? handleMultiToggle(option.value)
-                              : handleSingleSelect(option.value)
+                            isOptionDisabled
+                              ? undefined
+                              : isMultiple
+                                ? handleMultiToggle(option.value)
+                                : handleSingleSelect(option.value)
                           }
                           onMouseEnter={() => setHighlightedIndex(index)}
                         >
@@ -1228,17 +1283,19 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
   return (
     <div
       ref={setContainerRef}
-      className="relative inline-flex w-full flex-col gap-2"
+      className={`relative inline-flex flex-col ${width === undefined ? "w-full" : ""} ${hideLabel ? "gap-0" : "gap-2"} ${disabled ? "cursor-not-allowed" : ""}`}
       style={wrapperStyles}
     >
-      <span className="pointer-events-none absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
-        {renderLabel}
-      </span>
+      {!hideLabel ? (
+        <span className="pointer-events-none absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
+          {renderLabel}
+        </span>
+      ) : null}
 
       <button
         ref={buttonRef}
         type="button"
-        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""}`}
+        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""}`}
         onClick={toggleOpen}
         onKeyDown={handleKeyDown}
         onBlur={(e) => {

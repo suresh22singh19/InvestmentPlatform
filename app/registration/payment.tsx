@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState, useMemo, useEffect } from "react";
+import { useRef, useState, useMemo, useEffect, forwardRef, useImperativeHandle } from "react";
+import html2pdf from "html2pdf.js";
 import { FormikProps } from "formik";
 import { BackToPreviousPageButton, MessageDialog, ThreeDotLoader } from "@/components/ui";
+import { RupeeCircleIcon } from "@/components/icons/RupeeCircleIcon";
 import PaymentDetails from "@/components/registration/PaymentDetails";
 import BillingInformation from "@/components/registration/BillingInformation";
 import PaymentDialogDetails from "@/components/registration/PaymentDialogDetails";
@@ -14,11 +16,64 @@ import { useAppSelector } from "@/store/hooks";
 import type { RegistrationPersonalDetailsFormValues } from "@/lib/validation/registrationSchemas";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
+export type RegistrationReceiptPayload = {
+    uhid: string;
+    invoiceNumber: string;
+    invoiceId?: number;
+};
+
+/** Claimed consultancy voucher sent at root of registration POST bodies */
+export type PaymentFormConsultancyVoucher = {
+    voucherType: string;
+    voucher: string;
+    benefitMessage: string;
+};
+
+export type PaymentFormHandle = {
+    runDirectHospitalRegistration: () => Promise<void>;
+    runDirectClinicRegistration: () => Promise<void>;
+};
+
+export function buildConsultancyVoucherRoot(v: PaymentFormConsultancyVoucher | null | undefined): {
+    isConsultancyVoucherApplied: "yes" | "no";
+    voucher?: { voucherType: string; voucher: string; benefitMessage: string };
+} {
+    if (!v?.voucher?.trim()) {
+        return { isConsultancyVoucherApplied: "no" };
+    }
+    return {
+        isConsultancyVoucherApplied: "yes",
+        voucher: {
+            voucherType: v.voucherType,
+            voucher: v.voucher,
+            benefitMessage: v.benefitMessage,
+        },
+    };
+}
+
+function extractReceiptFromApiResult(result: { success: boolean; data?: unknown }): RegistrationReceiptPayload {
+    const data = result.data;
+    if (!data || typeof data !== "object") {
+        return { uhid: "", invoiceNumber: "" };
+    }
+    const o = data as Record<string, unknown>;
+    return {
+        uhid: o.uhid != null ? String(o.uhid) : "",
+        invoiceNumber: o.invoiceNumber != null ? String(o.invoiceNumber) : "",
+        invoiceId: typeof o.invoiceId === "number" ? o.invoiceId : o.invoiceId != null ? Number(o.invoiceId) : undefined,
+    };
+}
+
 interface PaymentFormProps {
     formik: FormikProps<RegistrationPersonalDetailsFormValues>;
     getFormErrors: () => Record<string, string>;
-    onNext: () => void;
     onBack: () => void;
+    /** Clinic only: runs clinic-patient or CreateAppointmentAndUpdateRegistration after user confirms payment preview or cash collection. */
+    onFinalizeClinicRegistration?: () => Promise<RegistrationReceiptPayload>;
+    /** Called after the post-success Payment Receipt dialog is closed (show parent success / cleanup). */
+    onPostSuccessReceiptClose: () => void;
+    /** Clinic `/registration`: true while createClinicPatient / update registration is in flight (final step). */
+    registrationSubmitting?: boolean;
     isHospitalRegistration?: boolean;
     patientToken?: string; // Token from patient entry (opdToken or registerToken)
     patientEntryId?: number | string | null; // Patient entry ID from patient-entries API
@@ -27,13 +82,23 @@ interface PaymentFormProps {
     patientRegistrationId?: number | null; // Registration ID from existing patient (if available)
     userLeadId?: number | null; // userLead ID when both registrations and preBookings are empty
     selectedReferralPatientId?: number | null; // Referral patient ID when a patient is selected from referral dialog
+    patientTokenSource?: "gate" | "reception"; // gate = selected from token panel; reception = direct registration without token
+    canDownload?: boolean;
+    /** Overrides auth user branch for services query and submit payloads (e.g. superadmin registration branch). */
+    registrationBranchId?: number;
+    /** When set, registration APIs include root-level consultancy voucher fields; payment doctor fee is sent as 0. */
+    consultancyVoucher?: PaymentFormConsultancyVoucher | null;
+    /** When false, only dialogs are rendered (clinic voucher flow mounts this for receipt + direct finalize). Default true. */
+    renderPaymentBody?: boolean;
 }
 
-export default function PaymentForm({
+const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentForm({
     formik,
     getFormErrors,
-    onNext,
     onBack,
+    onFinalizeClinicRegistration,
+    onPostSuccessReceiptClose,
+    registrationSubmitting = false,
     isHospitalRegistration = false,
     patientToken = "",
     patientEntryId = null,
@@ -42,11 +107,21 @@ export default function PaymentForm({
     patientRegistrationId = null,
     userLeadId = null,
     selectedReferralPatientId = null,
-}: PaymentFormProps) {
+    patientTokenSource,
+    canDownload = true,
+    registrationBranchId: registrationBranchIdProp,
+    consultancyVoucher = null,
+    renderPaymentBody = true,
+}, ref) {
     const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
+    const [showCashConsultationConfirm, setShowCashConsultationConfirm] = useState(false);
+    const [cashConsultConfirmLoading, setCashConsultConfirmLoading] = useState(false);
+    const [postSuccessReceipt, setPostSuccessReceipt] = useState<RegistrationReceiptPayload | null>(null);
+    const [isPostSuccessReceiptOpen, setIsPostSuccessReceiptOpen] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isDownloadingInvoice, setIsDownloadingInvoice] = useState(false);
     
     // Credit payment flow states
     const [showProcessingDialog, setShowProcessingDialog] = useState(false);
@@ -78,25 +153,25 @@ export default function PaymentForm({
     const [getTehsilsQuery] = useLazyGetTehsilsQuery();
     const [getAreasQuery] = useLazyGetAreasQuery();
     
-    // Get branchId and userId from auth state
-    const branchId = useAppSelector(selectUserBranchId) || 1;
+    const authBranchId = useAppSelector(selectUserBranchId) || 1;
+    const branchId =
+        registrationBranchIdProp != null && Number.isFinite(registrationBranchIdProp) && registrationBranchIdProp > 0
+            ? registrationBranchIdProp
+            : authBranchId;
     const userId = useAppSelector(selectUserId) || 1;
     
     // Fetch countries, states and cities data to get names from IDs
     const { data: countriesData } = useGetCountriesQuery();
 
+    const addressCountryIsIndia = formik.values.country === "6";
     const { data: statesData } = useGetStatesQuery(
-        formik.values.country
-            ? { countryId: formik.values.country }
-            : undefined,
-        { skip: !formik.values.country }
+        formik.values.country && addressCountryIsIndia ? { countryId: formik.values.country } : undefined,
+        { skip: !formik.values.country || !addressCountryIsIndia }
     );
 
     const { data: citiesData } = useGetCitiesQuery(
-        formik.values.state
-            ? { stateId: formik.values.state }
-            : undefined,
-        { skip: !formik.values.state }
+        formik.values.state && addressCountryIsIndia ? { stateId: formik.values.state } : undefined,
+        { skip: !formik.values.state || !addressCountryIsIndia }
     );
 
     // Helper function to get country name from ID
@@ -149,14 +224,29 @@ export default function PaymentForm({
         }
     }, [serviceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Voucher flow: default cash + list consultation price for receipt display; API fee overridden to 0 in payload mappers
+    useEffect(() => {
+        if (!consultancyVoucher) return;
+        if (!formik.values.paymentMode?.trim()) {
+            formik.setFieldValue("paymentMode", "cash", false);
+        }
+        const charges = (formik.values.consultationCharges || "").trim();
+        if (!charges && services.length > 0) {
+            const p = services[0]?.price;
+            if (p != null && p !== "") {
+                formik.setFieldValue("consultationCharges", String(p), false);
+            }
+        }
+    }, [consultancyVoucher, services, formik]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Transform services to SelectOption format
     const consultationChargesOptions: SelectOption[] = useMemo(() => {
         if (!services || services.length === 0) {
             // Fallback to default options if API data is not available
             return [
+                { value: "0", label: "0" },
                 { value: "300", label: "300" },
                 { value: "500", label: "500" },
-        
             ];
         }
         return services.map((service) => {
@@ -173,16 +263,15 @@ export default function PaymentForm({
     // Fetch billing states and cities data
     // Use same country as Personal Info (Address) for billing states
     const billingCountryId = formik.values.country && formik.values.country.trim() !== "" ? formik.values.country : "6";
+    const billingCountryIsIndia = billingCountryId === "6";
     const { data: billingStatesData } = useGetStatesQuery(
-        { countryId: billingCountryId },
-        { skip: !billingCountryId }
+        billingCountryId && billingCountryIsIndia ? { countryId: billingCountryId } : undefined,
+        { skip: !billingCountryId || !billingCountryIsIndia }
     );
 
     const { data: billingCitiesData } = useGetCitiesQuery(
-        formik.values.billingState
-            ? { stateId: formik.values.billingState }
-            : undefined,
-        { skip: !formik.values.billingState }
+        formik.values.billingState && billingCountryIsIndia ? { stateId: formik.values.billingState } : undefined,
+        { skip: !formik.values.billingState || !billingCountryIsIndia }
     );
 
     // Helper function to get billing state name from ID
@@ -213,6 +302,13 @@ export default function PaymentForm({
     const billingPincodeRef = useRef<HTMLInputElement>(null);
 
     const handleSubmit = async () => {
+        // For hospital flow, prevent multiple clicks while submitting or creating patient
+        if (
+            isHospitalRegistration && (isSubmitting || isCreatingPatient) ||
+            (!isHospitalRegistration && registrationSubmitting)
+        ) {
+            return;
+        }
         const consultationChargesAmount = parseFloat(formik.values.consultationCharges || '0') || 0;
         const requiresPaymentMode = consultationChargesAmount > 0;
 
@@ -260,18 +356,46 @@ export default function PaymentForm({
         
         if (Object.keys(step2Errors).length > 0) {
             formik.setErrors({ ...formik.errors, ...step2Errors });
-            // Scroll to first error
-            const firstErrorKey = Object.keys(step2Errors)[0];
+            // Focus first error in series: Consultation Charges → Payment Mode → Transaction ID → GST/Billing fields
+            const PAYMENT_STEP2_FIELD_ORDER: readonly string[] = [
+                'consultationCharges',
+                'paymentMode',
+                'transactionId',
+                'gstNumber',
+                'companyName',
+                'billingAddress',
+                'billingState',
+                'billingCity',
+                'billingPincode',
+            ];
+            const firstErrorKey = PAYMENT_STEP2_FIELD_ORDER.find((key) => step2Errors[key]) ?? Object.keys(step2Errors)[0];
             const element = document.querySelector(`[data-field="${firstErrorKey}"]`);
             if (element instanceof HTMLElement) {
                 setTimeout(() => {
                     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+                        element.focus();
+                    } else {
+                        const inputOrTextarea = element.querySelector('input, textarea');
+                        const btn = element.querySelector('button[type="button"]');
+                        if (inputOrTextarea instanceof HTMLInputElement || inputOrTextarea instanceof HTMLTextAreaElement) {
+                            setTimeout(() => inputOrTextarea.focus(), 150);
+                        } else if (btn instanceof HTMLElement) {
+                            setTimeout(() => btn.focus(), 150);
+                        }
+                    }
                 }, 100);
             }
             return;
         }
         
-        // Open invoice dialog instead of directly going to next step
+        const isCashPayment = formik.values.paymentMode?.toLowerCase() === "cash";
+        if (requiresPaymentMode && isCashPayment) {
+            setShowCashConsultationConfirm(true);
+            return;
+        }
+
+        // Preview receipt (credit / non-cash or zero-fee flow) before registration API
         setIsInvoiceDialogOpen(true);
     };
 
@@ -360,9 +484,9 @@ export default function PaymentForm({
                     referralSourceType: "doctor",
                     doctorUserId: doctorId,
                 };
-            } else if (values.source === "other") {
+            } else if (values.source === "other" || values.source === "Referral") {
                 referralObject = {
-                    referralSourceType: "patient",
+                    referralSourceType: "Referral",
                     referralRegistrationId: selectedReferralPatientId ? (typeof selectedReferralPatientId === 'number' ? selectedReferralPatientId : parseInt(String(selectedReferralPatientId), 10)) : undefined,
                     referralName: values.referralName || undefined,
                     referralMobile: values.referralMobile || undefined,
@@ -370,9 +494,10 @@ export default function PaymentForm({
             } else {
                 // tv | newspaper | social-media
                 let referralSourceInfo = "";
-                if (values.source === "tv" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
-                else if (values.source === "newspaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
-                else if (values.source === "social-media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
+                // debugger
+                if (values.source === "TV" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
+                else if (values.source === "NewsPaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
+                else if (values.source === "Social Media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
                 referralObject = {
                     referralSourceType: values.source,
                     doctorUserId: null,
@@ -384,16 +509,29 @@ export default function PaymentForm({
         // Convert doctor ID to number if it exists, otherwise use empty string
         const doctorUserId = values.doctor ? (typeof values.doctor === 'string' ? parseInt(values.doctor, 10) || values.doctor : values.doctor) : "";
         
+        const voucherWaiver = !!consultancyVoucher;
+        const paymentDoctorFee = voucherWaiver
+            ? 0
+            : parseFloat(values.consultationCharges || "0") || 0;
+        const paymentModeResolved = voucherWaiver
+            ? "cash"
+            : values.paymentMode?.toLowerCase() === "credit"
+              ? "razorpay"
+              : values.paymentMode?.toLowerCase() === "cash"
+                ? "cash"
+                : (values.paymentMode || "").toLowerCase();
+
         // Build the API payload - ensure all values are serializable
         // patientEntryId: from token panel (patient-entries API response id) - backend uses it to remove/update that entry after registration
         // userLeadId: when entry came from userLead (both registrations and preBookings empty)
+        // patientName and contactNumber are always sent for hospital-patient API (required for registration)
         const payload: HospitalPatientRequest = {
-            branchId: 1,
+            branchId: branchId || 1,
             patientEntryId: patientEntryId != null && patientEntryId !== '' ? (typeof patientEntryId === 'string' ? parseInt(patientEntryId, 10) || patientEntryId : patientEntryId) : undefined,
             patientTitle: values.patientNameSelect || "",
-            patientName: values.patientName || "",
-            contactNumber: values.contactNumber || "",
-            whatsappNo: values.whatsappNo || values.contactNumber || "",
+            patientName: (values.patientName || "").trim(),
+            contactNumber: (values.contactNumber || "").trim(),
+            whatsappNo: (values.whatsappNo || values.contactNumber || "").trim(),
             aadharCardNo: values.aadharCardNumber || undefined,
             guardianTitle: values.fathersHusbandsNameSelect || "",
             guardianName: values.fathersHusbandsName || "",
@@ -429,11 +567,21 @@ export default function PaymentForm({
                 addressLine2: (values as any).addressLine2 || undefined,
             },
             payment: {
-                doctorFee: parseFloat(values.consultationCharges || "0") || 0,
-                paymentMode: values.paymentMode?.toLowerCase() === "credit" ? "razorpay" : (values.paymentMode?.toLowerCase() === "cash" ? "cash" : (values.paymentMode || "").toLowerCase()),
-                transactionId: values.transactionId || undefined,
-                serviceId: values.paymentMode?.toLowerCase() === "credit" && serviceId ? (typeof serviceId === 'number' ? serviceId : parseInt(String(serviceId), 10)) : undefined,
-                razorpayPosPaymentLogId: values.paymentMode?.toLowerCase() === "credit" && razorpayPosPaymentLogId ? (typeof razorpayPosPaymentLogId === 'number' ? razorpayPosPaymentLogId : parseInt(String(razorpayPosPaymentLogId), 10)) : undefined,
+                doctorFee: paymentDoctorFee,
+                paymentMode: paymentModeResolved,
+                transactionId: voucherWaiver ? undefined : values.transactionId || undefined,
+                serviceId:
+                    !voucherWaiver && values.paymentMode?.toLowerCase() === "credit" && serviceId
+                        ? typeof serviceId === "number"
+                            ? serviceId
+                            : parseInt(String(serviceId), 10)
+                        : undefined,
+                razorpayPosPaymentLogId:
+                    !voucherWaiver && values.paymentMode?.toLowerCase() === "credit" && razorpayPosPaymentLogId
+                        ? typeof razorpayPosPaymentLogId === "number"
+                            ? razorpayPosPaymentLogId
+                            : parseInt(String(razorpayPosPaymentLogId), 10)
+                        : undefined,
                 gstNumber: values.gstBilling ? (values.gstNumber || undefined) : undefined,
                 companyName: values.gstBilling ? (values.companyName || undefined) : undefined,
                 billingAddress: values.gstBilling ? (values.billingAddress || undefined) : undefined,
@@ -442,13 +590,15 @@ export default function PaymentForm({
                 pincode: values.gstBilling ? (values.billingPincode ? parseInt(values.billingPincode, 10) : undefined) : undefined,
             },
             appointment: {
+                ...(patientTokenSource ? { patientTokenSource } : {}),
                 token: patientToken || undefined,
                 appointmentDate: values.appointmentDate || "",
                 timeSlot: values.timeSlot || "",
                 doctorUserId: doctorUserId,
-                isPreBooking: false,
+                isPreBooking: !!preBookingId,
                 preBookingId: preBookingId ? (typeof preBookingId === 'number' ? preBookingId : parseInt(String(preBookingId), 10)) : null,
             },
+            ...buildConsultancyVoucherRoot(consultancyVoucher),
         };
         
         return payload;
@@ -497,24 +647,37 @@ export default function PaymentForm({
         }
         
         // CreateAppointmentAndUpdateRegistration: old way - referral fields inside registration object
+        const sourceSlug = values.source?.toLowerCase().replace(/\s+/g, "-");
         let referralSourceInfoCreateApp = "";
         if (values.referral?.toLowerCase() === "yes" && values.source) {
-            if (values.source === "tv" && values.tvSpecificField) {
+            // debuggerimage.png
+            if (sourceSlug === "TV" && values.tvSpecificField) {
                 referralSourceInfoCreateApp = values.tvSpecificField;
-            } else if (values.source === "newspaper" && values.newspaperSpecificField) {
+            } else if (sourceSlug === "NewsPaper" && values.newspaperSpecificField) {
                 referralSourceInfoCreateApp = values.newspaperSpecificField;
-            } else if (values.source === "social-media" && values.socialMediaSpecificField) {
+            } else if (sourceSlug === "Social Media" && values.socialMediaSpecificField) {
                 referralSourceInfoCreateApp = values.socialMediaSpecificField;
-            } else if (values.source === "doctor" && values.doctorSpecificField) {
+            } else if (sourceSlug === "Doctor" && values.doctorSpecificField) {
                 referralSourceInfoCreateApp = values.doctorSpecificField;
-            } else if (values.source === "other" && values.referralName) {
+            } else if ((sourceSlug === "Referral" || sourceSlug === "other") && values.referralName) {
                 referralSourceInfoCreateApp = values.referralName;
             }
         }
         
         // Convert doctor ID to number
         const doctorUserId = values.doctor ? (typeof values.doctor === 'string' ? parseInt(values.doctor, 10) : values.doctor) : 0;
-        
+        console.log("values.panelId", values.panelId,values.patientType);
+        const voucherWaiver = !!consultancyVoucher;
+        const paymentDoctorFee = voucherWaiver
+            ? 0
+            : parseFloat(values.consultationCharges || "0") || 0;
+        const paymentModeResolved = voucherWaiver
+            ? "cash"
+            : values.paymentMode?.toLowerCase() === "credit"
+              ? "razorpay"
+              : values.paymentMode?.toLowerCase() === "cash"
+                ? "cash"
+                : (values.paymentMode || "").toLowerCase();
         // Build the API payload for CreateAppointmentAndUpdateRegistration (old way - no root referral object)
         const payload: CreateAppointmentAndUpdateRegistrationRequest = {
             branchId: branchId || 1,
@@ -547,9 +710,25 @@ export default function PaymentForm({
                 referralMobile: values.referralMobile || undefined,
                 maritalStatus: values.maritalStatus || "",
                 doctorUserId: doctorUserId,
-                patientType: (values.patientType || "").toLowerCase(),
+                patientType: values.patientType ? (values.patientType).toUpperCase() : "",
+                panelId: values?.panelId ? parseInt(values?.panelId, 10) : undefined,
+                // patientType: (values.patientType || "").toLowerCase(),
+                // panelId:
+                //     values.patientType?.toLowerCase() === "panel" && values.panelId
+                //         ? parseInt(values.panelId, 10)
+                //         : undefined,
                 addictionSpecify: undefined,
                 addictionType: undefined,
+                lastDayFullDiet: (values as any).lastDayFullDiet?.trim() || undefined,
+                dietType: (values as any).dietType?.trim() || undefined,
+                height: (() => {
+                    const feet = parseFloat((values as any).heightFeet || "0") || 0;
+                    const inch = parseFloat((values as any).heightInch || "0") || 0;
+                    if (feet <= 0 && inch <= 0) return undefined;
+                    return (feet + inch / 12).toFixed(1);
+                })(),
+                weight: (values as any).weight?.trim() || undefined,
+                bloodGroup: (values as any).bloodGroup?.trim() || undefined,
             },
             address: {
                 address: values.address || "",
@@ -564,6 +743,7 @@ export default function PaymentForm({
                 addressLine2: (values as any).addressLine2 || undefined,
             },
             appointment: {
+                ...(patientTokenSource ? { patientTokenSource } : {}),
                 isPreBooking: !!preBookingId,
                 preBookingId: preBookingId ? (typeof preBookingId === 'number' ? preBookingId : parseInt(String(preBookingId), 10)) : undefined,
                 appointmentDate: values.appointmentDate || "",
@@ -576,7 +756,7 @@ export default function PaymentForm({
                 pulse: undefined,
                 diagnosisId: undefined,
                 diagnosisSymptoms: undefined,
-                doctorFee: values.consultationCharges || undefined,
+                doctorFee: voucherWaiver ? "0" : values.consultationCharges || undefined,
                 subDiagnosisId: undefined,
                 isDoctorChecked: false,
                 isDiabetes: false,
@@ -593,17 +773,28 @@ export default function PaymentForm({
                 token: patientToken || undefined,
             },
             payment: {
-                doctorFee: parseFloat(values.consultationCharges || "0") || 0,
-                serviceId: values.paymentMode?.toLowerCase() === "credit" && serviceId ? (typeof serviceId === 'number' ? serviceId : parseInt(String(serviceId), 10)) : undefined,
-                paymentMode: values.paymentMode?.toLowerCase() === "credit" ? "razorpay" : (values.paymentMode?.toLowerCase() === "cash" ? "cash" : (values.paymentMode || "").toLowerCase()),
-                razorpayPosPaymentLogId: values.paymentMode?.toLowerCase() === "credit" && razorpayPosPaymentLogId ? (typeof razorpayPosPaymentLogId === 'number' ? razorpayPosPaymentLogId : parseInt(String(razorpayPosPaymentLogId), 10)) : undefined,
-                transactionId: values.transactionId || undefined,
+                doctorFee: paymentDoctorFee,
+                serviceId:
+                    !voucherWaiver && values.paymentMode?.toLowerCase() === "credit" && serviceId
+                        ? typeof serviceId === "number"
+                            ? serviceId
+                            : parseInt(String(serviceId), 10)
+                        : undefined,
+                paymentMode: paymentModeResolved,
+                razorpayPosPaymentLogId:
+                    !voucherWaiver && values.paymentMode?.toLowerCase() === "credit" && razorpayPosPaymentLogId
+                        ? typeof razorpayPosPaymentLogId === "number"
+                            ? razorpayPosPaymentLogId
+                            : parseInt(String(razorpayPosPaymentLogId), 10)
+                        : undefined,
+                transactionId: voucherWaiver ? undefined : values.transactionId || undefined,
                 companyName: values.gstBilling ? (values.companyName || undefined) : undefined,
                 billingAddress: values.gstBilling ? (values.billingAddress || undefined) : undefined,
                 state: values.gstBilling ? (getBillingStateName === 'N/A' ? undefined : getBillingStateName || undefined) : undefined,
                 city: values.gstBilling ? (getBillingCityName === 'N/A' ? undefined : getBillingCityName || undefined) : undefined,
                 pincode: values.gstBilling ? (values.billingPincode ? parseInt(values.billingPincode, 10) : undefined) : undefined,
             },
+            ...buildConsultancyVoucherRoot(consultancyVoucher),
         };
         
         return payload;
@@ -614,69 +805,241 @@ export default function PaymentForm({
         window.print();
     };
 
-    const handleSaveAndNext = async () => {
-        if (isHospitalRegistration) {
-            // For Hospital registration, check if patient already exists (has UHID)
+    const performHospitalRegistration = async () => {
+        if (patientUhid && patientRegistrationId) {
+            const payload = await mapFormikToCreateAppointmentPayload();
+            console.log("CreateAppointmentAndUpdateRegistration API Payload (before call):", JSON.stringify(payload, null, 2));
+            return createAppointmentAndUpdateRegistration(payload).unwrap();
+        }
+        const payload = await mapFormikToApiPayload();
+        console.log("API Payload Data:", JSON.stringify(payload, null, 2));
+        return createHospitalPatient(payload).unwrap();
+    };
+
+    const openPostSuccessReceiptFromResult = (result: { success: boolean; data?: unknown; message?: string }) => {
+        setShowCashConsultationConfirm(false);
+        if (!result.success) {
+            setErrorMessage(result.message || "Registration failed. Please try again.");
+            setShowErrorDialog(true);
+            return;
+        }
+        setPostSuccessReceipt(extractReceiptFromApiResult(result));
+        setIsPostSuccessReceiptOpen(true);
+    };
+
+    useImperativeHandle(ref, () => ({
+        runDirectHospitalRegistration: async () => {
             setIsSubmitting(true);
             try {
-                let result;
-                
-                // If patient already exists (has UHID and registrationId), use the new API
-                if (patientUhid && patientRegistrationId) {
-                    const payload = await mapFormikToCreateAppointmentPayload();
-                    // Console log API payload before hitting API
-                    console.log("CreateAppointmentAndUpdateRegistration API Payload Data:", JSON.stringify(payload, null, 2));
-                    result = await createAppointmentAndUpdateRegistration(payload).unwrap();
-                } else {
-                    // New patient registration - use the regular API
-                    const payload = await mapFormikToApiPayload();
-                    // Console log API payload before hitting API
-                    console.log("API Payload Data:", JSON.stringify(payload, null, 2));
-                    result = await createHospitalPatient(payload).unwrap();
-                }
-                
-                // Close invoice dialog
+                const result = await performHospitalRegistration();
                 setIsInvoiceDialogOpen(false);
-                
-                // If successful, call onNext which will show success dialog in parent
-                if (result.success) {
-                    onNext();
-                } else {
-                    setErrorMessage(result.message || "Registration failed. Please try again.");
-                    setShowErrorDialog(true);
-                }
-            } catch (error: any) {
-                // Close invoice dialog
+                openPostSuccessReceiptFromResult(result);
+            } catch (error: unknown) {
                 setIsInvoiceDialogOpen(false);
-                
-                // Log the full error for debugging
                 console.error("Registration error:", error);
-                
-                // Show error message
                 let errorMsg = "An error occurred during registration. Please try again.";
-                if (error?.data?.message) {
-                    errorMsg = error.data.message;
-                } else if (error?.message) {
-                    errorMsg = error.message;
-                } else if (typeof error === 'string') {
+                const err = error as { data?: { message?: string }; message?: string };
+                if (err?.data?.message) {
+                    errorMsg = err.data.message;
+                } else if (err?.message) {
+                    errorMsg = err.message;
+                } else if (typeof error === "string") {
                     errorMsg = error;
                 }
-                
                 setErrorMessage(errorMsg);
                 setShowErrorDialog(true);
             } finally {
                 setIsSubmitting(false);
             }
-        } else {
-            // For Clinics, onNext will go to next step (Vitals)
+        },
+        runDirectClinicRegistration: async () => {
+            if (!onFinalizeClinicRegistration) return;
+            const receipt = await onFinalizeClinicRegistration();
+            setPostSuccessReceipt(receipt);
+            setIsPostSuccessReceiptOpen(true);
+        },
+    }));
+
+    const handlePostSuccessReceiptDialogClose = () => {
+        setIsPostSuccessReceiptOpen(false);
+        setPostSuccessReceipt(null);
+        onPostSuccessReceiptClose();
+    };
+
+    const handleSaveAndNext = async () => {
+        if (isHospitalRegistration) {
+            setIsSubmitting(true);
+            try {
+                const result = await performHospitalRegistration();
+                setIsInvoiceDialogOpen(false);
+                openPostSuccessReceiptFromResult(result);
+            } catch (error: any) {
+                setIsInvoiceDialogOpen(false);
+                console.error("Registration error:", error);
+                let errorMsg = "An error occurred during registration. Please try again.";
+                if (error?.data?.message) {
+                    errorMsg = error.data.message;
+                } else if (error?.message) {
+                    errorMsg = error.message;
+                } else if (typeof error === "string") {
+                    errorMsg = error;
+                }
+                setErrorMessage(errorMsg);
+                setShowErrorDialog(true);
+            } finally {
+                setIsSubmitting(false);
+            }
+            return;
+        }
+
+        if (!onFinalizeClinicRegistration) {
             setIsInvoiceDialogOpen(false);
-            onNext();
+            return;
+        }
+        setIsInvoiceDialogOpen(false);
+        try {
+            const receipt = await onFinalizeClinicRegistration();
+            setPostSuccessReceipt(receipt);
+            setIsPostSuccessReceiptOpen(true);
+        } catch (error: any) {
+            const errorMsg =
+                error?.data?.message || error?.message || "An error occurred during registration. Please try again.";
+            setErrorMessage(errorMsg);
+            setShowErrorDialog(true);
         }
     };
 
-    const handleDownloadInvoice = () => {
-        // You can implement download logic here
-        console.log('Download invoice');
+    const handleCashConsultationConfirm = async () => {
+        setCashConsultConfirmLoading(true);
+        try {
+            if (isHospitalRegistration) {
+                setIsSubmitting(true);
+                try {
+                    const result = await performHospitalRegistration();
+                    openPostSuccessReceiptFromResult(result);
+                } finally {
+                    setIsSubmitting(false);
+                }
+            } else {
+                if (!onFinalizeClinicRegistration) {
+                    setShowCashConsultationConfirm(false);
+                    return;
+                }
+                const receipt = await onFinalizeClinicRegistration();
+                setShowCashConsultationConfirm(false);
+                setPostSuccessReceipt(receipt);
+                setIsPostSuccessReceiptOpen(true);
+            }
+        } catch (error: any) {
+            setShowCashConsultationConfirm(false);
+            let errorMsg = "An error occurred during registration. Please try again.";
+            if (error?.data?.message) {
+                errorMsg = error.data.message;
+            } else if (error?.message) {
+                errorMsg = error.message;
+            } else if (typeof error === "string") {
+                errorMsg = error;
+            }
+            setErrorMessage(errorMsg);
+            setShowErrorDialog(true);
+        } finally {
+            setCashConsultConfirmLoading(false);
+        }
+    };
+
+    const handleDownloadInvoice = async () => {
+        if (!canDownload) return;
+        const el = document.getElementById("payment-receipt-capture");
+        if (!el || !(el instanceof HTMLElement)) {
+            return;
+        }
+        /** Match live receipt width (full dialog body) so the PDF matches what’s on screen. */
+        const exportWidthPx = Math.max(Math.round(el.getBoundingClientRect().width), 320);
+
+        setIsDownloadingInvoice(true);
+        const host = document.createElement("div");
+        host.setAttribute("aria-hidden", "true");
+        host.style.cssText = [
+            "position:fixed",
+            "left:-99999px",
+            "top:0",
+            `width:${exportWidthPx}px`,
+            "margin:0",
+            "padding:0",
+            "background:#ffffff",
+            "box-sizing:border-box",
+            "overflow:visible",
+            "pointer-events:none",
+        ].join(";");
+
+        const clone = el.cloneNode(true) as HTMLElement;
+        clone.removeAttribute("id");
+        clone.style.width = "100%";
+        clone.style.maxWidth = "100%";
+        clone.style.boxSizing = "border-box";
+        clone.style.margin = "0";
+        host.appendChild(clone);
+        document.body.appendChild(host);
+
+        const idPart = (patientUhid || formik.values.jsHealthCardNo || "receipt").replace(/[^\w.-]+/g, "_");
+        const filename = `Payment-Receipt-${idPart}.pdf`;
+
+        try {
+            void host.offsetWidth;
+            const imgs = Array.from(clone.querySelectorAll("img"));
+            await Promise.all(
+                imgs.map(
+                    (img) =>
+                        new Promise<void>((resolve) => {
+                            if (img.complete && img.naturalWidth > 0) {
+                                resolve();
+                                return;
+                            }
+                            img.addEventListener("load", () => resolve(), { once: true });
+                            img.addEventListener("error", () => resolve(), { once: true });
+                        })
+                )
+            );
+            for (const img of imgs) {
+                try {
+                    await img.decode();
+                } catch {
+                    /* ignore decode failures */
+                }
+            }
+            await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+            await html2pdf()
+                .set({
+                    margin: 8,
+                    filename,
+                    image: { type: "jpeg", quality: 0.98 },
+                    html2canvas: {
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: false,
+                        foreignObjectRendering: false,
+                        imageTimeout: 15_000,
+                        logging: false,
+                        backgroundColor: "#ffffff",
+                        onclone: (_clonedDoc: Document, clonedRoot: HTMLElement) => {
+                            clonedRoot.style.overflow = "visible";
+                            clonedRoot.style.clipPath = "none";
+                            clonedRoot.style.boxSizing = "border-box";
+                            clonedRoot.style.border = "1px solid #C0C3C8";
+                            clonedRoot.style.backgroundColor = "#ffffff";
+                        },
+                    },
+                    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                })
+                .from(clone)
+                .save();
+        } catch (err) {
+            console.error("Payment receipt download failed:", err);
+        } finally {
+            host.remove();
+            setIsDownloadingInvoice(false);
+        }
     };
     
     const handleErrorDialogClose = () => {
@@ -1086,17 +1449,10 @@ export default function PaymentForm({
         formik.setFieldValue("transactionId", "", false);
     };
 
-    // Handle payment success dialog close - move to next step
+    // Handle payment success dialog close - open payment receipt preview for registration submit
     const handlePaymentSuccessDialogClose = () => {
         setShowPaymentSuccessDialog(false);
-        // For Credit payment, after success, proceed to next step
-        if (isHospitalRegistration) {
-            // For hospital, open invoice dialog
-            setIsInvoiceDialogOpen(true);
-        } else {
-            // For clinic, go to next step
-            onNext();
-        }
+        setIsInvoiceDialogOpen(true);
     };
 
     // Handle payment error dialog close
@@ -1107,6 +1463,8 @@ export default function PaymentForm({
     };
 
     return (
+        <>
+        {renderPaymentBody ? (
         <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] p-5 mb-4">
             <h3 className="font-inter font-semibold text-[24px] leading-[120%] text-[#262D3B] mb-4">Payment Information</h3>
             
@@ -1116,7 +1474,6 @@ export default function PaymentForm({
                     consultationCharges: formik.values.consultationCharges || "",
                     paymentMode: formik.values.paymentMode || "",
                     transactionId: formik.values.transactionId || "",
-                    gstBilling: formik.values.gstBilling || false,
                 }}
                 razorpayPosMachineUsers={razorpayPosMachineUsers}
                 onChange={(field, value) => {
@@ -1301,19 +1658,33 @@ export default function PaymentForm({
             )}
             
             <div className="flex justify-end mt-4 gap-2">
-                <BackToPreviousPageButton onClick={onBack} disabled={isHospitalRegistration && (isSubmitting || isCreatingPatient)} />
+                <BackToPreviousPageButton
+                    onClick={onBack}
+                    disabled={
+                        (isHospitalRegistration && (isSubmitting || isCreatingPatient)) ||
+                        (!isHospitalRegistration && registrationSubmitting)
+                    }
+                />
                 <button 
                     className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 bg-[#0B8C00] rounded-[32px] font-inter font-medium text-sm leading-[120%] text-center text-white hover:bg-[#0A7A00] transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
                     onClick={handleSubmit}
-                    disabled={isHospitalRegistration && (isSubmitting || isCreatingPatient)}
+                    disabled={
+                        (isHospitalRegistration && (isSubmitting || isCreatingPatient)) ||
+                        (!isHospitalRegistration && registrationSubmitting)
+                    }
                 >
                     {isHospitalRegistration && (isSubmitting || isCreatingPatient) ? (
+                        <ThreeDotLoader color="white" size="small" />
+                    ) : !isHospitalRegistration && registrationSubmitting ? (
                         <ThreeDotLoader color="white" size="small" />
                     ) : (
                         <span>{isHospitalRegistration ? "Submit" : "Save & Next"}</span>
                     )}
                 </button>
             </div>
+        </div>
+        ) : null}
+
             <PaymentDialogDetails
                 open={isInvoiceDialogOpen}
                 onClose={() => setIsInvoiceDialogOpen(false)}
@@ -1344,8 +1715,77 @@ export default function PaymentForm({
                 onPrint={handlePrintInvoice}
                 onSaveAndNext={handleSaveAndNext}
                 onDownload={handleDownloadInvoice}
-                isSubmitting={isSubmitting || isCreatingPatient}
-                isHospitalRegistration={isHospitalRegistration}
+                isDownloadingInvoice={isDownloadingInvoice}
+                canDownload={canDownload}
+                isSubmitting={isSubmitting || isCreatingPatient || registrationSubmitting}
+            />
+
+            <PaymentDialogDetails
+                open={isPostSuccessReceiptOpen}
+                onClose={handlePostSuccessReceiptDialogClose}
+                patientName={getPatientName()}
+                address={formik.values.address || ""}
+                countryName={getCountryName}
+                addressLine1={(formik.values as any).addressLine1}
+                addressLine2={(formik.values as any).addressLine2}
+                pinCode={formik.values.pinCode ?? ""}
+                cityName={getCityName}
+                stateName={getStateName}
+                jsHealthCardNo={formik.values.jsHealthCardNo || ""}
+                uhid={postSuccessReceipt?.uhid ?? patientUhid ?? ""}
+                invoiceNumber={postSuccessReceipt?.invoiceNumber}
+                consultationCharges={consultationCharges}
+                subtotal={subtotal}
+                tax={tax}
+                totalAmount={totalAmount}
+                billDate={formatDateTime()}
+                transactionId={formik.values.transactionId}
+                paymentMode={formik.values.paymentMode}
+                gstBilling={formik.values.gstBilling || false}
+                gstNumber={formik.values.gstNumber}
+                companyName={formik.values.companyName}
+                billingAddress={formik.values.billingAddress}
+                billingStateName={getBillingStateName}
+                billingCityName={getBillingCityName}
+                billingPincode={formik.values.billingPincode}
+                onPrint={handlePrintInvoice}
+                onSaveAndNext={() => {}}
+                onDownload={handleDownloadInvoice}
+                isDownloadingInvoice={isDownloadingInvoice}
+                canDownload={canDownload}
+                isSubmitting={false}
+                receiptActionsOnly
+            />
+
+            <MessageDialog
+                open={showCashConsultationConfirm}
+                onClose={() => {
+                    if (cashConsultConfirmLoading || (registrationSubmitting && !isHospitalRegistration)) {
+                        return;
+                    }
+                    setShowCashConsultationConfirm(false);
+                }}
+                iconSlot={
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[30px] bg-green-100">
+                        <RupeeCircleIcon className="h-10 w-10 text-green-700" />
+                    </div>
+                }
+                message="Please confirm if the payment has been collected from the patient"
+                showCancel
+                cancelText="Cancel"
+                confirmText="Yes"
+                onCancel={() => {
+                    if (cashConsultConfirmLoading || (registrationSubmitting && !isHospitalRegistration)) {
+                        return;
+                    }
+                    setShowCashConsultationConfirm(false);
+                }}
+                onConfirm={() => void handleCashConsultationConfirm()}
+                isActionLoading={
+                    cashConsultConfirmLoading ||
+                    (!isHospitalRegistration && registrationSubmitting && showCashConsultationConfirm)
+                }
+                width={440}
             />
             
             {/* Error Dialog */}
@@ -1399,7 +1839,11 @@ export default function PaymentForm({
                 onConfirm={handlePaymentErrorDialogClose}
                 width={400}
             />
-        </div>
+        </>
     );
-}
+});
+
+PaymentForm.displayName = "PaymentForm";
+
+export default PaymentForm;
 

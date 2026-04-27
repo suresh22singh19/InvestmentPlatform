@@ -19,6 +19,18 @@ interface PhotoCaptureProps {
   onChange: (field: keyof PhotoCaptureFormData, file: File | null) => void;
   mode?: PhotoCaptureMode;
   title?: string;
+  /** When true, omit outer card border/title (use inside another section). */
+  embedded?: boolean;
+  /** Override per-slot labels (defaults: vehicle / Aadhar copy). */
+  fieldLabels?: Partial<Record<keyof PhotoCaptureFormData, string>>;
+  /** Label above Take a Photo / Upload Photo (default: "Photo Selection"). */
+  selectionHeading?: string;
+  /** When true, show a red * after {@link selectionHeading}. */
+  selectionHeadingRequired?: boolean;
+  /** `data-field` on each upload slot (for form scroll-to-error). */
+  slotDataFields?: Partial<Record<keyof PhotoCaptureFormData, string>>;
+  /** e.g. Formik/Yup messages for a slot (shown under upload; does not replace file-type errors). */
+  externalFieldErrors?: Partial<Record<keyof PhotoCaptureFormData, string>>;
   accept?: string; // e.g. "image/png,image/jpeg"
   onValidationChange?: (hasErrors: boolean, errors: { vehiclePhoto?: string; aadharPhoto?: string }) => void;
 }
@@ -29,16 +41,26 @@ export interface PhotoCaptureRef {
   getErrorField: () => keyof PhotoCaptureFormData | null;
 }
 
+const DEFAULT_VEHICLE_LABEL = "Take Photo Vehicle Number";
+const DEFAULT_AADHAR_LABEL = "Take Photo Aadhar Card";
+
 const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
   formData,
   onChange,
   mode = "both",
   title = "Photo Capture",
-  // accept = "image/*,.pdf,.svg",
-  // Restrict uploads to image files only (png, jpg, jpeg)
-  accept = "image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg",
+  embedded = false,
+  fieldLabels,
+  selectionHeading = "Photo Selection",
+  selectionHeadingRequired = false,
+  slotDataFields,
+  externalFieldErrors,
+  // PNG, JPEG/JPG, SVG only (same rules as gate new-patient photo flow)
+  accept = "image/png,image/jpeg,image/jpg,image/svg+xml,.png,.jpg,.jpeg,.svg",
   onValidationChange,
 }, ref) => {
+  const labelVehicle = fieldLabels?.vehiclePhoto ?? DEFAULT_VEHICLE_LABEL;
+  const labelAadhar = fieldLabels?.aadharPhoto ?? DEFAULT_AADHAR_LABEL;
   const containerRef = useRef<HTMLDivElement>(null);
   const vehiclePhotoRef = useRef<HTMLDivElement>(null);
   const aadharPhotoRef = useRef<HTMLDivElement>(null);
@@ -64,7 +86,10 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
     vehiclePhoto?: string;
     aadharPhoto?: string;
   }>({});
-  
+
+  const vehicleErrorText = fileErrors.vehiclePhoto || externalFieldErrors?.vehiclePhoto;
+  const aadharErrorText = fileErrors.aadharPhoto || externalFieldErrors?.aadharPhoto;
+
   // Keys to force reset of FileUploadField when file is rejected
   const [fileFieldKeys, setFileFieldKeys] = useState<{
     vehiclePhoto: number;
@@ -270,22 +295,23 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
     );
   };
 
-  // Validate file type and size
+  // Validate file type and size (PNG, JPG/JPEG, SVG — same messaging pattern as gate/new-patient)
   const validateFile = (file: File): string | null => {
-    // Check file type - only allow images (jpg, jpeg, png)
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
-    const fileType = file.type.toLowerCase();
-    
-    // Also check file extension as a fallback (some browsers may not set file.type correctly)
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/svg+xml"];
+    const fileType = file.type.toLowerCase().trim();
+
     const fileName = file.name.toLowerCase();
-    const allowedExtensions = [".jpg", ".jpeg", ".png"];
-    const fileExtension = fileName.substring(fileName.lastIndexOf("."));
-    
-    // File must match either allowed type or allowed extension
-    const isValidType = allowedTypes.includes(fileType) || allowedExtensions.includes(fileExtension);
-    
+    const dot = fileName.lastIndexOf(".");
+    const fileExtension = dot >= 0 ? fileName.substring(dot) : "";
+
+    const allowedExtensions = [".jpg", ".jpeg", ".png", ".svg"];
+
+    const isValidType =
+      allowedTypes.includes(fileType) ||
+      (fileExtension !== "" && allowedExtensions.includes(fileExtension));
+
     if (!isValidType) {
-      return "Only image files (JPG, PNG) are allowed";
+      return "Only image files (PNG, JPG, JPEG, SVG) are allowed";
     }
     
     // Check file size - max 3MB
@@ -337,15 +363,20 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
     }
   };
 
+  const shellClass = embedded
+    ? "space-y-4"
+    : "space-y-6 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]";
+
   return (
     <>
-      <div ref={containerRef} className="space-y-6 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]">
-        <h2 className="text-base font-medium leading-[120%] text-[#262D3B]">{title}</h2>
+      <div ref={containerRef} className={shellClass}>
+        {!embedded ? <h2 className="text-base font-medium leading-[120%] text-[#262D3B]">{title}</h2> : null}
 
         <div className="w-full flex">
-          <div className="w-1/3 space-y-1">
+          <div className="lg:w-1/3 md:w-1/2 w-full space-y-1">
             <span className="block text-xs font-medium text-[#7B8089]">
-              Photo Selection
+              {selectionHeading}
+              {selectionHeadingRequired ? <span className="text-[#F6776E]">*</span> : null}
             </span>
             <PatientTypeButtonGroup
               options={["Take a Photo", "Upload Photo"]}
@@ -361,15 +392,21 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
           }`}
         >
           {showVehicle && (
-            <div ref={vehiclePhotoRef} className="flex flex-col gap-2">
+            <div
+              ref={vehiclePhotoRef}
+              className="flex flex-col gap-2"
+              {...(slotDataFields?.vehiclePhoto ? { "data-field": slotDataFields.vehiclePhoto } : {})}
+            >
               {photoOption.toLowerCase() === "take a photo" ? (
                 <div className="group relative inline-flex w-full">
                   <span className="pointer-events-none absolute left-6 top-0 z-10 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
-                    Take Photo Vehicle Number
+                    {labelVehicle}
                   </span>
                   <div
                     onClick={() => !formData.vehiclePhoto && handleOpenCamera("vehiclePhoto")}
-                    className={`flex h-11 w-full cursor-pointer items-center rounded-[32px] border border-[#DFE0E2] bg-white px-6 text-sm font-medium transition-colors ${
+                    className={`flex h-11 w-full cursor-pointer items-center rounded-[32px] border bg-white px-6 text-sm font-medium transition-colors ${
+                      vehicleErrorText ? "border-[#F87171]" : "border-[#DFE0E2]"
+                    } ${
                       formData.vehiclePhoto ? "cursor-default" : "hover:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 focus:border-[#0B8C00]"
                     }`}
                   >
@@ -406,27 +443,36 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
               ) : (
                 <FileUploadField
                   key={`vehiclePhoto-${fileFieldKeys.vehiclePhoto}`}
-                  label="Take Photo Vehicle Number"
+                  label={labelVehicle}
                   accept={accept}
                   value={formData.vehiclePhoto?.name || ""}
                   placeholder="Upload"
                   onChange={(file, fileName) => handleFileChange("vehiclePhoto", file, fileName)}
-                  error={fileErrors.vehiclePhoto}
+                  error={vehicleErrorText}
                 />
               )}
+              {photoOption.toLowerCase() === "take a photo" && vehicleErrorText ? (
+                <span className="text-xs text-[#F87171]">{vehicleErrorText}</span>
+              ) : null}
             </div>
           )}
 
           {showAadhar && (
-            <div ref={aadharPhotoRef} className="flex flex-col gap-2">
+            <div
+              ref={aadharPhotoRef}
+              className="flex flex-col gap-2"
+              {...(slotDataFields?.aadharPhoto ? { "data-field": slotDataFields.aadharPhoto } : {})}
+            >
               {photoOption.toLowerCase() === "take a photo" ? (
                 <div className="group relative inline-flex w-full">
                   <span className="pointer-events-none absolute left-6 top-0 z-10 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
-                    Take Photo Aadhar Card
+                    {labelAadhar}
                   </span>
                   <div
                     onClick={() => !formData.aadharPhoto && handleOpenCamera("aadharPhoto")}
-                    className={`flex h-11 w-full cursor-pointer items-center rounded-[32px] border border-[#DFE0E2] bg-white px-6 text-sm font-medium transition-colors ${
+                    className={`flex h-11 w-full cursor-pointer items-center rounded-[32px] border bg-white px-6 text-sm font-medium transition-colors ${
+                      aadharErrorText ? "border-[#F87171]" : "border-[#DFE0E2]"
+                    } ${
                       formData.aadharPhoto ? "cursor-default" : "hover:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 focus:border-[#0B8C00]"
                     }`}
                   >
@@ -463,14 +509,17 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
               ) : (
                 <FileUploadField
                   key={`aadharPhoto-${fileFieldKeys.aadharPhoto}`}
-                  label="Take Photo Aadhar Card"
+                  label={labelAadhar}
                   accept={accept}
                   value={formData.aadharPhoto?.name || ""}
                   placeholder="Upload"
                   onChange={(file, fileName) => handleFileChange("aadharPhoto", file, fileName)}
-                  error={fileErrors.aadharPhoto}
+                  error={aadharErrorText}
                 />
               )}
+              {photoOption.toLowerCase() === "take a photo" && aadharErrorText ? (
+                <span className="text-xs text-[#F87171]">{aadharErrorText}</span>
+              ) : null}
             </div>
           )}
         </div>

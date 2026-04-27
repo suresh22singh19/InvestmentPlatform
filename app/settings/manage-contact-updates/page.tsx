@@ -10,11 +10,13 @@ import { ListBorder } from "@/components/ui/ListBorder";
 import { useGetContactUpdatesQuery, useApproveRejectContactUpdateMutation } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSocket } from "@/hooks/useSocket";
+import { usePermission } from "@/hooks/usePermission";
 
 type ContactUpdateItem = {
     id: number;
     branchName?: string;
-    phoneNumber: string;
+    oldContactNumber: string;
+    newContactNumber: string;
     remark: string;
     permissionBy: string;
     status?: "pending" | "approved" | "rejected";
@@ -26,6 +28,11 @@ const tabOptions = [
 ];
 
 export default function ManageContactUpdatesPage() {
+    const manageContactPermission = usePermission("settings", { subModule: "manage-contact-updates" });
+    const canView = manageContactPermission.canView;
+    const canEdit = manageContactPermission.canEdit;
+    const canAdd = manageContactPermission.canAdd;
+
     const pathname = usePathname();
     const { onContactChangeRequest } = useSocket();
     const [activeTab, setActiveTab] = useState("pending");
@@ -65,7 +72,7 @@ export default function ManageContactUpdatesPage() {
         order: filters.sortField ? filters.sortOrder : undefined,
         search: searchParam,
         status: activeTab === "pending" ? "pending" : activeTab === "approved" ? "approved" : undefined,
-    });
+    }, { skip: !canView });
     const [approveRejectUpdate, { isLoading: isProcessingAction }] = useApproveRejectContactUpdateMutation();
     
     // Listen to contact-change-request socket event for real-time updates
@@ -115,14 +122,14 @@ export default function ManageContactUpdatesPage() {
         }
         return contactUpdatesData.data.map((item) => ({
             id: item.id,
-            // branchName: "N/A", // API response doesn't include branch info
-            phoneNumber: item.newContactNo,
+            branchName: item.branch?.name || "N/A",
+            oldContactNumber: item.oldContactNo || "N/A",
+            newContactNumber: item.newContactNo || "N/A",
             remark: item.remarks || "N/A",
             permissionBy: activeTab === "pending" 
                 ? (item.requestedByUser?.userName || "N/A")
                 : (item.approvedByUser?.userName || item.approvedByUser?.name || "N/A"),
             status: (item.status?.toLowerCase() || "pending") as "pending" | "approved" | "rejected",
-            branchName: item.branch?.name || "N/A",
         }));
     }, [contactUpdatesData, activeTab]);
 
@@ -135,7 +142,8 @@ export default function ManageContactUpdatesPage() {
         const searchLower = filters.searchTerm.toLowerCase();
         return contactUpdates.filter((update) => {
             return (
-                update.phoneNumber.toLowerCase().includes(searchLower) ||
+                (update.oldContactNumber || "").toLowerCase().includes(searchLower) ||
+                (update.newContactNumber || "").toLowerCase().includes(searchLower) ||
                 (update.remark || "").toLowerCase().includes(searchLower) ||
                 (update.branchName || "").toLowerCase().includes(searchLower) ||
                 update.permissionBy.toLowerCase().includes(searchLower)
@@ -144,6 +152,7 @@ export default function ManageContactUpdatesPage() {
     }, [contactUpdates, filters.searchTerm]);
 
     const totalItems = contactUpdatesData?.total || 0;
+    const showActionColumn = activeTab === "pending" && canEdit;
 
     const getSortDirection = (field: string): "asc" | "desc" | null => {
         if (filters.sortField === field) {
@@ -166,6 +175,7 @@ export default function ManageContactUpdatesPage() {
     };
 
     const handleApprove = async (id: number) => {
+        if (!canEdit) return;
         try {
             const result = await approveRejectUpdate({
                 id,
@@ -193,6 +203,7 @@ export default function ManageContactUpdatesPage() {
     };
 
     const handleReject = async (id: number) => {
+        if (!canEdit) return;
         try {
             const result = await approveRejectUpdate({
                 id,
@@ -240,6 +251,11 @@ export default function ManageContactUpdatesPage() {
                 </div>
 
                 <ListBorder as="section" className="px-4 py-4">
+                    {!canView ? (
+                        <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                            You don&apos;t have permission to view manage contact updates.
+                        </div>
+                    ) : (
                     <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
                         <div className="mb-6 flex items-center justify-between">
                             <h2 className="text-lg font-semibold text-[#434956]">
@@ -272,10 +288,17 @@ export default function ManageContactUpdatesPage() {
                                     </TableHead>
                                     <TableHead 
                                         sortable 
-                                        onSort={() => handleSort("newContactNumber")}
-                                        sortDirection={getSortDirection("newContactNumber")}
+                                        onSort={() => handleSort("oldContactNo")}
+                                        sortDirection={getSortDirection("oldContactNo")}
                                     >
-                                        Phone Number
+                                        Old Contact Number
+                                    </TableHead>
+                                    <TableHead 
+                                        sortable 
+                                        onSort={() => handleSort("newContactNo")}
+                                        sortDirection={getSortDirection("newContactNo")}
+                                    >
+                                        New Contact Number
                                     </TableHead>
                                     <TableHead 
                                         sortable 
@@ -300,7 +323,7 @@ export default function ManageContactUpdatesPage() {
                                             Status
                                         </TableHead>
                                     )}
-                                    {activeTab === "pending" && (
+                                    {showActionColumn && (
                                         <TableHead position="last">
                                             Action
                                         </TableHead>
@@ -311,7 +334,7 @@ export default function ManageContactUpdatesPage() {
                                 {isLoadingUpdates ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={activeTab === "pending" ? 6 : 6}
+                                            colSpan={showActionColumn ? 7 : 6}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             Loading...
@@ -320,7 +343,7 @@ export default function ManageContactUpdatesPage() {
                                 ) : filteredUpdates.length === 0 ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={activeTab === "pending" ? 6 : 6}
+                                            colSpan={showActionColumn ? 7 : 6}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             No contact updates found
@@ -339,7 +362,10 @@ export default function ManageContactUpdatesPage() {
                                                 {update.branchName}
                                             </TableData>
                                             <TableData>
-                                                {update.phoneNumber}
+                                                {update.oldContactNumber}
+                                            </TableData>
+                                            <TableData>
+                                                {update.newContactNumber}
                                             </TableData>
                                             <TableData>
                                                 {update.remark}
@@ -360,7 +386,7 @@ export default function ManageContactUpdatesPage() {
                                                     </span>
                                                 </TableData>
                                             )}
-                                            {activeTab === "pending" && (
+                                            {showActionColumn && (
                                                 <TableData>
                                                     <div className="flex items-center gap-2">
                                                         <button
@@ -402,6 +428,7 @@ export default function ManageContactUpdatesPage() {
                             />
                         )}
                     </div>
+                    )}
                 </ListBorder>
             </div>
 

@@ -27,6 +27,7 @@ export { ActionCard } from "./ActionCard";
 export { MasterDataCard } from "./MasterDataCard";
 export { ConfigurationProgressCard } from "./ConfigurationProgressCard";
 export { ConfigurationSummaryPanel } from "./ConfigurationSummaryPanel";
+export type { SetupChecklistItem } from "./ConfigurationSummaryPanel";
 export { RefreshButton, BackToPreviousPageButton, GoToHomeButton, IconOnlyButton } from "./Buttons";
 export { Tabs } from "./Tabs";
 export { ThreeDotLoader } from "./ThreeDotLoader";

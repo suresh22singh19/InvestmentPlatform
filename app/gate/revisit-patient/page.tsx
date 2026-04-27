@@ -7,14 +7,17 @@ import GateEntryLayout from "@/components/gate/GateEntryLayout";
 import { GoToHomeButton, BackToPreviousPageButton, Button, Dialog, Table, TableHeader, TableBody, TableRow, TableHead, TableData, MessageDialog } from "@/components/ui";
 import { FormInputField } from "@/components/ui";
 import { revisitPatientSchema, type RevisitPatientFormValues } from "@/lib/validation/gateSchemas";
-import { useLazyCheckExistingPatientsByPhoneQuery, useLazyGetPreBookingByIdQuery, type ExistingPatient } from "@/store/api/gateApi";
+import { useLazyCheckGateExistingPatientsByPhoneQuery, useLazyGetPreBookingByIdQuery, type ExistingPatient } from "@/store/api/gateApi";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserBranchId } from "@/store/slices/authSlice";
 
 export default function GateRevisitPatientPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const patientDataParam = searchParams.get("patientData");
-  const branchId = 1; // Default branch ID
+  const patientDataParam = searchParams?.get("patientData");
+  const userBranchId = useAppSelector(selectUserBranchId);
+  const branchId = userBranchId ?? 1;
 
   // Parse patient data from query param
   const [patientData, setPatientData] = useState<ExistingPatient | null>(null);
@@ -34,7 +37,7 @@ export default function GateRevisitPatientPage() {
   const [isPreBookingLoading, setIsPreBookingLoading] = useState(false);
 
   // Lazy query for checking existing patients (supports both phoneNumber and uhid)
-  const [checkExistingPatientsQuery] = useLazyCheckExistingPatientsByPhoneQuery();
+  const [checkExistingPatientsQuery] = useLazyCheckGateExistingPatientsByPhoneQuery();
   // Lazy query for getting pre-booking by ID
   const [getPreBookingByIdQuery] = useLazyGetPreBookingByIdQuery();
 
@@ -308,7 +311,7 @@ export default function GateRevisitPatientPage() {
 
   // Handle UHID change - check when UHID is entered (debounced)
   const handleUHIDChange = (value: string) => {
-    if (!isReadOnly && !isClosingDialogRef.current && value.trim().length >= 10) {
+    if (!isReadOnly && !isClosingDialogRef.current && value.trim().length >= 9) {
       // Clear any existing timeout
       if (uhidSearchTimeoutRef.current) {
         clearTimeout(uhidSearchTimeoutRef.current);
@@ -320,13 +323,13 @@ export default function GateRevisitPatientPage() {
         if (isClosingDialogRef.current) {
           return;
         }
-        // Only call API if UHID has at least 10 characters
-        if (value.trim().length >= 10) {
+        // Only call API if UHID has at least 9 characters
+        if (value.trim().length >= 9) {
           checkExistingPatients(undefined, value.trim(), undefined);
         }
       }, 500); // Wait 500ms after user stops typing
     } else {
-      // Clear timeout if UHID is less than 10 characters
+      // Clear timeout if UHID is less than 9 characters
       if (uhidSearchTimeoutRef.current) {
         clearTimeout(uhidSearchTimeoutRef.current);
         uhidSearchTimeoutRef.current = null;
@@ -491,8 +494,8 @@ export default function GateRevisitPatientPage() {
   };
 
   return (
-    <GateEntryLayout title="">
-      <div className="overflow-hidden rounded-[20px] border border-[#E3EEE1] px-4 py-4" style={{ width: "50%", margin: "auto" }}>
+    <GateEntryLayout title="" subModuleName="Revisit Patient">
+      <div className="overflow-hidden rounded-[20px] border border-[#E3EEE1] px-4 py-4 w-full lg:w-1/2 m-auto ">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-[24px] font-semibold leading-[130%] text-[#434956]">Revisit Patient</h1>
           <GoToHomeButton onClick={handleGoToHome} />
@@ -519,7 +522,10 @@ export default function GateRevisitPatientPage() {
                   value={formik.values.contactNumber}
                   onChange={(e) => {
                     if (!isReadOnly) {
-                      const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      let value = e.target.value.replace(/\D/g, "");
+                      // Disallow leading zeros – remove them while allowing zeros after first non-zero digit
+                      value = value.replace(/^0+/, "");
+                      value = value.slice(0, 10);
                       formik.setFieldValue("contactNumber", value, false);
                       // Clear error if field was previously invalid
                       if (formik.touched.contactNumber && formik.errors.contactNumber) {
@@ -572,8 +578,10 @@ export default function GateRevisitPatientPage() {
                   value={formik.values.uhid}
                   onChange={(e) => {
                     if (!isReadOnly) {
-                      // Remove spaces, allow alphanumeric characters, limit to 15 characters
-                      const value = e.target.value.replace(/\s/g, "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 15).toUpperCase();
+                      // Remove spaces, allow alphanumeric characters, disallow leading zeros, limit to 20 characters
+                      let value = e.target.value.replace(/\s/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                      value = value.replace(/^0+/, "");
+                      value = value.slice(0, 20);
                       formik.setFieldValue("uhid", value, false);
                       // Clear error if field was previously invalid
                       if (formik.touched.uhid && formik.errors.uhid) {
@@ -582,7 +590,7 @@ export default function GateRevisitPatientPage() {
                         }, 0);
                       }
                       // Check for existing patients when UHID is entered (debounced)
-                      if (value.length >= 10) {
+                      if (value.length >= 9) {
                         handleUHIDChange(value);
                       }
                     }
@@ -592,7 +600,7 @@ export default function GateRevisitPatientPage() {
                       formik.setFieldTouched("uhid", true, false);
                       formik.validateField("uhid");
                       const value = e.target.value.trim();
-                      if (value && value.length >= 10) {
+                      if (value && value.length >= 9) {
                         // Clear any pending timeout
                         if (uhidSearchTimeoutRef.current) {
                           clearTimeout(uhidSearchTimeoutRef.current);
@@ -604,7 +612,7 @@ export default function GateRevisitPatientPage() {
                   }}
                   placeholder="Enter UHID"
                   type="text"
-                  maxLength={15}
+                  maxLength={20}
                   error={getFormErrors().uhid}
                   disabled={isReadOnly}
                   readOnly={isReadOnly}
@@ -634,8 +642,10 @@ export default function GateRevisitPatientPage() {
                   value={formik.values.aadharCardNumber}
                   onChange={(e) => {
                     if (!isReadOnly) {
-                      // Only allow digits, limit to 12 characters
-                      const value = e.target.value.replace(/\D/g, "").slice(0, 12);
+                      // Only allow digits; Aadhaar first digit cannot be 0 or 1, limit to 12 characters
+                      let value = e.target.value.replace(/\D/g, "");
+                      value = value.replace(/^[01]+/, "");
+                      value = value.slice(0, 12);
                       formik.setFieldValue("aadharCardNumber", value, false);
                       // Clear error if field was previously invalid
                       if (formik.touched.aadharCardNumber && formik.errors.aadharCardNumber) {
@@ -693,8 +703,10 @@ export default function GateRevisitPatientPage() {
                   value={formik.values.preBooking}
                   onChange={(e) => {
                     if (!isReadOnly) {
-                      // Only allow digits, limit to 10 characters
-                      const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      // Only allow digits, disallow leading zeros, limit to 10 characters
+                      let value = e.target.value.replace(/\D/g, "");
+                      value = value.replace(/^0+/, "");
+                      value = value.slice(0, 10);
                       formik.setFieldValue("preBooking", value, false);
                       // Clear error if field was previously invalid
                       if (formik.touched.preBooking && formik.errors.preBooking) {
@@ -795,7 +807,11 @@ export default function GateRevisitPatientPage() {
                   >
                     <TableData variant="primary">{index + 1}</TableData>
                     <TableData>{patient.uhid || "-"}</TableData>
-                    <TableData>{patient.patientName || patient.name || "-"}</TableData>
+                    <TableData>
+                      {[patient.patientTitle, patient.patientName || patient.name]
+                        .filter(Boolean)
+                        .join(" ") || "-"}
+                    </TableData>
                     <TableData>{patient.branchName || "N/A"}</TableData>
                     <TableData>
                       <button

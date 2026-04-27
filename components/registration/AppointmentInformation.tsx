@@ -24,24 +24,40 @@ interface AppointmentInformationProps {
     errors?: Record<string, string>;
 }
 
-// All available time slots
+// All available time slots (value sent to API as-is, e.g. "10:00am - 12:00pm")
 const ALL_TIME_SLOTS: SelectOption[] = [
-    { value: "10-12", label: "10:00am - 12:00pm" },
-    { value: "11-13", label: "11:00am - 01:00pm" },
-    { value: "12-14", label: "12:00pm - 02:00pm" },
-    { value: "13-15", label: "01:00pm - 03:00pm" },
-    { value: "14-16", label: "02:00pm - 04:00pm" },
-    { value: "15-17", label: "03:00pm - 05:00pm" },
-    { value: "16-18", label: "04:00pm - 06:00pm" },
+    { value: "10:00am - 12:00pm", label: "10:00am - 12:00pm" },
+    { value: "11:00am - 01:00pm", label: "11:00am - 01:00pm" },
+    { value: "12:00pm - 02:00pm", label: "12:00pm - 02:00pm" },
+    { value: "01:00pm - 03:00pm", label: "01:00pm - 03:00pm" },
+    { value: "02:00pm - 04:00pm", label: "02:00pm - 04:00pm" },
+    { value: "03:00pm - 05:00pm", label: "03:00pm - 05:00pm" },
+    { value: "04:00pm - 06:00pm", label: "04:00pm - 06:00pm" },
 ];
 
-// Helper function to parse time slot value (e.g., "10-12" -> { start: 10, end: 12 })
+// Parse time string like "12:00pm" or "01:00pm" to 24h hour (12 -> 12, 01:00pm -> 13)
+const parseTimeToHour = (s: string): number | null => {
+    const t = s.trim().toLowerCase();
+    const pm = t.endsWith("pm");
+    const am = t.endsWith("am");
+    if (!pm && !am) return null;
+    const numPart = t.replace(/(am|pm)$/, "").trim();
+    const match = numPart.match(/^(\d{1,2})(?::(\d{2}))?/);
+    if (!match) return null;
+    let h = parseInt(match[1], 10);
+    if (isNaN(h) || h < 1 || h > 12) return null;
+    if (pm && h !== 12) h += 12;
+    if (am && h === 12) h = 0;
+    return h;
+};
+
+// Helper function to parse time slot value (e.g., "10:00am - 12:00pm" -> { start: 10, end: 12 })
 const parseTimeSlot = (value: string): { start: number; end: number } | null => {
-    const parts = value.split("-");
+    const parts = value.split(/\s*-\s*/);
     if (parts.length !== 2) return null;
-    const start = parseInt(parts[0], 10);
-    const end = parseInt(parts[1], 10);
-    if (isNaN(start) || isNaN(end)) return null;
+    const start = parseTimeToHour(parts[0].trim());
+    const end = parseTimeToHour(parts[1].trim());
+    if (start == null || end == null) return null;
     return { start, end };
 };
 
@@ -133,7 +149,7 @@ export default function AppointmentInformation({
             </h2>
 
             {/* First row: 3 fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 <div data-field="doctor" className="scroll-mt-4 w-full" ref={fieldRefs?.doctor}>
                     <FormSelectField
                         label="Doctor *"
@@ -176,7 +192,7 @@ export default function AppointmentInformation({
                         required
                         width="100%"
                         minDate={getTodayDate()}
-                        maxDate={getTodayDate()}
+                        // maxDate={getTodayDate()}    
                     />
                     {errors?.appointmentDate && (
                         <p className="mt-1 text-xs text-[#F6776E]">{errors.appointmentDate}</p>

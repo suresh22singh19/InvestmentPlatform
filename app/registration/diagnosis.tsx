@@ -54,12 +54,12 @@ export default function DiagnosisForm({
         // Explicitly validate required diagnosis fields first
         const diagnosisErrors: Record<string, string> = {};
         if (!formik.values.diagnosis || formik.values.diagnosis.trim() === "") {
-            diagnosisErrors.diagnosis = "Please select a diagnosis";
+            diagnosisErrors.diagnosis = "Please select a primary disease";
             formik.setFieldTouched('diagnosis', true, false);
         }
         
         if (!formik.values.subDiagnosis || formik.values.subDiagnosis.trim() === "") {
-            diagnosisErrors.subDiagnosis = "Please select a sub diagnosis";
+            diagnosisErrors.subDiagnosis = "Please select a secondary disease";
             formik.setFieldTouched('subDiagnosis', true, false);
         }
         

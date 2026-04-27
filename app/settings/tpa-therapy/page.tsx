@@ -310,7 +310,7 @@ export default function TpaTherapyPage() {
                   onClick={handleAddNew}
                 >
                   <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  Add TPA Therapy
+                  <span className="text-hide">Add TPA Therapy</span>
                 </button>
               </div>
             </div>

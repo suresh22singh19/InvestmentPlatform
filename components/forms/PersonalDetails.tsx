@@ -3,6 +3,7 @@
 import { FormInputField, FormSelectField } from "@/components/ui";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import { sanitizeEmailInput } from "@/lib/utils/emailValidation";
 
 export interface PersonalFormData {
   contactNumber: string;
@@ -47,6 +48,8 @@ interface PersonalDetailsProps {
   errors?: Record<string, string>;
   readOnlyFields?: string[]; // Array of field names that should be read-only
   isContactLoading?: boolean; // Show loading spinner on contact number field
+  /** When true (e.g. Address country is not India), email is required — label shows * */
+  emailRequiredByAddressCountry?: boolean;
 }
 
 export default function PersonalDetails({
@@ -69,9 +72,9 @@ export default function PersonalDetails({
     { value: "Nepal", label: "Nepal" },
   ],
   maritalStatusOptions = [
-    { value: "Single", label: "Single" },
-    { value: "Married", label: "Married" },
-    { value: "Other", label: "Other" },
+    { value: "single", label: "Single" },
+    { value: "married", label: "Married" },
+    { value: "other", label: "Other" },
   ],
   patientTypeOptions = [
     { value: "Private", label: "Private" },
@@ -84,6 +87,7 @@ export default function PersonalDetails({
   errors,
   readOnlyFields = [],
   isContactLoading = false,
+  emailRequiredByAddressCountry = false,
 }: PersonalDetailsProps) {
   
   // Helper to check if a field is read-only
@@ -100,8 +104,11 @@ export default function PersonalDetails({
             value={formData.contactNumber}
             onChange={(e) => {
               if (!isFieldReadOnly("contactNumber")) {
-              const value = e.target.value.replace(/\D/g, "").slice(0, 10); // Only allow digits, max 10
-              onChange("contactNumber", value);
+                let value = e.target.value.replace(/\D/g, "");
+                // Disallow leading zeros – remove them while allowing zeros after first non-zero digit
+                value = value.replace(/^0+/, "");
+                value = value.slice(0, 10); // Only allow digits, max 10
+                onChange("contactNumber", value);
                 // Call onContactNumberChange if provided (for checking existing patients)
                 onContactNumberChange?.(value);
               }
@@ -173,14 +180,27 @@ export default function PersonalDetails({
               value={formData.patientName}
               onChange={(e) => {
                 if (!isFieldReadOnly("patientName")) {
-                // Only allow letters and spaces
-                const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
-                onChange("patientName", value);
+                  // Only allow letters and spaces, max 100 characters; strip leading spaces only (trailing trimmed on blur)
+                  let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                  value = value.replace(/^\s+/, "");
+                  // Collapse consecutive repeated characters to max 2 (e.g. "aaaa" -> "aa")
+                  value = value.replace(/(.)\1{2,}/g, "$1$1");
+                  // Ensure first character is uppercase (e.g. "test kumar" -> "Test kumar")
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
+                  value = value.slice(0, 100);
+                  onChange("patientName", value);
                 }
               }}
-              onBlur={() => onBlur?.("patientName")}
+              onBlur={(e) => {
+                const trimmed = e.target.value.trim();
+                if (trimmed !== e.target.value) onChange("patientName", trimmed);
+                onBlur?.("patientName");
+              }}
               placeholder="Patient Name"
               required
+              maxLength={100}
               error={errors?.patientName}
               disabled={isFieldReadOnly("patientName")}
               readOnly={isFieldReadOnly("patientName")}
@@ -237,8 +257,11 @@ export default function PersonalDetails({
             value={formData.aadharCardNo}
             onChange={(e) => {
               if (!isFieldReadOnly("aadharCardNo")) {
-              const value = e.target.value.replace(/\D/g, "").slice(0, 12); // Only allow digits, max 12
-              onChange("aadharCardNo", value);
+                let value = e.target.value.replace(/\D/g, "");
+                // Aadhaar: first digit cannot be 0 or 1 – strip leading 0s and 1s
+                value = value.replace(/^[01]+/, "");
+                value = value.slice(0, 12); // Only allow digits, max 12
+                onChange("aadharCardNo", value);
               }
             }}
             onBlur={() => onBlur?.("aadharCardNo")}
@@ -383,12 +406,24 @@ export default function PersonalDetails({
         )}
 
         <FormInputField
-          label="Email Address"
+          label={emailRequiredByAddressCountry ? "Email Address *" : "Email Address"}
           value={formData.emailAddress}
-          onChange={(e) => onChange("emailAddress", e.target.value)}
+          onChange={(e) => onChange("emailAddress", sanitizeEmailInput(e.target.value))}
+          onKeyDown={(e) => {
+            if (e.key === " ") {
+              e.preventDefault();
+            }
+          }}
+          onPaste={(e) => {
+            e.preventDefault();
+            const pastedText = e.clipboardData.getData("text");
+            const currentValue = formData.emailAddress || "";
+            onChange("emailAddress", sanitizeEmailInput(`${currentValue}${pastedText}`));
+          }}
           onBlur={() => onBlur?.("emailAddress")}
           placeholder="Email Address"
           type="email"
+          maxLength={100}
           error={errors?.emailAddress}
         />
 
@@ -418,7 +453,11 @@ export default function PersonalDetails({
             onChange={(e) => {
               // Allow only alphanumeric characters, spaces, and common punctuation (hyphen, comma, period)
               // Block special characters like $, %, #, &, *, etc.
-              const value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-]/g, "");
+            let value = e.target.value.replace(/[^a-zA-Z0-9\s,.\-]/g, "");
+            // Ensure first character is uppercase if present
+            if (value.length > 0) {
+              value = value.charAt(0).toUpperCase() + value.slice(1);
+            }
               onChange("occupation", value);
             }}
             onBlur={() => onBlur?.("occupation")}

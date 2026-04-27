@@ -5,12 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import GateEntryLayout from "@/components/gate/GateEntryLayout";
 import { GoToHomeButton, Dialog, Table, TableHeader, TableBody, TableRow, TableHead, TableData } from "@/components/ui";
 import { useGetRegistrationsByPhoneQuery } from "@/store/api/gateApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserBranchId } from "@/store/slices/authSlice";
 
 export default function GateRegistrationsByPhonePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const phoneNumber = searchParams.get("phoneNumber");
-  const branchId = 1; // Default branch ID
+  const phoneNumber = searchParams?.get("phoneNumber");
+  const userBranchId = useAppSelector(selectUserBranchId);
+  const branchId = userBranchId ?? 1;
   
   const [showRevisitDataDialog, setShowRevisitDataDialog] = useState(true); // Show dialog by default when page loads
   
@@ -30,7 +33,7 @@ export default function GateRegistrationsByPhonePage() {
   };
 
   return (
-    <GateEntryLayout title="">
+    <GateEntryLayout title="" subModuleName="New Patient">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-[24px] font-semibold leading-[130%] text-[#434956]">Revisit Patient</h1>
