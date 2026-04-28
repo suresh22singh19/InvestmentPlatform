@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import { FormInputField, FormSelectField } from "@/components/ui";
 import { useGetCountriesQuery, useGetStatesQuery, useGetCitiesQuery, useGetTehsilsQuery, useGetAreasQuery, useLazyGetPincodeQuery } from "@/store/api/publicApi";
@@ -134,6 +134,41 @@ export default function AddressDetails({
   const pincodeDropdownRef = useRef<HTMLDivElement>(null);
   const [showPincodeDialog, setShowPincodeDialog] = useState<boolean>(false);
   const [pincodeDialogData, setPincodeDialogData] = useState<any[]>([]);
+  const pincodeDataCacheRef = useRef<Map<string, any[]>>(new Map());
+  const pincodeInFlightRef = useRef<Map<string, Promise<any[]>>>(new Map());
+  const isPincodeUserFocusedRef = useRef<boolean>(false);
+
+  const fetchPincodeData = useCallback(
+    async (digits: string): Promise<any[]> => {
+      const key = (digits || "").replace(/\D/g, "").slice(0, 6);
+      if (!key) return [];
+
+      const cached = pincodeDataCacheRef.current.get(key);
+      if (cached) return cached;
+
+      const inFlight = pincodeInFlightRef.current.get(key);
+      if (inFlight) return inFlight;
+
+      const request = getPincode(key)
+        .then((result) => {
+          if (result.data?.success && result.data?.data) {
+            const raw = result.data.data;
+            const arr = Array.isArray(raw) ? raw : [raw];
+            pincodeDataCacheRef.current.set(key, arr);
+            return arr;
+          }
+          return [];
+        })
+        .catch(() => [])
+        .finally(() => {
+          pincodeInFlightRef.current.delete(key);
+        });
+
+      pincodeInFlightRef.current.set(key, request);
+      return request;
+    },
+    [getPincode]
+  );
   
   // Fetch tehsils when city (district) is selected and country is India (and include pincode if available)
   const { data: tehsilsData, isLoading: tehsilsLoading } = useGetTehsilsQuery(
@@ -237,12 +272,9 @@ export default function AddressDetails({
       // Debounce API call
       pincodeSearchTimeoutRef.current = setTimeout(() => {
         setIsPincodeLoading(true);
-        getPincode(searchValue).then((result) => {
+        fetchPincodeData(searchValue).then((dataArray) => {
           setIsPincodeLoading(false);
-          if (result.data?.success && result.data?.data) {
-            const pincodeData = result.data.data;
-            const dataArray = Array.isArray(pincodeData) ? pincodeData : [pincodeData];
-            
+          if (dataArray.length > 0) {
             // Create options in format "152116 Abohar SO"
             const options: SelectOption[] = dataArray.map((item) => ({
               value: `${item.pincode}_${item.area_id}`, // Use pincode_areaId as unique identifier
@@ -251,13 +283,11 @@ export default function AddressDetails({
             
             setPincodeOptions(options);
             setPincodeApiError("");
-            setShowPincodeDropdown(options.length > 0);
+            setShowPincodeDropdown(options.length > 0 && isPincodeUserFocusedRef.current);
           } else {
             setPincodeOptions([]);
             setShowPincodeDropdown(false);
-            if (searchValue.length === 6) {
-              setPincodeApiError(result.data?.message || "Pincode not found");
-            }
+            if (searchValue.length === 6) setPincodeApiError("Pincode not found");
           }
         }).catch((error) => {
           setIsPincodeLoading(false);
@@ -284,7 +314,7 @@ export default function AddressDetails({
         clearTimeout(pincodeSearchTimeoutRef.current);
       }
     };
-  }, [pincodeSearchValue, formData.country, getPincode]);
+  }, [pincodeSearchValue, formData.country, fetchPincodeData]);
 
   // Transform flat pincode API response to nested structure for dialog
   const transformPincodeDataForDialog = (pincodeDataArray: any[]) => {
@@ -383,11 +413,8 @@ export default function AddressDetails({
     const searchValue = pincodeSearchValue.replace(/\D/g, "");
     if (searchValue.length >= 3) {
       // Fetch pincode data for dialog
-      getPincode(searchValue).then((result) => {
-        if (result.data?.success && result.data?.data) {
-          const pincodeData = result.data.data;
-          const dataArray = Array.isArray(pincodeData) ? pincodeData : [pincodeData];
-          
+      fetchPincodeData(searchValue).then((dataArray) => {
+        if (dataArray.length > 0) {
           // Transform to dialog format
           const transformedData = transformPincodeDataForDialog(dataArray);
           setPincodeDialogData(transformedData);
@@ -473,11 +500,8 @@ export default function AddressDetails({
     // Don't clear lastSetTehsilValueRef - preserve it to maintain value through re-renders
     
     // Fetch full pincode data to get all fields
-    getPincode(pincode).then((result) => {
-      if (result.data?.success && result.data?.data) {
-        const pincodeData = result.data.data;
-        const dataArray = Array.isArray(pincodeData) ? pincodeData : [pincodeData];
-        
+    fetchPincodeData(pincode).then((dataArray) => {
+      if (dataArray.length > 0) {
         // Find the selected item by area_id
         const selectedItem = dataArray.find((item) => item.area_id.toString() === areaId);
         if (!selectedItem) return;
@@ -1067,6 +1091,7 @@ export default function AddressDetails({
                   }
                 }}
                 onFocus={() => {
+                  isPincodeUserFocusedRef.current = true;
                   if (pincodeOptions.length > 0) {
                     setShowPincodeDropdown(true);
                   }
@@ -1074,6 +1099,7 @@ export default function AddressDetails({
                 onBlur={() => {
                   // Delay to allow click on dropdown option
                   setTimeout(() => {
+                    isPincodeUserFocusedRef.current = false;
                     setShowPincodeDropdown(false);
                     onBlur?.("pinCode");
                   }, 200);

@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { FormInputField, FormSelectField } from "@/components/ui";
-import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
 export interface ReferralFormData {
@@ -36,8 +35,8 @@ interface ReferralProps {
         referralMobile?: React.RefObject<HTMLInputElement | null>;
     };
     errors?: Record<string, string>;
-    readOnlyFields?: string[]; // Array of field names that should be read-only
-    isReferralMobileLoading?: boolean; // Show loading spinner on referral mobile field
+    readOnlyFields?: string[];
+    isReferralMobileLoading?: boolean;
 }
 
 export default function Referral({
@@ -57,30 +56,38 @@ export default function Referral({
     const isFieldReadOnly = (fieldName: string) => {
         return readOnlyFields.includes(fieldName);
     };
-    const referralOptions = ["Yes", "No"];
-    const showSourceFields = formData.referral?.toLowerCase() === "yes";
+
     const sourceLower = formData.source?.toLowerCase();
-    const sourceSlug = sourceLower?.replace(/\s+/g, "-"); // Normalize values like "Social Media" -> "social-media"
-    // Show referral name and mobile fields when source is Referral/Other
-    const showReferralNameMobile =
-        showSourceFields && (sourceSlug === "referral" || sourceSlug === "other");
-    const showSpecificField =
-        showSourceFields &&
-        (sourceSlug === "tv" ||
-            sourceSlug === "newspaper" ||
-            sourceSlug === "social-media" ||
-            sourceSlug === "doctor");
+    const sourceSlug = sourceLower?.replace(/\s+/g, "-");
+
+    // Show Doctor Specific for HIIMS Doctor or VOPD Doctors
+    const showDoctorSpecific =
+        sourceSlug === "hiims-doctor" || sourceSlug === "vopd-doctors";
+
+    // Show TV/Newspaper/Social Media specific sub-dropdown
+    const showMediaSpecific =
+        sourceSlug === "tv" ||
+        sourceSlug === "newspaper" ||
+        sourceSlug === "social-media";
+
+    const showSpecificField = showDoctorSpecific || showMediaSpecific;
+
+    // Show Referral Mobile + Name when source is Patient Referral (Health Card)
+    const showReferralNameMobile = sourceSlug === "patient-referral";
+
+    // "Direct Patient" has no sub-fields
+    const isDirectPatient = sourceSlug === "direct-patient";
 
     const getSpecificFieldOptions = () => {
-        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
-        switch (slug) {
+        switch (sourceSlug) {
             case "tv":
                 return tvSpecificFieldOptions;
             case "newspaper":
                 return newspaperSpecificFieldOptions;
             case "social-media":
                 return socialMediaSpecificFieldOptions;
-            case "doctor":
+            case "hiims-doctor":
+            case "vopd-doctors":
                 return doctorSpecificFieldOptions;
             default:
                 return [];
@@ -88,31 +95,31 @@ export default function Referral({
     };
 
     const getSpecificFieldLabel = () => {
-        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
-        switch (slug) {
+        switch (sourceSlug) {
             case "tv":
                 return "TV Specific";
             case "newspaper":
                 return "Newspaper Specific";
             case "social-media":
                 return "Social Media Specific";
-            case "doctor":
-                return "Doctor Specific";
+            case "hiims-doctor":
+            case "vopd-doctors":
+                return "Doctor Specific Name";
             default:
                 return "Select";
         }
     };
 
     const getSpecificFieldRef = () => {
-        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
-        switch (slug) {
+        switch (sourceSlug) {
             case "tv":
                 return fieldRefs?.tvSpecificField;
             case "newspaper":
                 return fieldRefs?.newspaperSpecificField;
             case "social-media":
                 return fieldRefs?.socialMediaSpecificField;
-            case "doctor":
+            case "hiims-doctor":
+            case "vopd-doctors":
                 return fieldRefs?.doctorSpecificField;
             default:
                 return undefined;
@@ -120,18 +127,34 @@ export default function Referral({
     };
 
     const getSpecificFieldValue = () => {
-        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
-        switch (slug) {
+        switch (sourceSlug) {
             case "tv":
                 return formData.tvSpecificField || null;
             case "newspaper":
                 return formData.newspaperSpecificField || null;
             case "social-media":
                 return formData.socialMediaSpecificField || null;
-            case "doctor":
+            case "hiims-doctor":
+            case "vopd-doctors":
                 return formData.doctorSpecificField || null;
             default:
                 return null;
+        }
+    };
+
+    const getSpecificFieldErrorKey = () => {
+        switch (sourceSlug) {
+            case "tv":
+                return "tvSpecificField";
+            case "newspaper":
+                return "newspaperSpecificField";
+            case "social-media":
+                return "socialMediaSpecificField";
+            case "hiims-doctor":
+            case "vopd-doctors":
+                return "doctorSpecificField";
+            default:
+                return "";
         }
     };
 
@@ -140,8 +163,7 @@ export default function Referral({
         _selection: SelectOption | SelectOption[] | null
     ) => {
         const selectedValue = Array.isArray(value) ? value[0] : value;
-        const slug = formData.source?.toLowerCase().replace(/\s+/g, "-");
-        switch (slug) {
+        switch (sourceSlug) {
             case "tv":
                 onChange("tvSpecificField" as keyof ReferralFormData, selectedValue || "");
                 break;
@@ -151,18 +173,19 @@ export default function Referral({
             case "social-media":
                 onChange("socialMediaSpecificField" as keyof ReferralFormData, selectedValue || "");
                 break;
-            case "doctor":
+            case "hiims-doctor":
+            case "vopd-doctors":
                 onChange("doctorSpecificField" as keyof ReferralFormData, selectedValue || "");
                 break;
         }
         if (selectedValue) {
             setTimeout(() => {
                 const fieldName =
-                    slug === "tv"
+                    sourceSlug === "tv"
                         ? "tvSpecificField"
-                        : slug === "newspaper"
+                        : sourceSlug === "newspaper"
                         ? "newspaperSpecificField"
-                        : slug === "social-media"
+                        : sourceSlug === "social-media"
                         ? "socialMediaSpecificField"
                         : "doctorSpecificField";
                 onBlur?.(fieldName as keyof ReferralFormData);
@@ -181,12 +204,13 @@ export default function Referral({
         onChange("newspaperSpecificField" as keyof ReferralFormData, "");
         onChange("socialMediaSpecificField" as keyof ReferralFormData, "");
         onChange("doctorSpecificField" as keyof ReferralFormData, "");
-        // Clear referral name and mobile when switching to Referral/Other (they will be filled fresh)
-        const normalized = selectedValue?.toLowerCase();
-        if (normalized === "other" || normalized === "referral" || normalized === "patient") {
-            onChange("referralName", "");
-            onChange("referralMobile", "");
-        }
+        onChange("referralName", "");
+        onChange("referralMobile", "");
+
+        // Auto-set the referral flag based on selected source
+        const slug = (selectedValue || "").toLowerCase().replace(/\s+/g, "-");
+        onChange("referral", slug === "direct-patient" ? "no" : "yes");
+
         if (selectedValue) {
             setTimeout(() => {
                 onBlur?.("source");
@@ -197,173 +221,138 @@ export default function Referral({
     return (
         <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 mb-4 mt-4">
             <h2 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                <Image src="/icons/Referral.svg" alt="Referral" width={20} height={20} /> Referral
+                <Image src="/icons/Referral.svg" alt="Lead Source" width={20} height={20} /> Lead Source
             </h2>
 
-            {/* Referral Yes/No */}
-            <div className="mb-4 lg:w-1/3 md:w-1/2 w-full">
-                <PatientTypeButtonGroup
-                    options={referralOptions}
-                    value={formData.referral}
-                    onChange={(value) => {
-                        onChange("referral", value);
-                        // Clear all fields when "No" is selected
-                        if (value === "no") {
-                            onChange("source", "");
-                            onChange("tvSpecificField" as keyof ReferralFormData, "");
-                            onChange("newspaperSpecificField" as keyof ReferralFormData, "");
-                            onChange("socialMediaSpecificField" as keyof ReferralFormData, "");
-                            onChange("doctorSpecificField" as keyof ReferralFormData, "");
-                            onChange("referralName", "");
-                            onChange("referralMobile", "");
-                        }
-                        setTimeout(() => {
-                            onBlur?.("referral");
-                        }, 0);
-                    }}
-                    label="Referral"
-                    error={errors?.referral}
-                    fieldRef={fieldRefs?.referral}
-                    dataField="referral"
-                />
+            {/* Lead Source dropdown — always visible, always required */}
+            <div className="mb-4">
+                {showSpecificField ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div data-field="source" className="scroll-mt-4" ref={fieldRefs?.source}>
+                            <FormSelectField
+                                label="Lead Source *"
+                                options={sourceOptions}
+                                value={formData.source || null}
+                                onChange={handleSourceChange}
+                                onBlur={() => onBlur?.("source")}
+                                placeholder="Select"
+                                mode="single"
+                                background="white"
+                            />
+                            {errors?.source && (
+                                <p className="mt-1 text-xs text-[#F6776E]">{errors.source}</p>
+                            )}
+                        </div>
+
+                        <div
+                            data-field={getSpecificFieldErrorKey()}
+                            className="scroll-mt-4"
+                            ref={getSpecificFieldRef()}
+                        >
+                            <FormSelectField
+                                label={`${getSpecificFieldLabel()} *`}
+                                options={getSpecificFieldOptions()}
+                                value={getSpecificFieldValue()}
+                                onChange={handleSpecificFieldChange}
+                                onBlur={() => {
+                                    const fieldName = getSpecificFieldErrorKey();
+                                    if (fieldName) onBlur?.(fieldName as keyof ReferralFormData);
+                                }}
+                                placeholder="Select"
+                                mode="single"
+                                background="white"
+                            />
+                            {errors?.[getSpecificFieldErrorKey()] && (
+                                <p className="mt-1 text-xs text-[#F6776E]">
+                                    {errors[getSpecificFieldErrorKey()]}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <div data-field="source" className="scroll-mt-4 w-full" ref={fieldRefs?.source}>
+                        <FormSelectField
+                            label="Lead Source *"
+                            options={sourceOptions}
+                            value={formData.source || null}
+                            onChange={handleSourceChange}
+                            onBlur={() => onBlur?.("source")}
+                            placeholder="Select"
+                            mode="single"
+                            background="white"
+                        />
+                        {errors?.source && (
+                            <p className="mt-1 text-xs text-[#F6776E]">{errors.source}</p>
+                        )}
+                    </div>
+                )}
             </div>
 
-            {/* Conditional fields when "Yes" is selected */}
-            {showSourceFields && (
-                <>
-                    {/* Source and Specific field in one row when both are visible */}
-                    {showSpecificField ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                            <div data-field="source" className="scroll-mt-4" ref={fieldRefs?.source}>
-                                <FormSelectField
-                                    label="Source"
-                                    options={sourceOptions}
-                                    value={formData.source || null}
-                                    onChange={handleSourceChange}
-                                    onBlur={() => onBlur?.("source")}
-                                    placeholder="Select"
-                                    mode="single"
-                                    background="white"
-                                />
-                                {errors?.source && (
-                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.source}</p>
-                                )}
+            {/* Referral Mobile and Name when "Patient Referral (Health Card)" is selected */}
+            {showReferralNameMobile && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div data-field="referralMobile" className="scroll-mt-4 relative">
+                        <FormInputField
+                            ref={fieldRefs?.referralMobile}
+                            label="Referral Mobile *"
+                            value={formData.referralMobile}
+                            onChange={(e) => {
+                                if (!isFieldReadOnly("referralMobile")) {
+                                    const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                    onChange("referralMobile", value);
+                                }
+                            }}
+                            onBlur={() => onBlur?.("referralMobile")}
+                            placeholder="Referral Mobile"
+                            type="tel"
+                            maxLength={10}
+                            error={errors?.referralMobile}
+                            disabled={isFieldReadOnly("referralMobile")}
+                            readOnly={isFieldReadOnly("referralMobile")}
+                        />
+                        {isReferralMobileLoading && (
+                            <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
+                                <svg
+                                    className="h-5 w-5 animate-spin text-[#0B8C00]"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
                             </div>
+                        )}
+                    </div>
 
-                            <div 
-                                data-field={`${formData.source}SpecificField`} 
-                                className="scroll-mt-4" 
-                                ref={getSpecificFieldRef()}
-                            >
-                                <FormSelectField
-                                    label={getSpecificFieldLabel()}
-                                    options={getSpecificFieldOptions()}
-                                    value={getSpecificFieldValue()}
-                                    onChange={handleSpecificFieldChange}
-                                    onBlur={() => {
-                                        const sourceLower = formData.source?.toLowerCase();
-                                        const fieldName = sourceLower === "tv" ? "tvSpecificField" :
-                                                         sourceLower === "newspaper" ? "newspaperSpecificField" :
-                                                         sourceLower === "social-media" ? "socialMediaSpecificField" :
-                                                         "doctorSpecificField";
-                                        onBlur?.(fieldName as keyof ReferralFormData);
-                                    }}
-                                    placeholder="Select"
-                                    mode="single"
-                                    background="white"
-                                />
-                                {errors?.[`${formData.source}SpecificField`] && (
-                                    <p className="mt-1 text-xs text-[#F6776E]">
-                                        {errors[`${formData.source}SpecificField`]}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        /* Source dropdown alone when specific field is not shown */
-                        <div className="mb-4">
-                            <div data-field="source" className="scroll-mt-4" ref={fieldRefs?.source}>
-                                <FormSelectField
-                                    label="Source"
-                                    options={sourceOptions}
-                                    value={formData.source || null}
-                                    onChange={handleSourceChange}
-                                    onBlur={() => onBlur?.("source")}
-                                    placeholder="Select"
-                                    mode="single"
-                                    background="white"
-                                />
-                                {errors?.source && (
-                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.source}</p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Referral Mobile and Name when "Other" is selected in Source */}
-                    {showReferralNameMobile && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div data-field="referralMobile" className="scroll-mt-4 relative">
-                                <FormInputField
-                                    ref={fieldRefs?.referralMobile}
-                                    label="Referral Mobile"
-                                    value={formData.referralMobile}
-                                    onChange={(e) => {
-                                        if (!isFieldReadOnly("referralMobile")) {
-                                            const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                            onChange("referralMobile", value);
-                                        }
-                                    }}
-                                    onBlur={() => onBlur?.("referralMobile")}
-                                    placeholder="Referral Mobile"
-                                    type="tel"
-                                    maxLength={10}
-                                    error={errors?.referralMobile}
-                                    disabled={isFieldReadOnly("referralMobile")}
-                                    readOnly={isFieldReadOnly("referralMobile")}
-                                />
-                                {isReferralMobileLoading && (
-                                    <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
-                                        <svg
-                                            className="h-5 w-5 animate-spin text-[#0B8C00]"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                        </svg>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div data-field="referralName" className="scroll-mt-4">
-                                <FormInputField
-                                    ref={fieldRefs?.referralName}
-                                    label="Referral Name"
-                                    value={formData.referralName}
-                                    onChange={(e) => {
-                                        if (!isFieldReadOnly("referralName")) {
-                                            // Only allow letters and spaces, remove numbers and special characters
-                                            const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
-                                            onChange("referralName", value);
-                                        }
-                                    }}
-                                    onBlur={() => onBlur?.("referralName")}
-                                    placeholder="Referral Name"
-                                    type="text"
-                                    error={errors?.referralName}
-                                    // disabled={isFieldReadOnly("referralName")}
-                                    disabled={true}
-                                    // readOnly={isFieldReadOnly("referralName")}
-                                    readOnly={true}
-                                />
-                            </div>
-                        </div>
-                    )}
-                </>
+                    <div data-field="referralName" className="scroll-mt-4">
+                        <FormInputField
+                            ref={fieldRefs?.referralName}
+                            label="Referral Name"
+                            value={formData.referralName}
+                            onChange={(e) => {
+                                if (!isFieldReadOnly("referralName")) {
+                                    const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                    onChange("referralName", value);
+                                }
+                            }}
+                            onBlur={() => onBlur?.("referralName")}
+                            placeholder="Referral Name"
+                            type="text"
+                            error={errors?.referralName}
+                            disabled={true}
+                            readOnly={true}
+                        />
+                    </div>
+                </div>
             )}
+
+            {/* Direct Patient — no sub-fields, just an info note */}
+            {/* {isDirectPatient && (
+                <p className="text-sm text-[#6B7280] mt-1">
+                    Direct walk-in patient — no referral source required.
+                </p>
+            )} */}
         </div>
     );
 }
-

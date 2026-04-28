@@ -472,29 +472,34 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
             }
         }
         
-        // Build referral object for hospital-patient: only required fields per source
-        // - Doctor: referralSourceType + doctorUserId only
-        // - Referral (other): referralSourceType "patient" + referralRegistrationId + referralName + referralMobile only
-        // - TV / NewsPaper / Social Media: referralSourceType + doctorUserId: null + referralSourceInfo only
+        // Build referral object for hospital-patient based on Lead Source selection
+        const sourceSlugHosp = (values.source || "").toLowerCase().replace(/\s+/g, "-");
         let referralObject: HospitalPatientRequest["referral"] = undefined;
-        if (values.referral?.toLowerCase() === "yes" && values.source) {
-            if (values.source === "doctor" && values.doctorSpecificField) {
-                const doctorId = typeof values.doctorSpecificField === 'string' ? parseInt(values.doctorSpecificField, 10) : values.doctorSpecificField;
+        if (values.source) {
+            if (sourceSlugHosp === "direct-patient") {
                 referralObject = {
-                    referralSourceType: "doctor",
+                    referralSourceType: "Direct Patient",
+                };
+            } else if (sourceSlugHosp === "hiims-doctor" || sourceSlugHosp === "vopd-doctors") {
+                const doctorId = values.doctorSpecificField
+                    ? (typeof values.doctorSpecificField === "string" ? parseInt(values.doctorSpecificField, 10) : values.doctorSpecificField)
+                    : undefined;
+                referralObject = {
+                    referralSourceType: values.source,
                     doctorUserId: doctorId,
                 };
-            } else if (values.source === "other" || values.source === "Referral") {
+            } else if (sourceSlugHosp === "patient-referral") {
                 referralObject = {
                     referralSourceType: "Referral",
-                    referralRegistrationId: selectedReferralPatientId ? (typeof selectedReferralPatientId === 'number' ? selectedReferralPatientId : parseInt(String(selectedReferralPatientId), 10)) : undefined,
+                    referralRegistrationId: selectedReferralPatientId
+                        ? (typeof selectedReferralPatientId === "number" ? selectedReferralPatientId : parseInt(String(selectedReferralPatientId), 10))
+                        : undefined,
                     referralName: values.referralName || undefined,
                     referralMobile: values.referralMobile || undefined,
                 };
             } else {
-                // tv | newspaper | social-media
+                // TV | NewsPaper | Social Media
                 let referralSourceInfo = "";
-                // debugger
                 if (values.source === "TV" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
                 else if (values.source === "NewsPaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
                 else if (values.source === "Social Media" && values.socialMediaSpecificField) referralSourceInfo = values.socialMediaSpecificField;
@@ -548,7 +553,7 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
             benificiaryId: values.benificiaryId || undefined,
             insuranceCompany: values.insuranceCompany || undefined,
             maritalStatus: values.maritalStatus || "",
-            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : "no",
+            isReferral: values.source && sourceSlugHosp !== "direct-patient" ? "yes" : "no",
             patientType: values.patientType ? values.patientType.toUpperCase() : undefined,
             doctorUserId: doctorUserId,
             referral: referralObject,
@@ -646,20 +651,19 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
             }
         }
         
-        // CreateAppointmentAndUpdateRegistration: old way - referral fields inside registration object
-        const sourceSlug = values.source?.toLowerCase().replace(/\s+/g, "-");
+        // CreateAppointmentAndUpdateRegistration — flat referral fields inside registration object
+        const sourceSlug = (values.source || "").toLowerCase().replace(/\s+/g, "-");
         let referralSourceInfoCreateApp = "";
-        if (values.referral?.toLowerCase() === "yes" && values.source) {
-            // debuggerimage.png
-            if (sourceSlug === "TV" && values.tvSpecificField) {
+        if (values.source && sourceSlug !== "direct-patient") {
+            if (sourceSlug === "tv" && values.tvSpecificField) {
                 referralSourceInfoCreateApp = values.tvSpecificField;
-            } else if (sourceSlug === "NewsPaper" && values.newspaperSpecificField) {
+            } else if (sourceSlug === "newspaper" && values.newspaperSpecificField) {
                 referralSourceInfoCreateApp = values.newspaperSpecificField;
-            } else if (sourceSlug === "Social Media" && values.socialMediaSpecificField) {
+            } else if (sourceSlug === "social-media" && values.socialMediaSpecificField) {
                 referralSourceInfoCreateApp = values.socialMediaSpecificField;
-            } else if (sourceSlug === "Doctor" && values.doctorSpecificField) {
+            } else if ((sourceSlug === "hiims-doctor" || sourceSlug === "vopd-doctors") && values.doctorSpecificField) {
                 referralSourceInfoCreateApp = values.doctorSpecificField;
-            } else if ((sourceSlug === "Referral" || sourceSlug === "other") && values.referralName) {
+            } else if (sourceSlug === "patient-referral" && values.referralName) {
                 referralSourceInfoCreateApp = values.referralName;
             }
         }
@@ -703,7 +707,7 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
                 ayushCovered: values.ayushCovered || undefined,
                 benificiaryId: values.benificiaryId || undefined,
                 insuranceCompany: values.insuranceCompany || undefined,
-                isReferral: values.referral?.toLowerCase() === "yes" ? values.referral : undefined,
+                isReferral: values.source && sourceSlug !== "direct-patient" ? "yes" : undefined,
                 referralSourceInfo: referralSourceInfoCreateApp || undefined,
                 referralUserId: values.doctorSpecificField ? parseInt(values.doctorSpecificField, 10) : undefined,
                 referralName: values.referralName || undefined,

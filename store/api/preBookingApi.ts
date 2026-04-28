@@ -148,6 +148,10 @@ export interface CreatePreBookingResponse {
   statusCode?: number;
 }
 
+export interface UpdatePreBookingRequest extends Omit<CreatePreBookingRequest, "contactNumber"> {
+  id: number | string;
+}
+
 export const preBookingApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -216,6 +220,14 @@ export const preBookingApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Prebookings"],
     }),
+    updatePreBooking: builder.mutation<CreatePreBookingResponse, UpdatePreBookingRequest>({
+      query: ({ id, ...body }) => ({
+        url: `/admin/pre-booking/UpdatePrebookingDetails/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Prebookings"],
+    }),
     sendAddressSms: builder.mutation<
       { success: boolean; data?: { message: string; sentTo: string }; message: string; statusCode: number },
       { patientName: string; contactNumber: string; branchId: number }
@@ -233,5 +245,6 @@ export const {
   useGetAllPrebookingsQuery,
   useLazyGetAllPrebookingsQuery,
   useCreatePreBookingMutation,
+  useUpdatePreBookingMutation,
   useSendAddressSmsMutation,
 } = preBookingApi;

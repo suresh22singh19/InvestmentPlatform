@@ -363,7 +363,7 @@ export default function ViewRegistrationFormPage() {
                         {patientData.isReferral && (
                             <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
                                 <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                                    <Image src="/icons/Referral.svg" alt="Referral info" width={20} height={20} /> Referral
+                                    <Image src="/icons/Referral.svg" alt="Referral info" width={20} height={20} /> Lead Source
                                 </h4>
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
@@ -373,7 +373,7 @@ export default function ViewRegistrationFormPage() {
                                         </div>
 
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                            <p className="text-xs font-medium text-[#7B8089]">Source</p>
+                                            <p className="text-xs font-medium text-[#7B8089]">Lead Source</p>
                                             <p className="text-sm font-medium text-[#262D3B]">
                                                 {(() => {
                                                     const ref = appointment?.patientReferral as any;

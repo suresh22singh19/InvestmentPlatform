@@ -149,10 +149,12 @@ export default function IPDRegistrationPage() {
     // Source options for Referral component
     const sourceOptions: SelectOption[] = [
         { value: "TV", label: "TV" },
-        { value: "NewsPaper", label: "NewsPaper" },
+        { value: "NewsPaper", label: "Newspaper" },
         { value: "Social Media", label: "Social Media" },
-        { value: "Doctor", label: "Doctor" },
-        { value: "Referral", label: "Referral" },
+        { value: "VOPD Doctors", label: "VOPD Doctors" },
+        { value: "HIIMS Doctor", label: "HIIMS Doctor" },
+        { value: "Patient Referral", label: "Patient Referral (Health Card)" },
+        { value: "Direct Patient", label: "Direct Patient" },
     ];
 
     // TV-specific field options

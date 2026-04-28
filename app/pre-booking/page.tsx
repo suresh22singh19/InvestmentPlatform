@@ -13,7 +13,10 @@ import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useAppSelector } from "@/store/hooks";
 import { selectUserBranchId, selectUserEmail } from "@/store/slices/authSlice";
 import { usePermission } from "@/hooks/usePermission";
-import { useBranchFilter } from "@/hooks/useBranchFilter";
+import {
+    PRE_BOOKING_LIST_BRANCH_STORAGE_KEY,
+    useBranchFilter,
+} from "@/hooks/useBranchFilter";
 
 // Same email → route mapping as in TopNavigationBar
 const EMAIL_REGISTRATION_ROUTE: Record<string, string> = {
@@ -43,6 +46,7 @@ type PreBookingRow = {
 
 const DEFAULT_FROM_DATE = "2025-01-01";
 const DEFAULT_TO_DATE = "2026-12-31";
+const PRE_BOOKING_EDIT_STORAGE_KEY = "hiims-pre-booking-edit-data";
 
 function formatDisplayDate(isoDate: string | null | undefined): string {
     if (!isoDate) return "—";
@@ -131,7 +135,8 @@ export default function PreBookingPage() {
         isBranchFilterDisabled,
         filterBranchId: hookFilterBranchId,
         isSuperAdmin: isBranchFilterSuperAdmin,
-    } = useBranchFilter();
+        branchFilterPersistReady,
+    } = useBranchFilter({ persistSuperAdminSelectionKey: PRE_BOOKING_LIST_BRANCH_STORAGE_KEY });
 
     const { data: branchesData } = useGetBranchesQuery();
 
@@ -159,15 +164,29 @@ export default function PreBookingPage() {
         return mapped;
     }, [branchOptions, branchesData, isBranchFilterSuperAdmin]);
 
-    /** Superadmin on Pre Booking: default filter to first branch (no "All Branches"). */
+    /** Superadmin on Pre Booking: restore from session, validate id, else default to first branch (no "All Branches"). */
     useEffect(() => {
+        if (!branchFilterPersistReady) return;
         if (!isBranchFilterSuperAdmin) return;
         if (isLoadingBranches) return;
         const rows = branchesData?.data;
         if (!Array.isArray(rows) || rows.length === 0) return;
-        if (selectedBranchId !== "") return;
+        if (selectedBranchId !== "") {
+            const valid = rows.some((b) => String(b.id) === selectedBranchId);
+            if (!valid) {
+                setSelectedBranchId(String(rows[0].id));
+            }
+            return;
+        }
         setSelectedBranchId(String(rows[0].id));
-    }, [isBranchFilterSuperAdmin, isLoadingBranches, branchesData, selectedBranchId, setSelectedBranchId]);
+    }, [
+        branchFilterPersistReady,
+        isBranchFilterSuperAdmin,
+        isLoadingBranches,
+        branchesData,
+        selectedBranchId,
+        setSelectedBranchId,
+    ]);
 
     /** Continue booking → registration URL from settings branch `type` (skip facility dialog when type is known). */
     const resolveContinueRouteFromBranchId = useCallback((branchId?: number | null): string | null => {
@@ -736,10 +755,30 @@ export default function PreBookingPage() {
 
                                                         {canEdit &&
                                                             activeTab !== "confirmed" &&
-                                                            activeTab2 === "present"  &&
-                                                            row.status?.toLowerCase() !== "confirmed" &&
-                                                            row.isAppointmentToday && (
-                                                            <><Tooltip content="Send Address">
+                                                            (activeTab2 === "present" || activeTab2 === "future") &&
+                                                            row.status?.toLowerCase() !== "confirmed" && (
+                                                            <><Tooltip content="Edit">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const fullItem = data?.data?.find((d) => d.id === row.bookingId) ?? null;
+                                                                        if (!fullItem) return;
+                                                                        try {
+                                                                            localStorage.setItem(PRE_BOOKING_EDIT_STORAGE_KEY, JSON.stringify(fullItem));
+                                                                        } catch {
+                                                                            // Ignore storage errors and continue navigation.
+                                                                        }
+                                                                        router.push(`/pre-booking/new?editId=${fullItem.id}`);
+                                                                    }}
+                                                                    className="cursor-pointer p-1 rounded hover:bg-[#F7FAF7] transition-colors"
+                                                                    aria-label="Edit pre-booking"
+                                                                >
+                                                                    <Image src="/icons/EditIconBlack.svg" alt="Edit" width={20} height={20} />
+                                                                </button>
+                                                            </Tooltip>
+                                                            {activeTab2 === "present" && row.isAppointmentToday ? (
+                                                            <>
+                                                            <Tooltip content="Send Address">
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => {
@@ -785,6 +824,8 @@ export default function PreBookingPage() {
                                                                         <Image src="/icons/sendBlackIcon.svg" alt="Continue booking" width={20} height={20} />
                                                                     </button>
                                                                 </Tooltip>
+                                                            </>
+                                                            ) : null}
                                                             </>
                                                         )}
                                                     </TableData>

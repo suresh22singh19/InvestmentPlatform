@@ -13,6 +13,9 @@ export const DOCTOR_LIST_BRANCH_STORAGE_KEY = "hiims-doctor-list-branch-filter";
 /** Session key for super-admin branch selection on `/registration/registrationList`. */
 export const REGISTRATION_LIST_BRANCH_STORAGE_KEY = "hiims-registration-list-branch-filter";
 
+/** Session key for branch on `/pre-booking` — shared with `/pre-booking/new` so selection survives navigation. */
+export const PRE_BOOKING_LIST_BRANCH_STORAGE_KEY = "hiims-pre-booking-list-branch-filter";
+
 function readPersistedBranchId(key: string | undefined): string {
   if (typeof window === "undefined" || !key) return "";
   try {
@@ -31,6 +34,16 @@ function writePersistedBranchId(key: string | undefined, val: string) {
   } catch {
     /* ignore quota / private mode */
   }
+}
+
+/** Read a persisted numeric branch id for keys exported from this module (e.g. pre-booking new page). */
+export function readPersistedBranchFilterSelection(key: string): string {
+  return readPersistedBranchId(key);
+}
+
+/** Write branch id for list ↔ detail flows (super-admin list filters). */
+export function writePersistedBranchFilterSelection(key: string, val: string): void {
+  writePersistedBranchId(key, val);
 }
 
 export interface UseBranchFilterOptions {

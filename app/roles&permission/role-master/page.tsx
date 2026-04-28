@@ -95,7 +95,7 @@ const REGIONS = [
 const DATA_SCOPE_OPTIONS: { id: DataScopeLevel; label: string }[] = [
     { id: "Zonal", label: "Zonal" },
     { id: "Regional", label: "Regional" },
-    { id: "Specific", label: "Specific" },
+    { id: "Specific", label: "Branch Specific" },
     { id: "All", label: "All" },
 ];
 
@@ -109,7 +109,7 @@ function isSpecificOrAllScope(scope: DataScopeLevel | null): scope is "Specific"
 
 /** `roleScopeTypes` from GET list — API uses lowercase/snake_case; show friendly labels in the table. */
 const ROLE_SCOPE_TYPE_DISPLAY: Record<string, string> = {
-    specific: "Specific",
+    specific: "Branch Specific",
     all: "All",
     hospital: "Hospital",
     clinic: "Clinic",
@@ -137,6 +137,13 @@ function formatRoleScopeTypeLabel(raw: string): string {
         .filter(Boolean)
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(" ");
+}
+
+/** Corporate `mainScope` from role detail API (e.g. "Specific") — match list table wording. */
+function formatMainScopeForDisplay(mainScope: string): string {
+    const t = mainScope.trim();
+    if (t.toLowerCase() === "specific") return "Branch Specific";
+    return mainScope;
 }
 
 /** Same rules as hospital registration Patient Name (`components/forms/PatientDetails.tsx`). */
@@ -596,6 +603,60 @@ export default function RoleMasterPage() {
     const authUserBranchId = useAppSelector(selectUserBranchId);
     const headerSelectedBranch = useAppSelector(selectSelectedBranch);
 
+    const { data: branchesEnvelope, isLoading: isBranchesEnvelopeLoading } = useGetBranchesQuery(
+        undefined,
+        {
+            skip: !canView,
+        }
+    );
+
+    /** Super Admin list filter: default to first branch so GET getListOfmodules always has branchId. */
+    useEffect(() => {
+        if (!isRoleListSuperAdmin) return;
+        if (isLoadingBranchFilter) return;
+        const rows = branchesEnvelope?.data;
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        if (selectedBranchFilter !== "") return;
+        setSelectedBranchFilter(String(rows[0].id));
+    }, [
+        isRoleListSuperAdmin,
+        isLoadingBranchFilter,
+        branchesEnvelope,
+        selectedBranchFilter,
+        setSelectedBranchFilter,
+    ]);
+
+    /**
+     * Branch id for GET getRole only: follows the branch dropdown, with super-admin first-branch
+     * fallback so the query string includes branchId even before the sync effect updates selection.
+     */
+    const getRoleListQueryBranchId = useMemo((): number | undefined => {
+        const raw = String(selectedBranchFilter ?? "").trim();
+        if (raw) {
+            const n = Number.parseInt(raw, 10);
+            if (Number.isFinite(n) && n > 0) return n;
+        }
+        if (isRoleListSuperAdmin) {
+            const rows = branchesEnvelope?.data;
+            if (Array.isArray(rows) && rows.length > 0) {
+                const fid = rows[0].id;
+                if (typeof fid === "number" && Number.isFinite(fid) && fid > 0) return fid;
+            }
+            return undefined;
+        }
+        const hdr = headerSelectedBranch?.id;
+        if (hdr != null && Number(hdr) > 0) return Number(hdr);
+        const auth = authUserBranchId != null ? Number(authUserBranchId) : NaN;
+        if (Number.isFinite(auth) && auth > 0) return auth;
+        return undefined;
+    }, [
+        selectedBranchFilter,
+        isRoleListSuperAdmin,
+        branchesEnvelope?.data,
+        headerSelectedBranch?.id,
+        authUserBranchId,
+    ]);
+
     useEffect(() => {
         const id = window.setTimeout(() => {
             setRoleListSearchDebounced(roleListSearchInput.trim());
@@ -605,7 +666,7 @@ export default function RoleMasterPage() {
 
     useEffect(() => {
         setListPage(1);
-    }, [roleListSearchDebounced, roleListRoleCatType]);
+    }, [roleListSearchDebounced, roleListRoleCatType, getRoleListQueryBranchId]);
 
     const rolesQueryParams = useMemo(
         () => ({
@@ -615,7 +676,9 @@ export default function RoleMasterPage() {
             order: rolesListSort.order,
             ...(roleListSearchDebounced ? { search: roleListSearchDebounced } : {}),
             ...(roleListRoleCatType ? { roleCatType: roleListRoleCatType } : {}),
-            ...(Number.isFinite(filterBranchId) ? { branchId: filterBranchId } : {}),
+            ...(getRoleListQueryBranchId != null && getRoleListQueryBranchId > 0
+                ? { branchId: getRoleListQueryBranchId }
+                : {}),
         }),
         [
             listPage,
@@ -624,9 +687,19 @@ export default function RoleMasterPage() {
             roleListRoleCatType,
             rolesListSort.field,
             rolesListSort.order,
-            filterBranchId,
+            getRoleListQueryBranchId,
         ]
     );
+
+    /**
+     * Super Admin: avoid a first GET getRole without branchId (then again with branchId) while
+     * branch list / filter is still resolving. Non–super-admin always has branch from session.
+     */
+    const skipGetRolesList =
+        !canView ||
+        (isRoleListSuperAdmin &&
+            getRoleListQueryBranchId == null &&
+            (isLoadingBranchFilter || isBranchesEnvelopeLoading));
 
     const setRolesListSortByColumn = useCallback((apiField: RolesListSortableColumnApiField) => {
         setListPage(1);
@@ -639,7 +712,9 @@ export default function RoleMasterPage() {
     }, []);
 
     const { data: rolesEnvelope, isLoading: rolesLoading, isFetching: rolesFetching } =
-        useGetRolesQuery(rolesQueryParams, { skip: !canView });
+        useGetRolesQuery(rolesQueryParams, {
+            skip: skipGetRolesList,
+        });
 
     const [createRoles, { isLoading: isCreating }] = useCreateRolesMutation();
     const [updateRoleMutation, { isLoading: isUpdating }] = useUpdateRoleMutation();
@@ -700,26 +775,6 @@ export default function RoleMasterPage() {
 
     /** Corporate Specific / All: branch IDs from GET /admin/settings/branches (multi-select values as strings). */
     const [corporateSelectedBranchIds, setCorporateSelectedBranchIds] = useState<string[]>([]);
-
-    const { data: branchesEnvelope } = useGetBranchesQuery(undefined, {
-        skip: !canView,
-    });
-
-    /** Super Admin list filter: default to first branch so GET getListOfmodules always has branchId. */
-    useEffect(() => {
-        if (!isRoleListSuperAdmin) return;
-        if (isLoadingBranchFilter) return;
-        const rows = branchesEnvelope?.data;
-        if (!Array.isArray(rows) || rows.length === 0) return;
-        if (selectedBranchFilter !== "") return;
-        setSelectedBranchFilter(String(rows[0].id));
-    }, [
-        isRoleListSuperAdmin,
-        isLoadingBranchFilter,
-        branchesEnvelope,
-        selectedBranchFilter,
-        setSelectedBranchFilter,
-    ]);
 
     const resolveBranchIdForModuleList = useCallback(
         (d: RoleByIdData, fallbackBranchId: number | undefined): number | undefined => {
@@ -1983,21 +2038,27 @@ export default function RoleMasterPage() {
                                 <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                                 <div className="flex items-center gap-3">
-                                    {/* <FormSelectField
-                                        label=""
-                                        hideLabel
-                                        options={branchFilterOptions}
-                                        value={selectedBranchFilter}
-                                        onChange={(value) => {
-                                            setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
-                                            setListPage(1);
-                                        }}
-                                        placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
-                                        mode="single"
-                                        background="normal"
-                                        width={300}
-                                        disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                                    /> */}
+                                    {/* <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                        <FormSelectField
+                                            label=""
+                                            hideLabel
+                                            options={branchFilterOptions}
+                                            value={selectedBranchFilter}
+                                            onChange={(value) => {
+                                                setSelectedBranchFilter(
+                                                    Array.isArray(value) ? value[0] ?? "" : value || ""
+                                                );
+                                                setListPage(1);
+                                            }}
+                                            placeholder={
+                                                isLoadingBranchFilter ? "Loading branches…" : "Select branch"
+                                            }
+                                            mode="single"
+                                            background="normal"
+                                            width={300}
+                                            disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                        />
+                                    </div> */}
                                     <div className="flex-shrink-0" style={{ width: "300px" }}>
                                         <FormSelectField
                                             label=""
@@ -2174,7 +2235,7 @@ export default function RoleMasterPage() {
                                                                         : "cursor-pointer hover:bg-[#18751b]"
                                                                 }`}
                                                             >
-                                                                Manage Permissions
+                                                                View Permissions
                                                             </button>
                                                             {canEdit ? (
                                                             <button
@@ -2874,7 +2935,7 @@ export default function RoleMasterPage() {
                                                 Data Scope
                                             </p>
                                             <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {manageView.scope.dataScope}
+                                                {formatMainScopeForDisplay(manageView.scope.dataScope)}
                                             </p>
                                         </div>
                                         <div>

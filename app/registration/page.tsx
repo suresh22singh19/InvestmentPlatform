@@ -381,10 +381,12 @@ export default function RegistrationPage() {
     // Source options for Referral component
     const sourceOptions: SelectOption[] = [
         { value: "TV", label: "TV" },
-        { value: "NewsPaper", label: "NewsPaper" },
+        { value: "NewsPaper", label: "Newspaper" },
         { value: "Social Media", label: "Social Media" },
-        { value: "Doctor", label: "Doctor" },
-        { value: "Referral", label: "Referral" },
+        { value: "VOPD Doctors", label: "VOPD Doctors" },
+        { value: "HIIMS Doctor", label: "HIIMS Doctor" },
+        { value: "Patient Referral", label: "Patient Referral (Health Card)" },
+        { value: "Direct Patient", label: "Direct Patient" },
     ];
 
     // TV-specific field options
@@ -817,7 +819,7 @@ export default function RegistrationPage() {
         benificiaryId: "",
         insuranceCompany: "",
         ayushCovered: "",
-        referral: "no",
+        referral: "",
         source: "",
         tvSpecificField: "",
         newspaperSpecificField: "",
@@ -1618,40 +1620,46 @@ export default function RegistrationPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedPreBooking, doctorsData]);
 
-    // Clear selected referral patient when referral is set to "no"
+    // Clear selected referral patient when source is Direct Patient or cleared
     useEffect(() => {
-        if (formik.values.referral?.toLowerCase() === "no") {
+        const sourceSlugEffect = (formik.values.source || "").toLowerCase().replace(/\s+/g, "-");
+        if (!formik.values.source || sourceSlugEffect === "direct-patient") {
             setSelectedReferralPatient(null);
             referralPatientSelectedRef.current = false;
         }
-    }, [formik.values.referral]);
+    }, [formik.values.source]);
 
     // Function to transform form values to clinic-patient API payload
     const mapFormikToClinicPatientPayload = async (): Promise<ClinicPatientRequest> => {
         const values = formik.values;
 
-        // Build referral object for clinic-patient: only required fields per source
-        // - Doctor: referralSourceType + doctorUserId only
-        // - Referral (patient/other): referralSourceType "patient" + referralRegistrationId + referralName + referralMobile only
-        // - TV / NewsPaper / Social Media: referralSourceType + doctorUserId: null + referralSourceInfo only
+        // Build referral object for clinic-patient based on selected Lead Source
+        const sourceSlugCli = (values.source || "").toLowerCase().replace(/\s+/g, "-");
         let referralObject: ClinicPatientRequest["referral"] = undefined;
-        if (values.referral?.toLowerCase() === "yes" && values.source) {
-            const sourceLower = values.source?.toLowerCase();
-            if (values.source === "doctor" && values.doctorSpecificField) {
-                const doctorId = typeof values.doctorSpecificField === 'string' ? parseInt(values.doctorSpecificField, 10) : values.doctorSpecificField;
+        if (values.source) {
+            if (sourceSlugCli === "direct-patient") {
                 referralObject = {
-                    referralSourceType: "doctor",
+                    referralSourceType: "Direct Patient",
+                };
+            } else if (sourceSlugCli === "hiims-doctor" || sourceSlugCli === "vopd-doctors") {
+                const doctorId = values.doctorSpecificField
+                    ? (typeof values.doctorSpecificField === "string" ? parseInt(values.doctorSpecificField, 10) : values.doctorSpecificField)
+                    : undefined;
+                referralObject = {
+                    referralSourceType: values.source,
                     doctorUserId: doctorId,
                 };
-            } else if (sourceLower === "patient" || values.source === "other" || sourceLower === "referral") {
+            } else if (sourceSlugCli === "patient-referral") {
                 referralObject = {
                     referralSourceType: "Referral",
-                    referralRegistrationId: selectedReferralPatient?.id ? (typeof selectedReferralPatient.id === 'number' ? selectedReferralPatient.id : parseInt(String(selectedReferralPatient.id), 10)) : undefined,
+                    referralRegistrationId: selectedReferralPatient?.id
+                        ? (typeof selectedReferralPatient.id === "number" ? selectedReferralPatient.id : parseInt(String(selectedReferralPatient.id), 10))
+                        : undefined,
                     referralName: values.referralName || undefined,
                     referralMobile: values.referralMobile || undefined,
                 };
             } else {
-                // tv | newspaper | social-media
+                // TV | NewsPaper | Social Media
                 let referralSourceInfo = "";
                 if (values.source === "TV" && values.tvSpecificField) referralSourceInfo = values.tvSpecificField;
                 else if (values.source === "NewsPaper" && values.newspaperSpecificField) referralSourceInfo = values.newspaperSpecificField;
@@ -1742,7 +1750,7 @@ export default function RegistrationPage() {
             benificiaryId: values.benificiaryId || undefined,
             insuranceCompany: values.insuranceCompany || undefined,
             maritalStatus: values.maritalStatus || "",
-            isReferral: values.referral?.toLowerCase() === "yes" ? "yes" : "no",
+            isReferral: values.source && (values.source || "").toLowerCase().replace(/\s+/g, "-") !== "direct-patient" ? "yes" : "no",
             referral: referralObject,
             doctorUserId: parseInt(values.doctor || "0", 10) || 0,
             // patientType: (values.patientType || "").toLowerCase(),
@@ -1894,20 +1902,19 @@ export default function RegistrationPage() {
             }
         }
 
-        // Determine referral source info based on source type (normalize: "TV" -> "tv", "Social Media" -> "social-media", "Referral" -> "referral")
+        // Determine referral source info based on Lead Source selection
         let referralSourceInfo = "";
-        const sourceSlug = values.source?.toLowerCase().replace(/\s+/g, "-");
-        // debugger
-        if (values.referral?.toLowerCase() === "yes" && values.source) {
-            if (sourceSlug === "TV" && values.tvSpecificField) {
+        const sourceSlug = (values.source || "").toLowerCase().replace(/\s+/g, "-");
+        if (values.source && sourceSlug !== "direct-patient") {
+            if (sourceSlug === "tv" && values.tvSpecificField) {
                 referralSourceInfo = values.tvSpecificField;
-            } else if (sourceSlug === "NewsPaper" && values.newspaperSpecificField) {
+            } else if (sourceSlug === "newspaper" && values.newspaperSpecificField) {
                 referralSourceInfo = values.newspaperSpecificField;
-            } else if (sourceSlug === "Social Media" && values.socialMediaSpecificField) {
+            } else if (sourceSlug === "social-media" && values.socialMediaSpecificField) {
                 referralSourceInfo = values.socialMediaSpecificField;
-            } else if (sourceSlug === "Doctor" && values.doctorSpecificField) {
+            } else if ((sourceSlug === "hiims-doctor" || sourceSlug === "vopd-doctors") && values.doctorSpecificField) {
                 referralSourceInfo = values.doctorSpecificField;
-            } else if ((sourceSlug === "Referral" || sourceSlug === "other") && values.referralName) {
+            } else if (sourceSlug === "patient-referral" && values.referralName) {
                 referralSourceInfo = values.referralName;
             }
         }
@@ -1957,7 +1964,7 @@ export default function RegistrationPage() {
                 ayushCovered: values.ayushCovered || undefined,
                 benificiaryId: values.benificiaryId || undefined,
                 insuranceCompany: values.insuranceCompany || undefined,
-                isReferral: values.referral?.toLowerCase() === "yes" ? values.referral : undefined,
+                isReferral: values.source && (values.source || "").toLowerCase().replace(/\s+/g, "-") !== "direct-patient" ? "yes" : undefined,
                 referralSourceInfo: referralSourceInfo || undefined,
                 referralUserId: values.doctorSpecificField ? parseInt(values.doctorSpecificField, 10) : undefined,
                 referralName: values.referralName || undefined,
@@ -3116,54 +3123,36 @@ export default function RegistrationPage() {
                 formik.setFieldValue("appointmentDate", pbAppointmentDate, false);
             }
 
-            // Fill referral fields if available
+            // Fill Lead Source fields if available
             if (patient.isReferral) {
-                // Set referral to "yes" if isReferral is truthy
                 formik.setFieldValue("referral", "yes", false);
 
-                // Map referralSourceInfo to appropriate source field
-                if (patient.referralSourceInfo) {
-                    // Try to determine source type from referralSourceInfo
-                    // This is a best-effort mapping - may need adjustment based on actual data
+                // Map stored source/referralSourceInfo back to new Lead Source values
+                if (patient.referralUserId && !isNaN(Number(patient.referralUserId))) {
+                    formik.setFieldValue("source", "HIIMS Doctor", false);
+                    formik.setFieldValue("doctorSpecificField", String(patient.referralUserId), false);
+                } else if (patient.referralName || patient.referralMobile) {
+                    formik.setFieldValue("source", "Patient Referral", false);
+                    if (patient.referralName) formik.setFieldValue("referralName", patient.referralName, false);
+                    if (patient.referralMobile) formik.setFieldValue("referralMobile", patient.referralMobile, false);
+                } else if (patient.referralSourceInfo) {
                     const sourceInfo = patient.referralSourceInfo.toLowerCase();
-
-                    // Check if it's a doctor ID (numeric)
-                    if (patient.referralUserId && !isNaN(Number(patient.referralUserId))) {
-                        formik.setFieldValue("source", "doctor", false);
-                        formik.setFieldValue("doctorSpecificField", String(patient.referralUserId), false);
-                    } else if (patient.referralName) {
-                        // If referralName exists, it's likely "other" source
-                        formik.setFieldValue("source", "other", false);
-                        formik.setFieldValue("referralName", patient.referralName, false);
-                    } else if (sourceInfo.includes("tv") || sourceInfo.includes("television")) {
-                        formik.setFieldValue("source", "tv", false);
+                    if (sourceInfo.includes("tv") || sourceInfo.includes("television")) {
+                        formik.setFieldValue("source", "TV", false);
                         formik.setFieldValue("tvSpecificField", patient.referralSourceInfo, false);
                     } else if (sourceInfo.includes("newspaper") || sourceInfo.includes("paper")) {
-                        formik.setFieldValue("source", "newspaper", false);
+                        formik.setFieldValue("source", "NewsPaper", false);
                         formik.setFieldValue("newspaperSpecificField", patient.referralSourceInfo, false);
                     } else if (sourceInfo.includes("social") || sourceInfo.includes("facebook") || sourceInfo.includes("instagram") || sourceInfo.includes("twitter")) {
-                        formik.setFieldValue("source", "social-media", false);
+                        formik.setFieldValue("source", "Social Media", false);
                         formik.setFieldValue("socialMediaSpecificField", patient.referralSourceInfo, false);
                     } else {
-                        // Default to "other" if we can't determine
-                        formik.setFieldValue("source", "other", false);
-                        if (patient.referralName) {
-                            formik.setFieldValue("referralName", patient.referralName, false);
-                        }
+                        formik.setFieldValue("source", "Patient Referral", false);
                     }
                 }
-
-                // Set referral name and mobile if available
-                if (patient.referralName) {
-                    formik.setFieldValue("referralName", patient.referralName, false);
-                }
-                if (patient.referralMobile) {
-                    formik.setFieldValue("referralMobile", patient.referralMobile, false);
-                }
             } else {
-                // Set referral to "no" if not a referral
                 formik.setFieldValue("referral", "no", false);
-                formik.setFieldValue("source", "", false);
+                formik.setFieldValue("source", "Direct Patient", false);
             }
 
             // Clear stale errors. Do not validate on the same tick as async tehsil/area — that re-sets "Post Office required" before IDs load.

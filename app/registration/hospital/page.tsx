@@ -342,10 +342,12 @@ export default function HospitalRegistrationPage() {
     // Source options for Referral component
     const sourceOptions: SelectOption[] = [
         { value: "TV", label: "TV" },
-        { value: "NewsPaper", label: "NewsPaper" },
+        { value: "NewsPaper", label: "Newspaper" },
         { value: "Social Media", label: "Social Media" },
-        { value: "Doctor", label: "Doctor" },
-        { value: "Referral", label: "Referral" },
+        { value: "VOPD Doctors", label: "VOPD Doctors" },
+        { value: "HIIMS Doctor", label: "HIIMS Doctor" },
+        { value: "Patient Referral", label: "Patient Referral (Health Card)" },
+        { value: "Direct Patient", label: "Direct Patient" },
     ];
 
     // TV-specific field options
@@ -751,7 +753,7 @@ export default function HospitalRegistrationPage() {
         benificiaryId: "",
         insuranceCompany: "",
         ayushCovered: "",
-        referral: "no",
+        referral: "",
         source: "",
         tvSpecificField: "",
         newspaperSpecificField: "",
@@ -913,13 +915,14 @@ export default function HospitalRegistrationPage() {
         };
     }, [isPreBookingOpen]);
 
-    // Clear selected referral patient when referral is set to "no"
+    // Clear selected referral patient when source is Direct Patient or cleared
     useEffect(() => {
-        if (formik.values.referral?.toLowerCase() === "no") {
+        const sourceSlugEffect = (formik.values.source || "").toLowerCase().replace(/\s+/g, "-");
+        if (!formik.values.source || sourceSlugEffect === "direct-patient") {
             setSelectedReferralPatient(null);
             referralPatientSelectedRef.current = false;
         }
-    }, [formik.values.referral]);
+    }, [formik.values.source]);
 
     // Handle token click - pre-fill form with entry data (after formik is initialized)
     const handleTokenClick = useCallback((entry: PatientEntry) => {
@@ -2626,54 +2629,35 @@ export default function HospitalRegistrationPage() {
             formik.setFieldValue("appointmentDate", pbAppointmentDate, false);
         }
 
-        // Fill referral fields if available
+        // Fill Lead Source fields if available
         if (patient.isReferral) {
-            // Set referral to "yes" if isReferral is truthy
             formik.setFieldValue("referral", "yes", false);
 
-            // Map referralSourceInfo to appropriate source field
-            if (patient.referralSourceInfo) {
-                // Try to determine source type from referralSourceInfo
-                // This is a best-effort mapping - may need adjustment based on actual data
+            if (patient.referralUserId && !isNaN(Number(patient.referralUserId))) {
+                formik.setFieldValue("source", "HIIMS Doctor", false);
+                formik.setFieldValue("doctorSpecificField", String(patient.referralUserId), false);
+            } else if (patient.referralName || patient.referralMobile) {
+                formik.setFieldValue("source", "Patient Referral", false);
+                if (patient.referralName) formik.setFieldValue("referralName", patient.referralName, false);
+                if (patient.referralMobile) formik.setFieldValue("referralMobile", patient.referralMobile, false);
+            } else if (patient.referralSourceInfo) {
                 const sourceInfo = patient.referralSourceInfo.toLowerCase();
-
-                // Check if it's a doctor ID (numeric)
-                if (patient.referralUserId && !isNaN(Number(patient.referralUserId))) {
-                    formik.setFieldValue("source", "doctor", false);
-                    formik.setFieldValue("doctorSpecificField", String(patient.referralUserId), false);
-                } else if (patient.referralName) {
-                    // If referralName exists, it's likely "other" source
-                    formik.setFieldValue("source", "other", false);
-                    formik.setFieldValue("referralName", patient.referralName, false);
-                } else if (sourceInfo.includes("tv") || sourceInfo.includes("television")) {
-                    formik.setFieldValue("source", "tv", false);
+                if (sourceInfo.includes("tv") || sourceInfo.includes("television")) {
+                    formik.setFieldValue("source", "TV", false);
                     formik.setFieldValue("tvSpecificField", patient.referralSourceInfo, false);
                 } else if (sourceInfo.includes("newspaper") || sourceInfo.includes("paper")) {
-                    formik.setFieldValue("source", "newspaper", false);
+                    formik.setFieldValue("source", "NewsPaper", false);
                     formik.setFieldValue("newspaperSpecificField", patient.referralSourceInfo, false);
                 } else if (sourceInfo.includes("social") || sourceInfo.includes("facebook") || sourceInfo.includes("instagram") || sourceInfo.includes("twitter")) {
-                    formik.setFieldValue("source", "social-media", false);
+                    formik.setFieldValue("source", "Social Media", false);
                     formik.setFieldValue("socialMediaSpecificField", patient.referralSourceInfo, false);
                 } else {
-                    // Default to "other" if we can't determine
-                    formik.setFieldValue("source", "other", false);
-                    if (patient.referralName) {
-                        formik.setFieldValue("referralName", patient.referralName, false);
-                    }
+                    formik.setFieldValue("source", "Patient Referral", false);
                 }
             }
-
-            // Set referral name and mobile if available
-            if (patient.referralName) {
-                formik.setFieldValue("referralName", patient.referralName, false);
-            }
-            if (patient.referralMobile) {
-                formik.setFieldValue("referralMobile", patient.referralMobile, false);
-            }
         } else {
-            // Set referral to "no" if not a referral
             formik.setFieldValue("referral", "no", false);
-            formik.setFieldValue("source", "", false);
+            formik.setFieldValue("source", "Direct Patient", false);
         }
 
         // Clear validation state; delay full validate until async tehsil/area IDs are applied

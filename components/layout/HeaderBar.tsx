@@ -324,6 +324,13 @@ export function HeaderBar({
       .join(" ");
   }, [userEmail]);
 
+  /** Prefer API `user.role.name` (login payload); fall back to `userRole` prop (e.g. group name). */
+  const roleDisplayName = useMemo(() => {
+    const fromApi = user?.role?.name?.trim();
+    if (fromApi) return fromApi;
+    return userRole?.trim() ?? "";
+  }, [user?.role?.name, userRole]);
+
   const headerActions = actions?.length
     ? actions.map((action) => {
         // Override badge for bell icon with dynamic count
@@ -542,7 +549,9 @@ export function HeaderBar({
           <div className="text-left text-sm" aria-expanded={isAccountMenuOpen}
             onClick={() => setIsAccountMenuOpen((prev) => !prev)}>
             <p className="font-semibold text-[#262D3B]">{displayName}</p>
-            {userRole && <p className="text-xs text-[#8A8F9B]">{userRole}</p>}
+            {roleDisplayName ? (
+              <p className="text-xs text-[#8A8F9B]">{roleDisplayName}</p>
+            ) : null}
           </div>
           <button
             type="button"

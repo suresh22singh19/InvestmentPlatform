@@ -583,7 +583,7 @@ export default function LabTestsPage() {
                       <TableHead>Status</TableHead>
                     </>
                   )}
-                  <TableHead>Updated At</TableHead>
+                  <TableHead>{activeTab === "all" ? "Last Synced" : "Updated At"}</TableHead>
                   {(activeTab === "all" ? canView : canEdit) ? (
                     <TableHead position="last">Action</TableHead>
                   ) : null}

@@ -192,7 +192,7 @@ export default function AppointmentInformation({
                         required
                         width="100%"
                         minDate={getTodayDate()}
-                        // maxDate={getTodayDate()}    
+                        maxDate={getTodayDate()}    
                     />
                     {errors?.appointmentDate && (
                         <p className="mt-1 text-xs text-[#F6776E]">{errors.appointmentDate}</p>

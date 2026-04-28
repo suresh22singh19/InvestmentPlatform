@@ -279,77 +279,63 @@ function buildRegistrationPersonalDetailsSchema(
     .optional()
     .oneOf(["yes", "no", "Yes", "No", ""], "Please select Yes or No"),
   
-  // Referral
+  // Lead Source (renamed from Referral) — always required
   referral: Yup.string()
     .trim()
-    .optional()
-    .oneOf(["yes", "no", "Yes", "No"], "Please select Yes or No"),
-  
+    .optional(),
+
   source: Yup.string()
     .trim()
-    .when("referral", {
-      is: (value: string) => value?.toLowerCase() === "yes",
-      then: (schema) => schema.required("Source is required"),
-      otherwise: (schema) => schema.optional(),
-    }),
-  
+    .required("Lead Source is required"),
+
   tvSpecificField: Yup.string()
     .trim()
-    .when(["referral", "source"], {
-      is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "tv",
+    .when("source", {
+      is: (source: string) => source?.toLowerCase() === "tv",
       then: (schema) => schema.required("TV Specific field is required"),
       otherwise: (schema) => schema.optional(),
     }),
-  
+
   newspaperSpecificField: Yup.string()
     .trim()
-    .when(["referral", "source"], {
-      is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "newspaper",
+    .when("source", {
+      is: (source: string) => source?.toLowerCase() === "newspaper",
       then: (schema) => schema.required("Newspaper Specific field is required"),
       otherwise: (schema) => schema.optional(),
     }),
-  
+
   socialMediaSpecificField: Yup.string()
     .trim()
-    .when(["referral", "source"], {
-      is: (referral: string, source: string) => {
-        if (referral?.toLowerCase() !== "yes") return false;
-        const normalized = (source || "").toLowerCase().replace(/\s+/g, "-");
-        return normalized === "social-media";
-      },
+    .when("source", {
+      is: (source: string) => (source || "").toLowerCase().replace(/\s+/g, "-") === "social-media",
       then: (schema) => schema.required("Social Media Specific field is required"),
       otherwise: (schema) => schema.optional(),
     }),
-  
+
   doctorSpecificField: Yup.string()
     .trim()
-    .when(["referral", "source"], {
-      is: (referral: string, source: string) => referral?.toLowerCase() === "yes" && source?.toLowerCase() === "doctor",
-      then: (schema) => schema.required("Doctor Specific field is required"),
+    .when("source", {
+      is: (source: string) => {
+        const slug = (source || "").toLowerCase().replace(/\s+/g, "-");
+        return slug === "hiims-doctor" || slug === "vopd-doctors";
+      },
+      then: (schema) => schema.required("Doctor Specific Name is required"),
       otherwise: (schema) => schema.optional(),
     }),
-  
+
   referralName: Yup.string()
     .trim()
     .matches(/^[a-zA-Z\s]*$/, "Referral Name must contain only letters and spaces")
-    .when(["referral", "source"], {
-      is: (referral: string, source: string) => {
-        if (referral?.toLowerCase() !== "yes") return false;
-        const normalized = (source || "").toLowerCase();
-        return normalized === "other" || normalized === "referral";
-      },
+    .when("source", {
+      is: (source: string) => (source || "").toLowerCase().replace(/\s+/g, "-") === "patient-referral",
       then: (schema) => schema.required("Referral Name is required").min(1, "Referral Name is required"),
       otherwise: (schema) => schema.optional(),
     }),
-  
+
   referralMobile: Yup.string()
     .trim()
-    .when(["referral", "source"], {
-      is: (referral: string, source: string) => {
-        if (referral?.toLowerCase() !== "yes") return false;
-        const normalized = (source || "").toLowerCase();
-        return normalized === "other" || normalized === "referral";
-      },
+    .when("source", {
+      is: (source: string) => (source || "").toLowerCase().replace(/\s+/g, "-") === "patient-referral",
       then: (schema) => schema
         .required("Referral Mobile is required")
         .length(10, "Referral Mobile must be 10 digits")
@@ -889,31 +875,50 @@ export const ipdRegistrationClinicSchema = registrationPersonalDetailsSchema.sha
   referral: Yup.string()
     .trim()
     .optional(),
-  
+
   source: Yup.string()
     .trim()
-    .optional(),
-  
+    .required("Lead Source is required"),
+
   tvSpecificField: Yup.string()
     .trim()
-    .optional(),
-  
+    .when("source", {
+      is: (source: string) => source?.toLowerCase() === "tv",
+      then: (schema) => schema.required("TV Specific field is required"),
+      otherwise: (schema) => schema.optional(),
+    }),
+
   newspaperSpecificField: Yup.string()
     .trim()
-    .optional(),
-  
+    .when("source", {
+      is: (source: string) => source?.toLowerCase() === "newspaper",
+      then: (schema) => schema.required("Newspaper Specific field is required"),
+      otherwise: (schema) => schema.optional(),
+    }),
+
   socialMediaSpecificField: Yup.string()
     .trim()
-    .optional(),
-  
+    .when("source", {
+      is: (source: string) => (source || "").toLowerCase().replace(/\s+/g, "-") === "social-media",
+      then: (schema) => schema.required("Social Media Specific field is required"),
+      otherwise: (schema) => schema.optional(),
+    }),
+
   doctorSpecificField: Yup.string()
     .trim()
-    .optional(),
-  
+    .when("source", {
+      is: (source: string) => {
+        const slug = (source || "").toLowerCase().replace(/\s+/g, "-");
+        return slug === "hiims-doctor" || slug === "vopd-doctors";
+      },
+      then: (schema) => schema.required("Doctor Specific Name is required"),
+      otherwise: (schema) => schema.optional(),
+    }),
+
   referralName: Yup.string()
     .trim()
     .optional(),
-  
+
   referralMobile: Yup.string()
     .trim()
     .optional()

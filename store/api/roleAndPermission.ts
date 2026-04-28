@@ -820,14 +820,36 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
         }),
 
         /**
-         * GET /admin/role-and-permissions/getRole?page=&limit=&sort=&order=&search=&roleCatType=
+         * GET /admin/role-and-permissions/getRole?page=&limit=&sort=&order=&search=&roleCatType=&branchId=
          */
         getRoles: builder.query<GetRolesResponse, GetRolesParams | void>({
-            query: (params) => ({
-                url: "/admin/role-and-permissions/getRole",
-                method: "GET",
-                params: params ?? {},
-            }),
+            query: (params) => {
+                const p = params ?? {};
+                const qp = new URLSearchParams();
+                if (p.page != null) qp.set("page", String(p.page));
+                if (p.limit != null) qp.set("limit", String(p.limit));
+                if (p.sort != null && String(p.sort).trim() !== "") qp.set("sort", String(p.sort));
+                if (p.order != null) qp.set("order", String(p.order));
+                if (p.search != null && String(p.search).trim() !== "") {
+                    qp.set("search", String(p.search).trim());
+                }
+                if (p.roleCatType != null && String(p.roleCatType).trim() !== "") {
+                    qp.set("roleCatType", String(p.roleCatType));
+                }
+                if (
+                    p.branchId != null &&
+                    typeof p.branchId === "number" &&
+                    Number.isFinite(p.branchId) &&
+                    p.branchId > 0
+                ) {
+                    qp.set("branchId", String(p.branchId));
+                }
+                const qs = qp.toString();
+                return {
+                    url: `/admin/role-and-permissions/getRole${qs ? `?${qs}` : ""}`,
+                    method: "GET",
+                };
+            },
             providesTags: [ROLE_TAGS.list],
         }),
 

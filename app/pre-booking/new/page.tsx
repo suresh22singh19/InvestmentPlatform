@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import type { RefObject } from "react";
 import { useFormik } from "formik";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { BackToPreviousPageButton, Button, FormInputField, FormSelectField, MessageDialog } from "@/components/ui";
@@ -22,7 +22,16 @@ import { selectUserBranchId, selectRoleCategoryType, selectSelectedBranch } from
 import { registrationApi } from "@/store/api/registrationApi";
 import type { ExistingPatient } from "@/store/api/gateApi";
 import { useGetDiagnosisCategoriesQuery, useGetMasterSettingsQuery, useGetBranchesQuery } from "@/store/api/settingsApi";
-import { useCreatePreBookingMutation } from "@/store/api/preBookingApi";
+import {
+  useCreatePreBookingMutation,
+  useUpdatePreBookingMutation,
+  type PreBookingListItem,
+} from "@/store/api/preBookingApi";
+import {
+  PRE_BOOKING_LIST_BRANCH_STORAGE_KEY,
+  readPersistedBranchFilterSelection,
+  writePersistedBranchFilterSelection,
+} from "@/hooks/useBranchFilter";
 import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
 import {
   useLazyGetPincodeQuery,
@@ -32,6 +41,8 @@ import {
   useGetTehsilsQuery,
   useGetAreasQuery,
 } from "@/store/api/publicApi";
+
+const PRE_BOOKING_EDIT_STORAGE_KEY = "hiims-pre-booking-edit-data";
 
 const initialValues: PreBookingFormValues = {
   contactNumber: "",
@@ -106,8 +117,50 @@ const PRE_BOOKING_FIELD_ORDER = [
   "bookingType", "appointmentDate", "timeSlot", "packageId", "startDate", "endDate", "amount", "paymentMode", "paymentMethod", "transactionId",
 ];
 
+function mapApiToFormikTimeSlot(timeSlot: string | null | undefined): string {
+  if (!timeSlot) return "";
+  const normalized = String(timeSlot).trim();
+  const map: Record<string, string> = {
+    "09:00am - 10:00am": "09:00-10:00",
+    "10:00am - 11:00am": "10:00-11:00",
+    "11:00am - 12:00pm": "11:00-12:00",
+    "12:00pm - 01:00pm": "12:00-13:00",
+    "01:00pm - 02:00pm": "13:00-14:00",
+    "02:00pm - 03:00pm": "14:00-15:00",
+    "03:00pm - 04:00pm": "15:00-16:00",
+    "04:00pm - 05:00pm": "16:00-17:00",
+    "05:00pm - 06:00pm": "17:00-18:00",
+  };
+  return map[normalized] ?? normalized;
+}
+
+function normalizeAddictionList(addiction: string[] | string | null | undefined): string[] {
+  if (Array.isArray(addiction)) {
+    return addiction.map((x) => String(x || "").toLowerCase()).filter(Boolean);
+  }
+  if (!addiction) return [];
+  const raw = String(addiction).trim();
+  if (!raw) return [];
+  if (raw.startsWith("[") && raw.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x || "").toLowerCase()).filter(Boolean);
+    } catch {
+      // fallback to split below
+    }
+  }
+  return raw
+    .split(",")
+    .map((x) => x.replace(/["'\[\]]/g, "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export default function NewPreBookingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editIdParam = searchParams?.get("editId") ?? null;
+  const editPreBookingId = editIdParam && /^\d+$/.test(editIdParam) ? Number(editIdParam) : null;
+  const isEditMode = editPreBookingId != null;
   const userBranchId = useAppSelector(selectUserBranchId);
   const headerSelectedBranch = useAppSelector(selectSelectedBranch);
   const roleCategoryType = useAppSelector(selectRoleCategoryType);
@@ -115,6 +168,15 @@ export default function NewPreBookingPage() {
   const [superAdminPreBookingBranch, setSuperAdminPreBookingBranch] = useState("");
   const isSuperAdminForSubmitRef = useRef(false);
   const submittedBranchIdRef = useRef<number | undefined>(undefined);
+  const editAddressTextRef = useRef<{
+    state?: string;
+    city?: string;
+    tehsil?: string;
+    area?: string;
+  } | null>(null);
+  const hasPrefilledEditAddressRef = useRef(false);
+  /** Prevents the edit-prefill effect from re-running every time formik changes. */
+  const hasInitializedEditRef = useRef(false);
 
   const { data: branchesForSuperAdmin, isLoading: isLoadingSuperAdminBranches } = useGetBranchesQuery(undefined, {
     skip: !isPreBookingSuperAdmin,
@@ -126,7 +188,9 @@ export default function NewPreBookingPage() {
   }, [branchesForSuperAdmin]);
 
   const [checkExistingPatientsQuery] = registrationApi.useLazyCheckExistingPatientsByPhoneQuery();
-  const [createPreBooking, { isLoading: isSubmitting }] = useCreatePreBookingMutation();
+  const [createPreBooking, { isLoading: isCreatingPreBooking }] = useCreatePreBookingMutation();
+  const [updatePreBooking, { isLoading: isUpdatingPreBooking }] = useUpdatePreBookingMutation();
+  const isSubmitting = isCreatingPreBooking || isUpdatingPreBooking;
   const [getPincode] = useLazyGetPincodeQuery();
 
   const [patientExistsDialogOpen, setPatientExistsDialogOpen] = useState(false);
@@ -269,6 +333,7 @@ export default function NewPreBookingPage() {
     validateOnChange: true,
     validateOnBlur: true,
     onSubmit: async (values) => {
+      if (isSubmitting) return;
       try {
         const resolvedBranchId = isSuperAdminForSubmitRef.current
           ? submittedBranchIdRef.current ?? resolveBranchId(values.branchId)
@@ -371,11 +436,19 @@ export default function NewPreBookingPage() {
           paymentMethod: values.bookingType === "ipd" ? values.paymentMethod : undefined,
           transactionId: values.bookingType === "ipd" ? values.transactionId : undefined,
         };
-        const res = await createPreBooking(payload).unwrap();
-        setSuccessMessage(res?.message ?? "Pre-booking created successfully.");
+        // The update endpoint rejects `contactNumber`; strip it before sending.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { contactNumber: _omit, ...updatePayload } = payload;
+        const res = isEditMode && editPreBookingId != null
+          ? await updatePreBooking({ id: editPreBookingId, ...updatePayload }).unwrap()
+          : await createPreBooking(payload).unwrap();
+        setSuccessMessage(
+          res?.message ??
+          (isEditMode ? "Pre-booking updated successfully." : "Pre-booking created successfully.")
+        );
         setShowSuccessDialog(true);
       } catch (err: any) {
-        const msg = err?.data?.message || err?.message || "Failed to save pre-booking.";
+        const msg = err?.data?.message || err?.message || (isEditMode ? "Failed to update pre-booking." : "Failed to save pre-booking.");
         setApiErrorMessage(msg);
         setShowApiErrorDialog(true);
       }
@@ -405,6 +478,11 @@ export default function NewPreBookingPage() {
   useEffect(() => {
     if (!isPreBookingSuperAdmin) return;
     if (superAdminPreBookingBranch !== "") return;
+    const fromList = readPersistedBranchFilterSelection(PRE_BOOKING_LIST_BRANCH_STORAGE_KEY);
+    if (fromList) {
+      setSuperAdminPreBookingBranch(fromList);
+      return;
+    }
     const id = headerSelectedBranch?.id ?? userBranchId;
     if (id != null && Number.isFinite(Number(id))) {
       setSuperAdminPreBookingBranch(String(id));
@@ -419,6 +497,103 @@ export default function NewPreBookingPage() {
       formik.setFieldValue("branchId", s, false);
     }
   }, [isPreBookingSuperAdmin, effectivePreBookingBranchId, formik]);
+
+  useEffect(() => {
+    if (!isEditMode || editPreBookingId == null) return;
+    // Guard: only run once per editId to prevent re-running on every formik state change.
+    if (hasInitializedEditRef.current) return;
+    if (typeof window === "undefined") return;
+    hasInitializedEditRef.current = true;
+    try {
+      const raw = localStorage.getItem(PRE_BOOKING_EDIT_STORAGE_KEY);
+      if (!raw) return;
+      const item = JSON.parse(raw) as PreBookingListItem | null;
+      if (!item || Number(item.id) !== Number(editPreBookingId)) return;
+
+      const addictionList = normalizeAddictionList(item.addiction);
+      const nextBranchId = item.branch_id != null ? String(item.branch_id) : "";
+      const countryLower = String(item.country ?? "").toLowerCase();
+      const isIndiaEdit =
+        countryLower === "india" || String(item.country) === "6" || countryLower === "6";
+
+      // Allow the address-resolution effect to fire once after initial values are set.
+      hasPrefilledEditAddressRef.current = false;
+      const nextValues: PreBookingFormValues = {
+        ...initialValues,
+        branchId: nextBranchId,
+        contactNumber: item.contact_number ?? "",
+        patientName: item.patient_name ?? "",
+        patientNameSelect: item.patient_title ?? "",
+        age: item.age ?? "",
+        gender: (item.gender ?? "").toLowerCase(),
+        emailAddress: item.email_address ?? "",
+        fathersHusbandsNameSelect: item.guardian_title ?? "",
+        fathersHusbandsName: item.guardian_name ?? "",
+        maritalStatus: (item.marital_status ?? "").toLowerCase(),
+        doctor: item.doctor_user_id != null ? String(item.doctor_user_id) : "",
+        pinCode: item.pin_code ?? "",
+        country: isIndiaEdit ? "6" : "",
+        // For India, these fields are IDs, but API provides names; we resolve IDs via pincode API.
+        state: isIndiaEdit ? "" : (item.state ?? ""),
+        city: isIndiaEdit ? "" : (item.city ?? ""),
+        tehsil: isIndiaEdit ? "" : (item.tehsil ?? ""),
+        area: isIndiaEdit ? "" : (item.area ?? ""),
+        address: item.address ?? "",
+        addressLine1: item.address_line1 ?? "",
+        addressLine2: item.address_line2 ?? "",
+        addictionAlcohol: addictionList.includes("alcohol"),
+        addictionSmoking: addictionList.includes("smoking"),
+        addictionTobacco: addictionList.includes("tobacco"),
+        addictionDrugs: addictionList.includes("drugs"),
+        addictionSpecify:
+          addictionList.find((a) => !["alcohol", "smoking", "tobacco", "drugs", "other", "others"].includes(a)) ?? "",
+        // Check "Other" when the list contains "other"/"others" OR a custom specify value.
+        addictionOther:
+          addictionList.includes("other") ||
+          addictionList.includes("others") ||
+          addictionList.some((a) => !["alcohol", "smoking", "tobacco", "drugs", "other", "others"].includes(a)),
+        patientType: (item.patient_type ?? "").toLowerCase(),
+        patientSubType: item.patient_sub_type ?? "",
+        panelId: item.panel_id != null ? String(item.panel_id) : "",
+        benificiaryId: item.benificiary_id ?? "",
+        insuranceCompany: item.insurance_company ?? "",
+        ayushCovered: item.ayush_covered ?? "",
+        diagnosis: item.diagnosis_id != null ? String(item.diagnosis_id) : "",
+        subDiagnosis: item.sub_diagnosis_id != null ? String(item.sub_diagnosis_id) : "",
+        symptoms: item.symptoms ?? "",
+        bookingType: (item.booking_type ?? "opd").toLowerCase(),
+        appointmentDate: item.appointment_date?.slice(0, 10) ?? "",
+        // API returns time slot in the same format as the UI options.
+        timeSlot: item.appointment_time ?? "",
+      };
+
+      formik.setValues(nextValues, false);
+      setSelectedRevisitPatient(null);
+      setExistingPatients([]);
+      setPatientExistsDialogOpen(false);
+      lastCheckedContactRef.current = "";
+      if (isPreBookingSuperAdmin && nextBranchId) {
+        setSuperAdminPreBookingBranch(nextBranchId);
+      }
+
+      if (isIndiaEdit) {
+        editAddressTextRef.current = {
+          state: item.state,
+          city: item.city,
+          tehsil: item.tehsil,
+          area: item.area,
+        };
+      } else {
+        editAddressTextRef.current = null;
+      }
+    } catch {
+      // Ignore parsing errors and allow manual edit.
+    }
+  // Intentionally omit `formik` and `isPreBookingSuperAdmin` from deps: formik is a new object
+  // on every render, which would cause this effect to re-run and overwrite the prefilled values.
+  // The `hasInitializedEditRef` guard ensures this runs exactly once per editId.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, editPreBookingId]);
 
   // Facility / corporate: branch is not chosen via UI; Yup requires `branchId`. Sync from auth/header when empty.
   useEffect(() => {
@@ -555,6 +730,38 @@ export default function NewPreBookingPage() {
     },
     [getPincode, formik]
   );
+
+  // Keep a stable ref to the latest prefillAddressFromPincode so the address-resolution
+  // effect below does not re-run every render (the useCallback recreates on every formik change).
+  const prefillAddressFromPincodeRef = useRef(prefillAddressFromPincode);
+  useEffect(() => {
+    prefillAddressFromPincodeRef.current = prefillAddressFromPincode;
+  });
+
+  // Edit-mode address resolution:
+  // API returns India location as names, but the form uses master-list IDs. Resolve via pincode API.
+  useEffect(() => {
+    if (!isEditMode || editPreBookingId == null) return;
+    if (formik.values.country !== "6") return;
+    if (!formik.values.pinCode) return;
+    if (!editAddressTextRef.current) return;
+    if (hasPrefilledEditAddressRef.current) return;
+
+    hasPrefilledEditAddressRef.current = true;
+    void prefillAddressFromPincodeRef.current({
+      pinCode: formik.values.pinCode,
+      state: editAddressTextRef.current.state,
+      city: editAddressTextRef.current.city,
+      tehsil: editAddressTextRef.current.tehsil,
+      area: editAddressTextRef.current.area,
+    });
+  }, [
+    isEditMode,
+    editPreBookingId,
+    formik.values.country,
+    formik.values.pinCode,
+    // prefillAddressFromPincode is intentionally omitted — the stable ref is used instead.
+  ]);
 
   /** Resolve registration address country to master id; India uses pincode cascade, non-India uses state/city text from API. */
   const applyRevisitAddressFromRegistration = useCallback(
@@ -959,6 +1166,17 @@ export default function NewPreBookingPage() {
     return filtered;
   };
 
+  const patientInfoReadOnlyFields = useMemo<("contactNumber" | "patientNameSelect" | "patientName")[] | undefined>(() => {
+    if (isEditMode) {
+      const fields: ("contactNumber" | "patientNameSelect" | "patientName")[] = ["contactNumber", "patientName"];
+      // Disable Patient Title only when a value is already present; allow editing if it is empty.
+      if (formik.values.patientNameSelect) fields.push("patientNameSelect");
+      return fields;
+    }
+    if (selectedRevisitPatient) return ["contactNumber", "patientNameSelect", "patientName"];
+    return undefined;
+  }, [isEditMode, selectedRevisitPatient, formik.values.patientNameSelect]);
+
   // Focus the first focusable control inside a container (input, textarea, or select trigger button) – in series order
   const focusElementInContainer = (container: HTMLElement, delayMs = 200) => {
     if (container instanceof HTMLInputElement || container instanceof HTMLTextAreaElement) {
@@ -993,10 +1211,10 @@ export default function NewPreBookingPage() {
   return (
     <AppShell>
       <div className="flex items-start justify-between mb-4">
-        <PageHeading title="Pre Booking" />
+        <PageHeading title={isEditMode ? "Edit Pre Booking" : "Pre Booking"} />
           <div className="px-5 flex flex-wrap items-center justify-end gap-2">
             {isPreBookingSuperAdmin && superAdminBranchOptions.length > 0 ? (
-              <div className="w-[min(300px,85vw)] shrink-0">
+              <div className={`w-[min(300px,85vw)] shrink-0 ${isEditMode ? "cursor-not-allowed" : ""}`}>
                 <FormSelectField
                   label=""
                   hideLabel
@@ -1010,12 +1228,16 @@ export default function NewPreBookingPage() {
                       resetPreBookingFormOnSuperAdminBranchChange(nextNum);
                     }
                     setSuperAdminPreBookingBranch(String(nextNum));
+                    writePersistedBranchFilterSelection(
+                      PRE_BOOKING_LIST_BRANCH_STORAGE_KEY,
+                      String(nextNum),
+                    );
                   }}
                   placeholder={isLoadingSuperAdminBranches ? "Loading branches…" : "Select Branch"}
                   mode="single"
                   background="normal"
                   width={300}
-                  disabled={isLoadingSuperAdminBranches}
+                  disabled={isLoadingSuperAdminBranches || isEditMode}
                 />
               </div>
             ) : null}
@@ -1092,7 +1314,7 @@ export default function NewPreBookingPage() {
             }
           }}
           onBlur={(field) => { formik.setFieldTouched(field, true); formik.validateField(field); }}
-          onContactNumberChange={handleContactNumberChange}
+          onContactNumberChange={isEditMode ? undefined : handleContactNumberChange}
           errors={getFormErrors()}
           isContactLoading={isContactLoading}
           showJsHealthCardNo={formik.values.patientType?.toLowerCase() === "private"}
@@ -1103,7 +1325,7 @@ export default function NewPreBookingPage() {
           }}
           onJsHealthCardNoBlur={() => { formik.setFieldTouched("jsHealthCardNo", true); formik.validateField("jsHealthCardNo"); }}
           jsHealthCardReadOnly={!!(selectedRevisitPatient && (selectedRevisitPatient as { jsHealthCardNo?: string | null }).jsHealthCardNo)}
-          readOnlyFields={selectedRevisitPatient ? ["contactNumber", "patientNameSelect", "patientName"] : undefined}
+          readOnlyFields={patientInfoReadOnlyFields}
           fieldRefs={{
             contactNumber: contactNumberRef,
             doctor: doctorRef,
@@ -1232,11 +1454,23 @@ export default function NewPreBookingPage() {
         <div className="mt-6 flex justify-end">
           <Button
             type="submit"
-            disabled={isSubmitting}
+            disabled={
+              isSubmitting ||
+              (isEditMode &&
+                formik.values.country === "6" &&
+                ((!formik.values.state ||
+                  !formik.values.city ||
+                  !formik.values.tehsil ||
+                  !formik.values.area) ||
+                  !statesData?.data ||
+                  !citiesData?.data ||
+                  !tehsilsData?.data ||
+                  !areasData?.data))
+            }
             isLoading={isSubmitting}
             className="bg-[#0B8C00] hover:bg-[#0a7d00] text-white font-medium py-3 px-6 rounded-[12px] w-auto min-w-[100px]"
           >
-            Save
+            {isEditMode ? "Update" : "Save"}
           </Button>
         </div>
       </form>

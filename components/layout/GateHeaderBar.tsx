@@ -24,7 +24,7 @@ type GateHeaderBarProps = {
 
 export function GateHeaderBar({
   userName,
-  userRole = "Admin",
+  userRole = "",
   onLogout,
 }: GateHeaderBarProps) {
   const router = useRouter();
@@ -58,6 +58,12 @@ export function GateHeaderBar({
     return "User";
   }, [userName]);
 
+  const roleDisplayName = useMemo(() => {
+    const fromApi = user?.role?.name?.trim();
+    if (fromApi) return fromApi;
+    return userRole?.trim() ?? "";
+  }, [user?.role?.name, userRole]);
+
   return (
     <header className="flex w-full items-center justify-between gap-4 px-5 py-3">
       <div className="flex items-center">
@@ -89,7 +95,9 @@ export function GateHeaderBar({
             onClick={() => setIsAccountMenuOpen((prev) => !prev)}
           >
             <p className="font-semibold text-[#262D3B]">{`Welcome ${displayName}`}</p>
-            <p className="text-xs text-[#8A8F9B]">{userRole}</p>
+            {roleDisplayName ? (
+              <p className="text-xs text-[#8A8F9B]">{roleDisplayName}</p>
+            ) : null}
           </div>
           <button
             type="button"

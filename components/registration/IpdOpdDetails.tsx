@@ -114,7 +114,9 @@ export default function IpdOpdDetails({
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
       const currentMinutes = currentHour * 60 + currentMinute;
-      return OPD_TIME_SLOTS.filter((slot) => {
+      const filtered = OPD_TIME_SLOTS.filter((slot) => {
+        // Always keep the currently selected slot so a pre-filled value is never hidden.
+        if (formData.timeSlot && slot.value === formData.timeSlot) return true;
         const parts = slot.value.split(/\s*-\s*/);
         if (parts.length !== 2) return true;
         const endPart = parts[1].trim().toLowerCase();
@@ -130,9 +132,10 @@ export default function IpdOpdDetails({
         const slotEndMinutes = endHour * 60;
         return currentMinutes < slotEndMinutes;
       });
+      return filtered;
     }
     return OPD_TIME_SLOTS;
-  }, [formData.appointmentDate]);
+  }, [formData.appointmentDate, formData.timeSlot]);
 
   return (
     <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">

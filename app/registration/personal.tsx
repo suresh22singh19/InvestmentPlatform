@@ -232,34 +232,32 @@ export default function PersonalForm({
                 }
                 
                 
-                if (!hideReferral && formik.values.referral?.toLowerCase() === 'yes') {
+                if (!hideReferral) {
+                    const sourceSlug = (formik.values.source || "").toLowerCase().replace(/\s+/g, "-");
+
                     if (!formik.values.source) {
-                        step1Errors.source = 'Source is required';
+                        step1Errors.source = 'Lead Source is required';
                         formik.setFieldTouched('source', true, false);
                     }
-                    
-                    if (formik.values.source === 'tv' && !formik.values.tvSpecificField) {
+
+                    if (sourceSlug === 'tv' && !formik.values.tvSpecificField) {
                         step1Errors.tvSpecificField = 'TV Specific field is required';
                         formik.setFieldTouched('tvSpecificField', true, false);
                     }
-                    if (formik.values.source === 'newspaper' && !formik.values.newspaperSpecificField) {
+                    if (sourceSlug === 'newspaper' && !formik.values.newspaperSpecificField) {
                         step1Errors.newspaperSpecificField = 'Newspaper Specific field is required';
                         formik.setFieldTouched('newspaperSpecificField', true, false);
                     }
-                    if (formik.values.source === 'social-media' && !formik.values.socialMediaSpecificField) {
+                    if (sourceSlug === 'social-media' && !formik.values.socialMediaSpecificField) {
                         step1Errors.socialMediaSpecificField = 'Social Media Specific field is required';
                         formik.setFieldTouched('socialMediaSpecificField', true, false);
                     }
-                    if (formik.values.source === 'doctor' && !formik.values.doctorSpecificField) {
-                        step1Errors.doctorSpecificField = 'Doctor Specific field is required';
+                    if ((sourceSlug === 'hiims-doctor' || sourceSlug === 'vopd-doctors') && !formik.values.doctorSpecificField) {
+                        step1Errors.doctorSpecificField = 'Doctor Specific Name is required';
                         formik.setFieldTouched('doctorSpecificField', true, false);
                     }
-                    // Require referral name and mobile when source is "patient" (Referral) or "other"
-                    if (formik.values.source?.toLowerCase() === 'patient' || formik.values.source === 'other') {
-                        if (!formik.values.referralName) {
-                            step1Errors.referralName = 'Referral Name is required';
-                            formik.setFieldTouched('referralName', true, false);
-                        }
+                    // Require referral mobile when source is "Patient Referral (Health Card)"
+                    if (sourceSlug === 'patient-referral') {
                         if (!formik.values.referralMobile) {
                             step1Errors.referralMobile = 'Referral Mobile is required';
                             formik.setFieldTouched('referralMobile', true, false);
@@ -681,11 +679,10 @@ export default function PersonalForm({
                         }, 10);
                     }
 
-                    // When source changes, clear validation errors for referralName and referralMobile if source is not "other" or "patient" (Referral)
+                    // When source changes, clear referralName/referralMobile errors unless source is "Patient Referral"
                     if (field === "source") {
-                        const sourceLower = value?.toLowerCase();
-                        if (sourceLower !== "other" && sourceLower !== "patient") {
-                            // Clear errors and touched state for referral fields when source is not "other" or "patient" (Referral)
+                        const sourceSlug = (value || "").toLowerCase().replace(/\s+/g, "-");
+                        if (sourceSlug !== "patient-referral") {
                             setTimeout(() => {
                                 if (formik.errors.referralName) {
                                     formik.setFieldError("referralName", undefined);
@@ -693,31 +690,17 @@ export default function PersonalForm({
                                 if (formik.errors.referralMobile) {
                                     formik.setFieldError("referralMobile", undefined);
                                 }
-                                // Clear touched state so errors don't reappear
                                 formik.setFieldTouched("referralName", false, false);
                                 formik.setFieldTouched("referralMobile", false, false);
                             }, 0);
                         }
                     }
 
-                    // For button group fields (referral), validate immediately
-                    const buttonFields = ["referral"];
-                    if (buttonFields.includes(field)) {
-                        setTimeout(() => {
-                            formik.setFieldTouched(field, true, false);
-                            formik.validateField(field);
-                        }, 10);
-                    }
-                    
-                    // When referral changes to "no", clear validation errors for referral fields
+                    // When referral flag changes to "no" (Direct Patient), clear sub-field errors
                     if (field === "referral" && value?.toLowerCase() === "no") {
                         setTimeout(() => {
-                            if (formik.errors.referralName) {
-                                formik.setFieldError("referralName", undefined);
-                            }
-                            if (formik.errors.referralMobile) {
-                                formik.setFieldError("referralMobile", undefined);
-                            }
+                            if (formik.errors.referralName) formik.setFieldError("referralName", undefined);
+                            if (formik.errors.referralMobile) formik.setFieldError("referralMobile", undefined);
                             formik.setFieldTouched("referralName", false, false);
                             formik.setFieldTouched("referralMobile", false, false);
                         }, 0);
