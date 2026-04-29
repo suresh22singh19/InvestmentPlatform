@@ -29,6 +29,11 @@ import PatientCGHS, {
     type PatientCGHSProps,
     type BranchInfo,
 } from "@/lib/utils/patientForm";
+import PatientForm2, {
+    DEFAULT_STATIC_BRANCH_INFO2,
+    type PatientForm2Handle,
+    type PatientForm2Props,
+} from "@/lib/utils/patientForm2";
 import { PaymentReceiptCapture } from "@/components/registration/PaymentReceiptCapture";
 import { buildListInvoiceReceiptProps } from "@/lib/registration/buildListInvoiceReceiptProps";
 import { downloadPaymentReceiptPdfFromElement } from "@/lib/utils/downloadPaymentReceiptPdf";
@@ -206,6 +211,64 @@ function buildPatientFormDownloadProps(
     };
 }
 
+function buildPatientForm2DownloadProps(
+    patient: PatientRegistration,
+    appointment: AppointmentRegistration | undefined,
+    loginType: string | null | undefined,
+): PatientForm2Props {
+    const reg = appointment?.registration;
+
+    const toDisplayString = (v: unknown): string => {
+        if (v == null) return "";
+        return String(v).trim();
+    };
+
+    const branchType: "clinic" | "hospital" = loginType?.toLowerCase().includes("hospital")
+        ? "hospital"
+        : "clinic";
+
+    const guardianDisplay = formatNameWithTitle(reg?.guardianName ?? null, reg?.guardianTitle ?? null);
+    const createdRaw = appointment?.createdAt
+        ? String(appointment.createdAt)
+        : new Date().toISOString();
+
+    const addr = reg?.address;
+
+    return {
+        branch: {
+            ...DEFAULT_STATIC_BRANCH_INFO2,
+            type: branchType,
+        },
+        patient: {
+            patient: patient.patientName || "",
+            parent_name: guardianDisplay || "—",
+            bp: toDisplayString(appointment?.bloodPressure),
+            sl: toDisplayString(appointment?.sugarLevel) || "—",
+            weight: toDisplayString(reg?.weight),
+            height: toDisplayString(reg?.height),
+            uhid: patient.uhid || "",
+            opdId: String(appointment?.id ?? patient.id ?? ""),
+            age: toDisplayString(reg?.age) || "—",
+            gender: patient.gender || toDisplayString(reg?.gender) || "—",
+            contactNumber: toDisplayString(reg?.contactNumber),
+            emailAddress: toDisplayString(reg?.emailAddress),
+            bloodGroup: toDisplayString(reg?.bloodGroup),
+            address: toDisplayString(addr?.address || addr?.addressLine1),
+            city: toDisplayString(addr?.city),
+            state: toDisplayString(addr?.state),
+            pinCode: toDisplayString(addr?.pinCode),
+        },
+        doctor: {
+            name: patient.doctorName || "",
+            education: ["BAMS"],
+            reg_no: "",
+        },
+        appointment: { created_at: createdRaw },
+        diagnosis: patient.diagnosis || "",
+        showDownloadButton: false,
+    };
+}
+
 // Patient status options for filter
 const patientStatusOptions: SelectOption[] = [
     { value: "OPD Waiting", label: "OPD Waiting" },
@@ -253,6 +316,10 @@ export default function RegistrationListPage() {
     const authUser = useAppSelector(selectUser);
     const patientFormRef = useRef<PatientCGHSHandle>(null);
     const [patientFormDownloadProps, setPatientFormDownloadProps] = useState<PatientCGHSProps | null>(null);
+    const patientForm2Ref = useRef<PatientForm2Handle>(null);
+    const [patientForm2DownloadProps, setPatientForm2DownloadProps] = useState<PatientForm2Props | null>(null);
+    const [pdfDownloadingPatientId2, setPdfDownloadingPatientId2] = useState<number | null>(null);
+    const pdfDownloadBusyRef2 = useRef(false);
     /** Row id while html2pdf is generating (shows spinner on that row; other PDF buttons disabled). */
     const [pdfDownloadingPatientId, setPdfDownloadingPatientId] = useState<number | null>(null);
     /** Row id while invoice receipt PDF is generating. */
@@ -546,6 +613,40 @@ export default function RegistrationListPage() {
             if (timeoutId !== null) window.clearTimeout(timeoutId);
         };
     }, [patientFormDownloadProps]);
+
+    useEffect(() => {
+        if (!patientForm2DownloadProps) return;
+        let cancelled = false;
+        let raf2Id = 0;
+        let timeoutId: number | null = null;
+        const raf1Id = requestAnimationFrame(() => {
+            raf2Id = requestAnimationFrame(() => {
+                timeoutId = window.setTimeout(() => {
+                    if (cancelled) return;
+                    const downloadPromise = patientForm2Ref.current?.downloadPdf();
+                    if (downloadPromise) {
+                        void downloadPromise.finally(() => {
+                            if (!cancelled) {
+                                setPatientForm2DownloadProps(null);
+                                setPdfDownloadingPatientId2(null);
+                                pdfDownloadBusyRef2.current = false;
+                            }
+                        });
+                    } else if (!cancelled) {
+                        setPatientForm2DownloadProps(null);
+                        setPdfDownloadingPatientId2(null);
+                        pdfDownloadBusyRef2.current = false;
+                    }
+                }, 0);
+            });
+        });
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf1Id);
+            cancelAnimationFrame(raf2Id);
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+        };
+    }, [patientForm2DownloadProps]);
 
     useEffect(() => {
         if (!invoicePdfAppointment) return;
@@ -866,6 +967,28 @@ export default function RegistrationListPage() {
         });
         setPatientFormDownloadProps(
             buildPatientFormDownloadProps(patient, appointment, loginType)
+        );
+    };
+
+    const handleDownloadPDF2 = (patient: PatientRegistration) => {
+        if (!canDownload) return;
+        if (
+            pdfDownloadBusyRef2.current ||
+            pdfDownloadingPatientId2 !== null ||
+            pdfDownloadingPatientId !== null ||
+            invoiceDownloadingPatientId !== null
+        ) {
+            return;
+        }
+        pdfDownloadBusyRef2.current = true;
+        const appointment = appointmentsData?.data?.find(
+            (apt: AppointmentRegistration) => Number(apt.id) === patient.id
+        );
+        flushSync(() => {
+            setPdfDownloadingPatientId2(patient.id);
+        });
+        setPatientForm2DownloadProps(
+            buildPatientForm2DownloadProps(patient, appointment, loginType)
         );
     };
 
@@ -1253,6 +1376,71 @@ export default function RegistrationListPage() {
                                                                         )}
                                                                     </button>
                                                                 </Tooltip>
+                                                                <Tooltip
+                                                                    content="Download Patient Form 2"
+                                                                    position="top"
+                                                                    delay={0}
+                                                                    disabled={
+                                                                        pdfDownloadingPatientId2 !== null ||
+                                                                        pdfDownloadingPatientId !== null ||
+                                                                        invoiceDownloadingPatientId !== null
+                                                                    }
+                                                                >
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={
+                                                                            pdfDownloadingPatientId2 !== null ||
+                                                                            pdfDownloadingPatientId !== null ||
+                                                                            invoiceDownloadingPatientId !== null
+                                                                        }
+                                                                        onClick={() => handleDownloadPDF2(patient)}
+                                                                        className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${
+                                                                            pdfDownloadingPatientId2 === patient.id
+                                                                                ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
+                                                                                : pdfDownloadingPatientId2 !== null ||
+                                                                                    pdfDownloadingPatientId !== null ||
+                                                                                    invoiceDownloadingPatientId !== null
+                                                                                  ? "cursor-not-allowed opacity-50"
+                                                                                  : "cursor-pointer hover:bg-[#F2F8F2]"
+                                                                        }`}
+                                                                        aria-label={
+                                                                            pdfDownloadingPatientId2 === patient.id
+                                                                                ? "Generating patient form 2 PDF"
+                                                                                : "Download patient form 2"
+                                                                        }
+                                                                    >
+                                                                        {pdfDownloadingPatientId2 === patient.id ? (
+                                                                            <svg
+                                                                                className="h-5 w-5 shrink-0 animate-spin text-[#0B8C00]"
+                                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                                fill="none"
+                                                                                viewBox="0 0 24 24"
+                                                                                aria-hidden
+                                                                            >
+                                                                                <circle
+                                                                                    className="opacity-25"
+                                                                                    cx="12"
+                                                                                    cy="12"
+                                                                                    r="10"
+                                                                                    stroke="currentColor"
+                                                                                    strokeWidth="4"
+                                                                                />
+                                                                                <path
+                                                                                    className="opacity-75"
+                                                                                    fill="currentColor"
+                                                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                                                />
+                                                                            </svg>
+                                                                        ) : (
+                                                                            <Image
+                                                                                src="/icons/DownloadExport.svg"
+                                                                                alt=""
+                                                                                width={20}
+                                                                                height={20}
+                                                                            />
+                                                                        )}
+                                                                    </button>
+                                                                </Tooltip>
                                                                 {isWithinInvoiceDownloadWindow(patient.createdAt) ? (
                                                                     <Tooltip
                                                                         content="Download invoice"
@@ -1425,6 +1613,10 @@ export default function RegistrationListPage() {
 
             {patientFormDownloadProps ? (
                 <PatientCGHS ref={patientFormRef} {...patientFormDownloadProps} />
+            ) : null}
+
+            {patientForm2DownloadProps ? (
+                <PatientForm2 ref={patientForm2Ref} {...patientForm2DownloadProps} />
             ) : null}
 
             {invoicePdfAppointment ? (
