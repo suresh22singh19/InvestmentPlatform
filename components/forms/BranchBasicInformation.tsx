@@ -62,6 +62,11 @@ const wifiStatusOptions: SelectOption[] = [
   { label: "Deactive", value: "deactive" },
 ];
 
+const labTestSourceOptions: SelectOption[] = [
+  { label: "Chandan", value: "chandan_api" },
+  { label: "Manual", value: "manual" },
+];
+
 const warehouseSelectOptions: SelectOption[] = [
   { label: "Warehouse 1", value: "Warehouse 1" },
   { label: "Warehouse 2", value: "Warehouse 2" },
@@ -634,6 +639,21 @@ export default function BranchBasicInformation({
             </div>
           ) : null}
         </div>
+          <div className="scroll-mt-4 md:col-span-2 flex w-full min-w-0 flex-row flex-nowrap items-start gap-4">
+            <FormSelectField
+              label="Lab Test Source *"
+              options={labTestSourceOptions}
+              placeholder="Select"
+              background="white"
+              width="100%"
+              value={values.labTestSource || null}
+              onChange={(v) =>
+                setFieldValue("labTestSource", Array.isArray(v) ? (v[0] ?? "") : (v ?? ""), true)
+              }
+              onBlur={() => void handleBlur("labTestSource")}
+              error={err(formik, "labTestSource")}
+            />
+          </div>
         <div className="scroll-mt-4 md:col-span-2 space-y-3">
           <PhotoCapture
             ref={photoCaptureRef}

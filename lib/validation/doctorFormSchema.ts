@@ -7,6 +7,7 @@ const MAX_LEN = 100;
 /** Same core rules as registration personal details: contact, name, email, address + max 100 on text fields. */
 export const doctorFormSchema = Yup.object({
   branchId: Yup.string().trim().required("Branch is required"),
+  assignableRoleId: Yup.string().trim().required("Role is required"),
   profileImageUrl: Yup.string().nullable().optional(),
   attachmentUrl: Yup.string().nullable().optional(),
   nameTitle: Yup.string()
@@ -65,7 +66,8 @@ export const doctorFormSchema = Yup.object({
   employeeId: Yup.string()
     .trim()
     .required("Employee Id is required")
-    .max(MAX_LEN, `Employee Id cannot exceed ${MAX_LEN} characters`),
+    .max(MAX_LEN, `Employee Id cannot exceed ${MAX_LEN} characters`)
+    .matches(/^[a-zA-Z0-9\-]+$/, "Only letters, numbers, and hyphens are allowed"),
   status: Yup.mixed<"Active" | "Inactive">().oneOf(["Active", "Inactive"]).required(),
   address: Yup.string()
     .trim()

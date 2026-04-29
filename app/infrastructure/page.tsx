@@ -18,6 +18,7 @@ import {
   pickMandatoryBranchFacilityErrors,
   pickOptionalOnlyBranchFacilityErrors,
   type BranchFacilityFormValues,
+  type BranchLabTestSource,
 } from "@/lib/validation/branchFacilitySchemas";
 import { useGetStatesQuery, useGetCitiesQuery, useGetTehsilsQuery, useGetAreasQuery } from "@/store/api/publicApi";
 import {
@@ -176,6 +177,12 @@ function scrollToFirstBranchError(flatErrors: Record<string, string>) {
   }
 }
 
+/** POST /branch/createBranch — root `labTestSource`: `chandan_api` | `manual`. */
+function normalizeLabTestSourceForCreateBranch(raw: string): BranchLabTestSource {
+  const t = raw.trim();
+  return t === "manual" ? "manual" : "chandan_api";
+}
+
 /** POST /branch/createBranch — wifi: `active` | `deactive` (legacy `inactive` → `deactive`). */
 function normalizeWifiStatusForCreateBranch(raw: string): "active" | "deactive" {
   const t = raw.trim().toLowerCase();
@@ -273,6 +280,7 @@ function buildCreateBranchFormData(
   fd.append("crone", "yes");
   fd.append("salesforceId", "");
   fd.append("wifiStatus", wifiStatus);
+  fd.append("labTestSource", normalizeLabTestSourceForCreateBranch(values.labTestSource));
 
   const stateIdRaw = String(a.state ?? "").trim();
   const stateIdNum = parseInt(stateIdRaw, 10);

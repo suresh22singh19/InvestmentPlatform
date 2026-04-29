@@ -94,6 +94,11 @@ export const branchFacilityAddressSchema = Yup.object().shape({
   companyName: Yup.string().optional(),
 });
 
+/** POST /branch/createBranch — root field `labTestSource`. */
+export type BranchLabTestSource = "chandan_api" | "manual";
+
+export const BRANCH_LAB_TEST_SOURCE_VALUES = ["chandan_api", "manual"] as const satisfies readonly BranchLabTestSource[];
+
 export type BranchFacilityFormValues = {
   facilityType: "Hospital" | "Clinic" | "Daycare";
   name: string;
@@ -122,6 +127,8 @@ export type BranchFacilityFormValues = {
   isFranchise: string;
   branchStatus: string;
   wifiStatus: string;
+  /** POST /branch/createBranch as `chandan_api` | `manual`. */
+  labTestSource: BranchLabTestSource | "";
   apiStatus: string;
   maplink: string;
   /** Selected module ids (strings) from GET /branch/getModulesForBranchSetup; sent as numeric `moduleIds` on create. */
@@ -177,6 +184,7 @@ export const initialBranchFacilityValues: BranchFacilityFormValues = {
   isFranchise: "no",
   branchStatus: "active",
   wifiStatus: "",
+  labTestSource: "",
   apiStatus: "",
   maplink: "",
   moduleIds: [],
@@ -343,6 +351,10 @@ export const branchFacilityFormSchema = Yup.object().shape({
   wifiStatus: Yup.string()
     .trim()
     .test("wifi", "Select Active or Deactive", (v) => !v || v === "active" || v === "deactive"),
+  labTestSource: Yup.string()
+    .trim()
+    .required("Lab test source is required")
+    .oneOf([...BRANCH_LAB_TEST_SOURCE_VALUES], "Select Chandan or Manual"),
   apiStatus: Yup.string()
     .trim()
     .test("api", "Select Active or Inactive", (v) => !v || v === "active" || v === "inactive"),
@@ -438,6 +450,7 @@ export const BRANCH_FACILITY_FIELD_ORDER: readonly string[] = [
   "isFranchise",
   "branchStatus",
   "wifiStatus",
+  "labTestSource",
   "apiStatus",
   "maplink",
   "moduleIds",

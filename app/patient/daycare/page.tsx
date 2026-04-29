@@ -45,12 +45,14 @@ type LegacyDayCareApiItem = {
   branch_id: string | null;
   patient_id: string | null;
   doctor_id: string | null;
+  doctor_name: string | null;
   patient_opd_id: string | null;
   patient_name: string | null;
   patient_panel: string | null;
   type: string | null;
   gender: string | null;
   age: string | null;
+  blood_group: string | null;
   vip: string | null;
   status: string | null;
   created_at: string | null;
@@ -217,20 +219,27 @@ export default function DayCarePage() {
           throw new Error(payload?.message || "Failed to fetch Day Care list");
         }
 
-        const mappedRows: DayCareRow[] = (payload.data ?? []).map((item) => ({
-          id: Number(item.id) || 0,
-          branchId: Number(item.branch_id) || 0,
-          uhid: item.uhid ?? "-",
-          regId: item.id ?? "-",
-          name: item.patient_name ?? "-",
-          doctorId: item.doctor_id ?? "",
-          doctor: item.doctor_id ? `Doctor ${item.doctor_id}` : "-",
-          sex: item.gender ?? "-",
-          age: item.age ?? "-",
-          bloodGroup: "-",
-          type: item.patient_panel ?? item.type ?? "-",
-          admitDate: (item.created_at ?? "").split(" ")[0] || "-",
-        }));
+        const mappedRows: DayCareRow[] = (payload.data ?? []).map((item) => {
+          const doctorDisplay = item.doctor_name?.trim()
+            ? item.doctor_name.trim()
+            : item.doctor_id
+              ? `Doctor ${item.doctor_id}`
+              : "-";
+          return {
+            id: Number(item.id) || 0,
+            branchId: Number(item.branch_id) || 0,
+            uhid: item.uhid ?? "-",
+            regId: item.id ?? "-",
+            name: item.patient_name ?? "-",
+            doctorId: item.doctor_id ?? "",
+            doctor: doctorDisplay,
+            sex: item.gender ?? "-",
+            age: item.age ?? "-",
+            bloodGroup: item.blood_group?.trim() ? item.blood_group : "-",
+            type: item.patient_panel ?? item.type ?? "-",
+            admitDate: (item.created_at ?? "").split(" ")[0] || "-",
+          };
+        });
 
         setRows(mappedRows);
         setTotalRecords(Number(payload.total_records) || 0);

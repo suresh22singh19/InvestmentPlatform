@@ -82,9 +82,16 @@ export interface GetBranchRoleByCategoryTypeResponse {
   data: BranchAssignableRole[];
 }
 
+/** Facility-scoped role lists: generic `facility` or preset slots e.g. `facility_doctor` (doctor form). */
+export type FacilityScopedRoleCategoryType =
+  | "facility"
+  | "facility_doctor"
+  | "facility_nurse"
+  | "facility_therapist";
+
 export type GetBranchRoleByCategoryTypeParams = {
-  roleCategoryType: "facility" | "corporate";
-  /** Required when roleCategoryType is facility */
+  roleCategoryType: "corporate" | FacilityScopedRoleCategoryType;
+  /** Required when roleCategoryType is facility-like (facility or facility_*) */
   branchId?: number;
   /** From branch `type` (GET /branches): hospital | clinic; daycare maps to hospital */
   branchType?: "hospital" | "clinic";
@@ -336,6 +343,37 @@ interface UpdateLabTestByBranchRequest {
 interface UpdateLabTestByBranchResponse {
   success: boolean;
   message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+interface BranchesWithManualLabTestSourceResponse {
+  success: boolean;
+  data: Array<{ id: number; name?: string | null }>;
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface CreateLabTestRequest {
+  testName: string;
+  testDescription: string;
+  test_fee: number;
+  tpaPrice: number;
+  panelPrice: number;
+  status: string;
+  tpaStatus: string;
+  panelStatus: string;
+  groupName: string;
+  categoryName: string;
+  externalItemId: null;
+  branchId: number;
+}
+
+interface CreateLabTestResponse {
+  success: boolean;
+  message?: string;
+  data?: LabTestApiItem;
   timestamp?: string;
   statusCode?: number;
 }
@@ -1845,10 +1883,15 @@ export const settingsApi = baseApi.injectEndpoints({
       query: ({ roleCategoryType, branchId, branchType }) => {
         const params = new URLSearchParams();
         params.append("roleCategoryType", roleCategoryType);
-        if (roleCategoryType === "facility" && branchId != null && Number.isFinite(branchId)) {
+        const needsBranchScope =
+          roleCategoryType === "facility" ||
+          roleCategoryType === "facility_doctor" ||
+          roleCategoryType === "facility_nurse" ||
+          roleCategoryType === "facility_therapist";
+        if (needsBranchScope && branchId != null && Number.isFinite(branchId)) {
           params.append("branchId", String(branchId));
         }
-        if (roleCategoryType === "facility" && branchType) {
+        if (needsBranchScope && branchType) {
           params.append("branchType", branchType);
         }
         return {
@@ -1927,6 +1970,13 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       providesTags: ["Settings"],
     }),
+    getBranchesWithManualLabTestSource: builder.query<BranchesWithManualLabTestSourceResponse, void>({
+      query: () => ({
+        url: "/admin/settings/lab-tests/getBranchesWithManualLabTestSource",
+        method: "GET",
+      }),
+      providesTags: ["Settings"],
+    }),
     getLabTests: builder.query<LabTestsResponse, GetLabTestsParams | void>({
       query: (params) => {
         const queryParams = new URLSearchParams();
@@ -1994,6 +2044,17 @@ export const settingsApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: ["Settings"],
+    }),
+    createLabTest: builder.mutation<CreateLabTestResponse, CreateLabTestRequest>({
+      query: (body) => ({
+        url: "/admin/settings/lab-tests",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _err, arg) => [
+        "Settings",
+        { type: "Settings", id: `LabTests-Branch-${arg.branchId}` },
+      ],
     }),
     getBranchIPs: builder.query<BranchIPsResponse, GetBranchIPsParams | void>({
       query: (params) => {
@@ -2935,6 +2996,8 @@ export const {
   useGetLabTestQuery,
   useGetLabTestGroupsQuery,
   useGetLabTestCategoriesQuery,
+  useGetBranchesWithManualLabTestSourceQuery,
+  useCreateLabTestMutation,
   useUpdateLabTestMutation,
   useUpdateLabTestByBranchMutation,
   useGetBranchIPsQuery,

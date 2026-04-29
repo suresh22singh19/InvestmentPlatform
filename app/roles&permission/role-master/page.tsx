@@ -36,6 +36,7 @@ import type {
     RoleByIdData,
     RoleAccessPayload,
     RolePermissionPayload,
+    RoleDropdownItem,
     StateByZoneItem,
 } from "@/store/api/roleAndPermission";
 import {
@@ -45,6 +46,7 @@ import {
     useLazyGetListOfModulesQuery,
     useLazyGetRoleByIdQuery,
     useLazyGetStatesByZoneQuery,
+    useLazyGetRoleListDropdownQuery,
     useUpdateRoleMutation,
 } from "@/store/api/roleAndPermission";
 import { useAppSelector } from "@/store/hooks";
@@ -53,6 +55,7 @@ import { useGetStatesQuery } from "@/store/api/publicApi";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { usePermission } from "@/hooks/usePermission";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type RoleGroup = "facility" | "corporate";
 
@@ -589,7 +592,7 @@ export default function RoleMasterPage() {
     const [roleListSearchInput, setRoleListSearchInput] = useState("");
     const [roleListSearchDebounced, setRoleListSearchDebounced] = useState("");
     /** List filter: GET getRole `roleCatType` (facility | corporate). */
-    const [roleListRoleCatType, setRoleListRoleCatType] = useState<RoleGroup | null>(null);
+    const [roleListRoleCatType, setRoleListRoleCatType] = useState<RoleGroup | null>("facility");
     const {
         selectedBranchFilter,
         setSelectedBranchFilter,
@@ -676,7 +679,9 @@ export default function RoleMasterPage() {
             order: rolesListSort.order,
             ...(roleListSearchDebounced ? { search: roleListSearchDebounced } : {}),
             ...(roleListRoleCatType ? { roleCatType: roleListRoleCatType } : {}),
-            ...(getRoleListQueryBranchId != null && getRoleListQueryBranchId > 0
+            ...(roleListRoleCatType === "facility" &&
+            getRoleListQueryBranchId != null &&
+            getRoleListQueryBranchId > 0
                 ? { branchId: getRoleListQueryBranchId }
                 : {}),
         }),
@@ -698,6 +703,7 @@ export default function RoleMasterPage() {
     const skipGetRolesList =
         !canView ||
         (isRoleListSuperAdmin &&
+            roleListRoleCatType === "facility" &&
             getRoleListQueryBranchId == null &&
             (isLoadingBranchFilter || isBranchesEnvelopeLoading));
 
@@ -742,15 +748,137 @@ export default function RoleMasterPage() {
     const [phaseStep, setPhaseStep] = useState(1);
 
     const [roleName, setRoleName] = useState("");
+    const debouncedRoleName = useDebounce(roleName, 400);
+    /** Hide dropdown while user is still typing (debounce not caught up) to avoid stale API results. */
+    const isRoleNameSearchSynced = roleName.trim() === debouncedRoleName.trim();
+    const [roleNameOption, setRoleNameOption] = useState<"Doctor" | "Nurse" | "Therapist" | "Other">("Doctor");
     const [roleDescription, setRoleDescription] = useState("");
 
+    /** Inline field-level errors for the "Define Role Name" step. */
+    const [defineErrors, setDefineErrors] = useState({ roleName: "", branch: "" });
+
+    /** Autocomplete for define-step role name field (all presets) */
+    const [roleDropdownItems, setRoleDropdownItems] = useState<RoleDropdownItem[]>([]);
+    const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+    const roleDropdownRef = useRef<HTMLDivElement>(null);
+    const [fetchRoleDropdown] = useLazyGetRoleListDropdownQuery();
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (roleDropdownRef.current && !roleDropdownRef.current.contains(e.target as Node)) {
+                setRoleDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const ROLE_NAME_PRESET_OPTIONS = ["Doctor", "Nurse", "Therapist", "Other"] as const;
+
+    const ROLE_DEFINE_NAME_FIELD_COPY: Record<
+        "Doctor" | "Nurse" | "Therapist" | "Other",
+        { label: string; placeholder: string }
+    > = {
+        Doctor: { label: "Role Name *", placeholder: "Role Name" },
+        Nurse: { label: "Role Name *", placeholder: "Role Name" },
+        Therapist: { label: "Role Name *", placeholder: "Role Name" },
+        Other: { label: "Role Name *", placeholder: "Role Name" },
+    };
+
+    /** `roleCategoryType` query param for getRoleListDropdown. */
+    const roleListDropdownRoleCategoryParam = useMemo(() => {
+        if (selectedGroup === "corporate") return "corporate";
+        if (selectedGroup === "facility") {
+            switch (roleNameOption) {
+                case "Doctor":
+                    return "facility_doctor";
+                case "Nurse":
+                    return "facility_nurse";
+                case "Therapist":
+                    return "facility_therapist";
+                case "Other":
+                    return "facility";
+            }
+        }
+        return "facility";
+    }, [selectedGroup, roleNameOption]);
+
+    useEffect(() => {
+        const q = debouncedRoleName.trim();
+        if (q.length === 0) {
+            setRoleDropdownItems([]);
+            setRoleDropdownOpen(false);
+            return;
+        }
+        let cancelled = false;
+        void fetchRoleDropdown({
+            search: q,
+            roleCategoryType: roleListDropdownRoleCategoryParam,
+        })
+            .unwrap()
+            .then((res) => {
+                if (cancelled) return;
+                const apiItems: RoleDropdownItem[] = res.success && Array.isArray(res.data) ? res.data : [];
+                setRoleDropdownItems(apiItems);
+                setRoleDropdownOpen(apiItems.length > 0);
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setRoleDropdownItems([]);
+                setRoleDropdownOpen(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [debouncedRoleName, roleListDropdownRoleCategoryParam, fetchRoleDropdown]);
+
+    const onRoleNameOptionChange = useCallback((option: "Doctor" | "Nurse" | "Therapist" | "Other") => {
+        setRoleNameOption(option);
+        setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+        setRoleDropdownOpen(false);
+        setRoleDropdownItems([]);
+        setRoleName("");
+    }, []);
+
     const onRoleNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-        setRoleName(sanitizeRoleWizardTextLikePatientName(e.target.value));
+        const val = sanitizeRoleWizardTextLikePatientName(e.target.value);
+        setRoleName(val);
+        if (val.trim()) setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+
+        if (val.trim().length === 0) {
+            setRoleDropdownItems([]);
+            setRoleDropdownOpen(false);
+        }
     }, []);
     const onRoleNameBlur = useCallback((e: FocusEvent<HTMLInputElement>) => {
         const trimmed = e.target.value.trim();
         if (trimmed !== e.target.value) setRoleName(trimmed);
-    }, []);
+
+        // Auto-select first dropdown item on blur if dropdown is open
+        setRoleDropdownItems((prevItems) => {
+            setRoleDropdownOpen((prevOpen) => {
+                if (prevOpen && prevItems.length > 0) {
+                    const first = prevItems[0];
+                    if (selectedGroup === "facility") {
+                        const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
+                            (p) => p.toLowerCase() === first.name.trim().toLowerCase()
+                        );
+                        if (presetMatch) {
+                            setRoleNameOption(presetMatch);
+                            setRoleName(presetMatch);
+                        } else {
+                            setRoleName(first.name);
+                        }
+                    } else {
+                        setRoleName(first.name);
+                    }
+                    setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+                }
+                return false;
+            });
+            return [];
+        });
+    }, [selectedGroup]);
     const onRoleDescriptionChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
         setRoleDescription(sanitizeRoleWizardTextLikePatientName(e.target.value));
     }, []);
@@ -1082,6 +1210,8 @@ export default function RoleMasterPage() {
 
     const resetForm = useCallback(() => {
         setRoleName("");
+        setRoleNameOption("Doctor");
+        setDefineErrors({ roleName: "", branch: "" });
         setRoleDescription("");
         setFacilitySelectedBranchId("");
         setDataScope(null);
@@ -1261,6 +1391,10 @@ export default function RoleMasterPage() {
             const grp: RoleGroup = cat === "corporate" ? "corporate" : "facility";
             setSelectedGroup(grp);
             setRoleName(d.name);
+            const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
+                (o) => o.toLowerCase() === d.name.trim().toLowerCase()
+            );
+            setRoleNameOption(presetMatch ?? "Other");
             setRoleDescription("");
             const rawScope = (d.mainScope || "Zonal").trim();
             const scopeMatch = DATA_SCOPE_OPTIONS.find(
@@ -1460,23 +1594,28 @@ export default function RoleMasterPage() {
     };
 
     const validateDefineFacility = () => {
+        const errors = { roleName: "", branch: "" };
         if (!roleName.trim()) {
-            showMessage("error", "Please enter role name.");
-            return false;
+            errors.roleName = "Please enter role name.";
         }
         const bid = Number.parseInt(facilitySelectedBranchId.trim(), 10);
         if (!facilitySelectedBranchId.trim() || !Number.isFinite(bid) || bid <= 0) {
-            showMessage("error", "Please select a branch.");
+            errors.branch = "Please select a branch.";
+        }
+        if (errors.roleName || errors.branch) {
+            setDefineErrors(errors);
             return false;
         }
+        setDefineErrors({ roleName: "", branch: "" });
         return true;
     };
 
     const validateDefineCorporate = () => {
         if (!roleName.trim()) {
-            showMessage("error", "Please enter role name.");
+            setDefineErrors((prev) => ({ ...prev, roleName: "Please enter role name." }));
             return false;
         }
+        setDefineErrors({ roleName: "", branch: "" });
         return true;
     };
 
@@ -1625,10 +1764,22 @@ export default function RoleMasterPage() {
                       })()
                     : null;
             if (wizardMode === "create") {
+                const createRoleCategoryType =
+                    selectedGroup === "corporate"
+                        ? "CORPORATE"
+                        : roleNameOption === "Doctor"
+                          ? "facility_doctor"
+                          : roleNameOption === "Nurse"
+                            ? "facility_nurse"
+                            : roleNameOption === "Therapist"
+                              ? "facility_therapist"
+                              : "FACILITY";
+
                 await createRoles({
                     name: roleName.trim(),
-                    roleCategoryType: selectedGroup === "facility" ? "FACILITY" : "CORPORATE",
-                    mainScope: selectedGroup === "facility" ? "Facility" : (dataScope || "Zonal"),
+                    roleCategoryType: createRoleCategoryType,
+                    mainScope:
+                        selectedGroup === "facility" ? "Specific" : (dataScope || "Zonal"),
                     roleAccess: buildRoleAccessForCreate(
                         selectedGroup,
                         dataScope,
@@ -2038,33 +2189,12 @@ export default function RoleMasterPage() {
                                 <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                                 <div className="flex items-center gap-3">
-                                    {/* <div className="flex-shrink-0" style={{ width: "300px" }}>
-                                        <FormSelectField
-                                            label=""
-                                            hideLabel
-                                            options={branchFilterOptions}
-                                            value={selectedBranchFilter}
-                                            onChange={(value) => {
-                                                setSelectedBranchFilter(
-                                                    Array.isArray(value) ? value[0] ?? "" : value || ""
-                                                );
-                                                setListPage(1);
-                                            }}
-                                            placeholder={
-                                                isLoadingBranchFilter ? "Loading branches…" : "Select branch"
-                                            }
-                                            mode="single"
-                                            background="normal"
-                                            width={300}
-                                            disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                                        />
-                                    </div> */}
-                                    <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                <div className="flex-shrink-0" style={{ width: "300px" }}>
                                         <FormSelectField
                                             label=""
                                             hideLabel
                                             options={[
-                                                { label: "None", value: "" },
+                                                // { label: "None", value: "" },
                                                 { label: "Facility", value: "facility" },
                                                 { label: "Corporate", value: "corporate" },
                                             ]}
@@ -2083,6 +2213,30 @@ export default function RoleMasterPage() {
                                             }}
                                         />
                                     </div>
+                                    {roleListRoleCatType === "facility" ? (
+                                        <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                            <FormSelectField
+                                                label=""
+                                                hideLabel
+                                                options={branchFilterOptions.filter((option) => option.label !== "All Branches")}
+                                                value={selectedBranchFilter}
+                                                onChange={(value) => {
+                                                    setSelectedBranchFilter(
+                                                        Array.isArray(value) ? value[0] ?? "" : value || ""
+                                                    );
+                                                    setListPage(1);
+                                                }}
+                                                placeholder={
+                                                    isLoadingBranchFilter ? "Loading branches…" : "Select branch"
+                                                }
+                                                mode="single"
+                                                background="normal"
+                                                width={300}
+                                                disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                            />
+                                        </div>
+                                    ) : null}
+                                    
                                     <div className="flex-shrink-0" style={{ width: "300px" }}>
                                         <TableSearchInput
                                             value={roleListSearchInput}
@@ -2281,7 +2435,7 @@ export default function RoleMasterPage() {
 
             {isRoleWizardOpen && wizardMode === "create" && phaseStep === 1 && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                         <PageHeading title={wizardTitle} />
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
@@ -2337,13 +2491,16 @@ export default function RoleMasterPage() {
 
             {isRoleWizardOpen && activeGroup === "facility" && isDefineStep && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                         <PageHeading title={wizardTitle} />
+                        {wizardMode === "edit" && (
+                            <BackToPreviousPageButton onClick={closeWizard} />
+                        )}
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
                         <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
                             {renderStepperFacility()}
-                            <form className="mt-6">
+                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
                                 <div className="mb-5">
                                     <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
                                         Define Role Name
@@ -2353,16 +2510,85 @@ export default function RoleMasterPage() {
                                         responsibility.
                                     </p>
                                 </div>
-                                <div className="mb-5">
-                                    <FormInputField
-                                        label="Role Name *"
-                                        placeholder="Role Name"
-                                        height={44}
-                                        value={roleName}
-                                        maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
-                                        onChange={onRoleNameChange}
-                                        onBlur={onRoleNameBlur}
+                                <div className="mb-3">
+                                    <FormSelectField
+                                        label="Branches *"
+                                        options={branchSelectOptions}
+                                        value={facilitySelectedBranchId || null}
+                                        onChange={(v) => {
+                                            setFacilitySelectedBranchId(
+                                                typeof v === "string" ? v : Array.isArray(v) ? v[0] ?? "" : ""
+                                            );
+                                            setDefineErrors((prev) => ({ ...prev, branch: "" }));
+                                        }}
+                                        placeholder="Select branch"
+                                        background="white"
+                                        width="100%"
+                                        emptyMessage="No branches found."
+                                        error={defineErrors.branch || undefined}
                                     />
+                                </div>
+                                <div className="mb-5">
+                                    <label className="mb-2 block text-[13px] font-medium text-[#434956]">
+                                        Role Type <span className="text-[#F6776E]">*</span>
+                                    </label>
+                                    <div className="flex flex-wrap gap-4">
+                                        {ROLE_NAME_PRESET_OPTIONS.map((opt) => (
+                                            <label key={opt} className="flex cursor-pointer items-center gap-2">
+                                                <input
+                                                    type="radio"
+                                                    name="roleNameOption-facility"
+                                                    value={opt}
+                                                    checked={roleNameOption === opt}
+                                                    onChange={() => onRoleNameOptionChange(opt)}
+                                                    className="h-4 w-4 accent-[#0B8C00]"
+                                                />
+                                                <span className="text-[14px] text-[#434956]">{opt}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="relative mt-3" ref={roleDropdownRef}>
+                                        <FormInputField
+                                            label={ROLE_DEFINE_NAME_FIELD_COPY[roleNameOption].label}
+                                            placeholder={ROLE_DEFINE_NAME_FIELD_COPY[roleNameOption].placeholder}
+                                            height={44}
+                                            value={roleName}
+                                            maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
+                                            onChange={onRoleNameChange}
+                                            onBlur={onRoleNameBlur}
+                                            error={defineErrors.roleName || undefined}
+                                            autoComplete="off"
+                                        />
+                                        {roleDropdownOpen &&
+                                            roleDropdownItems.length > 0 &&
+                                            isRoleNameSearchSynced && (
+                                            <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-[#DFE0E2] bg-white py-1 shadow-lg">
+                                                {roleDropdownItems.map((item) => (
+                                                    <li
+                                                        key={item.id}
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault();
+                                                            const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
+                                                                (o) => o.toLowerCase() === item.name.trim().toLowerCase()
+                                                            );
+                                                            if (presetMatch) {
+                                                                setRoleNameOption(presetMatch);
+                                                                setRoleName(presetMatch);
+                                                            } else {
+                                                                setRoleName(item.name);
+                                                            }
+                                                            setRoleDropdownOpen(false);
+                                                            setRoleDropdownItems([]);
+                                                            setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+                                                        }}
+                                                        className="cursor-pointer px-5 py-2 text-sm text-[#434956] hover:bg-[#F0FAF0]"
+                                                    >
+                                                        {item.name}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="mb-5">
                                     <FormTextareaField
@@ -2375,22 +2601,7 @@ export default function RoleMasterPage() {
                                         onBlur={onRoleDescriptionBlur}
                                     />
                                 </div>
-                                <div className="mb-5">
-                                    <FormSelectField
-                                        label="Branches *"
-                                        options={branchSelectOptions}
-                                        value={facilitySelectedBranchId || null}
-                                        onChange={(v) =>
-                                            setFacilitySelectedBranchId(
-                                                typeof v === "string" ? v : Array.isArray(v) ? v[0] ?? "" : ""
-                                            )
-                                        }
-                                        placeholder="Select branch"
-                                        background="white"
-                                        width="100%"
-                                        emptyMessage="No branches found."
-                                    />
-                                </div>
+                               
                                 <div className="mt-4 flex gap-2">
                                     <BackToPreviousPageButton onClick={handleWizardBack} />
                                     <button
@@ -2410,13 +2621,16 @@ export default function RoleMasterPage() {
 
             {isRoleWizardOpen && activeGroup === "corporate" && isDefineStep && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                         <PageHeading title={wizardTitle} />
+                        {wizardMode === "edit" && (
+                            <BackToPreviousPageButton onClick={closeWizard} />
+                        )}
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
                         <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
                             {renderStepperCorporate()}
-                            <form className="mt-6">
+                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
                                 <div className="mb-5">
                                     <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
                                         Define Role Name
@@ -2427,15 +2641,40 @@ export default function RoleMasterPage() {
                                     </p>
                                 </div>
                                 <div className="mb-5">
-                                    <FormInputField
-                                        label="Role Name *"
-                                        placeholder="Role Name"
-                                        height={44}
-                                        value={roleName}
-                                        maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
-                                        onChange={onRoleNameChange}
-                                        onBlur={onRoleNameBlur}
-                                    />
+                                    <div className="relative" ref={roleDropdownRef}>
+                                        <FormInputField
+                                            label="Role Name *"
+                                            placeholder="Role Name"
+                                            height={44}
+                                            value={roleName}
+                                            maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
+                                            onChange={onRoleNameChange}
+                                            onBlur={onRoleNameBlur}
+                                            error={defineErrors.roleName || undefined}
+                                            autoComplete="off"
+                                        />
+                                        {roleDropdownOpen &&
+                                            roleDropdownItems.length > 0 &&
+                                            isRoleNameSearchSynced && (
+                                            <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-[#DFE0E2] bg-white py-1 shadow-lg">
+                                                {roleDropdownItems.map((item) => (
+                                                    <li
+                                                        key={item.id}
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault();
+                                                            setRoleName(item.name);
+                                                            setRoleDropdownOpen(false);
+                                                            setRoleDropdownItems([]);
+                                                            setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+                                                        }}
+                                                        className="cursor-pointer px-5 py-2 text-sm text-[#434956] hover:bg-[#F0FAF0]"
+                                                    >
+                                                        {item.name}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="mb-5">
                                     <FormTextareaField
@@ -2467,13 +2706,16 @@ export default function RoleMasterPage() {
 
             {isRoleWizardOpen && activeGroup === "corporate" && isChooseScopeStep && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                         <PageHeading title={wizardTitle} />
+                        {wizardMode === "edit" && (
+                            <BackToPreviousPageButton onClick={closeWizard} />
+                        )}
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
                         <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
                             {renderStepperCorporate()}
-                            <form className="mt-6">
+                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
                                 <div className="mb-5">
                                     <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
                                         Choose Data Scope
@@ -2568,13 +2810,16 @@ export default function RoleMasterPage() {
                 isConfigureScopeStep &&
                 isZonalOrRegionalScope(dataScope) && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                         <PageHeading title={wizardTitle} />
+                        {wizardMode === "edit" && (
+                            <BackToPreviousPageButton onClick={closeWizard} />
+                        )}
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
                         <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
                             {renderStepperCorporate()}
-                            <form className="mt-6">
+                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
                                 <div className="mb-5">
                                     <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
                                         Configure Scope
@@ -2646,15 +2891,18 @@ export default function RoleMasterPage() {
 
             {isRoleWizardOpen && isPermissionsStep && activeGroup && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                         <PageHeading title={wizardTitle} />
+                        {wizardMode === "edit" && (
+                            <BackToPreviousPageButton onClick={closeWizard} />
+                        )}
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
                         <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
                             {activeGroup === "facility"
                                 ? renderStepperFacility()
                                 : renderStepperCorporate()}
-                            <form className="mt-6">
+                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
                                 <div className="mb-5">
                                     <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
                                         Assign Permissions

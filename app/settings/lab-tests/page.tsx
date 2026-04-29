@@ -24,7 +24,7 @@ import {
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
-import { useGetBranchesQuery, useGetLabTestsQuery, useGetLabTestsByBranchQuery, useGetLabTestQuery, useGetLabTestGroupsQuery, useGetLabTestCategoriesQuery, useUpdateLabTestMutation, useUpdateLabTestByBranchMutation } from "@/store/api/settingsApi";
+import { useGetBranchesQuery, useGetLabTestsQuery, useGetLabTestsByBranchQuery, useGetLabTestQuery, useGetLabTestGroupsQuery, useGetLabTestCategoriesQuery, useGetBranchesWithManualLabTestSourceQuery, useUpdateLabTestMutation, useUpdateLabTestByBranchMutation, useCreateLabTestMutation } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
@@ -53,12 +53,6 @@ type LabTest = {
   tpaStatus?: LabTestStatus;
 };
 
-const statusOptions: SelectOption[] = [
-  { value: "Active", label: "Active" },
-  { value: "Inactive", label: "Inactive" },
-  { value: "Pending", label: "Pending" },
-];
-
 function formatPrice(n: number): string {
   return `₹ ${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -85,6 +79,46 @@ function formatDateOnly(iso: string): string {
   }
 }
 
+function sanitizeDecimalInput(raw: string): string {
+  let v = raw.replace(/[^0-9.]/g, "");
+  const dotCount = (v.match(/\./g) || []).length;
+  if (dotCount > 1) {
+    const [first, ...rest] = v.split(".");
+    v = first + "." + rest.join("").replace(/\./g, "");
+  }
+  return v;
+}
+
+type AddLabTestFormState = {
+  branchId: string;
+  groupName: string;
+  categoryName: string;
+  testName: string;
+  testDescription: string;
+  privatePrice: string;
+  privateStatus: "active" | "inactive";
+  panelPrice: string;
+  panelStatus: "active" | "inactive";
+  tpaPrice: string;
+  tpaStatus: "active" | "inactive";
+};
+
+function emptyAddLabTestForm(): AddLabTestFormState {
+  return {
+    branchId: "",
+    groupName: "",
+    categoryName: "",
+    testName: "",
+    testDescription: "",
+    privatePrice: "",
+    privateStatus: "active",
+    panelPrice: "",
+    panelStatus: "active",
+    tpaPrice: "",
+    tpaStatus: "active",
+  };
+}
+
 export default function LabTestsPage() {
   const labTestsPermission = usePermission("settings", { subModule: "lab-tests" });
   const canView = labTestsPermission.canView;
@@ -95,7 +129,10 @@ export default function LabTestsPage() {
   const debouncedSearchTerm = useDebounce(searchTerm, 400);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [dialogMode, setDialogMode] = useState<"add" | "edit" | "view" | null>(null);
+  const [dialogMode, setDialogMode] = useState<"edit" | "view" | null>(null);
+  const [isAddLabTestDialogOpen, setIsAddLabTestDialogOpen] = useState(false);
+  const [addLabTestForm, setAddLabTestForm] = useState<AddLabTestFormState>(emptyAddLabTestForm);
+  const [addLabTestErrors, setAddLabTestErrors] = useState<Record<string, string>>({});
   const [selectedLabTest, setSelectedLabTest] = useState<LabTest | null>(null);
   const [formValues, setFormValues] = useState({
     testName: "",
@@ -208,6 +245,11 @@ export default function LabTestsPage() {
   const isLoadingLabTests = isBranchIdValid ? isLoadingLabTestsBranch : isLoadingLabTestsAll;
   const refetchLabTests = isBranchIdValid ? refetchLabTestsBranch : refetchLabTestsAll;
 
+  const { data: manualBranchRes, isFetching: isLoadingManualBranches } = useGetBranchesWithManualLabTestSourceQuery(
+    undefined,
+    { skip: !canAdd || !isAddLabTestDialogOpen }
+  );
+  const [createLabTest, { isLoading: isCreatingLabTest }] = useCreateLabTestMutation();
   const [updateLabTest, { isLoading: isUpdatingLabTest }] = useUpdateLabTestMutation();
   const [updateLabTestByBranch, { isLoading: isUpdatingLabTestByBranch }] = useUpdateLabTestByBranchMutation();
 
@@ -215,17 +257,6 @@ export default function LabTestsPage() {
   useGetLabTestQuery(selectedLabTestId!, {
     skip: !selectedLabTestId || dialogMode !== "edit",
   });
-
-  const branchOptions: SelectOption[] = useMemo(
-    () => [
-      { value: "", label: "None" },
-      ...(branchesData?.data ?? []).map((branch) => ({
-        value: branch.id.toString(),
-        label: branch.name,
-      })),
-    ],
-    [branchesData?.data]
-  );
 
   const toNum = (v: number | string | undefined): number =>
     typeof v === "string" ? parseFloat(v) || 0 : v ?? 0;
@@ -308,21 +339,97 @@ export default function LabTestsPage() {
     [categoriesData?.data]
   );
 
+  const addManualBranchOptions: SelectOption[] = useMemo(() => {
+    const rows = manualBranchRes?.success && Array.isArray(manualBranchRes.data) ? manualBranchRes.data : [];
+    return rows.map((b) => ({
+      value: String(b.id),
+      label: (b.name && String(b.name).trim()) || `Branch ${b.id}`,
+    }));
+  }, [manualBranchRes]);
+
+  const addGroupSelectOptions: SelectOption[] = useMemo(
+    () => (groupsData?.data ?? []).map((name) => ({ value: name, label: name })),
+    [groupsData?.data]
+  );
+
+  const addCategorySelectOptions: SelectOption[] = useMemo(
+    () => (categoriesData?.data ?? []).map((name) => ({ value: name, label: name })),
+    [categoriesData?.data]
+  );
+
+  const closeAddLabTestDialog = () => {
+    setIsAddLabTestDialogOpen(false);
+    setAddLabTestForm(emptyAddLabTestForm());
+    setAddLabTestErrors({});
+  };
+
   const handleAddNew = () => {
     if (!canAdd) return;
-    setFormValues({
-      testName: "",
-      description: "",
-      fee: "",
-      status: "Active",
-    });
-    setFormErrors({});
+    setAddLabTestForm(emptyAddLabTestForm());
+    setAddLabTestErrors({});
+    setDialogMode(null);
     setSelectedLabTest(null);
-    setDialogMode("add");
+    setIsAddLabTestDialogOpen(true);
+  };
+
+  const validateAddLabTestForm = (): boolean => {
+    const err: Record<string, string> = {};
+    if (!addLabTestForm.branchId.trim()) err.branchId = "Branch is required";
+    if (!addLabTestForm.groupName.trim()) err.groupName = "Group name is required";
+    if (!addLabTestForm.categoryName.trim()) err.categoryName = "Category is required";
+    if (!addLabTestForm.testName.trim()) err.testName = "Test name is required";
+    if (!addLabTestForm.testDescription.trim()) err.testDescription = "Description is required";
+    if (!addLabTestForm.privatePrice.trim()) err.privatePrice = "Private price is required";
+    if (!addLabTestForm.panelPrice.trim()) err.panelPrice = "Panel price is required";
+    if (!addLabTestForm.tpaPrice.trim()) err.tpaPrice = "TPA price is required";
+    setAddLabTestErrors(err);
+    return Object.keys(err).length === 0;
+  };
+
+  const handleAddLabTestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canAdd || !validateAddLabTestForm()) return;
+    const branchId = parseInt(addLabTestForm.branchId, 10);
+    if (!Number.isFinite(branchId)) {
+      setAddLabTestErrors((prev) => ({ ...prev, branchId: "Select a valid branch" }));
+      return;
+    }
+    const test_fee = parseFloat(addLabTestForm.privatePrice) || 0;
+    const panelPrice = parseFloat(addLabTestForm.panelPrice) || 0;
+    const tpaPrice = parseFloat(addLabTestForm.tpaPrice) || 0;
+    try {
+      const res = await createLabTest({
+        testName: addLabTestForm.testName.trim(),
+        testDescription: addLabTestForm.testDescription.trim(),
+        test_fee,
+        tpaPrice,
+        panelPrice,
+        status: addLabTestForm.privateStatus,
+        tpaStatus: addLabTestForm.tpaStatus,
+        panelStatus: addLabTestForm.panelStatus,
+        groupName: addLabTestForm.groupName.trim(),
+        categoryName: addLabTestForm.categoryName.trim(),
+        externalItemId: null,
+        branchId,
+      }).unwrap();
+      if (res.success) {
+        closeAddLabTestDialog();
+        refetchLabTests();
+      } else {
+        setAddLabTestErrors((prev) => ({ ...prev, _form: res.message || "Could not create lab test." }));
+      }
+    } catch (unknownErr: unknown) {
+      const msg =
+        unknownErr && typeof unknownErr === "object" && "data" in unknownErr
+          ? String((unknownErr as { data?: { message?: string } }).data?.message ?? "Request failed.")
+          : "Request failed.";
+      setAddLabTestErrors((prev) => ({ ...prev, _form: msg }));
+    }
   };
 
   const handleEdit = (test: LabTest) => {
     if (!canEdit) return;
+    setIsAddLabTestDialogOpen(false);
     setSelectedLabTest(test);
     const priceForTab =
       activeTab === "panel"
@@ -349,28 +456,13 @@ export default function LabTestsPage() {
 
   const handleView = (test: LabTest) => {
     if (!canView) return;
+    setIsAddLabTestDialogOpen(false);
     setSelectedLabTest(test);
     setDialogMode("view");
   };
 
-  const validateForm = () => {
-    const errors: Record<string, string> = {};
-    if (!formValues.testName.trim()) errors.testName = "Test name is required";
-    if (!formValues.description.trim()) errors.description = "Description is required";
-    if (!formValues.fee.trim()) errors.fee = "Fee is required";
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const parsePriceFromFormatted = (s: string | undefined): number => {
-    if (!s) return 0;
-    const num = parseFloat((s || "").replace(/[₹,\s]/g, ""));
-    return isNaN(num) ? 0 : num;
-  };
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (dialogMode === "add" && !canAdd) return;
     if (dialogMode === "edit" && !canEdit) return;
 
     if (dialogMode === "edit" && selectedLabTest) {
@@ -426,23 +518,7 @@ export default function LabTestsPage() {
       } catch {
         setFormErrors((prev) => ({ ...prev, fee: "Update failed. Please try again." }));
       }
-      return;
     }
-    if (dialogMode === "add") {
-      if (!validateForm()) return;
-      // TODO: call create lab test API when available
-    }
-
-    setDialogMode(null);
-    setFormValues({
-      testName: "",
-      description: "",
-      fee: "",
-      status: "Active",
-    });
-    setFormErrors({});
-    setSelectedLabTest(null);
-    refetchLabTests();
   };
 
   const handlePageChange = (page: number) => {
@@ -471,14 +547,11 @@ export default function LabTestsPage() {
   const isPanelOrTpaEdit = dialogMode === "edit" && (activeTab === "panel" || activeTab === "tpa");
   const isAllView = dialogMode === "view" && activeTab === "all";
 
-  const dialogTitle =
-    dialogMode === "add"
-      ? "Add Lab Tests"
-      : isAllView
-        ? "View Lab Tests"
-        : dialogMode === "edit"
-          ? "Edit Lab Tests"
-          : "View Lab Test";
+  const dialogTitle = isAllView
+    ? "View Lab Tests"
+    : dialogMode === "edit"
+      ? "Edit Lab Tests"
+      : "View Lab Test";
 
   return (
     <AppShell>
@@ -546,7 +619,7 @@ export default function LabTestsPage() {
                     placeholder="Search Here..."
                   />
                 </div>
-                {/* {canAdd ? (
+                {canAdd ? (
                   <button
                     type="button"
                     className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
@@ -555,7 +628,7 @@ export default function LabTestsPage() {
                     <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
                     <span>Add Lab Test</span>
                   </button>
-                ) : null} */}
+                ) : null}
               </div>
             </div>
 
@@ -735,13 +808,197 @@ export default function LabTestsPage() {
         </ListBorder>
       </div>
 
-      {/* Add / Edit (Private) / Edit (Panel|TPA) / View (All) Dialog */}
+      {/* Add Lab Test — branches with manual labTestSource, prices + status rows */}
       <Dialog
-        open={
-          (dialogMode === "add" && canAdd) ||
-          (dialogMode === "edit" && canEdit) ||
-          (dialogMode === "view" && canView)
-        }
+        open={isAddLabTestDialogOpen && canAdd}
+        onClose={closeAddLabTestDialog}
+        title="Add Lab Test"
+        width={949}
+      >
+        <form onSubmit={handleAddLabTestSubmit} className="space-y-6">
+          {addLabTestErrors._form ? (
+            <p className="text-sm text-[#F6776E]">{addLabTestErrors._form}</p>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+            <FormSelectField
+              label="Branch *"
+              options={addManualBranchOptions}
+              mode="single"
+              value={addLabTestForm.branchId || null}
+              onChange={(val) => {
+                const v = typeof val === "string" ? val : val?.[0] ?? "";
+                setAddLabTestForm((p) => ({ ...p, branchId: v }));
+                setAddLabTestErrors((prev) => ({ ...prev, branchId: "" }));
+              }}
+              placeholder={isLoadingManualBranches ? "Loading branches…" : "Select branch"}
+              background="white"
+              width="100%"
+              disabled={isLoadingManualBranches || addManualBranchOptions.length === 0}
+              emptyMessage="No branches with manual lab source"
+              error={addLabTestErrors.branchId}
+            />
+            <FormSelectField
+              label="Group Name *"
+              options={[{ value: "", label: "Select group" }, ...addGroupSelectOptions]}
+              mode="single"
+              value={addLabTestForm.groupName || null}
+              onChange={(val) => {
+                const v = typeof val === "string" ? val : val?.[0] ?? "";
+                setAddLabTestForm((p) => ({ ...p, groupName: v }));
+                setAddLabTestErrors((prev) => ({ ...prev, groupName: "" }));
+              }}
+              placeholder="Select group"
+              background="white"
+              width="100%"
+              disabled={isLoadingGroups}
+              error={addLabTestErrors.groupName}
+            />
+            <FormSelectField
+              label="Category Name *"
+              options={[{ value: "", label: "Select category" }, ...addCategorySelectOptions]}
+              mode="single"
+              value={addLabTestForm.categoryName || null}
+              onChange={(val) => {
+                const v = typeof val === "string" ? val : val?.[0] ?? "";
+                setAddLabTestForm((p) => ({ ...p, categoryName: v }));
+                setAddLabTestErrors((prev) => ({ ...prev, categoryName: "" }));
+              }}
+              placeholder="Select category"
+              background="white"
+              width="100%"
+              disabled={isLoadingCategories}
+              error={addLabTestErrors.categoryName}
+            />
+            <FormInputField
+              label="Test Name *"
+              value={addLabTestForm.testName}
+              onChange={(e) => {
+                setAddLabTestForm((p) => ({ ...p, testName: e.target.value }));
+                setAddLabTestErrors((prev) => ({ ...prev, testName: "" }));
+              }}
+              height={44}
+              placeholder="Test Name"
+              error={addLabTestErrors.testName}
+            />
+          </div>
+
+          <FormTextareaField
+            label="Description *"
+            value={addLabTestForm.testDescription}
+            onChange={(e) => {
+              setAddLabTestForm((p) => ({ ...p, testDescription: e.target.value }));
+              setAddLabTestErrors((prev) => ({ ...prev, testDescription: "" }));
+            }}
+            height={94}
+            placeholder="Write a description..."
+            error={addLabTestErrors.testDescription}
+          />
+
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 md:items-end">
+              <FormInputField
+                label="Private Price *"
+                value={addLabTestForm.privatePrice}
+                onChange={(e) => {
+                  setAddLabTestForm((p) => ({
+                    ...p,
+                    privatePrice: sanitizeDecimalInput(e.target.value),
+                  }));
+                  setAddLabTestErrors((prev) => ({ ...prev, privatePrice: "" }));
+                }}
+                height={44}
+                placeholder="Private Price"
+                type="text"
+                inputMode="decimal"
+                error={addLabTestErrors.privatePrice}
+              />
+              <PatientTypeButtonGroup
+                label="Private Status"
+                options={["Active", "Inactive"]}
+                value={addLabTestForm.privateStatus}
+                onChange={(val) =>
+                  setAddLabTestForm((p) => ({
+                    ...p,
+                    privateStatus: (val === "inactive" ? "inactive" : "active") as "active" | "inactive",
+                  }))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 md:items-end">
+              <FormInputField
+                label="Panel Price *"
+                value={addLabTestForm.panelPrice}
+                onChange={(e) => {
+                  setAddLabTestForm((p) => ({
+                    ...p,
+                    panelPrice: sanitizeDecimalInput(e.target.value),
+                  }));
+                  setAddLabTestErrors((prev) => ({ ...prev, panelPrice: "" }));
+                }}
+                height={44}
+                placeholder="Panel Price"
+                type="text"
+                inputMode="decimal"
+                error={addLabTestErrors.panelPrice}
+              />
+              <PatientTypeButtonGroup
+                label="Panel Status"
+                options={["Active", "Inactive"]}
+                value={addLabTestForm.panelStatus}
+                onChange={(val) =>
+                  setAddLabTestForm((p) => ({
+                    ...p,
+                    panelStatus: (val === "inactive" ? "inactive" : "active") as "active" | "inactive",
+                  }))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 md:items-end">
+              <FormInputField
+                label="TPA Price *"
+                value={addLabTestForm.tpaPrice}
+                onChange={(e) => {
+                  setAddLabTestForm((p) => ({
+                    ...p,
+                    tpaPrice: sanitizeDecimalInput(e.target.value),
+                  }));
+                  setAddLabTestErrors((prev) => ({ ...prev, tpaPrice: "" }));
+                }}
+                height={44}
+                placeholder="TPA Price"
+                type="text"
+                inputMode="decimal"
+                error={addLabTestErrors.tpaPrice}
+              />
+              <PatientTypeButtonGroup
+                label="TPA Status"
+                options={["Active", "Inactive"]}
+                value={addLabTestForm.tpaStatus}
+                onChange={(val) =>
+                  setAddLabTestForm((p) => ({
+                    ...p,
+                    tpaStatus: (val === "inactive" ? "inactive" : "active") as "active" | "inactive",
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" variant="primary" disabled={isCreatingLabTest}>
+              {isCreatingLabTest ? "Adding…" : "Add Lab Test"}
+            </Button>
+            <Button type="button" variant="outline" onClick={closeAddLabTestDialog} disabled={isCreatingLabTest}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* Edit (Private) / Edit (Panel|TPA) / View (All) Dialog */}
+      <Dialog
+        open={(dialogMode === "edit" && canEdit) || (dialogMode === "view" && canView)}
         onClose={() => {
           setDialogMode(null);
           setFormErrors({});
@@ -796,7 +1053,7 @@ export default function LabTestsPage() {
             </div>
           </>
         ) : (
-          <form onSubmit={(dialogMode === "edit" || dialogMode === "add") ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
+          <form onSubmit={dialogMode === "edit" ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
             {/* Private tab edit: read-only Group, Test, Category, Price; Status toggle only */}
             {isPrivateEdit && selectedLabTest && (
               <div className="grid grid-cols-2 gap-6">
@@ -877,78 +1134,6 @@ export default function LabTestsPage() {
               </div>
             )}
 
-            {/* Add mode: full form */}
-            {dialogMode === "add" && (
-              <div className="space-y-6">
-                <div>
-                  <FormInputField
-                    label="Test Name"
-                    value={formValues.testName}
-                    onChange={(e) => {
-                      setFormValues((prev) => ({ ...prev, testName: e.target.value }));
-                      setFormErrors((prev) => ({ ...prev, testName: "" }));
-                    }}
-                    height={44}
-                    placeholder="Test Name"
-                    required
-                  />
-                  {formErrors.testName && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.testName}</p>}
-                </div>
-                <div>
-                  <FormTextareaField
-                    label="Description"
-                    value={formValues.description}
-                    onChange={(e) => {
-                      setFormValues((prev) => ({ ...prev, description: e.target.value }));
-                      setFormErrors((prev) => ({ ...prev, description: "" }));
-                    }}
-                    height={94}
-                    placeholder="Write a description..."
-                    required
-                  />
-                  {formErrors.description && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.description}</p>}
-                </div>
-                <div>
-                  <FormInputField
-                    label="Fee"
-                    value={formValues.fee}
-                    onChange={(e) => {
-                      let v = e.target.value.replace(/[^0-9.]/g, "");
-                      const dotCount = (v.match(/\./g) || []).length;
-                      if (dotCount > 1) {
-                        const [first, ...rest] = v.split(".");
-                        v = first + "." + rest.join("").replace(/\./g, "");
-                      }
-                      setFormValues((prev) => ({ ...prev, fee: v }));
-                      setFormErrors((prev) => ({ ...prev, fee: "" }));
-                    }}
-                    height={44}
-                    placeholder="Fee"
-                    required
-                    type="text"
-                    inputMode="decimal"
-                  />
-                  {formErrors.fee && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.fee}</p>}
-                </div>
-                <div>
-                  <FormSelectField
-                    label="Status"
-                    value={formValues.status}
-                    onChange={(value) =>
-                      setFormValues((prev) => ({
-                        ...prev,
-                        status: (Array.isArray(value) ? value[0] : value || "Active") as LabTestStatus,
-                      }))
-                    }
-                    options={statusOptions}
-                    placeholder="Status"
-                    mode="single"
-                    background="white"
-                  />
-                </div>
-              </div>
-            )}
-
             <div className="flex flex-wrap items-center gap-3">
               {dialogMode === "view" && !isAllView ? (
                 <Button
@@ -965,7 +1150,7 @@ export default function LabTestsPage() {
               ) : (
                 <>
                   <Button type="submit" variant="primary" disabled={isUpdatingLabTest || isUpdatingLabTestByBranch}>
-                    {dialogMode === "add" ? "Add Lab Test" : (isUpdatingLabTest || isUpdatingLabTestByBranch) ? "Updating..." : "Update Lab Test"}
+                    {(isUpdatingLabTest || isUpdatingLabTestByBranch) ? "Updating..." : "Update Lab Test"}
                   </Button>
                   <Button
                     type="button"

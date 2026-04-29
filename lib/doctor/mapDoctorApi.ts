@@ -289,6 +289,8 @@ export function mapApiDoctorListItemToPayload(row: ApiDoctorListItem): DoctorPay
 
     return {
         branchId: String(row.branchId),
+        assignableRoleId:
+            row.roleId != null && Number(row.roleId) > 0 ? String(Number(row.roleId)) : "",
         profileImageUrl: row.imgUrl && row.imgUrl !== "default.png" ? row.imgUrl : null,
         attachmentUrl: row.attachment?.trim() ? row.attachment : null,
         nameTitle: "Dr",
@@ -316,10 +318,13 @@ export function mapApiDoctorListItemToPayload(row: ApiDoctorListItem): DoctorPay
     };
 }
 
-export function buildCreateDoctorBody(payload: DoctorPayload, roleId: number = DEFAULT_DOCTOR_ROLE_ID) {
+export function buildCreateDoctorBody(payload: DoctorPayload) {
     const departmentId = resolveDepartmentIdFromPayload(payload);
     const experienceNum = Number.parseInt(payload.yearsExperience, 10);
     const altPhone = altPhoneDigitsOrUndefined(payload.altContact);
+    const parsedRole = Number.parseInt((payload.assignableRoleId ?? "").trim(), 10);
+    const roleId =
+        Number.isFinite(parsedRole) && parsedRole > 0 ? parsedRole : DEFAULT_DOCTOR_ROLE_ID;
     return {
         branchId: Number(payload.branchId),
         name: doctorDisplayName(payload).trim(),
@@ -353,9 +358,12 @@ export function buildCreateDoctorBody(payload: DoctorPayload, roleId: number = D
 
 export function buildUpdateDoctorBody(
     payload: DoctorPayload,
-    roleId: number = DEFAULT_DOCTOR_ROLE_ID
+    fallbackRoleId: number = DEFAULT_DOCTOR_ROLE_ID
 ): Record<string, unknown> {
     const departmentId = resolveDepartmentIdFromPayload(payload);
+    const parsedRole = Number.parseInt((payload.assignableRoleId ?? "").trim(), 10);
+    const roleId =
+        Number.isFinite(parsedRole) && parsedRole > 0 ? parsedRole : fallbackRoleId;
     const rawExp = (payload.yearsExperience ?? "").trim();
     let experience = "0 years";
     if (rawExp) {

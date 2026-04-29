@@ -49,12 +49,17 @@ type LegacyIpdApiItem = {
   branch_id: string | null;
   patient_id: string | null;
   doctor_id: string | null;
+  doctor_name: string | null;
   patient_opd_id: string | null;
   patient_name: string | null;
   patient_panel: string | null;
   type: string | null;
   gender: string | null;
   age: string | null;
+  blood_group: string | null;
+  room_type: string | null;
+  room_number: string | null;
+  bed_number: string | null;
   vip: string | null;
   status: string | null;
   created_at: string | null;
@@ -222,23 +227,38 @@ export default function IpdPage() {
           throw new Error(payload?.message || "Failed to fetch IPD list");
         }
 
-        const mappedRows: IpdRow[] = (payload.data ?? []).map((item) => ({
-          id: Number(item.id) || 0,
-          branchId: Number(item.branch_id) || 0,
-          uhid: item.uhid ?? "-",
-          ipdId: item.id ?? "-",
-          name: item.patient_name ?? "-",
-          doctorId: item.doctor_id ?? "",
-          doctor: item.doctor_id ? `Doctor ${item.doctor_id}` : "-",
-          room: "-",
-          bed: "-",
-          type: item.patient_panel ?? item.type ?? "-",
-          sex: item.gender ?? "-",
-          age: item.age ?? "-",
-          bloodGroup: "-",
-          admitDate: (item.created_at ?? "").split(" ")[0] || "-",
-          isVip: (item.vip ?? "").toLowerCase() === "yes",
-        }));
+        const mappedRows: IpdRow[] = (payload.data ?? []).map((item) => {
+          const roomType = item.room_type?.trim();
+          const roomNum = item.room_number?.trim();
+          let roomDisplay = "-";
+          if (roomType && roomNum) roomDisplay = `${roomType} (${roomNum})`;
+          else if (roomType) roomDisplay = roomType;
+          else if (roomNum) roomDisplay = roomNum;
+
+          const doctorDisplay = item.doctor_name?.trim()
+            ? item.doctor_name.trim()
+            : item.doctor_id
+              ? `Doctor ${item.doctor_id}`
+              : "-";
+
+          return {
+            id: Number(item.id) || 0,
+            branchId: Number(item.branch_id) || 0,
+            uhid: item.uhid ?? "-",
+            ipdId: item.id ?? "-",
+            name: item.patient_name ?? "-",
+            doctorId: item.doctor_id ?? "",
+            doctor: doctorDisplay,
+            room: roomDisplay,
+            bed: item.bed_number?.trim() ? item.bed_number : "-",
+            type: item.patient_panel ?? item.type ?? "-",
+            sex: item.gender ?? "-",
+            age: item.age ?? "-",
+            bloodGroup: item.blood_group?.trim() ? item.blood_group : "-",
+            admitDate: (item.created_at ?? "").split(" ")[0] || "-",
+            isVip: (item.vip ?? "").toLowerCase() === "yes",
+          };
+        });
 
         setRows(mappedRows);
         setTotalRecords(Number(payload.total_records) || 0);

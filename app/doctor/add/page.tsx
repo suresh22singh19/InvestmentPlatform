@@ -8,7 +8,7 @@ import { BackToPreviousPageButton } from "@/components/ui/Buttons";
 import { MessageDialog } from "@/components/ui";
 import { DoctorForm } from "@/components/doctor/DoctorForm";
 import { createEmptyDoctorPayload } from "@/lib/doctor/doctorStatic";
-import { buildCreateDoctorBody, DEFAULT_DOCTOR_ROLE_ID } from "@/lib/doctor/mapDoctorApi";
+import { buildCreateDoctorBody } from "@/lib/doctor/mapDoctorApi";
 import { useCreateDoctorByBranchMutation } from "@/store/api/doctorApi";
 
 function rtkErrorMessage(e: unknown): string {
@@ -39,7 +39,7 @@ export default function AddDoctorPage() {
                     initial={initial}
                     onSubmit={async (payload, files) => {
                         try {
-                            const body = buildCreateDoctorBody(payload, DEFAULT_DOCTOR_ROLE_ID);
+                            const body = buildCreateDoctorBody(payload);
                             const res = await createDoctor({ body, files }).unwrap();
                             setSuccessMessage(res?.message || "Doctor added successfully.");
                             setShowSuccessDialog(true);

@@ -57,6 +57,9 @@ type LegacyOpdApiItem = {
     gender: string | null;
     age: string | null;
     patient_panel: string | null;
+    city: string | null;
+    state: string | null;
+    country: string | null;
 };
 
 type LegacyOpdApiResponse = {
@@ -203,9 +206,9 @@ export default function IpdPage() {
                     gender: item.gender ?? "-",
                     age: item.age ?? "-",
                     type: item.patient_panel ?? "-",
-                    city: "-",
-                    state: "-",
-                    country: "-",
+                    city: item.city?.trim() ? item.city : "-",
+                    state: item.state?.trim() ? item.state : "-",
+                    country: item.country?.trim() ? item.country : "-",
                     createdAt: item.created_at ?? "-",
                 }));
 

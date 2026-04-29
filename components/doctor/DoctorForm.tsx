@@ -28,7 +28,11 @@ import {
     selectUserBranchId,
     selectUserBranchName,
 } from "@/store/slices/authSlice";
-import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import {
+    useGetBranchesQuery,
+    useGetBranchRoleByCategoryTypeQuery,
+} from "@/store/api/settingsApi";
+import type { GetBranchRoleByCategoryTypeParams } from "@/store/api/settingsApi";
 import { useGetAllDepartmentsForDoctorQuery } from "@/store/api/doctorApi";
 import { DEPARTMENT_SLUG_TO_API_ID } from "@/lib/doctor/mapDoctorApi";
 import { doctorFormSchema, mapDoctorFormYupErrors } from "@/lib/validation/doctorFormSchema";
@@ -45,6 +49,13 @@ function newRowId() {
 
 function pickSingle(v: string | string[]): string {
     return Array.isArray(v) ? v[0] ?? "" : v ?? "";
+}
+
+/** Map GET /branches `type` to getBranchRoleByCategoryType `branchType` (API: hospital | clinic). */
+function branchRecordTypeToRoleApiBranchType(apiType: string | undefined): "hospital" | "clinic" {
+    const t = (apiType ?? "").toLowerCase().trim();
+    if (t === "clinic") return "clinic";
+    return "hospital";
 }
 
 /** Mirrors registration `PersonalDetails` patient name handling. */
@@ -91,6 +102,11 @@ function formatCouncilRegistrationNumberInput(raw: string): string {
 /** Digits only; used for year-style fields. */
 function digitsOnly(raw: string, maxLen: number): string {
     return raw.replace(/\D/g, "").slice(0, maxLen);
+}
+
+/** Employee id: letters, digits, hyphen (e.g. JS20752). */
+function formatEmployeeIdInput(raw: string): string {
+    return raw.replace(/[^a-zA-Z0-9\-]/g, "").slice(0, MAX_FIELD_LEN);
 }
 
 /** Same as BranchBankInformation: uppercase A–Z / 0–9 only, max 11 (IFSC). */
@@ -414,6 +430,36 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
         return BRANCH_OPTIONS_FORM;
     }, [isSuperAdmin, isFacilityUser, branchesData, selectedBranch, singleBranchFromAuth]);
 
+    /** Effective branch id for loading facility_doctor roles (matches branch selector / locked JWT branch). */
+    const resolvedBranchIdForRoleDropdown = useMemo(() => {
+        if (!isSuperAdmin && singleBranchFromAuth?.value) return singleBranchFromAuth.value.trim();
+        return values.branchId.trim();
+    }, [isSuperAdmin, singleBranchFromAuth, values.branchId]);
+
+    const assignableRolesQueryArgs = useMemo((): GetBranchRoleByCategoryTypeParams | null => {
+        const bid = resolvedBranchIdForRoleDropdown;
+        if (!bid) return null;
+        const n = Number.parseInt(bid, 10);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        const rows = branchesData?.success && Array.isArray(branchesData.data) ? branchesData.data : [];
+        const branchRow = rows.find((b) => b.id === n);
+        const branchType = branchRecordTypeToRoleApiBranchType(branchRow?.type as string | undefined);
+        return { roleCategoryType: "facility_doctor", branchId: n, branchType };
+    }, [resolvedBranchIdForRoleDropdown, branchesData]);
+
+    const { data: assignableRolesRes, isFetching: isLoadingAssignableRoles } =
+        useGetBranchRoleByCategoryTypeQuery(assignableRolesQueryArgs ?? { roleCategoryType: "corporate" }, {
+            skip: assignableRolesQueryArgs === null,
+            refetchOnMountOrArgChange: true,
+        });
+
+    const assignableRoleOptions: SelectOption[] = useMemo(() => {
+        const rows = Array.isArray(assignableRolesRes?.data) ? assignableRolesRes.data : [];
+        return rows
+            .filter((r) => r.isActive !== false)
+            .map((r) => ({ value: String(r.id), label: r.name }));
+    }, [assignableRolesRes]);
+
     const selectableBranchCount = useMemo(
         () => branchOptionsForm.filter((o) => !o.disabled).length,
         [branchOptionsForm]
@@ -575,12 +621,15 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             onChange={(v) => {
                                 if (branchFieldDisabled) return;
                                 const selected = pickSingle(v);
-                                setField("branchId", selected);
-                                if (selected) {
-                                    markTouched("branchId");
-                                    const nextPayload = { ...values, branchId: selected };
-                                    void validateFieldWithPayload("branchId", nextPayload);
-                                }
+                                markTouched("branchId");
+                                setValues((prev) => {
+                                    const next = { ...prev, branchId: selected, assignableRoleId: "" };
+                                    queueMicrotask(() => {
+                                        void validateFieldWithPayload("branchId", next);
+                                        void validateFieldWithPayload("assignableRoleId", next);
+                                    });
+                                    return next;
+                                });
                             }}
                             options={branchOptionsForm}
                             placeholder={
@@ -594,6 +643,40 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             background="white"
                             disabled={branchFieldDisabled}
                             error={formErrors.branchId}
+                        />
+                    </div>
+                    <div>
+                        <FormSelectField
+                            label="Role *"
+                            value={values.assignableRoleId || null}
+                            onChange={(value) => {
+                                if (mode === "edit") return;
+                                const id = Array.isArray(value) ? value[0] : value;
+                                setValues((prev) => {
+                                    const next = { ...prev, assignableRoleId: id || "" };
+                                    markTouched("assignableRoleId");
+                                    void validateFieldWithPayload("assignableRoleId", next);
+                                    setFormErrors((e) => ({ ...e, assignableRoleId: "" }));
+                                    return next;
+                                });
+                            }}
+                            options={assignableRoleOptions}
+                            placeholder={
+                                isLoadingAssignableRoles
+                                    ? "Loading roles..."
+                                    : !resolvedBranchIdForRoleDropdown
+                                      ? "Select branch first"
+                                      : "Select role"
+                            }
+                            mode="single"
+                            background="white"
+                            disabled={
+                                mode === "edit" ||
+                                isLoadingAssignableRoles ||
+                                assignableRoleOptions.length === 0 ||
+                                !resolvedBranchIdForRoleDropdown
+                            }
+                            error={formErrors.assignableRoleId}
                         />
                     </div>
                     <FileUploadField
@@ -610,6 +693,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                         accept={PROFILE_IMAGE_ACCEPT}
                         validateFile={validateDoctorProfileImage}
                     />
+
                     <div className="flex min-w-0 gap-2">
                         <div data-field="nameTitle" className="scroll-mt-4 w-[115px] shrink-0">
                             <FormSelectField
@@ -764,6 +848,19 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                         background="white"
                         error={formErrors.loginType}
                     />
+                     <FormInputField
+                            label="Employee Id *"
+                            type="text"
+                            autoComplete="off"
+                            value={values.employeeId}
+                            onChange={(e) => setField("employeeId", formatEmployeeIdInput(e.target.value))}
+                            onBlur={() => blurAndValidate("employeeId")}
+                            height={44}
+                            placeholder="Employee Id"
+                            maxLength={MAX_FIELD_LEN}
+                            error={formErrors.employeeId}
+                            disabled={mode === "edit"}
+                        />
                     {/* <FormSelectField
                         label="Doctor Type *"
                         value={values.doctorType}
@@ -784,14 +881,13 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             background="white"
                         /> */}
                     {/* ) : null} */}
-                    <div className={mode === "add" ? "min-w-0 xl:col-span-2" : "min-w-0"}>
+                    {/* <div className={mode === "add" ? "min-w-0 xl:col-span-2" : "min-w-0"}>
                         <FormInputField
                             label="Employee Id *"
-                            type="tel"
-                            inputMode="numeric"
+                            type="text"
                             autoComplete="off"
                             value={values.employeeId}
-                            onChange={(e) => setField("employeeId", digitsOnly(e.target.value, MAX_FIELD_LEN))}
+                            onChange={(e) => setField("employeeId", formatEmployeeIdInput(e.target.value))}
                             onBlur={() => blurAndValidate("employeeId")}
                             height={44}
                             placeholder="Employee Id"
@@ -799,7 +895,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             error={formErrors.employeeId}
                             disabled={mode === "edit"}
                         />
-                    </div>
+                    </div> */}
                     {mode === "edit" ? (
                         <FormSelectField
                             label="Status"

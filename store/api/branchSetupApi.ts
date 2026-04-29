@@ -955,6 +955,7 @@ export const branchSetupApi = baseApi.injectEndpoints({
       invalidatesTags: ["Branches"],
     }),
     createBranch: builder.mutation<CreateBranchApiResponse, FormData>({
+      /** Body: multipart FormData. Root field `labTestSource`: `chandan_api` | `manual`. */
       query: (body) => ({
         url: "/branch/createBranch",
         method: "POST",

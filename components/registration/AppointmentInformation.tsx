@@ -143,7 +143,7 @@ export default function AppointmentInformation({
     }, [availableTimeSlots, formData.timeSlot, onChange]);
 
     return (
-        <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5">
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 mt-4">
             <h2 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
                 <Image src="/icons/CalendarDarkIcon.svg" alt="Appointment info" width={20} height={20} /> Appointment Information
             </h2>

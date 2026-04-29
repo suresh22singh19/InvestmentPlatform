@@ -152,6 +152,21 @@ export interface GetRoleByIdParams {
     roleId: number | string;
 }
 
+/* ---------- Role list dropdown (search) ---------- */
+
+export interface RoleDropdownItem {
+    id: number;
+    name: string;
+}
+
+export interface GetRoleListDropdownParams {
+    search?: string;
+    /** Scoped search: `facility_doctor` | `facility_nurse` | `facility_therapist` | `facility` | `corporate`. */
+    roleCategoryType?: string;
+}
+
+export type GetRoleListDropdownResponse = RolePermissionApiEnvelope<RoleDropdownItem[]>;
+
 /* ---------- Update role ---------- */
 
 export interface UpdateRoleRequest {
@@ -1061,10 +1076,15 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
             query: ({ roleCategoryType, branchId, branchType }) => {
                 const params = new URLSearchParams();
                 params.append("roleCategoryType", roleCategoryType);
-                if (roleCategoryType === "facility" && branchId != null && Number.isFinite(branchId)) {
+                const needsBranchScope =
+                    roleCategoryType === "facility" ||
+                    roleCategoryType === "facility_doctor" ||
+                    roleCategoryType === "facility_nurse" ||
+                    roleCategoryType === "facility_therapist";
+                if (needsBranchScope && branchId != null && Number.isFinite(branchId)) {
                     params.append("branchId", String(branchId));
                 }
-                if (roleCategoryType === "facility" && branchType) {
+                if (needsBranchScope && branchType) {
                     params.append("branchType", branchType);
                 }
                 return {
@@ -1155,6 +1175,17 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
             }),
             invalidatesTags: [APPROVAL_LEAVE_ASSIGNMENT_TAGS.list],
         }),
+
+        /**
+         * GET /admin/role-and-permissions/getRoleListDropdown
+         */
+        getRoleListDropdown: builder.query<GetRoleListDropdownResponse, GetRoleListDropdownParams>({
+            query: (params) => ({
+                url: "/admin/role-and-permissions/getRoleListDropdown",
+                method: "GET",
+                params,
+            }),
+        }),
     }),
 });
 
@@ -1187,4 +1218,5 @@ export const {
     useGetApprovalLeaveAssignmentListQuery,
     useCreateApprovalLeaveAssignmentMutation,
     useUpdateApprovalLeaveAssignmentMutation,
+    useLazyGetRoleListDropdownQuery,
 } = roleAndPermissionApi;

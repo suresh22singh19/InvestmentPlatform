@@ -28,6 +28,8 @@ export const DOCTOR_NAME_TITLE_VALUES = ["Dr"] as const;
 export type DoctorRecord = {
     id: number;
     branchId: string;
+    /** Selected role id string for forms; maps to API `roleId`. */
+    assignableRoleId: string;
     profileImageUrl: string | null;
     /** Certificate / PDF URL from API (`attachment`); used on edit to show existing filename. */
     attachmentUrl: string | null;
@@ -149,6 +151,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
     {
         id: 1,
         branchId: "1",
+        assignableRoleId: "3",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
@@ -178,6 +181,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
     {
         id: 2,
         branchId: "2",
+        assignableRoleId: "3",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
@@ -207,6 +211,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
     {
         id: 3,
         branchId: "3",
+        assignableRoleId: "3",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
@@ -236,6 +241,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
     {
         id: 4,
         branchId: "2",
+        assignableRoleId: "3",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
@@ -265,6 +271,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
     {
         id: 5,
         branchId: "1",
+        assignableRoleId: "3",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
@@ -294,6 +301,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
     {
         id: 6,
         branchId: "3",
+        assignableRoleId: "3",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
@@ -341,6 +349,7 @@ export function createEmptyDoctorPayload(): DoctorPayload {
     const rid = () => Math.random().toString(36).slice(2, 11);
     return {
         branchId: "",
+        assignableRoleId: "",
         profileImageUrl: null,
         attachmentUrl: null,
         nameTitle: "Dr",
