@@ -20,6 +20,7 @@ import {
   Pagination,
   Tabs,
   Tooltip,
+  MessageDialog,
 } from "@/components/ui";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import { ListBorder } from "@/components/ui/ListBorder";
@@ -51,6 +52,19 @@ type LabTest = {
   panelStatus?: LabTestStatus;
   tpaPrice?: string;
   tpaStatus?: LabTestStatus;
+  testFeeLastUpdatedBy?: string | null;
+  panelPriceLastUpdatedBy?: string | null;
+  tpaPriceLastUpdatedBy?: string | null;
+};
+
+/** API may return camelCase or snake_case for these fields */
+type LabTestApiItemRow = {
+  testFeeLastUpdatedBy?: string | null;
+  panelPriceLastUpdatedBy?: string | null;
+  tpaPriceLastUpdatedBy?: string | null;
+  test_fee_last_updated_by?: string | null;
+  panel_price_last_updated_by?: string | null;
+  tpa_price_last_updated_by?: string | null;
 };
 
 function formatPrice(n: number): string {
@@ -77,6 +91,19 @@ function formatDateOnly(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function displayUpdatedBy(test: LabTest, tab: string): string {
+  if (tab === "private") {
+    return test.testFeeLastUpdatedBy?.trim() || "—";
+  }
+  if (tab === "panel") {
+    return test.panelPriceLastUpdatedBy?.trim() || "—";
+  }
+  if (tab === "tpa") {
+    return test.tpaPriceLastUpdatedBy?.trim() || "—";
+  }
+  return "—";
 }
 
 function sanitizeDecimalInput(raw: string): string {
@@ -133,6 +160,10 @@ export default function LabTestsPage() {
   const [isAddLabTestDialogOpen, setIsAddLabTestDialogOpen] = useState(false);
   const [addLabTestForm, setAddLabTestForm] = useState<AddLabTestFormState>(emptyAddLabTestForm);
   const [addLabTestErrors, setAddLabTestErrors] = useState<Record<string, string>>({});
+  const [showCreateLabTestSuccessDialog, setShowCreateLabTestSuccessDialog] = useState(false);
+  const [createLabTestSuccessMessage, setCreateLabTestSuccessMessage] = useState("");
+  const [showCreateLabTestErrorDialog, setShowCreateLabTestErrorDialog] = useState(false);
+  const [createLabTestErrorMessage, setCreateLabTestErrorMessage] = useState("");
   const [selectedLabTest, setSelectedLabTest] = useState<LabTest | null>(null);
   const [formValues, setFormValues] = useState({
     testName: "",
@@ -205,6 +236,26 @@ export default function LabTestsPage() {
   const selectedBranchId = hookFilterBranchId ?? null;
   const isBranchIdValid = selectedBranchId != null;
 
+  const selectedBranchRowForLabSource = useMemo(() => {
+    if (hookFilterBranchId == null) return undefined;
+    const rows = branchesData?.data;
+    if (!Array.isArray(rows)) return undefined;
+    return rows.find((b) => b.id === hookFilterBranchId);
+  }, [hookFilterBranchId, branchesData?.data]);
+
+  const showAddLabTestButton =
+    canAdd &&
+    hookFilterBranchId != null &&
+    String(selectedBranchRowForLabSource?.labTestSource ?? "").toLowerCase() === "manual";
+
+  useEffect(() => {
+    if (!isAddLabTestDialogOpen) return;
+    if (showAddLabTestButton) return;
+    setIsAddLabTestDialogOpen(false);
+    setAddLabTestForm(emptyAddLabTestForm());
+    setAddLabTestErrors({});
+  }, [showAddLabTestButton, isAddLabTestDialogOpen]);
+
   const {
     data: labTestsDataAll,
     isLoading: isLoadingLabTestsAll,
@@ -263,7 +314,9 @@ export default function LabTestsPage() {
 
   const labTests: LabTest[] = useMemo(() => {
     if (!labTestsData?.data) return [];
-    return labTestsData.data.map((item) => ({
+    return labTestsData.data.map((item) => {
+      const row = item as LabTestApiItemRow;
+      return {
       id: item.id,
       testName: item.testName,
       description: item.testDescription ?? "",
@@ -299,7 +352,11 @@ export default function LabTestsPage() {
       panelStatus: capitalizeStatus(item.panelStatus),
       tpaPrice: formatPrice(toNum(item.tpaPrice)),
       tpaStatus: capitalizeStatus(item.tpaStatus),
-    }));
+      testFeeLastUpdatedBy: row.testFeeLastUpdatedBy ?? row.test_fee_last_updated_by ?? null,
+      panelPriceLastUpdatedBy: row.panelPriceLastUpdatedBy ?? row.panel_price_last_updated_by ?? null,
+      tpaPriceLastUpdatedBy: row.tpaPriceLastUpdatedBy ?? row.tpa_price_last_updated_by ?? null,
+    };
+    });
   }, [labTestsData?.data]);
 
   const filteredLabTests = useMemo(() => {
@@ -364,7 +421,7 @@ export default function LabTestsPage() {
   };
 
   const handleAddNew = () => {
-    if (!canAdd) return;
+    if (!canAdd || !showAddLabTestButton) return;
     setAddLabTestForm(emptyAddLabTestForm());
     setAddLabTestErrors({});
     setDialogMode(null);
@@ -388,7 +445,7 @@ export default function LabTestsPage() {
 
   const handleAddLabTestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canAdd || !validateAddLabTestForm()) return;
+    if (!canAdd || !showAddLabTestButton || !validateAddLabTestForm()) return;
     const branchId = parseInt(addLabTestForm.branchId, 10);
     if (!Number.isFinite(branchId)) {
       setAddLabTestErrors((prev) => ({ ...prev, branchId: "Select a valid branch" }));
@@ -415,15 +472,19 @@ export default function LabTestsPage() {
       if (res.success) {
         closeAddLabTestDialog();
         refetchLabTests();
+        setCreateLabTestSuccessMessage(res.message || "Lab test created successfully.");
+        setShowCreateLabTestSuccessDialog(true);
       } else {
-        setAddLabTestErrors((prev) => ({ ...prev, _form: res.message || "Could not create lab test." }));
+        setCreateLabTestErrorMessage(res.message || "Could not create lab test.");
+        setShowCreateLabTestErrorDialog(true);
       }
     } catch (unknownErr: unknown) {
       const msg =
         unknownErr && typeof unknownErr === "object" && "data" in unknownErr
           ? String((unknownErr as { data?: { message?: string } }).data?.message ?? "Request failed.")
           : "Request failed.";
-      setAddLabTestErrors((prev) => ({ ...prev, _form: msg }));
+      setCreateLabTestErrorMessage(msg);
+      setShowCreateLabTestErrorDialog(true);
     }
   };
 
@@ -619,7 +680,7 @@ export default function LabTestsPage() {
                     placeholder="Search Here..."
                   />
                 </div>
-                {canAdd ? (
+                {showAddLabTestButton ? (
                   <button
                     type="button"
                     className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
@@ -657,6 +718,9 @@ export default function LabTestsPage() {
                     </>
                   )}
                   <TableHead>{activeTab === "all" ? "Last Synced" : "Updated At"}</TableHead>
+                  {activeTab !== "all" ? (
+                    <TableHead className="min-w-[100px] max-w-[320px]">Updated By</TableHead>
+                  ) : null}
                   {(activeTab === "all" ? canView : canEdit) ? (
                     <TableHead position="last">Action</TableHead>
                   ) : null}
@@ -666,7 +730,7 @@ export default function LabTestsPage() {
                 {isLoadingLabTests ? (
                   <TableRow>
                     <TableData
-                      colSpan={activeTab === "all" ? ((activeTab === "all" ? canView : canEdit) ? 12 : 11) : ((activeTab === "all" ? canView : canEdit) ? 8 : 7)}
+                      colSpan={activeTab === "all" ? (canView ? 12 : 11) : canEdit ? 9 : 8}
                       className="py-12 text-center text-sm text-[#9CA3AF]"
                     >
                       Loading...
@@ -675,14 +739,16 @@ export default function LabTestsPage() {
                 ) : paginatedLabTests.length === 0 ? (
                   <TableRow>
                     <TableData
-                      colSpan={activeTab === "all" ? ((activeTab === "all" ? canView : canEdit) ? 12 : 11) : ((activeTab === "all" ? canView : canEdit) ? 8 : 7)}
+                      colSpan={activeTab === "all" ? (canView ? 12 : 11) : canEdit ? 9 : 8}
                       className="py-12 text-center text-sm text-[#9CA3AF]"
                     >
                       No lab tests found
                     </TableData>
                   </TableRow>
                 ) : (
-                  paginatedLabTests.map((test, index) => (
+                  paginatedLabTests.map((test, index) => {
+                    const updatedByLabel = displayUpdatedBy(test, activeTab);
+                    return (
                     <TableRow key={test.id}>
                       <TableData position="first">{startIndex + index + 1}</TableData>
                       <TableData>{test.groupName ?? "—"}</TableData>
@@ -752,6 +818,16 @@ export default function LabTestsPage() {
                               ? (test.tpaUpdatedAt ?? test.updatedAt)
                               : test.updatedAt}
                       </TableData>
+                      {activeTab !== "all" ? (
+                        <TableData className="max-w-[320px] text-sm text-[#434956]">
+                          <span
+                            className="line-clamp-2 break-words"
+                            title={updatedByLabel !== "—" ? updatedByLabel : undefined}
+                          >
+                            {updatedByLabel}
+                          </span>
+                        </TableData>
+                      ) : null}
                       {(activeTab === "all" ? canView : canEdit) ? (
                         <TableData position="last">
                           <div className="flex items-center gap-3">
@@ -787,7 +863,8 @@ export default function LabTestsPage() {
                         </TableData>
                       ) : null}
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -810,16 +887,12 @@ export default function LabTestsPage() {
 
       {/* Add Lab Test — branches with manual labTestSource, prices + status rows */}
       <Dialog
-        open={isAddLabTestDialogOpen && canAdd}
+        open={isAddLabTestDialogOpen && showAddLabTestButton}
         onClose={closeAddLabTestDialog}
         title="Add Lab Test"
         width={949}
       >
         <form onSubmit={handleAddLabTestSubmit} className="space-y-6">
-          {addLabTestErrors._form ? (
-            <p className="text-sm text-[#F6776E]">{addLabTestErrors._form}</p>
-          ) : null}
-
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
             <FormSelectField
               label="Branch *"
@@ -1169,6 +1242,28 @@ export default function LabTestsPage() {
           </form>
         )}
       </Dialog>
+
+      <MessageDialog
+        open={showCreateLabTestSuccessDialog}
+        onClose={() => setShowCreateLabTestSuccessDialog(false)}
+        icon="/icons/SuccessCheck.svg"
+        iconBgColor="#E8F5E9"
+        message={createLabTestSuccessMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => setShowCreateLabTestSuccessDialog(false)}
+      />
+
+      <MessageDialog
+        open={showCreateLabTestErrorDialog}
+        onClose={() => setShowCreateLabTestErrorDialog(false)}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={createLabTestErrorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => setShowCreateLabTestErrorDialog(false)}
+      />
     </AppShell>
   );
 }

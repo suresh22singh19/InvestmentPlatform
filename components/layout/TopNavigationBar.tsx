@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useId } from "react";
+import React, { useState, useRef, useEffect, useCallback, useId, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -220,12 +220,12 @@ const getAllSettingsItems = (): SettingsItem[] => [
     href: "/settings/lab-tests",
     iconSrc: "/icons/LabTestsDarkIcon.svg",
   },
-  // {
-  //   key: "package",
-  //   label: "Package",
-  //   href: "/settings/package",
-  //   iconSrc: "/icons/PackageDarkIcon.svg",
-  // },
+  {
+    key: "package",
+    label: "Packages",
+    href: "/settings/package",
+    iconSrc: "/icons/PackageDarkIcon.svg",
+  },
   // {
   //   key: "field-users",
   //   label: "Field Users",
@@ -707,6 +707,7 @@ const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
   panel: ["panel"],
   therapy: ["therapy"],
   "lab-tests": ["lab-tests", "lab-test"],
+  package: ["package", "packages", "package-master", "package-settings", "package-management"],
   "diet-category": ["diet-category"],
   diet: ["diagnosis-diet", "diet"],
   diagnosis: ["diagnosis"],
@@ -836,12 +837,21 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     return "/registration";
   };
 
-  const settingsItems = filterBySubModuleAccess(
-    getAllSettingsItems(),
-    permissionsMap,
-    ["settings"],
-    SETTINGS_SUBMODULE_ALIASES
-  );
+  const settingsItems = useMemo(() => {
+    const all = getAllSettingsItems();
+    const filtered = filterBySubModuleAccess(
+      all,
+      permissionsMap,
+      ["settings"],
+      SETTINGS_SUBMODULE_ALIASES
+    );
+    const pkg = all.find((i) => i.key === "package");
+    if (!pkg) return filtered;
+    if (filtered.some((i) => i.key === "package")) return filtered;
+    const labIdx = filtered.findIndex((i) => i.key === "lab-tests");
+    const insertAt = labIdx >= 0 ? labIdx + 1 : filtered.length;
+    return [...filtered.slice(0, insertAt), pkg, ...filtered.slice(insertAt)];
+  }, [permissionsMap]);
   const rolesPermissionItems = filterBySubModuleAccess(
     getRolesPermissionItems(),
     permissionsMap,

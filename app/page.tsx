@@ -37,6 +37,7 @@ const SUB_MODULE_ROUTE_MAP: Record<string, string> = {
   panel: "/settings/panel",
   therapy: "/settings/therapy",
   "lab tests": "/settings/lab-tests",
+  package: "/settings/package",
   "diet category": "/settings/diet-category",
   "diagnosis diet": "/settings/diet",
   diagnosis: "/settings/diagnosis",

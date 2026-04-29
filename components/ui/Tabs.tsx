@@ -13,9 +13,10 @@ type TabsProps = {
   onChange: (value: string) => void;
   className?: string;
   disabled?: boolean;
+  tabBorder?: boolean;
 };
 
-export const Tabs = ({ options, value, onChange, className = "", disabled = false }: TabsProps) => {
+export const Tabs = ({ options, value, onChange, className = "", disabled = false , tabBorder = true}: TabsProps) => {
   return (
     <div
       className={`flex h-[41px] w-full items-center gap-[5px] rounded-[100px] border border-[#DFE0E2]  p-1 ${disabled ? "opacity-60" : ""} ${className}`}
@@ -30,7 +31,7 @@ export const Tabs = ({ options, value, onChange, className = "", disabled = fals
             onClick={() => {
               if (!disabled) onChange(option.value);
             }}
-            className={`text-nowrap flex h-[33px] flex-1 items-center justify-center rounded-[100px] px-4 text-sm font-medium leading-[120%] transition-colors disabled:cursor-not-allowed ${
+            className={`text-nowrap flex h-[33px] flex-1 items-center justify-center rounded-[100px] px-4 text-sm font-medium leading-[120%] transition-colors disabled:cursor-not-allowed  ${tabBorder ? "border border-[#DFE0E2]" : ""} ${
               isActive
                 ? "bg-[#0B8C00] text-white"
                 : "bg-white text-[#434956] hover:bg-[#F2F8F2]"
@@ -43,4 +44,3 @@ export const Tabs = ({ options, value, onChange, className = "", disabled = fals
     </div>
   );
 };
-

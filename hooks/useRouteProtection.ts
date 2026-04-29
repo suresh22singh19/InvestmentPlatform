@@ -56,6 +56,12 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     panel: ["/settings/panel"],
     therapy: ["/settings/therapy"],
     "lab-tests": ["/settings/lab-tests"],
+    "lab-test": ["/settings/lab-tests"],
+    package: ["/settings/package"],
+    packages: ["/settings/package"],
+    "package-master": ["/settings/package"],
+    "package-settings": ["/settings/package"],
+    "package-management": ["/settings/package"],
     "diet-category": ["/settings/diet-category"],
     "diagnosis-diet": ["/settings/diet"],
     diagnosis: ["/settings/diagnosis"],
@@ -105,6 +111,48 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/hospital-infrastructure",
     // "/discharge-pending",
 ];
+
+/**
+ * First path segment after `/settings/` may not match `slugify(moduleName)` from the API
+ * (e.g. URL is `package` but permission key is `package-master`). Map segment → submodule keys to try.
+ */
+const SETTINGS_URL_SEGMENT_SUBMODULE_SLUGS: Record<string, string[]> = {
+    package: [
+        "package",
+        "packages",
+        "package-master",
+        "package-settings",
+        "package-management",
+    ],
+    "lab-tests": ["lab-tests", "lab-test"],
+};
+
+const canAccessSettingsUrlBySegment = (
+    pathname: string,
+    permissionsMap: NormalizedPermissionsMap
+): boolean => {
+    const base = pathname.split("?")[0] ?? pathname;
+    if (!base.startsWith("/settings/")) return false;
+    const parts = base.split("/").filter(Boolean);
+    if (parts.length < 2 || parts[0] !== "settings") return false;
+    const segment = parts[1];
+    if (!segment || segment === "profile") return false;
+
+    const settingsModule = Object.values(permissionsMap).find(
+        (m) => m.key === "settings" && m.isActive
+    );
+    if (!settingsModule?.subModules) return false;
+
+    const slugCandidates = new Set<string>([
+        segment,
+        ...(SETTINGS_URL_SEGMENT_SUBMODULE_SLUGS[segment] ?? []),
+    ]);
+    for (const slug of slugCandidates) {
+        const sub = settingsModule.subModules[slug];
+        if (sub?.isActive && sub?.canView) return true;
+    }
+    return false;
+};
 
 const getAllowedRoutePrefixesFromPermissions = (
     permissionsMap: NormalizedPermissionsMap,
@@ -239,6 +287,16 @@ export const useRouteProtection = () => {
             if (!userLoginType) {
                 userLoginType = localStorage.getItem("loginType") || null;
             }
+            if (!userPermissionsMap || Object.keys(userPermissionsMap).length === 0) {
+                try {
+                    const persistedPermissions = localStorage.getItem("permissions");
+                    if (persistedPermissions) {
+                        userPermissionsMap = JSON.parse(persistedPermissions) as NormalizedPermissionsMap;
+                    }
+                } catch {
+                    userPermissionsMap = {};
+                }
+            }
             if (!userGroupName) {
                 try {
                     const rawLoginData = localStorage.getItem("loginData");
@@ -260,16 +318,6 @@ export const useRouteProtection = () => {
                                     )?.type?.toLowerCase() ??
                                     parsed?.branch_access?.[0]?.type?.toLowerCase() ??
                                     null;
-                            }
-                        }
-                        if (!userPermissionsMap || Object.keys(userPermissionsMap).length === 0) {
-                            try {
-                                const persistedPermissions = localStorage.getItem("permissions");
-                                if (persistedPermissions) {
-                                    userPermissionsMap = JSON.parse(persistedPermissions) as NormalizedPermissionsMap;
-                                }
-                            } catch {
-                                userPermissionsMap = {};
                             }
                         }
                         if (!userEmail) {
@@ -310,10 +358,13 @@ export const useRouteProtection = () => {
                 userPermissionsMap,
                 selectedBranchType
             );
-            const canAccessCurrentRoute = allowedPrefixes.some((prefix) =>
-                pathMatchesPrefix(pathname, prefix)
-            );
-            if (!canAccessCurrentRoute) {
+            const canAccessCurrentRoute =
+                allowedPrefixes.some((prefix) => pathMatchesPrefix(pathname, prefix)) ||
+                canAccessSettingsUrlBySegment(pathname, userPermissionsMap);
+            const isSettingsPackageOpenAccess =
+                pathname === "/settings/package" ||
+                pathname?.startsWith("/settings/package/");
+            if (!canAccessCurrentRoute && !isSettingsPackageOpenAccess) {
                 const fallbackRoute =
                     getFirstAccessibleRouteFromPermissions(
                         userPermissionsMap,

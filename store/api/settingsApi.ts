@@ -52,6 +52,8 @@ interface Branch {
   branchCode: string;
   branchStatus: string;
   status: string;
+  /** `"manual"` → can add branch-scoped lab tests in UI; `"chandan_api"` hides add. */
+  labTestSource?: string | null;
 }
 
 interface BranchesResponse {
@@ -259,6 +261,9 @@ interface LabTestApiItem {
   testFeeLastUpdatedAt?: string | null;
   tpaPriceLastUpdatedAt?: string | null;
   panelPriceLastUpdatedAt?: string | null;
+  testFeeLastUpdatedBy?: string | null;
+  tpaPriceLastUpdatedBy?: string | null;
+  panelPriceLastUpdatedBy?: string | null;
 }
 
 interface GetLabTestsParams {
@@ -349,7 +354,12 @@ interface UpdateLabTestByBranchResponse {
 
 interface BranchesWithManualLabTestSourceResponse {
   success: boolean;
-  data: Array<{ id: number; name?: string | null }>;
+  data: Array<{
+    id: number;
+    name?: string | null;
+    /** e.g. `"manual"` for branches using manual lab test source */
+    labTestSource?: string | null;
+  }>;
   message?: string;
   timestamp?: string;
   statusCode?: number;
