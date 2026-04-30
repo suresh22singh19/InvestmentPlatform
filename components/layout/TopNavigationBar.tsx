@@ -390,7 +390,7 @@ type PatientItem = {
 
 const getPatientItems = (): PatientItem[] => [
   { key: "patient-opd", label: "OPD", href: "/registration/registrationList", iconSrc: "/icons/RegistrationDarkIcon.svg" },
-  // { key: "patient-old-opd", label: "Old OPD", href: "/patient/opd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
+  { key: "patient-old-opd", label: "Old OPD", href: "/patient/opd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
   { key: "patient-ipd", label: "IPD", href: "/patient/ipd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
   { key: "patient-daycare", label: "DayCare", href: "/patient/daycare", iconSrc: "/icons/RegistrationDarkIcon.svg" },
 ];
@@ -677,7 +677,7 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "lead-request", label: "Lead Request", href: "/lead-request" },
   { key: "voucher", label: "Voucher", href: "/voucher" },
   { key: "token", label: "Tokens", href: "/token" },
-  // { key: "discharge-pending", label: "Discharge Pending", href: "/discharge-pending" },
+  { key: "discharge-pending", label: "Discharge Pending", href: "/discharge-pending" },
 ];
 
 const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {

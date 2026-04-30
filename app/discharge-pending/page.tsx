@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -27,6 +28,7 @@ import type { SelectOption } from "@/components/ui/FormSelectField";
 
 type DischargePendingRow = {
   id: number;
+  patientId: number | null;
   branchId: string;
   uhid: string;
   patientName: string;
@@ -84,6 +86,7 @@ export default function DischargePendingPage() {
     () => branchFilterOptions.filter((o) => o.value !== ""),
     [branchFilterOptions]
   );
+  const router = useRouter();
   const [searchType, setSearchType] = useState<"uhid" | "patientName">("uhid");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -128,8 +131,12 @@ export default function DischargePendingPage() {
     const rawDate = dischargeRaw || fallbackRaw;
     const dischargedDate = rawDate ? rawDate.split(" ")[0] : "-";
     const statusLabel = (item.status ?? "").trim();
+    const patientIdRaw = item.patient_id?.trim();
+    const patientIdParsed =
+      patientIdRaw && patientIdRaw !== "" ? Number(patientIdRaw) : NaN;
     return {
       id: Number(item.id) || 0,
+      patientId: Number.isFinite(patientIdParsed) ? patientIdParsed : null,
       branchId: item.branch_id ?? "",
       uhid: item.uhid ?? "-",
       patientName: item.patient_name ?? "-",
@@ -439,6 +446,9 @@ export default function DischargePendingPage() {
                             type="button"
                             className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
                             aria-label="View details"
+                            onClick={() =>
+                              router.push(`/patient/details?id=${row.patientId ?? row.id}`)
+                            }
                           >
                             <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
                           </button>

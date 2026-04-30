@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -92,6 +93,7 @@ export default function DayCarePage() {
     () => branchFilterOptions.filter((o) => o.value !== ""),
     [branchFilterOptions]
   );
+  const router = useRouter();
   const [selectedDoctor, setSelectedDoctor] = useState("all");
   const [searchType, setSearchType] = useState<"uhid" | "contactNumber" | "patientName">("uhid");
   const [searchTerm, setSearchTerm] = useState("");
@@ -443,6 +445,7 @@ export default function DayCarePage() {
                               type="button"
                               className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
                               aria-label="View details"
+                              onClick={() => router.push(`/patient/details?id=${row.id}`)}
                             >
                               <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
                             </button>

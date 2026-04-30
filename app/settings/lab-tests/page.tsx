@@ -106,6 +106,15 @@ function displayUpdatedBy(test: LabTest, tab: string): string {
   return "—";
 }
 
+/** List "Last synced" / "Updated at": All → row `updatedAt`; other tabs → that price channel’s last update */
+function displayLastSyncDate(test: LabTest, tab: string): string {
+  if (tab === "all") return test.updatedAt;
+  if (tab === "private") return test.privateUpdatedAt ?? "—";
+  if (tab === "panel") return test.panelUpdatedAt ?? "—";
+  if (tab === "tpa") return test.tpaUpdatedAt ?? "—";
+  return "—";
+}
+
 function sanitizeDecimalInput(raw: string): string {
   let v = raw.replace(/[^0-9.]/g, "");
   const dotCount = (v.match(/\./g) || []).length;
@@ -325,25 +334,9 @@ export default function LabTestsPage() {
       updatedAt: formatDateOnly(
         item.updatedAt ?? item.updated_at ?? item.createdAt ?? item.created_at ?? ""
       ),
-      privateUpdatedAt: formatDateOnly(
-        item.testFeeLastUpdatedAt ?? ""
-      ),
-      panelUpdatedAt: formatDateOnly(
-        item.panelPriceLastUpdatedAt ??
-          item.updatedAt ??
-          item.updated_at ??
-          item.createdAt ??
-          item.created_at ??
-          ""
-      ),
-      tpaUpdatedAt: formatDateOnly(
-        item.tpaPriceLastUpdatedAt ??
-          item.updatedAt ??
-          item.updated_at ??
-          item.createdAt ??
-          item.created_at ??
-          ""
-      ),
+      privateUpdatedAt: formatDateOnly(item.testFeeLastUpdatedAt ?? ""),
+      panelUpdatedAt: formatDateOnly(item.panelPriceLastUpdatedAt ?? ""),
+      tpaUpdatedAt: formatDateOnly(item.tpaPriceLastUpdatedAt ?? ""),
       groupName: item.groupName,
       categoryName: item.categoryName,
       privatePrice: formatPrice(toNum(item.testFee)),
@@ -810,13 +803,7 @@ export default function LabTestsPage() {
                         </>
                       )}
                       <TableData className="whitespace-nowrap">
-                        {activeTab === "private"
-                          ? (test.privateUpdatedAt ?? test.updatedAt)
-                          : activeTab === "panel"
-                            ? (test.panelUpdatedAt ?? test.updatedAt)
-                            : activeTab === "tpa"
-                              ? (test.tpaUpdatedAt ?? test.updatedAt)
-                              : test.updatedAt}
+                        {displayLastSyncDate(test, activeTab)}
                       </TableData>
                       {activeTab !== "all" ? (
                         <TableData className="max-w-[320px] text-sm text-[#434956]">

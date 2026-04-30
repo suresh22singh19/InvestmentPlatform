@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 
@@ -36,6 +37,7 @@ import {
     type TableListingSection,
     Pagination,
     RefreshButton,
+    BackToPreviousPageButton,
     Table,
     TableBody,
     TableData,
@@ -897,6 +899,7 @@ export default function IpdPage() {
         () => branchFilterOptions.filter((o) => o.value !== ""),
         [branchFilterOptions]
     );
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState("overview");
     const [selectedDoctor, setSelectedDoctor] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
@@ -1063,16 +1066,12 @@ export default function IpdPage() {
             <div className="flex items-start justify-between">
                 <PageHeading title="View Appointment" />
                 <div className="flex items-center gap-3">
-                    <button
-                        type="button"
-                        className="flex h-11 items-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 text-sm font-medium text-[#9A7909] transition-colors hover:bg-[#F2F8F2]"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M8.75049 4.24976C8.78356 4.24988 8.81499 4.26347 8.83838 4.28687C8.86176 4.31028 8.8754 4.34167 8.87549 4.37476C8.87549 4.408 8.86189 4.44012 8.83838 4.46362L4.27979 9.02124L3.42627 9.87476H16.8755C16.9085 9.87488 16.9401 9.88854 16.9634 9.91187C16.9867 9.93522 17.0004 9.96676 17.0005 9.99976C17.0005 10.0329 16.9868 10.0652 16.9634 10.0886C16.9401 10.1119 16.9084 10.1246 16.8755 10.1248H3.42627L8.83838 15.5369C8.84993 15.5484 8.85944 15.5618 8.86572 15.5769C8.87198 15.592 8.87544 15.6084 8.87549 15.6248C8.87549 15.6411 8.87192 15.6575 8.86572 15.6726C8.85942 15.6878 8.85002 15.702 8.83838 15.7136C8.82683 15.7252 8.8134 15.7347 8.79834 15.741C8.78328 15.7472 8.76678 15.7507 8.75049 15.7507C8.73403 15.7507 8.71687 15.7473 8.70166 15.741C8.6866 15.7347 8.67317 15.7252 8.66162 15.7136L3.03662 10.0886C3.025 10.077 3.01557 10.0628 3.00928 10.0476C3.00305 10.0325 2.99951 10.0161 2.99951 9.99976C2.99956 9.98345 3.00303 9.96697 3.00928 9.9519C3.01556 9.93687 3.02509 9.92338 3.03662 9.91187L8.66162 4.28687C8.68513 4.26336 8.71724 4.24976 8.75049 4.24976Z" stroke="#9A7909" />
-                        </svg>
-                        <span className="text-hide">List</span>
-                    </button>
-                    <button
+                    <BackToPreviousPageButton
+                        text="List"
+                        className=" hover:bg-[#F2F8F2]"
+                        onClick={() => router.back()}
+                    />
+                    {/* <button
                         type="button"
                         className="flex h-11 items-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 text-sm font-medium text-[#9A7909] transition-colors hover:bg-[#F2F8F2]"
                     >
@@ -1096,7 +1095,7 @@ export default function IpdPage() {
                     >
                         <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
                         <span className="text-hide">Branch Shifting</span>
-                    </button>
+                    </button> */}
                 </div>
             </div>
             <div className="mb-6">

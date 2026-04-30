@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -91,6 +92,7 @@ export default function IpdPage() {
         () => branchFilterOptions.filter((o) => o.value !== ""),
         [branchFilterOptions]
     );
+    const router = useRouter();
     const [selectedDoctor, setSelectedDoctor] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
     const [debouncedUhid, setDebouncedUhid] = useState("");
@@ -401,6 +403,7 @@ export default function IpdPage() {
                                                             type="button"
                                                             className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
                                                             aria-label="Patient View"
+                                                            onClick={() => router.push(`/patient/details?id=${row.id}`)}
                                                         >
                                                             <Image src="/icons/ViewEyeIcon.svg" alt="Patient View" width={18} height={18} />
                                                         </button>
@@ -429,7 +432,7 @@ export default function IpdPage() {
                                                             className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
                                                             aria-label="Doctor Change"
                                                         >
-                                                            <Image src="/icons/DoctorIcon.svg" alt="Doctor Change" width={18} height={18} />
+                                                            <Image src="/icons/doctorIcon.svg" alt="Doctor Change" width={18} height={18} />
                                                         </button>
                                                     </Tooltip>
                                                 </div>
