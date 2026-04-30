@@ -94,6 +94,12 @@ export default function DayCarePage() {
     [branchFilterOptions]
   );
   const router = useRouter();
+  const handleViewPatient = useCallback(
+    (row: DayCareRow) => {
+      router.push(`/patient/details?id=${row.id}`);
+    },
+    [router]
+  );
   const [selectedDoctor, setSelectedDoctor] = useState("all");
   const [searchType, setSearchType] = useState<"uhid" | "contactNumber" | "patientName">("uhid");
   const [searchTerm, setSearchTerm] = useState("");
@@ -427,7 +433,9 @@ export default function DayCarePage() {
                   rows.map((row, index) => (
                     <TableRow key={row.id} className="bg-white transition-colors hover:bg-[#F7FAF7]">
                       <TableData variant="primary">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                      <TableData>{row.uhid}</TableData>
+                      <TableData onClick={() => handleViewPatient(row)}>
+                        <span className="font-medium text-[#0B8C00]">{row.uhid}</span>
+                      </TableData>
                       <TableData>{row.regId}</TableData>
                       <TableData>{row.name}</TableData>
                       <TableData>{row.doctor}</TableData>
@@ -443,9 +451,9 @@ export default function DayCarePage() {
                           <Tooltip content="View" position="top" delay={0}>
                             <button
                               type="button"
-                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                               aria-label="View details"
-                              onClick={() => router.push(`/patient/details?id=${row.id}`)}
+                              onClick={() => handleViewPatient(row)}
                             >
                               <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
                             </button>
@@ -453,7 +461,7 @@ export default function DayCarePage() {
                           <Tooltip content="Patient Form" position="top" delay={0}>
                             <button
                               type="button"
-                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                               aria-label="Download"
                             >
                               <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />

@@ -22,6 +22,7 @@ import {
 import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { usePermission } from "@/hooks/usePermission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -84,6 +85,18 @@ const DOCTOR_OPTIONS = [
 
 export default function IpdPage() {
   const router = useRouter();
+  const patientPermission = usePermission("Patient");
+  const opdPermission = usePermission("Patient", { subModule: "Opd" });
+  const canView = patientPermission.canView || opdPermission.canView;
+
+  const handleView = useCallback(
+    (row: IpdRow) => {
+      if (!canView || !row.id) return;
+      router.push(`/patient/details?id=${row.id}`);
+    },
+    [canView, router]
+  );
+
   const {
     selectedBranchFilter,
     setSelectedBranchFilter,
@@ -445,7 +458,9 @@ export default function IpdPage() {
                   rows.map((row, index) => (
                     <TableRow key={row.id} className="bg-white transition-colors hover:bg-[#F7FAF7]">
                       <TableData variant="primary">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                      <TableData>{row.uhid}</TableData>
+                      <TableData onClick={canView ? () => handleView(row) : undefined}>
+                        <span className="font-medium text-[#0B8C00]">{row.uhid}</span>
+                      </TableData>
                       <TableData>{row.ipdId}</TableData>
                       <TableData>{row.name}</TableData>
                       <TableData>{row.doctor}</TableData>
@@ -476,9 +491,9 @@ export default function IpdPage() {
                           <Tooltip content="View" position="top" delay={0}>
                             <button
                               type="button"
-                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                               aria-label="View details"
-                              onClick={() => router.push(`/patient/details?id=${row.id}`)}
+                              onClick={() => handleView(row)}
                             >
                               <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
                             </button>
@@ -486,7 +501,7 @@ export default function IpdPage() {
                           <Tooltip content="Patient Form" position="top" delay={0}>
                             <button
                               type="button"
-                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                               aria-label="Download"
                             >
                               <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />

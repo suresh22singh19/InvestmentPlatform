@@ -93,6 +93,12 @@ export default function IpdPage() {
         [branchFilterOptions]
     );
     const router = useRouter();
+    const handleViewPatient = useCallback(
+        (row: OldOpdRow) => {
+            router.push(`/patient/details?id=${row.id}`);
+        },
+        [router]
+    );
     const [selectedDoctor, setSelectedDoctor] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
     const [debouncedUhid, setDebouncedUhid] = useState("");
@@ -382,7 +388,9 @@ export default function IpdPage() {
                                     rows.map((row, index) => (
                                         <TableRow key={row.id} className="bg-white transition-colors hover:bg-[#F7FAF7]">
                                             <TableData variant="primary">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                                            <TableData>{row.uhid}</TableData>
+                                            <TableData onClick={() => handleViewPatient(row)}>
+                                                <span className="font-medium text-[#0B8C00]">{row.uhid}</span>
+                                            </TableData>
                                             <TableData>{row.token}</TableData>
                                             <TableData>{row.opdId}</TableData>
                                             <TableData>{row.name}</TableData>
@@ -401,9 +409,9 @@ export default function IpdPage() {
                                                     <Tooltip content="Patient View" position="top" delay={0}>
                                                         <button
                                                             type="button"
-                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                                                             aria-label="Patient View"
-                                                            onClick={() => router.push(`/patient/details?id=${row.id}`)}
+                                                            onClick={() => handleViewPatient(row)}
                                                         >
                                                             <Image src="/icons/ViewEyeIcon.svg" alt="Patient View" width={18} height={18} />
                                                         </button>
@@ -411,7 +419,7 @@ export default function IpdPage() {
                                                     <Tooltip content="Patient Form" position="top" delay={0}>
                                                         <button
                                                             type="button"
-                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                                                             aria-label="Patient Form"
                                                         >
                                                             <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
@@ -420,7 +428,7 @@ export default function IpdPage() {
                                                     <Tooltip content="OPD Confirm" position="top" delay={0}>
                                                         <button
                                                             type="button"
-                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                                                             aria-label="OPD Confirm"
                                                         >
                                                             <Image src="/icons/opdConfirmIcon.svg" alt="OPD Confirm" width={18} height={18} />
@@ -429,7 +437,7 @@ export default function IpdPage() {
                                                     <Tooltip content="Doctor Change" position="top" delay={0}>
                                                         <button
                                                             type="button"
-                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1]"
+                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                                                             aria-label="Doctor Change"
                                                         >
                                                             <Image src="/icons/doctorIcon.svg" alt="Doctor Change" width={18} height={18} />
