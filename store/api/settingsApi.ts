@@ -110,7 +110,7 @@ export interface PackageItem {
   therapyLoad: number;
   therapySessionsPerDay: number;
   therapyPrice: string;
-  roomPrice?: string;
+  branchRoomType?: { id: number; roomRentPrice: number };
   isPackageActive: boolean;
   branchName: string;
   createdAt: string;
@@ -149,7 +149,6 @@ export interface CreatePackageRequest {
   therapyLoad: number;
   therapySessionsPerDay: number;
   therapyPrice: number;
-  roomPrice: number;
 }
 
 export interface CreatePackageResponse {

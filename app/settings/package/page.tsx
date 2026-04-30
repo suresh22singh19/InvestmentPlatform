@@ -187,8 +187,9 @@ function formatRelativeTime(iso: string): string {
 }
 
 function apiItemToPackageCard(pkg: PackageItem): PackageCard {
-  const totalPrice = [pkg.medicinePrice, pkg.mealsPrice, pkg.doctorFeePrice, pkg.nurseFeePrice, pkg.attendantFeePrice, pkg.therapyPrice, pkg.roomPrice ?? "0"]
-    .reduce((sum, p) => sum + (Number.parseFloat(p) || 0), 0);
+  const roomRentPrice = pkg.branchRoomType?.roomRentPrice ?? 0;
+  const totalPrice = [pkg.medicinePrice, pkg.mealsPrice, pkg.doctorFeePrice, pkg.nurseFeePrice, pkg.attendantFeePrice, pkg.therapyPrice]
+    .reduce((sum, p) => sum + (Number.parseFloat(p) || 0), roomRentPrice);
   return {
     id: pkg.id,
     name: pkg.packageName,
@@ -987,10 +988,8 @@ export default function PackagePage() {
     }
     const parseNum = (v: string) => Number.parseFloat(v) || 0;
     const parseIntSafe = (v: string) => Number.parseInt(v, 10) || 0;
-    const selectedRoom = branchRoomListRes?.data?.find((r) => String(r.id) === activeTab2);
     const commonFields = {
       branchRoomTypeId: Number.parseInt(activeTab2, 10),
-      roomPrice: selectedRoom?.price ?? 0,
       diseaseCategoryType: addPackageForm.diseaseCategory,
       packageName: addPackageForm.packageName.trim(),
       remark: addPackageForm.description.trim(),
