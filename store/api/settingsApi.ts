@@ -64,6 +64,124 @@ interface BranchesResponse {
   statusCode: number;
 }
 
+export interface BranchRoomItem {
+  id: number;
+  name: string;
+  price: number;
+}
+
+export interface GetBranchRoomListResponse {
+  success: boolean;
+  data: BranchRoomItem[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface GetAllPackagesParams {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  order?: "ASC" | "DESC";
+  search?: string;
+  branchId?: number;
+  isPackageActive?: boolean;
+  diseaseCategoryType?: string;
+}
+
+export interface PackageItem {
+  id: number;
+  branchId: number;
+  branchRoomTypeId: number;
+  diseaseCategoryType: string;
+  packageName: string;
+  remark: string;
+  medicineEnabled: number;
+  medicinePrice: string;
+  mealsEnabled: number;
+  mealsPrice: string;
+  doctorFeeEnabled: number;
+  doctorFeePrice: string;
+  nurseFeeEnabled: number;
+  nurseFeePrice: string;
+  attendantFeeEnabled: number;
+  attendantFeePrice: string;
+  therapyEnabled: number;
+  therapyLoad: number;
+  therapySessionsPerDay: number;
+  therapyPrice: string;
+  roomPrice?: string;
+  isPackageActive: boolean;
+  branchName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GetAllPackagesResponse {
+  success: boolean;
+  data: PackageItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface CreatePackageRequest {
+  branchRoomTypeId: number;
+  branchId: number;
+  diseaseCategoryType: string;
+  packageName: string;
+  remark?: string;
+  medicineEnabled: boolean;
+  medicinePrice: number;
+  mealsEnabled: boolean;
+  mealsPrice: number;
+  doctorFeeEnabled: boolean;
+  doctorFeePrice: number;
+  nurseFeeEnabled: boolean;
+  nurseFeePrice: number;
+  attendantFeeEnabled: boolean;
+  attendantFeePrice: number;
+  therapyEnabled: boolean;
+  therapyLoad: number;
+  therapySessionsPerDay: number;
+  therapyPrice: number;
+  roomPrice: number;
+}
+
+export interface CreatePackageResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface UpdatePackageRequest extends Omit<CreatePackageRequest, "branchId"> {
+  id: number;
+}
+
+export interface UpdatePackageResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface UpdatePackageStatusRequest {
+  id: number;
+  isPackageActive: boolean;
+}
+
+export interface UpdatePackageStatusResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 /** GET /admin/settings/getBranchRoleByCategoryType */
 export interface BranchAssignableRole {
   id: number;
@@ -2981,6 +3099,56 @@ export const settingsApi = baseApi.injectEndpoints({
         body,
       }),
     }),
+    getBranchRoomListByBranchId: builder.query<GetBranchRoomListResponse, number>({
+      query: (branchId) => ({
+        url: `/admin/settings/package/getBranchRoomListByBranchId?branchId=${branchId}`,
+        method: "GET",
+      }),
+      providesTags: (_result, _err, branchId) => [{ type: "Settings", id: `BranchRooms-${branchId}` }],
+    }),
+    getAllPackages: builder.query<GetAllPackagesResponse, GetAllPackagesParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page != null) queryParams.append("page", params.page.toString());
+        if (params?.limit != null) queryParams.append("limit", params.limit.toString());
+        if (params?.sortBy) queryParams.append("sortBy", params.sortBy);
+        if (params?.order) queryParams.append("order", params.order);
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) queryParams.append("branchId", params.branchId.toString());
+        if (params?.isPackageActive != null) queryParams.append("isPackageActive", params.isPackageActive.toString());
+        if (params?.diseaseCategoryType) queryParams.append("diseaseCategoryType", params.diseaseCategoryType);
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/package/getAllPackages${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createPackage: builder.mutation<CreatePackageResponse, CreatePackageRequest>({
+      query: (body) => ({
+        url: "/admin/settings/package/createPackage",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updatePackage: builder.mutation<UpdatePackageResponse, UpdatePackageRequest>({
+      query: ({ id, ...body }) => ({
+        url: `/admin/settings/package/updatePackage/${id}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updatePackageStatus: builder.mutation<UpdatePackageStatusResponse, UpdatePackageStatusRequest>({
+      query: ({ id, isPackageActive }) => ({
+        url: `/admin/settings/package/updatePackageStatus/${id}`,
+        method: "PATCH",
+        body: { isPackageActive },
+      }),
+      invalidatesTags: ["Settings"],
+    }),
   }),
 });
 
@@ -3070,5 +3238,10 @@ export const {
   useCreateArogyaCardMutation,
   useUpdateArogyaCardMutation,
   useUpdatePasswordMutation,
+  useGetBranchRoomListByBranchIdQuery,
+  useGetAllPackagesQuery,
+  useCreatePackageMutation,
+  useUpdatePackageMutation,
+  useUpdatePackageStatusMutation,
 } = settingsApi;
 

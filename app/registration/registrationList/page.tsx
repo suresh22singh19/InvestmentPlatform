@@ -1376,6 +1376,7 @@ export default function RegistrationListPage() {
                                                                         )}
                                                                     </button>
                                                                 </Tooltip>
+                                                                {/*
                                                                 <Tooltip
                                                                     content="Download Patient Form 2"
                                                                     position="top"
@@ -1441,6 +1442,7 @@ export default function RegistrationListPage() {
                                                                         )}
                                                                     </button>
                                                                 </Tooltip>
+                                                                */}
                                                                 {isWithinInvoiceDownloadWindow(patient.createdAt) ? (
                                                                     <Tooltip
                                                                         content="Download invoice"

@@ -15,11 +15,17 @@ import {
   useAddUserMutation,
   useUpdateUserMutation,
   useLazyGenerateUsersPdfQuery,
+  useGetBranchRoomListByBranchIdQuery,
+  useGetAllPackagesQuery,
+  useCreatePackageMutation,
+  useUpdatePackageMutation,
+  useUpdatePackageStatusMutation,
   normalizeGetUsersResponse,
   type GetBranchRoleByCategoryTypeParams,
   type SettingsApiUser,
   type UpdateUserBody,
   type GetUsersParams,
+  type PackageItem,
 } from "@/store/api/settingsApi";
 import { API_BASE_URL } from "@/lib/config/api";
 import { sanitizePatientNameInput, sanitizeDigitsOnlyInput } from "@/lib/utils/common";
@@ -115,11 +121,16 @@ function mapApiUserToCardUser(u: SettingsApiUser): User {
 }
 
 type AddPackageFormState = {
+  branch: string;
   diseaseCategory: string;
   packageName: string;
   description: string;
   medicinePrice: string;
-  therapyLoad: string;
+  mealsPrice: string;
+  doctorFeesPrice: string;
+  nurseFeesPrice: string;
+  attendantFeesPrice: string;
+  therapySessionsPerDay: string;
   therapyPrice: string;
   medicineEnabled: boolean;
   mealsEnabled: boolean;
@@ -131,11 +142,16 @@ type AddPackageFormState = {
 
 function defaultAddPackageForm(): AddPackageFormState {
   return {
+    branch: "",
     diseaseCategory: "",
     packageName: "",
     description: "",
     medicinePrice: "",
-    therapyLoad: "",
+    mealsPrice: "",
+    doctorFeesPrice: "",
+    nurseFeesPrice: "",
+    attendantFeesPrice: "",
+    therapySessionsPerDay: "",
     therapyPrice: "",
     medicineEnabled: true,
     mealsEnabled: false,
@@ -157,138 +173,65 @@ function formatRsDisplayFromNumericInput(raw: string): string {
   return `Rs ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+function formatRelativeTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
+function apiItemToPackageCard(pkg: PackageItem): PackageCard {
+  const totalPrice = [pkg.medicinePrice, pkg.mealsPrice, pkg.doctorFeePrice, pkg.nurseFeePrice, pkg.attendantFeePrice, pkg.therapyPrice, pkg.roomPrice ?? "0"]
+    .reduce((sum, p) => sum + (Number.parseFloat(p) || 0), 0);
+  return {
+    id: pkg.id,
+    name: pkg.packageName,
+    description: pkg.remark || "",
+    priceLabel: `Rs ${totalPrice.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`,
+    updatedLabel: pkg.updatedAt ? `Updated ${formatRelativeTime(pkg.updatedAt)}` : "",
+    status: pkg.isPackageActive ? "Active" : "Draft",
+    statusClassName: pkg.isPackageActive
+      ? "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]"
+      : "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#3F3F3F]",
+    branchName: pkg.branchName || "",
+  };
+}
+
+function apiItemToFormState(pkg: PackageItem): AddPackageFormState {
+  return {
+    branch: String(pkg.branchId),
+    diseaseCategory: pkg.diseaseCategoryType || "",
+    packageName: pkg.packageName,
+    description: pkg.remark || "",
+    medicineEnabled: !!pkg.medicineEnabled,
+    medicinePrice: pkg.medicineEnabled ? String(Number.parseFloat(pkg.medicinePrice) || "") : "",
+    mealsEnabled: !!pkg.mealsEnabled,
+    mealsPrice: pkg.mealsEnabled ? String(Number.parseFloat(pkg.mealsPrice) || "") : "",
+    doctorFeesEnabled: !!pkg.doctorFeeEnabled,
+    doctorFeesPrice: pkg.doctorFeeEnabled ? String(Number.parseFloat(pkg.doctorFeePrice) || "") : "",
+    nurseFeesEnabled: !!pkg.nurseFeeEnabled,
+    nurseFeesPrice: pkg.nurseFeeEnabled ? String(Number.parseFloat(pkg.nurseFeePrice) || "") : "",
+    attendantFeesEnabled: !!pkg.attendantFeeEnabled,
+    attendantFeesPrice: pkg.attendantFeeEnabled ? String(Number.parseFloat(pkg.attendantFeePrice) || "") : "",
+    therapyEnabled: !!pkg.therapyEnabled,
+    therapySessionsPerDay: pkg.therapyEnabled ? String(pkg.therapySessionsPerDay || "") : "",
+    therapyPrice: pkg.therapyEnabled ? String(Number.parseFloat(pkg.therapyPrice) || "") : "",
+  };
+}
+
 /** Best-effort hint for the disease category select when opening Edit from a card. */
 function inferDiseaseCategoryFromPackageName(name: string): string {
   const n = name.toLowerCase();
-  if (n.includes("oncolog")) return "oncology";
-  if (n.includes("cardiac") || n.includes("heart") || n.includes("dialysis")) return "cardiology";
-  if (n.includes("neurolog")) return "neurology";
-  if (n.includes("orthopedic")) return "orthopedics";
-  return "";
+  if (n.includes("dialysis") || n.includes("ckd") || n.includes("kidney")) return "ckd";
+  return "others";
 }
 
-const MOCK_PACKAGE_CARDS: PackageCard[] = [
-  {
-    id: 1,
-    name: "Oncology Premium Care",
-    description: "Comprehensive cancer treatment bundle...",
-    priceLabel: "Rs 14,200",
-    updatedLabel: "Updated 2h ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "HIIMS",
-  },
-  {
-    id: 2,
-    name: "General Recovery Lite",
-    description: "Comprehensive cancer treatment bundle...",
-    priceLabel: "Rs 14,200",
-    updatedLabel: "Updated 1d ago",
-    status: "Draft",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#3F3F3F]",
-    branchName: "HIIMS Ambala",
-  },
-  {
-    id: 3,
-    name: "Cardiac Rehab Standard",
-    description: "Post-surgery monitoring and therapy bundle...",
-    priceLabel: "Rs 9,450",
-    updatedLabel: "Updated 3d ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "HIIMS Panchkula",
-  },
-  {
-    id: 4,
-    name: "Orthopedic Mobility Plus",
-    description: "Joint care, physio sessions, and room tier...",
-    priceLabel: "Rs 11,800",
-    updatedLabel: "Updated 5h ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "RDC Ghaziabad UP",
-  },
-  {
-    id: 5,
-    name: "Neurology Observation Pack",
-    description: "ICU step-down with specialist consults...",
-    priceLabel: "Rs 18,300",
-    updatedLabel: "Updated 1w ago",
-    status: "Draft",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#3F3F3F]",
-    branchName: "Vaishali UP",
-  },
-  {
-    id: 6,
-    name: "Maternity Comfort",
-    description: "Deluxe room, meals, and newborn essentials...",
-    priceLabel: "Rs 22,000",
-    updatedLabel: "Updated 12h ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "Prashant Vihar",
-  },
-  {
-    id: 7,
-    name: "Dialysis Day Package",
-    description: "Same-day dialysis with nursing support...",
-    priceLabel: "Rs 6,200",
-    updatedLabel: "Updated 4d ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "Camp Jeena",
-  },
-  {
-    id: 8,
-    name: "Executive Health Check-In",
-    description: "Private suite, diagnostics, and meals...",
-    priceLabel: "Rs 15,900",
-    updatedLabel: "Updated 6h ago",
-    status: "Draft",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#3F3F3F]",
-    branchName: "Shastri Nagar Delhi",
-  },
-  {
-    id: 9,
-    name: "Pediatric Care Basic",
-    description: "Child-friendly ward with parent stay...",
-    priceLabel: "Rs 7,400",
-    updatedLabel: "Updated 2d ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "Sonipat",
-  },
-  {
-    id: 10,
-    name: "Senior Wellness Stay",
-    description: "Extended stay with therapy and meals...",
-    priceLabel: "Rs 10,100",
-    updatedLabel: "Updated 8h ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "HIIMS",
-  },
-  {
-    id: 11,
-    name: "ICU Step-Down Bundle",
-    description: "Monitored recovery after critical care...",
-    priceLabel: "Rs 24,500",
-    updatedLabel: "Updated 1d ago",
-    status: "Draft",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#3F3F3F]",
-    branchName: "MURAD NAGAR UP",
-  },
-  {
-    id: 12,
-    name: "Outpatient Surgery Pack",
-    description: "Same-day procedure with observation slot...",
-    priceLabel: "Rs 5,600",
-    updatedLabel: "Updated 3h ago",
-    status: "Active",
-    statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-    branchName: "HIIMS",
-  },
-];
 
 function addPackageFormFromCard(pkg: PackageCard): AddPackageFormState {
   return {
@@ -496,8 +439,6 @@ export default function PackagePage() {
     message: string;
   }>({ open: false, variant: "success", message: "" });
 
-  const [activePackageCards, setActivePackageCards] = useState<PackageCard[]>(() => [...MOCK_PACKAGE_CARDS]);
-  const [archivedPackageCards, setArchivedPackageCards] = useState<PackageCard[]>([]);
   const [packageArchiveConfirm, setPackageArchiveConfirm] = useState<PackageCard | null>(null);
   const [showArchiveSuccessDialog, setShowArchiveSuccessDialog] = useState(false);
   const [archiveSuccessMessage, setArchiveSuccessMessage] = useState("");
@@ -506,6 +447,19 @@ export default function PackagePage() {
   const [showSavePackageErrorDialog, setShowSavePackageErrorDialog] = useState(false);
   const [savePackageErrorMessage, setSavePackageErrorMessage] = useState("");
   const [editingPackageId, setEditingPackageId] = useState<number | null>(null);
+  const [selectedPackageType, setSelectedPackageType] = useState("");
+  const [packageFormErrors, setPackageFormErrors] = useState<{
+    branch: string;
+    diseaseCategory: string;
+    packageName: string;
+    roomType: string;
+    medicinePrice: string;
+    mealsPrice: string;
+    doctorFeesPrice: string;
+    nurseFeesPrice: string;
+    attendantFeesPrice: string;
+    therapyPrice: string;
+  }>({ branch: "", diseaseCategory: "", packageName: "", roomType: "", medicinePrice: "", mealsPrice: "", doctorFeesPrice: "", nurseFeesPrice: "", attendantFeesPrice: "", therapyPrice: "" });
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(searchTerm), 350);
@@ -564,6 +518,9 @@ export default function PackagePage() {
   const [addUser, { isLoading: isAddingUser }] = useAddUserMutation();
   const [updateUser, { isLoading: isUpdatingUser }] = useUpdateUserMutation();
   const [triggerUsersPdf] = useLazyGenerateUsersPdfQuery();
+  const [createPackage, { isLoading: isCreatingPackage }] = useCreatePackageMutation();
+  const [updatePackage, { isLoading: isUpdatingPackage }] = useUpdatePackageMutation();
+  const [updatePackageStatus, { isLoading: isUpdatingPackageStatus }] = useUpdatePackageStatusMutation();
 
   /** Corporate: only `roleCategoryType` (no `branchId` key). Facility: include `branchId` only when a valid branch is selected. */
   const assignableRolesQueryArgs = useMemo((): GetBranchRoleByCategoryTypeParams => {
@@ -881,24 +838,50 @@ export default function PackagePage() {
     </div>
   );
   const [isAddPackageDialogOpen, setIsAddPackageDialogOpen] = useState(false);
-  const [packageDialogMode, setPackageDialogMode] = useState<"add" | "edit">("add");
+  const [packageDialogMode, setPackageDialogMode] = useState<"add" | "edit" | "view">("add");
   const [addPackageForm, setAddPackageForm] = useState<AddPackageFormState>(defaultAddPackageForm);
 
+  const branchIdForRooms = useMemo(() => {
+    const n = Number.parseInt(addPackageForm.branch, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [addPackageForm.branch]);
+
+  const { data: branchRoomListRes, isLoading: isLoadingRoomList } = useGetBranchRoomListByBranchIdQuery(
+    branchIdForRooms!,
+    { skip: branchIdForRooms == null || !isAddPackageDialogOpen }
+  );
+
+  const tabOptions2 = useMemo(() => {
+    if (!branchRoomListRes?.success || !Array.isArray(branchRoomListRes.data)) return [];
+    return branchRoomListRes.data.map((room) => ({ value: String(room.id), label: room.name }));
+  }, [branchRoomListRes]);
+
   const [activeTab, setActiveTab] = useState("existing-packages");
-  const [activeTab2, setActiveTab2] = useState("existing-packages");
+  const [activeTab2, setActiveTab2] = useState("");
+
+  const getAllPackagesParams = useMemo(() => ({
+    page: packagesCurrentPage,
+    limit: packagesItemsPerPage,
+    sortBy: "id",
+    order: "DESC" as const,
+    search: debouncedSearch.trim() || undefined,
+    branchId: hookFilterBranchId,
+    isPackageActive: activeTab !== "archived-packages",
+    diseaseCategoryType: selectedPackageType === "CKD" ? "ckd" : selectedPackageType === "Other" ? "others" : undefined,
+  }), [packagesCurrentPage, packagesItemsPerPage, debouncedSearch, hookFilterBranchId, activeTab, selectedPackageType]);
+
+  const { data: packagesRes, isLoading: isLoadingPackages } = useGetAllPackagesQuery(getAllPackagesParams, {
+    refetchOnMountOrArgChange: true,
+  });
+
+  const apiPackageCards = useMemo((): PackageCard[] => {
+    if (!packagesRes?.data) return [];
+    return packagesRes.data.map(apiItemToPackageCard);
+  }, [packagesRes]);
+
   const tabOptions = [
     { value: "existing-packages", label: "Existing Packages" },
     { value: "archived-packages", label: "Archived Packages" },
-  ];
-  const tabOptions2 = [
-    { value: "private-suite", label: "Private Suite" },
-    { value: "semi-private-ward", label: "Semi-Private Ward" },
-    { value: "premium-deluxe-selected", label: "Premium Deluxe (Selected)" },
-    { value: "private-cottage", label: "Private Cottage" },
-    { value: "general-ward", label: "General Ward" },
-    { value: "executive-room", label: "Executive Room" },
-    { value: "icu-room", label: "ICU Room" },
-    { value: "deluxe-twin-sharing-room", label: "Deluxe Twin Sharing Room" }
   ];
   const handleTabChange = (value: string) => {
     setActiveTab(value);
@@ -912,74 +895,125 @@ export default function PackagePage() {
     setPackageDialogMode("add");
     setEditingPackageId(null);
     setAddPackageForm(defaultAddPackageForm());
+    setActiveTab2("");
+    setPackageFormErrors({ branch: "", diseaseCategory: "", packageName: "", roomType: "", medicinePrice: "", mealsPrice: "", doctorFeesPrice: "", nurseFeesPrice: "", attendantFeesPrice: "", therapyPrice: "" });
   };
 
   const openAddPackageDialog = () => {
     setPackageDialogMode("add");
     setEditingPackageId(null);
     setAddPackageForm(defaultAddPackageForm());
+    setActiveTab2("");
+    setIsAddPackageDialogOpen(true);
+  };
+
+  const openViewPackageDialog = (pkg: PackageCard) => {
+    setPackageDialogMode("view");
+    setEditingPackageId(pkg.id);
+    const apiItem = packagesRes?.data?.find((item) => item.id === pkg.id);
+    if (apiItem) {
+      setAddPackageForm(apiItemToFormState(apiItem));
+      setActiveTab2(String(apiItem.branchRoomTypeId));
+    } else {
+      setAddPackageForm(addPackageFormFromCard(pkg));
+    }
     setIsAddPackageDialogOpen(true);
   };
 
   const openEditPackageDialog = (pkg: PackageCard) => {
     setPackageDialogMode("edit");
     setEditingPackageId(pkg.id);
-    setAddPackageForm(addPackageFormFromCard(pkg));
+    const apiItem = packagesRes?.data?.find((item) => item.id === pkg.id);
+    if (apiItem) {
+      setAddPackageForm(apiItemToFormState(apiItem));
+      setActiveTab2(String(apiItem.branchRoomTypeId));
+    } else {
+      setAddPackageForm(addPackageFormFromCard(pkg));
+    }
     setIsAddPackageDialogOpen(true);
   };
 
-  const validatePackageForm = (): string | null => {
-    if (!addPackageForm.packageName.trim()) {
-      return "Package name is required.";
+  const validatePackageForm = (): boolean => {
+    const errors = { branch: "", diseaseCategory: "", packageName: "", roomType: "", medicinePrice: "", mealsPrice: "", doctorFeesPrice: "", nurseFeesPrice: "", attendantFeesPrice: "", therapyPrice: "" };
+    let hasError = false;
+    if (!addPackageForm.branch) {
+      errors.branch = "Branch is required";
+      hasError = true;
     }
     if (!addPackageForm.diseaseCategory.trim()) {
-      return "Please select a disease category.";
+      errors.diseaseCategory = "Disease category is required";
+      hasError = true;
     }
-    return null;
+    if (!addPackageForm.packageName.trim()) {
+      errors.packageName = "Package name is required";
+      hasError = true;
+    }
+    if (!activeTab2) {
+      errors.roomType = "Room type selection is required";
+      hasError = true;
+    }
+    if (addPackageForm.medicineEnabled && !addPackageForm.medicinePrice.trim()) {
+      errors.medicinePrice = "Medicine price is required";
+      hasError = true;
+    }
+    if (addPackageForm.mealsEnabled && !addPackageForm.mealsPrice.trim()) {
+      errors.mealsPrice = "Meals price is required";
+      hasError = true;
+    }
+    if (addPackageForm.doctorFeesEnabled && !addPackageForm.doctorFeesPrice.trim()) {
+      errors.doctorFeesPrice = "Doctor fees price is required";
+      hasError = true;
+    }
+    if (addPackageForm.nurseFeesEnabled && !addPackageForm.nurseFeesPrice.trim()) {
+      errors.nurseFeesPrice = "Nurse fees price is required";
+      hasError = true;
+    }
+    if (addPackageForm.attendantFeesEnabled && !addPackageForm.attendantFeesPrice.trim()) {
+      errors.attendantFeesPrice = "Attendant fees price is required";
+      hasError = true;
+    }
+    if (addPackageForm.therapyEnabled && !addPackageForm.therapyPrice.trim()) {
+      errors.therapyPrice = "Therapy price is required";
+      hasError = true;
+    }
+    setPackageFormErrors(errors);
+    return !hasError;
   };
 
-  const handleSavePackage = (e: React.FormEvent) => {
+  const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
-    const err = validatePackageForm();
-    if (err) {
-      setSavePackageErrorMessage(err);
-      setShowSavePackageErrorDialog(true);
+    if (!validatePackageForm()) {
       return;
     }
+    const parseNum = (v: string) => Number.parseFloat(v) || 0;
+    const parseIntSafe = (v: string) => Number.parseInt(v, 10) || 0;
+    const selectedRoom = branchRoomListRes?.data?.find((r) => String(r.id) === activeTab2);
+    const commonFields = {
+      branchRoomTypeId: Number.parseInt(activeTab2, 10),
+      roomPrice: selectedRoom?.price ?? 0,
+      diseaseCategoryType: addPackageForm.diseaseCategory,
+      packageName: addPackageForm.packageName.trim(),
+      remark: addPackageForm.description.trim(),
+      medicineEnabled: addPackageForm.medicineEnabled,
+      medicinePrice: addPackageForm.medicineEnabled ? parseNum(addPackageForm.medicinePrice) : 0,
+      mealsEnabled: addPackageForm.mealsEnabled,
+      mealsPrice: addPackageForm.mealsEnabled ? parseNum(addPackageForm.mealsPrice) : 0,
+      doctorFeeEnabled: addPackageForm.doctorFeesEnabled,
+      doctorFeePrice: addPackageForm.doctorFeesEnabled ? parseNum(addPackageForm.doctorFeesPrice) : 0,
+      nurseFeeEnabled: addPackageForm.nurseFeesEnabled,
+      nurseFeePrice: addPackageForm.nurseFeesEnabled ? parseNum(addPackageForm.nurseFeesPrice) : 0,
+      attendantFeeEnabled: addPackageForm.attendantFeesEnabled,
+      attendantFeePrice: addPackageForm.attendantFeesEnabled ? parseNum(addPackageForm.attendantFeesPrice) : 0,
+      therapyEnabled: addPackageForm.therapyEnabled,
+      therapyLoad: 1,
+      therapySessionsPerDay: addPackageForm.therapyEnabled ? parseIntSafe(addPackageForm.therapySessionsPerDay) : 0,
+      therapyPrice: addPackageForm.therapyEnabled ? parseNum(addPackageForm.therapyPrice) : 0,
+    };
     try {
       if (packageDialogMode === "edit" && editingPackageId != null) {
-        const patch = (p: PackageCard): PackageCard =>
-          p.id === editingPackageId
-            ? {
-                ...p,
-                name: addPackageForm.packageName.trim(),
-                description: addPackageForm.description.trim(),
-                priceLabel: formatRsDisplayFromNumericInput(addPackageForm.therapyPrice),
-                updatedLabel: "Updated just now",
-              }
-            : p;
-        setActivePackageCards((prev) => prev.map(patch));
-        setArchivedPackageCards((prev) => prev.map(patch));
+        await updatePackage({ id: editingPackageId, ...commonFields }).unwrap();
       } else {
-        const newId =
-          Math.max(
-            0,
-            ...activePackageCards.map((p) => p.id),
-            ...archivedPackageCards.map((p) => p.id)
-          ) + 1;
-        setActivePackageCards((prev) => [
-          ...prev,
-          {
-            id: newId,
-            name: addPackageForm.packageName.trim(),
-            description: addPackageForm.description.trim(),
-            priceLabel: formatRsDisplayFromNumericInput(addPackageForm.therapyPrice),
-            updatedLabel: "Created just now",
-            status: "Active",
-            statusClassName: "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]",
-            branchName: "HIIMS",
-          },
-        ]);
+        await createPackage({ branchId: Number.parseInt(addPackageForm.branch, 10), ...commonFields }).unwrap();
       }
       setSavePackageSuccessMessage(
         packageDialogMode === "edit" ? "Package updated successfully." : "Package added successfully."
@@ -992,47 +1026,30 @@ export default function PackagePage() {
     }
   };
 
-  const confirmArchivePackage = () => {
+  const confirmArchivePackage = async () => {
     if (!packageArchiveConfirm) return;
     const pkg = packageArchiveConfirm;
-    setActivePackageCards((prev) => prev.filter((p) => p.id !== pkg.id));
-    setArchivedPackageCards((prev) => [
-      {
-        ...pkg,
-        status: "Archived",
-        statusClassName: "border-[#9CA3AF]/40 bg-[#F9FAFB] text-[#6B7280]",
-        updatedLabel: "Archived just now",
-      },
-      ...prev,
-    ]);
-    setPackageArchiveConfirm(null);
-    setArchiveSuccessMessage(`"${pkg.name}" has been archived successfully.`);
-    setShowArchiveSuccessDialog(true);
+    try {
+      await updatePackageStatus({ id: pkg.id, isPackageActive: false }).unwrap();
+      setPackageArchiveConfirm(null);
+      setArchiveSuccessMessage(`"${pkg.name}" has been archived successfully.`);
+      setShowArchiveSuccessDialog(true);
+    } catch {
+      setPackageArchiveConfirm(null);
+      setSavePackageErrorMessage("Failed to archive package. Please try again.");
+      setShowSavePackageErrorDialog(true);
+    }
   };
 
-  const filteredPackageCards = useMemo(() => {
-    const base = activeTab === "existing-packages" ? activePackageCards : archivedPackageCards;
-    const q = debouncedSearch.trim().toLowerCase();
-    if (!q) return base;
-    return base.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
-        p.priceLabel.toLowerCase().includes(q) ||
-        p.branchName.toLowerCase().includes(q)
-    );
-  }, [activeTab, debouncedSearch, activePackageCards, archivedPackageCards]);
+  const filteredPackageCards = apiPackageCards;
 
-  const totalFilteredPackages = filteredPackageCards.length;
+  const totalFilteredPackages = packagesRes?.total ?? 0;
 
-  const paginatedPackageCards = useMemo(() => {
-    const start = (packagesCurrentPage - 1) * packagesItemsPerPage;
-    return filteredPackageCards.slice(start, start + packagesItemsPerPage);
-  }, [filteredPackageCards, packagesCurrentPage, packagesItemsPerPage]);
+  const paginatedPackageCards = apiPackageCards;
 
   useEffect(() => {
     setPackagesCurrentPage(1);
-  }, [debouncedSearch, packagesItemsPerPage, activeTab]);
+  }, [debouncedSearch, packagesItemsPerPage, activeTab, selectedBranch, selectedPackageType]);
 
   const handlePackagePageChange = (page: number) => {
     setPackagesCurrentPage(page);
@@ -1042,6 +1059,24 @@ export default function PackagePage() {
     setPackagesItemsPerPage(items);
     setPackagesCurrentPage(1);
   };
+
+  const packageFinancialTotal = useMemo(() => {
+    const parse = (v: string) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+    let total = 0;
+    if (activeTab2 && branchRoomListRes?.data) {
+      const selectedRoom = branchRoomListRes.data.find((r) => String(r.id) === activeTab2);
+      if (selectedRoom && selectedRoom.price > 0) total += selectedRoom.price;
+    }
+    if (addPackageForm.medicineEnabled) total += parse(addPackageForm.medicinePrice);
+    if (addPackageForm.mealsEnabled) total += parse(addPackageForm.mealsPrice);
+    if (addPackageForm.doctorFeesEnabled) total += parse(addPackageForm.doctorFeesPrice);
+    if (addPackageForm.nurseFeesEnabled) total += parse(addPackageForm.nurseFeesPrice);
+    if (addPackageForm.attendantFeesEnabled) total += parse(addPackageForm.attendantFeesPrice);
+    if (addPackageForm.therapyEnabled) total += parse(addPackageForm.therapyPrice);
+    return total;
+  }, [addPackageForm, activeTab2, branchRoomListRes]);
+
+  const isViewMode = packageDialogMode === "view";
 
   return (
     <AppShell>
@@ -1067,25 +1102,62 @@ export default function PackagePage() {
                 </span>
               </h4>
               <div className="flex flex-wrap items-center gap-3">
+                <FormSelectField
+                  label=""
+                  hideLabel
+                  options={hookBranchFilterOptions}
+                  value={selectedBranch}
+                  onChange={(value) => {
+                    setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                    setPackagesCurrentPage(1);
+                  }}
+                  placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                  mode="single"
+                  background="normal"
+                  width={200}
+                  disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                />
+                <FormSelectField
+                  label=""
+                  hideLabel
+                  options={[
+                    { value: "", label: "All Types" },
+                    { value: "CKD", label: "CKD" },
+                    { value: "Other", label: "Other" },
+                  ]}
+                  value={selectedPackageType}
+                  onChange={(value) => {
+                    setSelectedPackageType(Array.isArray(value) ? value[0] : value || "");
+                    setPackagesCurrentPage(1);
+                  }}
+                  placeholder="Package Type"
+                  mode="single"
+                  background="normal"
+                  width={180}
+                />
                 <TableSearchInput
                   value={searchTerm}
                   onChange={setSearchTerm}
                   placeholder="Search Here..."
                   className="!w-[280px] min-w-[280px] max-w-[280px] shrink-0"
                 />
-                <button
-                  type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
-                  onClick={openAddPackageDialog}
-                >
-                  <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  <span className="text-hide hide-text-overflow">Add New Package</span>
-                </button>
+                {activeTab === "existing-packages" && (
+                  <button
+                    type="button"
+                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                    onClick={openAddPackageDialog}
+                  >
+                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                    <span className="text-hide hide-text-overflow">Add New Package</span>
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3 lg:grid-cols-4">
-              {totalFilteredPackages === 0 ? (
+              {isLoadingPackages ? (
+                <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+              ) : totalFilteredPackages === 0 ? (
                 <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">
                   {activeTab === "archived-packages"
                     ? "No archived packages"
@@ -1104,6 +1176,7 @@ export default function PackagePage() {
                       showActions={activeTab === "existing-packages"}
                       onEdit={openEditPackageDialog}
                       onArchive={setPackageArchiveConfirm}
+                      onView={openViewPackageDialog}
                     />
                   );
                 })
@@ -1128,7 +1201,7 @@ export default function PackagePage() {
       <Dialog
         open={isAddPackageDialogOpen}
         onClose={closeAddPackageDialog}
-        title={packageDialogMode === "edit" ? "Edit Package" : "Add Package"}
+        title={packageDialogMode === "view" ? "View Package" : packageDialogMode === "edit" ? "Edit Package" : "Add Package"}
         width={949}
       >
         <form
@@ -1136,40 +1209,70 @@ export default function PackagePage() {
           className="space-y-6"
           onSubmit={handleSavePackage}
         >
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-3 gap-6">
             <div>
               <FormSelectField
-                label="Disease Category"
-                value={addPackageForm.diseaseCategory}
+                label="Branch *"
+                value={addPackageForm.branch}
                 onChange={(value) => {
-                  const id = Array.isArray(value) ? value[0] : value;
-                  setAddPackageForm((p) => ({ ...p, diseaseCategory: id ?? "" }));
+                  const id = Array.isArray(value) ? value[0] : value ?? "";
+                  setAddPackageForm((p) => ({ ...p, branch: id }));
+                  setActiveTab2("");
+                  if (id && packageFormErrors.branch) setPackageFormErrors((e) => ({ ...e, branch: "" }));
                 }}
-                options={[
-                  { label: "Cardiology", value: "cardiology" },
-                  { label: "Neurology", value: "neurology" },
-                  { label: "Oncology", value: "oncology" },
-                  { label: "Orthopedics", value: "orthopedics" }
-                ]}
-                placeholder="Select Disease Category"
+                options={branchOptions}
+                placeholder={isLoadingBranches ? "Loading branches..." : "Select"}
                 mode="single"
                 background="white"
+                disabled={isLoadingBranches || packageDialogMode === "edit" || packageDialogMode === "view"}
               />
+              {packageFormErrors.branch && (
+                <span className="mt-2 text-xs text-[#F87171]">{packageFormErrors.branch}</span>
+              )}
+            </div>
+
+            <div>
+              <FormSelectField
+                label="Disease Category *"
+                value={addPackageForm.diseaseCategory}
+                onChange={(value) => {
+                  const id = Array.isArray(value) ? value[0] : value ?? "";
+                  setAddPackageForm((p) => ({ ...p, diseaseCategory: id }));
+                  if (id && packageFormErrors.diseaseCategory) setPackageFormErrors((e) => ({ ...e, diseaseCategory: "" }));
+                }}
+                options={[
+                  { label: "CKD", value: "ckd" },
+                  { label: "Others", value: "others" },
+                ]}
+                placeholder="Select"
+                mode="single"
+                background="white"
+                disabled={packageDialogMode === "view"}
+              />
+              {packageFormErrors.diseaseCategory && (
+                <span className="mt-2 text-xs text-[#F87171]">{packageFormErrors.diseaseCategory}</span>
+              )}
             </div>
 
             <div>
               <FormInputField
-                label="Package Name"
+                label="Package Name *"
                 value={addPackageForm.packageName}
-                onChange={(e) =>
-                  setAddPackageForm((p) => ({ ...p, packageName: e.target.value }))
-                }
+                onChange={(e) => {
+                  setAddPackageForm((p) => ({ ...p, packageName: e.target.value }));
+                  if (e.target.value.trim() && packageFormErrors.packageName) setPackageFormErrors((err) => ({ ...err, packageName: "" }));
+                }}
                 height={44}
                 placeholder="Package Name"
                 type="text"
+                disabled={packageDialogMode === "view"}
               />
+              {packageFormErrors.packageName && (
+                <span className="mt-2 text-xs text-[#F87171]">{packageFormErrors.packageName}</span>
+              )}
             </div>
           </div>
+
           <div className="grid grid-cols-1 gap-6">
             <div className="w-full">
               <FormTextareaField
@@ -1180,166 +1283,297 @@ export default function PackagePage() {
                 }
                 placeholder="Description"
                 height={60}
+                disabled={packageDialogMode === "view"}
               />
             </div>
           </div>
           <div className="grid grid-cols-1 gap-2">
 
-            <h4 className="font-medium text-[14px] leading-[120%] text-[#262D3B]">Room Type Selection</h4>
+            <h4 className="font-medium text-[14px] leading-[120%] text-[#262D3B]">Room Type Selection <span className="text-[#F6776E]">*</span></h4>
 
             <div>
-              <Tabs options={tabOptions2} value={activeTab2} onChange={handleTabChange2} className="border-0 !grid !grid-cols-4 !h-full" tabBorder={true} />
+              {!addPackageForm.branch ? (
+                <p className="text-[12px] text-[#9CA3AF]">Select a branch to load room types.</p>
+              ) : isLoadingRoomList ? (
+                <p className="text-[12px] text-[#9CA3AF]">Loading room types...</p>
+              ) : tabOptions2.length === 0 ? (
+                <p className="text-[12px] text-[#9CA3AF]">No room types found for this branch.</p>
+              ) : (
+                <Tabs
+                  options={tabOptions2}
+                  value={activeTab2}
+                  onChange={(value) => {
+                    if (packageDialogMode === "view") return;
+                    handleTabChange2(value);
+                    if (value && packageFormErrors.roomType) setPackageFormErrors((e) => ({ ...e, roomType: "" }));
+                  }}
+                  className="border-0 !grid !grid-cols-4 !h-full"
+                  tabBorder={true}
+                />
+              )}
             </div>
+            {packageFormErrors.roomType && (
+              <span className="text-xs text-[#F87171]">{packageFormErrors.roomType}</span>
+            )}
           </div>
 
           <h4 className="font-medium text-[14px] leading-[120%] text-[#262D3B] mb-2">Clinical Configurations</h4>
           <div className="grid grid-cols-2 gap-2">
-            <div className="flex gap-[32px] h-[37px]">
-              <div className="flex items-center justify-between">
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
                   checked={addPackageForm.medicineEnabled}
-                  onChange={(checked) =>
-                    setAddPackageForm((p) => ({ ...p, medicineEnabled: checked }))
-                  }
+                  onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, medicineEnabled: checked })); }}
                   label="Medicine"
                   className="!w-10 !h-6 "
                   width="w-[16px]"
                   height="h-[16px]"
                   fontsize="text-[12px]"
                   transform={addPackageForm.medicineEnabled ? "!translate-x-[20px]" : undefined}
+                  disabled={isViewMode}
                 />
               </div>
-              <div className="relative w-[216]">
-                <FormInputField
-                  label={""}
-                  value={addPackageForm.medicinePrice}
-                  onChange={(e) =>
-                    setAddPackageForm((p) => ({ ...p, medicinePrice: e.target.value }))
-                  }
-                  placeholder="Price"
-                  type="number"
-                  height={37}
-                />
-                <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
-                  ₹
-                </span>
-              </div>
+              {addPackageForm.medicineEnabled && (
+                <div className="flex flex-col gap-1">
+                  <div className="relative w-[216px]">
+                    <FormInputField
+                      label={""}
+                      value={addPackageForm.medicinePrice}
+                      onChange={(e) => {
+                        setAddPackageForm((p) => ({ ...p, medicinePrice: e.target.value }));
+                        if (e.target.value.trim() && packageFormErrors.medicinePrice) setPackageFormErrors((err) => ({ ...err, medicinePrice: "" }));
+                      }}
+                      placeholder="Price"
+                      type="number"
+                      height={37}
+                      disabled={isViewMode}
+                    />
+                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                      ₹
+                    </span>
+                  </div>
+                  {packageFormErrors.medicinePrice && <span className="text-xs text-[#F87171]">{packageFormErrors.medicinePrice}</span>}
+                </div>
+              )}
             </div>
 
-            <div className="flex gap-[32px] h-[37px]">
-              <div className="flex items-center justify-between">
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
                   checked={addPackageForm.mealsEnabled}
-                  onChange={(checked) =>
-                    setAddPackageForm((p) => ({ ...p, mealsEnabled: checked }))
-                  }
+                  onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, mealsEnabled: checked })); }}
                   label="Meals"
                   className="!w-10 !h-6 "
                   width="w-[16px]"
                   height="h-[16px]"
                   fontsize="text-[12px]"
                   transform={addPackageForm.mealsEnabled ? "!translate-x-[20px]" : undefined}
+                  disabled={isViewMode}
                 />
               </div>
+              {addPackageForm.mealsEnabled && (
+                <div className="flex flex-col gap-1">
+                  <div className="relative w-[216px]">
+                    <FormInputField
+                      label={""}
+                      value={addPackageForm.mealsPrice}
+                      onChange={(e) => {
+                        setAddPackageForm((p) => ({ ...p, mealsPrice: e.target.value }));
+                        if (e.target.value.trim() && packageFormErrors.mealsPrice) setPackageFormErrors((err) => ({ ...err, mealsPrice: "" }));
+                      }}
+                      placeholder="Price"
+                      type="number"
+                      height={37}
+                      disabled={isViewMode}
+                    />
+                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                      ₹
+                    </span>
+                  </div>
+                  {packageFormErrors.mealsPrice && <span className="text-xs text-[#F87171]">{packageFormErrors.mealsPrice}</span>}
+                </div>
+              )}
             </div>
 
-            <div className="flex gap-[32px] h-[37px]">
-              <div className="flex items-center justify-between">
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
                   checked={addPackageForm.doctorFeesEnabled}
-                  onChange={(checked) =>
-                    setAddPackageForm((p) => ({ ...p, doctorFeesEnabled: checked }))
-                  }
+                  onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, doctorFeesEnabled: checked })); }}
                   label="Doctor Fees"
                   className="!w-10 !h-6 "
                   width="w-[16px]"
                   height="h-[16px]"
                   fontsize="text-[12px]"
                   transform={addPackageForm.doctorFeesEnabled ? "!translate-x-[20px]" : undefined}
+                  disabled={isViewMode}
                 />
               </div>
+              {addPackageForm.doctorFeesEnabled && (
+                <div className="flex flex-col gap-1">
+                  <div className="relative w-[216px]">
+                    <FormInputField
+                      label={""}
+                      value={addPackageForm.doctorFeesPrice}
+                      onChange={(e) => {
+                        setAddPackageForm((p) => ({ ...p, doctorFeesPrice: e.target.value }));
+                        if (e.target.value.trim() && packageFormErrors.doctorFeesPrice) setPackageFormErrors((err) => ({ ...err, doctorFeesPrice: "" }));
+                      }}
+                      placeholder="Price"
+                      type="number"
+                      height={37}
+                      disabled={isViewMode}
+                    />
+                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                      ₹
+                    </span>
+                  </div>
+                  {packageFormErrors.doctorFeesPrice && <span className="text-xs text-[#F87171]">{packageFormErrors.doctorFeesPrice}</span>}
+                </div>
+              )}
             </div>
-            <div className="flex gap-[32px] h-[37px]">
-              <div className="flex items-center justify-between">
+
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
                   checked={addPackageForm.nurseFeesEnabled}
-                  onChange={(checked) =>
-                    setAddPackageForm((p) => ({ ...p, nurseFeesEnabled: checked }))
-                  }
+                  onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, nurseFeesEnabled: checked })); }}
                   label="Nurse Fees"
                   className="!w-10 !h-6 "
                   width="w-[16px]"
                   height="h-[16px]"
                   fontsize="text-[12px]"
                   transform={addPackageForm.nurseFeesEnabled ? "!translate-x-[20px]" : undefined}
+                  disabled={isViewMode}
                 />
               </div>
+              {addPackageForm.nurseFeesEnabled && (
+                <div className="flex flex-col gap-1">
+                  <div className="relative w-[216px]">
+                    <FormInputField
+                      label={""}
+                      value={addPackageForm.nurseFeesPrice}
+                      onChange={(e) => {
+                        setAddPackageForm((p) => ({ ...p, nurseFeesPrice: e.target.value }));
+                        if (e.target.value.trim() && packageFormErrors.nurseFeesPrice) setPackageFormErrors((err) => ({ ...err, nurseFeesPrice: "" }));
+                      }}
+                      placeholder="Price"
+                      type="number"
+                      height={37}
+                      disabled={isViewMode}
+                    />
+                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                      ₹
+                    </span>
+                  </div>
+                  {packageFormErrors.nurseFeesPrice && <span className="text-xs text-[#F87171]">{packageFormErrors.nurseFeesPrice}</span>}
+                </div>
+              )}
             </div>
-            <div className="flex gap-[32px] h-[37px]">
-              <div className="flex items-center justify-between">
+
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
                   checked={addPackageForm.attendantFeesEnabled}
-                  onChange={(checked) =>
-                    setAddPackageForm((p) => ({ ...p, attendantFeesEnabled: checked }))
-                  }
+                  onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, attendantFeesEnabled: checked })); }}
                   label="Attendant Fees"
                   className="!w-10 !h-6 "
                   width="w-[16px]"
                   height="h-[16px]"
                   fontsize="text-[12px]"
                   transform={addPackageForm.attendantFeesEnabled ? "!translate-x-[20px]" : undefined}
+                  disabled={isViewMode}
                 />
               </div>
+              {addPackageForm.attendantFeesEnabled && (
+                <div className="flex flex-col gap-1">
+                  <div className="relative w-[216px]">
+                    <FormInputField
+                      label={""}
+                      value={addPackageForm.attendantFeesPrice}
+                      onChange={(e) => {
+                        setAddPackageForm((p) => ({ ...p, attendantFeesPrice: e.target.value }));
+                        if (e.target.value.trim() && packageFormErrors.attendantFeesPrice) setPackageFormErrors((err) => ({ ...err, attendantFeesPrice: "" }));
+                      }}
+                      placeholder="Price"
+                      type="number"
+                      height={37}
+                      disabled={isViewMode}
+                    />
+                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                      ₹
+                    </span>
+                  </div>
+                  {packageFormErrors.attendantFeesPrice && <span className="text-xs text-[#F87171]">{packageFormErrors.attendantFeesPrice}</span>}
+                </div>
+              )}
             </div>
-            <div className="flex gap-[32px] h-[37px]">
-              <div className="flex items-center justify-between">
+
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
                   checked={addPackageForm.therapyEnabled}
-                  onChange={(checked) =>
-                    setAddPackageForm((p) => ({ ...p, therapyEnabled: checked }))
-                  }
+                  onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, therapyEnabled: checked })); }}
                   label="Therapy"
                   className="!w-10 !h-6 "
                   width="w-[16px]"
                   height="h-[16px]"
                   fontsize="text-[12px]"
                   transform={addPackageForm.therapyEnabled ? "!translate-x-[20px]" : undefined}
+                  disabled={isViewMode}
                 />
               </div>
             </div>
 
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
-            <div className="relative">
-              <FormInputField
-                label={"Therapy Load"}
-                value={addPackageForm.therapyLoad}
-                onChange={(e) =>
-                  setAddPackageForm((p) => ({ ...p, therapyLoad: e.target.value }))
-                }
-                placeholder="Therapy Load"
-                type="text"
-              />
-              <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
-                Sessions / Day
-              </span>
+          {addPackageForm.therapyEnabled && (
+            <div className="grid grid-cols-2 gap-6">
+              <div className="relative">
+                <FormInputField
+                  label={"Therapy Load"}
+                  value={addPackageForm.therapySessionsPerDay}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "") {
+                      setAddPackageForm((p) => ({ ...p, therapySessionsPerDay: "" }));
+                      return;
+                    }
+                    const n = Number.parseInt(val, 10);
+                    if (Number.isFinite(n) && n >= 1 && n <= 5) {
+                      setAddPackageForm((p) => ({ ...p, therapySessionsPerDay: String(n) }));
+                    }
+                  }}
+                  placeholder="Therapy Load (1–5)"
+                  type="number"
+                  min={1}
+                  max={5}
+                  disabled={isViewMode}
+                />
+                <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
+                  Sessions / Day
+                </span>
+                <p className="mt-1 text-[11px] leading-snug text-[#7B8089]">Maximum allowed: 5 sessions based on staff availability.</p>
+              </div>
+              <div className="relative">
+                <FormInputField
+                  label={"Price"}
+                  value={addPackageForm.therapyPrice}
+                  onChange={(e) => {
+                    setAddPackageForm((p) => ({ ...p, therapyPrice: e.target.value }));
+                    if (e.target.value.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
+                  }}
+                  placeholder="Price"
+                  type="number"
+                  disabled={isViewMode}
+                />
+                <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
+                  ₹
+                </span>
+                {packageFormErrors.therapyPrice && <span className="mt-1 text-xs text-[#F87171]">{packageFormErrors.therapyPrice}</span>}
+              </div>
             </div>
-            <div className="relative">
-              <FormInputField
-                label={"Price"}
-                value={addPackageForm.therapyPrice}
-                onChange={(e) =>
-                  setAddPackageForm((p) => ({ ...p, therapyPrice: e.target.value }))
-                }
-                placeholder="Price"
-                type="number"
-              />
-              <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
-                ₹
-              </span>
-            </div>
-          </div>
+          )}
 
           <div className="w-[300px] p-4 bg-[#0B8C00] shadow-[0px_6px_40px_rgba(0,0,0,0.02)] rounded-2xl">
             <div className="flex items-center gap-2 ">
@@ -1348,23 +1582,27 @@ export default function PackagePage() {
             </div>
             <div className="flex justify-between items-center mt-4">
               <h5 className="not-italic font-medium text-[12px] leading-[120%] text-white">Daily Rate</h5>
-              <h4 className="not-italic font-semibold text-[16px] leading-[120%] text-white">Rs. 0</h4>
+              <h4 className="not-italic font-semibold text-[16px] leading-[120%] text-white">
+                Rs. {packageFinancialTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+              </h4>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <>
-              <Button type="submit" variant="primary">
-                {packageDialogMode === "edit" ? "Update Package" : "Add Package"}
+            {isViewMode ? (
+              <Button type="button" variant="outline" onClick={closeAddPackageDialog}>
+                Close
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={closeAddPackageDialog}
-              >
-                Cancel
-              </Button>
-            </>
+            ) : (
+              <>
+                <Button type="submit" variant="primary">
+                  {packageDialogMode === "edit" ? "Update Package" : "Add Package"}
+                </Button>
+                <Button type="button" variant="outline" onClick={closeAddPackageDialog}>
+                  Cancel
+                </Button>
+              </>
+            )}
           </div>
         </form>
       </Dialog>
