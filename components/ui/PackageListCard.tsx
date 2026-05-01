@@ -17,13 +17,17 @@ export type PackageCard = {
 type PackageListCardProps = {
   pkg: PackageCard;
   rowNum: number;
-  showActions: boolean;
+  isExistingPackage: boolean;
+  showEdit: boolean;
+  showArchive: boolean;
   onEdit: (pkg: PackageCard) => void;
   onArchive: (pkg: PackageCard) => void;
   onView?: (pkg: PackageCard) => void;
 };
 
-export function PackageListCard({ pkg, rowNum, showActions, onEdit, onArchive, onView }: PackageListCardProps) {
+export function PackageListCard({ pkg, rowNum, isExistingPackage, showEdit, showArchive, onEdit, onArchive, onView }: PackageListCardProps) {
+  const showActionButtons = showEdit || showArchive;
+
   return (
     <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-5 shadow-[0px_1px_8px_rgba(25,33,61,0.06)]">
       <div className="-mx-5 mb-5 flex items-start justify-between gap-3 border-b border-[#DFE0E2] px-5 pb-5">
@@ -47,7 +51,7 @@ export function PackageListCard({ pkg, rowNum, showActions, onEdit, onArchive, o
             <p className="text-xs leading-[120%] text-[#525763]">{pkg.updatedLabel}</p>
           </div>
         </div>
-        {showActions && (
+        {isExistingPackage && (
           <span
             className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${pkg.statusClassName}`}
           >
@@ -74,25 +78,29 @@ export function PackageListCard({ pkg, rowNum, showActions, onEdit, onArchive, o
         </div>
       </div>
 
-      {showActions ? (
-        <div className="-mx-5 flex items-center gap-2  px-5 pt-5">
-          <button
-            type="button"
-            onClick={() => onEdit(pkg)}
-            className="cursor-pointer flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
-          >
-            <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => onArchive(pkg)}
-            disabled={pkg.status === "Archived"}
-            className="cursor-pointer flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Image src="/icons/archivedicon.svg" alt="Archive" width={14} height={14} className="shrink-0" />
-            Archive
-          </button>
+      {showActionButtons ? (
+        <div className="-mx-5 flex items-center gap-2 px-5 pt-5">
+          {showEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(pkg)}
+              className="cursor-pointer flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00]"
+            >
+              <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
+              Edit
+            </button>
+          )}
+          {showArchive && (
+            <button
+              type="button"
+              onClick={() => onArchive(pkg)}
+              disabled={pkg.status === "Archived"}
+              className="cursor-pointer flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Image src="/icons/archivedicon.svg" alt="Archive" width={14} height={14} className="shrink-0" />
+              Archive
+            </button>
+          )}
         </div>
       ) : (
         <div className="-mx-5 flex items-center px-5 pt-5">

@@ -837,21 +837,40 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     return "/registration";
   };
 
+  // const settingsItems = useMemo(() => {
+  //   const all = getAllSettingsItems();
+  //   const filtered = filterBySubModuleAccess(
+  //     all,
+  //     permissionsMap,
+  //     ["settings"],
+  //     SETTINGS_SUBMODULE_ALIASES
+  //   );
+  //   const pkg = all.find((i) => i.key === "package");
+  //   if (!pkg) return filtered;
+  //   if (filtered.some((i) => i.key === "package")) return filtered;
+  //   const labIdx = filtered.findIndex((i) => i.key === "lab-tests");
+  //   const insertAt = labIdx >= 0 ? labIdx + 1 : filtered.length;
+  //   return [...filtered.slice(0, insertAt), pkg, ...filtered.slice(insertAt)];
+  // }, [permissionsMap]);
+
   const settingsItems = useMemo(() => {
-    const all = getAllSettingsItems();
-    const filtered = filterBySubModuleAccess(
-      all,
-      permissionsMap,
-      ["settings"],
-      SETTINGS_SUBMODULE_ALIASES
-    );
-    const pkg = all.find((i) => i.key === "package");
-    if (!pkg) return filtered;
-    if (filtered.some((i) => i.key === "package")) return filtered;
-    const labIdx = filtered.findIndex((i) => i.key === "lab-tests");
-    const insertAt = labIdx >= 0 ? labIdx + 1 : filtered.length;
-    return [...filtered.slice(0, insertAt), pkg, ...filtered.slice(insertAt)];
-  }, [permissionsMap]);
+  const all = getAllSettingsItems();
+
+  const filtered = filterBySubModuleAccess(
+    all,
+    permissionsMap,
+    ["settings"],
+    SETTINGS_SUBMODULE_ALIASES
+  );
+  const labIdx = filtered.findIndex((i) => i.key === "lab-tests");
+  const insertAt = labIdx >= 0 ? labIdx + 1 : filtered.length;
+
+  return [
+    ...filtered.slice(0, insertAt),
+    ...filtered.slice(insertAt),
+  ];
+
+}, [permissionsMap]);
   const rolesPermissionItems = filterBySubModuleAccess(
     getRolesPermissionItems(),
     permissionsMap,

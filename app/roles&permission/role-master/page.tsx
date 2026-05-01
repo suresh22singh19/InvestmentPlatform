@@ -73,7 +73,7 @@ const PERM_COL_LABELS: Record<keyof PermCell, string> = {
     view: "View",
     add: "Add",
     edit: "Edit",
-    delete: "Delete",
+    delete: "Archive",
 };
 
 type PermSectionDef = { id: string; title: string; rows: string[] };

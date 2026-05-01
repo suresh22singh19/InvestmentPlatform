@@ -390,11 +390,12 @@ const userTypeOptions: SelectOption[] = [
 ];
 
 export default function PackagePage() {
-  const usersPermission = usePermission("settings", { subModule: "users" });
-  const canView = usersPermission.canView;
-  const canAdd = usersPermission.canAdd;
-  const canEdit = usersPermission.canEdit;
-  const canDownload = usersPermission.canDownload;
+  const packagePermission = usePermission("settings", { subModule: "package" });
+  const canView = packagePermission.canView;
+  const canAdd = packagePermission.canAdd;
+  const canEdit = packagePermission.canEdit;
+  const canDownload = packagePermission.canDownload;
+  const canDelete = packagePermission.canDelete;
 
   const { data: branchesRes, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
     skip: !canView && !canAdd && !canEdit,
@@ -887,6 +888,7 @@ export default function PackagePage() {
 
   const { data: packagesRes, isLoading: isLoadingPackages } = useGetAllPackagesQuery(getAllPackagesParams, {
     refetchOnMountOrArgChange: true,
+    skip: !canView,
   });
 
   const apiPackageCards = useMemo((): PackageCard[] => {
@@ -915,6 +917,7 @@ export default function PackagePage() {
   };
 
   const openAddPackageDialog = () => {
+    if (!canAdd) return;
     setPackageDialogMode("add");
     setEditingPackageId(null);
     setAddPackageForm(defaultAddPackageForm());
@@ -923,6 +926,7 @@ export default function PackagePage() {
   };
 
   const openViewPackageDialog = (pkg: PackageCard) => {
+    if (!canView) return;
     setPackageDialogMode("view");
     setEditingPackageId(pkg.id);
     const apiItem = packagesRes?.data?.find((item) => item.id === pkg.id);
@@ -936,6 +940,7 @@ export default function PackagePage() {
   };
 
   const openEditPackageDialog = (pkg: PackageCard) => {
+    if (!canEdit) return;
     setPackageDialogMode("edit");
     setEditingPackageId(pkg.id);
     const apiItem = packagesRes?.data?.find((item) => item.id === pkg.id);
@@ -997,6 +1002,8 @@ export default function PackagePage() {
 
   const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (packageDialogMode === "add" && !canAdd) return;
+    if (packageDialogMode === "edit" && !canEdit) return;
     if (!validatePackageForm()) {
       return;
     }
@@ -1040,6 +1047,7 @@ export default function PackagePage() {
   };
 
   const confirmArchivePackage = async () => {
+    if (!canDelete) return;
     if (!packageArchiveConfirm) return;
     const pkg = packageArchiveConfirm;
     try {
@@ -1117,6 +1125,12 @@ export default function PackagePage() {
         </div>
 
         <ListBorder as="section" className="px-4 py-4">
+          {!canView ? (
+            <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+              You don&apos;t have permission to view package.
+            </div>
+          ) : (
+          <>
           <div className="mb-6 w-[450px]">
             <Tabs options={tabOptions} value={activeTab} onChange={handleTabChange} />
           </div>
@@ -1168,7 +1182,7 @@ export default function PackagePage() {
                   placeholder="Search Here..."
                   className="!w-[280px] min-w-[280px] max-w-[280px] shrink-0"
                 />
-                {activeTab === "existing-packages" && (
+                {activeTab === "existing-packages" && canAdd && (
                   <button
                     type="button"
                     className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
@@ -1200,7 +1214,9 @@ export default function PackagePage() {
                       key={pkg.id}
                       pkg={pkg}
                       rowNum={rowNum}
-                      showActions={activeTab === "existing-packages"}
+                      isExistingPackage={activeTab === "existing-packages"}
+                      showEdit={activeTab === "existing-packages" && canEdit}
+                      showArchive={activeTab === "existing-packages" && canDelete}
                       onEdit={openEditPackageDialog}
                       onArchive={setPackageArchiveConfirm}
                       onView={openViewPackageDialog}
@@ -1221,12 +1237,18 @@ export default function PackagePage() {
               />
             )}
           </div>
+          </>
+          )}
         </ListBorder>
       </div>
 
       {/* add package  */}
       <Dialog
-        open={isAddPackageDialogOpen}
+        open={
+          (packageDialogMode === "add" && canAdd && isAddPackageDialogOpen) ||
+          (packageDialogMode === "edit" && canEdit && isAddPackageDialogOpen) ||
+          (packageDialogMode === "view" && canView && isAddPackageDialogOpen)
+        }
         onClose={closeAddPackageDialog}
         title={packageDialogMode === "view" ? "View Package" : packageDialogMode === "edit" ? "Edit Package" : "Add Package"}
         width={949}
