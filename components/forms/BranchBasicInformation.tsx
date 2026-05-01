@@ -138,9 +138,8 @@ export default function BranchBasicInformation({
           <button
             type="button"
             onClick={() => setFieldValue("facilityType", "Hospital")}
-            className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
-              values.facilityType === "Hospital" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
-            }`}
+            className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${values.facilityType === "Hospital" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
+              }`}
           >
             <div className="flex w-full items-center gap-2">
               <div className={`h-2 w-2 flex-shrink-0 rounded-full ${values.facilityType === "Hospital" ? "bg-green-600" : "bg-gray-300"}`} />
@@ -156,9 +155,8 @@ export default function BranchBasicInformation({
           <button
             type="button"
             onClick={() => setFieldValue("facilityType", "Clinic")}
-            className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
-              values.facilityType === "Clinic" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
-            }`}
+            className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${values.facilityType === "Clinic" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
+              }`}
           >
             <div className="flex w-full items-center gap-2">
               <div className={`h-2 w-2 flex-shrink-0 rounded-full ${values.facilityType === "Clinic" ? "bg-green-600" : "bg-gray-300"}`} />
@@ -286,7 +284,7 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("tinNo", filterDigitsOnly(e.target.value, 11))}
             onBlur={handleBlur}
             error={err(formik, "tinNo")}
-            // helperText="Optional. Exactly 11 digits if filled."
+          // helperText="Optional. Exactly 11 digits if filled."
           />
         </div>
         <div data-field="creditLimit" className="scroll-mt-4">
@@ -300,11 +298,11 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("creditLimit", filterDigitsOnly(e.target.value, 15))}
             onBlur={handleBlur}
             error={err(formik, "creditLimit")}
-            // helperText={
-            //   values.isFranchise === "yes"
-            //     ? "Required for franchise branches. Numbers only, max 15 digits."
-            //     : "Optional when Is Franchise is No. Numbers only, max 15 digits if filled."
-            // }
+          // helperText={
+          //   values.isFranchise === "yes"
+          //     ? "Required for franchise branches. Numbers only, max 15 digits."
+          //     : "Optional when Is Franchise is No. Numbers only, max 15 digits if filled."
+          // }
           />
         </div>
         <div data-field="tat" className="scroll-mt-4">
@@ -317,7 +315,7 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("tat", filterAlphanumericUpper(e.target.value, 10))}
             onBlur={handleBlur}
             error={err(formik, "tat")}
-            // helperText="Exactly 10 letters or digits."
+          // helperText="Exactly 10 letters or digits."
           />
         </div>
         <div data-field="cstNo" className="scroll-mt-4">
@@ -331,7 +329,7 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("cstNo", filterDigitsOnly(e.target.value, 11))}
             onBlur={handleBlur}
             error={err(formik, "cstNo")}
-            // helperText="Exactly 11 digits."
+          // helperText="Exactly 11 digits."
           />
         </div>
         <div data-field="gstNumber" className="scroll-mt-4">
@@ -357,7 +355,7 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("stock", filterPercentageMax100(e.target.value, 7))}
             onBlur={handleBlur}
             error={err(formik, "stock")}
-            // helperText="0–100%, decimals allowed."
+          // helperText="0–100%, decimals allowed."
           />
         </div>
         <div data-field="dp" className="scroll-mt-4">
@@ -371,7 +369,7 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("dp", filterPercentageMax100(e.target.value, 7))}
             onBlur={handleBlur}
             error={err(formik, "dp")}
-            // helperText="0–100%, decimals allowed."
+          // helperText="0–100%, decimals allowed."
           />
         </div>
         <div data-field="stateCode" className="scroll-mt-4">
@@ -398,7 +396,7 @@ export default function BranchBasicInformation({
             error={err(formik, "warehouse")}
           />
         </div>
-        <div data-field="branchCode" className="scroll-mt-4">
+        {/* <div data-field="branchCode" className="scroll-mt-4">
           <FormInputField
             label="Branch Code *"
             name="branchCode"
@@ -409,8 +407,23 @@ export default function BranchBasicInformation({
             onBlur={handleBlur}
             error={err(formik, "branchCode")}
             // helperText="Alphanumeric only, maximum 10 characters."
+          /> */}
+        <div data-field="branchCode" className="scroll-mt-4">
+          <FormInputField
+            label="Branch Code *"
+            name="branchCode"
+            placeholder="Enter branch code"
+            value={values.branchCode}
+            maxLength={4}
+            onChange={(e) =>
+              // Replace everything that is NOT a letter (a-z, A-Z) with an empty string
+              setFieldValue("branchCode", e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4))
+            }
+            onBlur={handleBlur}
+            error={err(formik, "branchCode")}
           />
         </div>
+        {/* </div> */}
         <div data-field="branchId" className="scroll-mt-4">
           <FormInputField
             label="Branch ID *"
@@ -422,7 +435,7 @@ export default function BranchBasicInformation({
             onChange={(e) => setFieldValue("branchId", filterDigitsOnly(e.target.value, 20))}
             onBlur={handleBlur}
             error={err(formik, "branchId")}
-            // helperText="Numbers only, maximum 20 digits."
+          // helperText="Numbers only, maximum 20 digits."
           />
         </div>
         <div data-field="branchUser" className="scroll-mt-4">
@@ -489,7 +502,7 @@ export default function BranchBasicInformation({
             }
             onBlur={handleBlur}
             error={err(formik, "advancedReferralAmount")}
-            // helperText="Optional. Digits only, maximum 9 digits if filled."
+          // helperText="Optional. Digits only, maximum 9 digits if filled."
           />
         </div>
         <div data-field="referralAmountInPercent" className="scroll-mt-4">
@@ -505,7 +518,7 @@ export default function BranchBasicInformation({
             }
             onBlur={handleBlur}
             error={err(formik, "referralAmountInPercent")}
-            // helperText="Optional. 0–100%, max 10 characters if filled."
+          // helperText="Optional. 0–100%, max 10 characters if filled."
           />
         </div>
         <div data-field="showToAgent" className="scroll-mt-4">
@@ -639,21 +652,21 @@ export default function BranchBasicInformation({
             </div>
           ) : null}
         </div>
-          <div className="scroll-mt-4 md:col-span-2 flex w-full min-w-0 flex-row flex-nowrap items-start gap-4">
-            <FormSelectField
-              label="Lab Test Source *"
-              options={labTestSourceOptions}
-              placeholder="Select"
-              background="white"
-              width="100%"
-              value={values.labTestSource || null}
-              onChange={(v) =>
-                setFieldValue("labTestSource", Array.isArray(v) ? (v[0] ?? "") : (v ?? ""), true)
-              }
-              onBlur={() => void handleBlur("labTestSource")}
-              error={err(formik, "labTestSource")}
-            />
-          </div>
+        <div className="scroll-mt-4 md:col-span-2 flex w-full min-w-0 flex-row flex-nowrap items-start gap-4">
+          <FormSelectField
+            label="Lab Test Source *"
+            options={labTestSourceOptions}
+            placeholder="Select"
+            background="white"
+            width="100%"
+            value={values.labTestSource || null}
+            onChange={(v) =>
+              setFieldValue("labTestSource", Array.isArray(v) ? (v[0] ?? "") : (v ?? ""), true)
+            }
+            onBlur={() => void handleBlur("labTestSource")}
+            error={err(formik, "labTestSource")}
+          />
+        </div>
         <div className="scroll-mt-4 md:col-span-2 space-y-3">
           <PhotoCapture
             ref={photoCaptureRef}

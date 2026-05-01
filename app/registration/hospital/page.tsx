@@ -754,7 +754,7 @@ export default function HospitalRegistrationPage() {
         insuranceCompany: "",
         ayushCovered: "",
         referral: "",
-        source: "",
+        source: "Direct Patient",
         tvSpecificField: "",
         newspaperSpecificField: "",
         socialMediaSpecificField: "",

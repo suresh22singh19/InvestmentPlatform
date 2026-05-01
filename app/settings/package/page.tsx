@@ -153,12 +153,12 @@ function defaultAddPackageForm(): AddPackageFormState {
     attendantFeesPrice: "",
     therapySessionsPerDay: "",
     therapyPrice: "",
-    medicineEnabled: true,
+    medicineEnabled: false,
     mealsEnabled: false,
     doctorFeesEnabled: false,
     nurseFeesEnabled: false,
     attendantFeesEnabled: false,
-    therapyEnabled: true,
+    therapyEnabled: false,
   };
 }
 
@@ -347,6 +347,20 @@ async function downloadPdfFromApiUrl(url: string, filename: string) {
     a.click();
     document.body.removeChild(a);
   }
+}
+
+function sanitizePriceInput(raw: string, maxIntDigits = 5): string {
+  let s = raw.replace(/[^0-9.]/g, "");
+  const dotIdx = s.indexOf(".");
+  if (dotIdx !== -1) {
+    s = s.slice(0, dotIdx + 1) + s.slice(dotIdx + 1).replace(/\./g, "");
+  }
+  const parts = s.split(".");
+  if (parts[0].length > maxIntDigits) {
+    parts[0] = parts[0].slice(0, maxIntDigits);
+    s = parts.join(".");
+  }
+  return s;
 }
 
 const EMPLOYEE_ID_MAX_LEN = 25;
@@ -1077,6 +1091,20 @@ export default function PackagePage() {
 
   const isViewMode = packageDialogMode === "view";
 
+  const roomRentPriceDisplay = useMemo(() => {
+    if (packageDialogMode === "edit" && editingPackageId != null) {
+      const apiItem = packagesRes?.data?.find((item) => item.id === editingPackageId);
+      if (apiItem?.branchRoomType?.roomRentPrice != null) {
+        return String(apiItem.branchRoomType.roomRentPrice);
+      }
+    }
+    if (activeTab2 && branchRoomListRes?.data) {
+      const selectedRoom = branchRoomListRes.data.find((r) => String(r.id) === activeTab2);
+      if (selectedRoom && selectedRoom.price > 0) return String(selectedRoom.price);
+    }
+    return "";
+  }, [packageDialogMode, editingPackageId, packagesRes, activeTab2, branchRoomListRes]);
+
   return (
     <AppShell>
     
@@ -1321,6 +1349,38 @@ export default function PackagePage() {
             <div className="flex gap-[32px] min-h-[37px] justify-between">
               <div className="flex items-center justify-between pt-[7px]">
                 <Toggle
+                  checked={true}
+                  onChange={() => {}}
+                  label="Room Rent"
+                  className="!w-10 !h-6"
+                  width="w-[16px]"
+                  height="h-[16px]"
+                  fontsize="text-[12px]"
+                  transform="!translate-x-[20px]"
+                  disabled={true}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="relative w-[216px]">
+                  <FormInputField
+                    label={""}
+                    value={roomRentPriceDisplay}
+                    onChange={() => {}}
+                    placeholder="Price"
+                    type="number"
+                    height={37}
+                    disabled={true}
+                  />
+                  <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                    ₹
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-[32px] min-h-[37px] justify-between">
+              <div className="flex items-center justify-between pt-[7px]">
+                <Toggle
                   checked={addPackageForm.medicineEnabled}
                   onChange={(checked) => { if (!isViewMode) setAddPackageForm((p) => ({ ...p, medicineEnabled: checked })); }}
                   label="Medicine"
@@ -1339,11 +1399,13 @@ export default function PackagePage() {
                       label={""}
                       value={addPackageForm.medicinePrice}
                       onChange={(e) => {
-                        setAddPackageForm((p) => ({ ...p, medicinePrice: e.target.value }));
-                        if (e.target.value.trim() && packageFormErrors.medicinePrice) setPackageFormErrors((err) => ({ ...err, medicinePrice: "" }));
+                        const val = sanitizePriceInput(e.target.value);
+                        setAddPackageForm((p) => ({ ...p, medicinePrice: val }));
+                        if (val.trim() && packageFormErrors.medicinePrice) setPackageFormErrors((err) => ({ ...err, medicinePrice: "" }));
                       }}
                       placeholder="Price"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       height={37}
                       disabled={isViewMode}
                     />
@@ -1377,11 +1439,13 @@ export default function PackagePage() {
                       label={""}
                       value={addPackageForm.mealsPrice}
                       onChange={(e) => {
-                        setAddPackageForm((p) => ({ ...p, mealsPrice: e.target.value }));
-                        if (e.target.value.trim() && packageFormErrors.mealsPrice) setPackageFormErrors((err) => ({ ...err, mealsPrice: "" }));
+                        const val = sanitizePriceInput(e.target.value);
+                        setAddPackageForm((p) => ({ ...p, mealsPrice: val }));
+                        if (val.trim() && packageFormErrors.mealsPrice) setPackageFormErrors((err) => ({ ...err, mealsPrice: "" }));
                       }}
                       placeholder="Price"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       height={37}
                       disabled={isViewMode}
                     />
@@ -1415,11 +1479,13 @@ export default function PackagePage() {
                       label={""}
                       value={addPackageForm.doctorFeesPrice}
                       onChange={(e) => {
-                        setAddPackageForm((p) => ({ ...p, doctorFeesPrice: e.target.value }));
-                        if (e.target.value.trim() && packageFormErrors.doctorFeesPrice) setPackageFormErrors((err) => ({ ...err, doctorFeesPrice: "" }));
+                        const val = sanitizePriceInput(e.target.value);
+                        setAddPackageForm((p) => ({ ...p, doctorFeesPrice: val }));
+                        if (val.trim() && packageFormErrors.doctorFeesPrice) setPackageFormErrors((err) => ({ ...err, doctorFeesPrice: "" }));
                       }}
                       placeholder="Price"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       height={37}
                       disabled={isViewMode}
                     />
@@ -1453,11 +1519,13 @@ export default function PackagePage() {
                       label={""}
                       value={addPackageForm.nurseFeesPrice}
                       onChange={(e) => {
-                        setAddPackageForm((p) => ({ ...p, nurseFeesPrice: e.target.value }));
-                        if (e.target.value.trim() && packageFormErrors.nurseFeesPrice) setPackageFormErrors((err) => ({ ...err, nurseFeesPrice: "" }));
+                        const val = sanitizePriceInput(e.target.value);
+                        setAddPackageForm((p) => ({ ...p, nurseFeesPrice: val }));
+                        if (val.trim() && packageFormErrors.nurseFeesPrice) setPackageFormErrors((err) => ({ ...err, nurseFeesPrice: "" }));
                       }}
                       placeholder="Price"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       height={37}
                       disabled={isViewMode}
                     />
@@ -1491,11 +1559,13 @@ export default function PackagePage() {
                       label={""}
                       value={addPackageForm.attendantFeesPrice}
                       onChange={(e) => {
-                        setAddPackageForm((p) => ({ ...p, attendantFeesPrice: e.target.value }));
-                        if (e.target.value.trim() && packageFormErrors.attendantFeesPrice) setPackageFormErrors((err) => ({ ...err, attendantFeesPrice: "" }));
+                        const val = sanitizePriceInput(e.target.value);
+                        setAddPackageForm((p) => ({ ...p, attendantFeesPrice: val }));
+                        if (val.trim() && packageFormErrors.attendantFeesPrice) setPackageFormErrors((err) => ({ ...err, attendantFeesPrice: "" }));
                       }}
                       placeholder="Price"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       height={37}
                       disabled={isViewMode}
                     />
@@ -1559,11 +1629,13 @@ export default function PackagePage() {
                   label={"Price"}
                   value={addPackageForm.therapyPrice}
                   onChange={(e) => {
-                    setAddPackageForm((p) => ({ ...p, therapyPrice: e.target.value }));
-                    if (e.target.value.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
+                    const val = sanitizePriceInput(e.target.value);
+                    setAddPackageForm((p) => ({ ...p, therapyPrice: val }));
+                    if (val.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
                   }}
                   placeholder="Price"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   disabled={isViewMode}
                 />
                 <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
