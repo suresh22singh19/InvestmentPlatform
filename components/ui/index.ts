@@ -40,6 +40,8 @@ export { PatientWalletInformationCard } from "./PatientWalletInformationCard";
 export type { PatientWalletDetailItem } from "./PatientWalletInformationCard";
 export { OtherInformationCard } from "./OtherInformationCard";
 export type { OtherInformationItem } from "./OtherInformationCard";
+export { ReferralPatientInfoCard } from "./referralPatientInfo";
+export type { ReferralPatientInfoItem } from "./referralPatientInfo";
 export { PatientDetailsCard } from "./PatientDetailsCard";
 export type { PatientDetailsBadge, PatientDetailsInfoItem } from "./PatientDetailsCard";
 export { VitalsCard } from "./VitalsCard";

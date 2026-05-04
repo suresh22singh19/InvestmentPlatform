@@ -47,6 +47,8 @@ import {
     TableSearchInput,
     OtherInformationCard,
     type OtherInformationItem,
+    ReferralPatientInfoCard,
+    type ReferralPatientInfoItem,
     PatientDetailsCard,
     PatientInformationTimelineCard,
     type PatientInformationTimelineItem,
@@ -133,6 +135,14 @@ const PATIENT_WALLET_DETAILS: PatientWalletDetailItem[] = [
     { label: "Amount", value: "5000" },
     { label: "Discount", value: "20%" },
     { label: "Expire", value: "30-12-2025" },
+];
+
+const REFERRAL_DETAIL_ITEMS: ReferralPatientInfoItem[] = [
+    { label: "Source", value: "N/A" },
+    { label: "Sub Source", value: "N/A" },
+    { label: "Referral Doctor", value: "N/A" },
+    { label: "Referral Name", value: "N/A" },
+    { label: "Mobile", value: "N/A" },
 ];
 
 const OTHER_INFORMATION_ITEMS: OtherInformationItem[] = [
@@ -1119,6 +1129,7 @@ export default function IpdPage() {
                                 remainingAmount="Rs. 7000.00"
                                 details={PATIENT_WALLET_DETAILS}
                             />
+                            <ReferralPatientInfoCard items={REFERRAL_DETAIL_ITEMS} />
 
                             <OtherInformationCard items={OTHER_INFORMATION_ITEMS} />
                         </div>
