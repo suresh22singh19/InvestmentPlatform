@@ -965,8 +965,21 @@ export default function RoleMasterPage() {
         branchesEnvelope?.data,
     ]);
 
+    /** Map ROLE_NAME_PRESET_OPTIONS selection to the `roleType` query param for getListOfModules. Only applies for facility wizard; undefined for corporate. */
+    const resolvedRoleType: string | undefined = useMemo(() => {
+        if (selectedGroup !== "facility") return undefined;
+        switch (roleNameOption) {
+            case "Doctor": return "doctor";
+            case "Nurse": return "nurse";
+            case "Therapist": return "therapist";
+            case "Other": return "other";
+        }
+    }, [selectedGroup, roleNameOption]);
+
     const modulesQueryArg =
-        resolvedModulesBranchId != null ? { branchId: resolvedModulesBranchId } : undefined;
+        resolvedModulesBranchId != null
+            ? { branchId: resolvedModulesBranchId, ...(resolvedRoleType ? { roleType: resolvedRoleType } : {}) }
+            : undefined;
 
     const { data: modulesEnvelope, isFetching: modulesLoading } = useGetListOfModulesQuery(
         modulesQueryArg,
@@ -995,6 +1008,7 @@ export default function RoleMasterPage() {
 
     const [editingRoleId, setEditingRoleId] = useState<number | null>(null);
     const [editingIsActive, setEditingIsActive] = useState(true);
+    const [editingRoleCategoryType, setEditingRoleCategoryType] = useState("");
     const submitRoleInFlightRef = useRef(false);
     const [isRoleSubmitting, setIsRoleSubmitting] = useState(false);
 
@@ -1309,10 +1323,19 @@ export default function RoleMasterPage() {
                 return;
             }
 
+            const roleTypeFromCategory = (() => {
+                const cat = (d.roleCategoryType ?? "").toLowerCase();
+                if (cat === "facility_doctor") return "doctor";
+                if (cat === "facility_nurse") return "nurse";
+                if (cat === "facility_therapist") return "therapist";
+                if (cat.startsWith("facility")) return "other";
+                return undefined;
+            })();
+
             let modulesPayload: ModuleListItem[] | undefined;
             let modulesMessage = "";
             try {
-                const modRes = await triggerListModules({ branchId: branchForModules }).unwrap();
+                const modRes = await triggerListModules({ branchId: branchForModules, ...(roleTypeFromCategory ? { roleType: roleTypeFromCategory } : {}) }).unwrap();
                 if (modRes.success && Array.isArray(modRes.data) && modRes.data.length > 0) {
                     modulesPayload = modRes.data;
                     modulesMessage = modRes.message || "";
@@ -1388,14 +1411,17 @@ export default function RoleMasterPage() {
             const d = res.data;
             setEditingIsActive(d.isActive);
             const cat = (d.roleCategoryType || "").toLowerCase();
+            setEditingRoleCategoryType(d.roleCategoryType || "");
             const grp: RoleGroup = cat === "corporate" ? "corporate" : "facility";
             setSelectedGroup(grp);
             setRoleName(d.name);
-            const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
-                (o) => o.toLowerCase() === d.name.trim().toLowerCase()
-            );
-            setRoleNameOption(presetMatch ?? "Other");
-            setRoleDescription("");
+            const presetMatch: "Doctor" | "Nurse" | "Therapist" | "Other" =
+                cat === "facility_doctor" ? "Doctor"
+                : cat === "facility_nurse" ? "Nurse"
+                : cat === "facility_therapist" ? "Therapist"
+                : "Other";
+            setRoleNameOption(presetMatch);
+            setRoleDescription((d as any).roleDescription || "");
             const rawScope = (d.mainScope || "Zonal").trim();
             const scopeMatch = DATA_SCOPE_OPTIONS.find(
                 (o) => o.id.toLowerCase() === rawScope.toLowerCase()
@@ -1793,6 +1819,7 @@ export default function RoleMasterPage() {
                         indiaStatesData?.data ?? []
                     ),
                     permissions: permsPayload,
+                    roleDescription: roleDescription.trim() || undefined,
                 }).unwrap();
                 showMessage("success", "Role created successfully.");
             } else {
@@ -1801,10 +1828,11 @@ export default function RoleMasterPage() {
                     roleId: editingRoleId,
                     body: {
                         name: roleName.trim(),
-                        roleCategoryType: selectedGroup === "facility" ? "facility" : "corporate",
+                        roleCategoryType: editingRoleCategoryType,
                         mainScope: selectedGroup === "facility" ? "Facility" : (dataScope || "Zonal"),
                         isActive: editingIsActive,
                         permissions: permsPayload,
+                        roleDescription: roleDescription.trim() || undefined,
                     },
                 }).unwrap();
                 showMessage("success", "Role updated successfully.");
@@ -2526,6 +2554,7 @@ export default function RoleMasterPage() {
                                         width="100%"
                                         emptyMessage="No branches found."
                                         error={defineErrors.branch || undefined}
+                                        disabled={wizardMode === "edit"}
                                     />
                                 </div>
                                 <div className="mb-5">
@@ -2533,19 +2562,23 @@ export default function RoleMasterPage() {
                                         Role Type <span className="text-[#F6776E]">*</span>
                                     </label>
                                     <div className="flex flex-wrap gap-4">
-                                        {ROLE_NAME_PRESET_OPTIONS.map((opt) => (
-                                            <label key={opt} className="flex cursor-pointer items-center gap-2">
-                                                <input
-                                                    type="radio"
-                                                    name="roleNameOption-facility"
-                                                    value={opt}
-                                                    checked={roleNameOption === opt}
-                                                    onChange={() => onRoleNameOptionChange(opt)}
-                                                    className="h-4 w-4 accent-[#0B8C00]"
-                                                />
-                                                <span className="text-[14px] text-[#434956]">{opt}</span>
-                                            </label>
-                                        ))}
+                                        {ROLE_NAME_PRESET_OPTIONS.map((opt) => {
+                                            const isDisabled = wizardMode === "edit" || opt === "Nurse" || opt === "Therapist";
+                                            return (
+                                                <label key={opt} className={`flex items-center gap-2 ${isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="roleNameOption-facility"
+                                                        value={opt}
+                                                        checked={roleNameOption === opt}
+                                                        onChange={() => onRoleNameOptionChange(opt)}
+                                                        disabled={isDisabled}
+                                                        className="h-4 w-4 accent-[#0B8C00] disabled:cursor-not-allowed"
+                                                    />
+                                                    <span className="text-[14px] text-[#434956]">{opt}</span>
+                                                </label>
+                                            );
+                                        })}
                                     </div>
                                     <div className="relative mt-3" ref={roleDropdownRef}>
                                         <FormInputField

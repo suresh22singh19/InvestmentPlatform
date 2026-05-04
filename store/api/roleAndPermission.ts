@@ -45,6 +45,7 @@ export interface CreateRolesRequest {
     mainScope: string;
     roleAccess: RoleAccessPayload[];
     permissions: RolePermissionPayload[];
+    roleDescription?: string;
 }
 
 export type CreateRolesResponse = RolePermissionApiEnvelope<null>;
@@ -175,6 +176,7 @@ export interface UpdateRoleRequest {
     mainScope: string;
     isActive: boolean;
     permissions: RolePermissionPayload[];
+    roleDescription?: string;
 }
 
 export interface UpdateRoleData {
@@ -226,8 +228,8 @@ export interface ModuleListItem {
 
 export type GetListOfModulesResponse = RolePermissionApiEnvelope<ModuleListItem[]>;
 
-/** Omit or pass `undefined` for full catalog; `branchId` filters modules for that branch (Facility Role). */
-export type GetListOfModulesArg = { branchId: number } | undefined;
+/** Omit or pass `undefined` for full catalog; `branchId` filters modules for that branch (Facility Role). `roleType` filters by role type (e.g. "doctor", "nurse", "therapist", "other"). */
+export type GetListOfModulesArg = { branchId: number; roleType?: string } | undefined;
 
 /* ---------- Public states by zone (configure scope) ---------- */
 
@@ -898,16 +900,21 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
          * Optional query: branchId — modules available for that branch (Facility Role / assign permissions).
          */
         getListOfModules: builder.query<GetListOfModulesResponse, GetListOfModulesArg>({
-            query: (arg) => ({
-                url: "/admin/role-and-permissions/getListOfmodules",
-                method: "GET",
-                ...(arg?.branchId != null &&
-                typeof arg.branchId === "number" &&
-                !Number.isNaN(arg.branchId) &&
-                arg.branchId > 0
-                    ? { params: { branchId: arg.branchId } }
-                    : {}),
-            }),
+            query: (arg) => {
+                const hasBranchId =
+                    arg?.branchId != null &&
+                    typeof arg.branchId === "number" &&
+                    !Number.isNaN(arg.branchId) &&
+                    arg.branchId > 0;
+                const params: Record<string, unknown> = {};
+                if (hasBranchId) params.branchId = arg!.branchId;
+                if (arg?.roleType) params.roleType = arg.roleType;
+                return {
+                    url: "/admin/role-and-permissions/getListOfmodules",
+                    method: "GET",
+                    ...(Object.keys(params).length > 0 ? { params } : {}),
+                };
+            },
             providesTags: [ROLE_TAGS.modules],
         }),
 
