@@ -393,6 +393,7 @@ const getPatientItems = (): PatientItem[] => [
   { key: "patient-old-opd", label: "Old OPD", href: "/patient/opd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
   { key: "patient-ipd", label: "IPD", href: "/patient/ipd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
   { key: "patient-daycare", label: "DayCare", href: "/patient/daycare", iconSrc: "/icons/RegistrationDarkIcon.svg" },
+  { key: "patient-discharge", label: "Discharge", href: "/patient/discharge", iconSrc: "/icons/RegistrationDarkIcon.svg" },
 ];
 
 const getAllDoctorItems = (): SettingsItem[] => [
@@ -414,6 +415,36 @@ const getAllDoctorItems = (): SettingsItem[] => [
   //   href: "/doctor/visit",
   //   iconSrc: "/icons/DoctorDarkIcon.svg",
   // },
+];
+
+const getPreBookingItems = (): SettingsItem[] => [
+  {
+    key: "pre-booking-new",
+    label: "New Pre Booking",
+    href: "/pre-booking",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "pre-booking-old",
+    label: "Old Pre Booking",
+    href: "/pre-booking/old",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+];
+
+const getLeadRequestItems = (): SettingsItem[] => [
+  {
+    key: "lead-request-new",
+    label: "New Lead Request",
+    href: "/lead-request",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "lead-request-old",
+    label: "Old Lead Request",
+    href: "/lead-request/old",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
 ];
 
 type RolesPermissionItem = {
@@ -566,6 +597,8 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
               {columnItems.map((item) => {
                 const isRootRegistrationItem = item.href === "/registration";
                 const isRootInfrastructureItem = item.href === "/hospital-infrastructure";
+                const isRootPreBookingItem = item.href === "/pre-booking";
+                const isRootLeadRequestItem = item.href === "/lead-request";
                 const isDisabled = "disabled" in item && (item as PatientItem).disabled === true;
 
                 // Determine if this item is active
@@ -582,6 +615,12 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
                     isActive = pathname === item.href;
                   } else if (isRootInfrastructureItem) {
                     // For infrastructure root (Builder), match exact path only (not structure-preview)
+                    isActive = pathname === item.href;
+                  } else if (isRootPreBookingItem) {
+                    // For Pre Booking root, keep exact match so "Old Pre Booking" can highlight independently.
+                    isActive = pathname === item.href;
+                  } else if (isRootLeadRequestItem) {
+                    // For Lead Request root, keep exact match so "Old Lead Request" can highlight independently.
                     isActive = pathname === item.href;
                   } else {
                     // For other items (including structure-preview), match exact path or paths that start with it
@@ -673,8 +712,8 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "doctors", label: "Doctor", hasDropdown: true },
   { key: "reports", label: "Reports", href: "/reports" },
   { key: "infrastructure-view", label: "Infrastructure", href: "/infrastructure" },
-  { key: "pre-booking", label: "Pre Booking", href: "/pre-booking" },
-  { key: "lead-request", label: "Lead Request", href: "/lead-request" },
+  { key: "pre-booking", label: "Pre Booking", hasDropdown: true },
+  { key: "lead-request", label: "Lead Request", hasDropdown: true },
   { key: "voucher", label: "Voucher", href: "/voucher" },
   { key: "token", label: "Tokens", href: "/token" },
   { key: "discharge-pending", label: "Discharge Pending", href: "/discharge-pending" },
@@ -691,7 +730,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   "lead-request": ["lead-request", "lead"],
   voucher: ["vouchers", "voucher"],
   token: ["token", "tokens"],
-  "discharge-pending": ["patient", "patients", "registration-list"],
+  "discharge-pending": ["discharge-pending"],
   doctors: ["doctor", "doctors"],
   registration: ["registration"],
 };
@@ -729,11 +768,16 @@ const ROLES_SUBMODULE_ALIASES: Record<string, string[]> = {
 };
 
 const PATIENT_SUBMODULE_ALIASES: Record<string, string[]> = {
+  /** OPD list — submodule name "Opd" → slug `opd` */
   "patient-opd": ["opd", "patient-opd", "registration-list"],
-  "patient-old-opd": ["opd", "patient-opd", "registration-list"],
-  /** Also allow OPD/registration-list permission so all three appear when only OPD is configured */
-  "patient-ipd": ["ipd", "patient-ipd", "opd", "patient-opd", "registration-list"],
-  "patient-daycare": ["daycare", "day-care", "patient-daycare", "opd", "patient-opd", "registration-list"],
+  /** Old OPD — shown only when the user has an "Old Opd" / "Opd" submodule explicitly */
+  "patient-old-opd": ["old-opd", "patient-old-opd", "opd", "patient-opd"],
+  /** IPD — shown only when the user has the "Ipd" submodule */
+  "patient-ipd": ["ipd", "patient-ipd"],
+  /** DayCare — shown only when the user has the "DayCare" / "Daycare" submodule */
+  "patient-daycare": ["daycare", "day-care", "patient-daycare"],
+  /** Discharge — shown only when the user has the "Discharge" submodule */
+  "patient-discharge": ["discharge", "patient-discharge"],
 };
 
 const DOCTOR_SUBMODULE_ALIASES: Record<string, string[]> = {
@@ -877,12 +921,15 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     ["roles-permissions", "roles-and-permissions", "roles-permission"],
     ROLES_SUBMODULE_ALIASES
   );
-  const patientItems = filterBySubModuleAccess(
-    getPatientItems(),
-    permissionsMap,
-    ["patient", "patients", "registration-list"],
-    PATIENT_SUBMODULE_ALIASES
-  );
+  const patientItems = useMemo(() => {
+    const all = getPatientItems();
+    return filterBySubModuleAccess(
+      all,
+      permissionsMap,
+      ["patient", "patients", "registration-list"],
+      PATIENT_SUBMODULE_ALIASES
+    );
+  }, [permissionsMap]);
   const doctorItemsFiltered = filterBySubModuleAccess(
     getAllDoctorItems(),
     permissionsMap,
@@ -891,6 +938,8 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   );
   const doctorItems =
     doctorItemsFiltered.length > 0 ? doctorItemsFiltered : getAllDoctorItems();
+  const preBookingItems = useMemo(() => getPreBookingItems(), []);
+  const leadRequestItems = useMemo(() => getLeadRequestItems(), []);
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -1094,6 +1143,8 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               (item.key === "settings" && settingsItems.length > 0) ||
               (item.key === "patient" && patientItems.length > 0) ||
               (item.key === "doctors" && doctorItems.length > 0) ||
+              (item.key === "pre-booking" && preBookingItems.length > 0) ||
+              (item.key === "lead-request" && leadRequestItems.length > 0) ||
               item.key === "hospital-infrastructure" ||
               (item.key === "roles-permission" && rolesPermissionItems.length > 0));
 
@@ -1263,6 +1314,30 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                     onNavigate?.();
                   }}
                   title="Roles & Permissions"
+                />
+              )}
+              {openDropdownKey === "pre-booking" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={preBookingItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="Pre Booking"
+                />
+              )}
+              {openDropdownKey === "lead-request" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={leadRequestItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="Lead Request"
                 />
               )}
               {openDropdownKey === "doctors" && (

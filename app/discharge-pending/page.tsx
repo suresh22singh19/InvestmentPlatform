@@ -11,6 +11,7 @@ import {
   FormSelectField,
   Pagination,
   RefreshButton,
+  SpinnerLoader,
   Table,
   TableBody,
   TableData,
@@ -23,6 +24,7 @@ import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { useExport, type ExportColumn } from "@/hooks/useExport";
+import { usePermission } from "@/hooks/usePermission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -36,20 +38,26 @@ type DischargePendingRow = {
   patientStatus: string;
   patientType: string;
   dischargedDate: string;
+  /** Raw `type` from API: "ipd" | "day_care" | "daycare" | etc. */
+  rawType: string;
 };
 
 type LegacyDischargeApiItem = {
-  id: string;
+  branch_name?: string | null;
   patient_id: string | null;
-  branch_id: string | null;
   uhid: string | null;
-  patient_name: string | null;
-  gender: string | null;
-  age: string | null;
-  status: string | null;
-  discharge_date: string | null;
-  created_at: string | null;
-  group_id: string | null;
+  patient: string | null;
+  parent_name: string | null;
+  type: string | null;
+  patient_status: string | null;
+  end_date: string | null;
+  branch_id?: string | null;
+  id?: string;
+  patient_name?: string | null;
+  status?: string | null;
+  discharge_date?: string | null;
+  created_at?: string | null;
+  group_id?: string | null;
 };
 
 type LegacyDischargeApiResponse = {
@@ -57,6 +65,29 @@ type LegacyDischargeApiResponse = {
   message?: string;
   total_records?: number;
   data?: LegacyDischargeApiItem[];
+};
+
+const asDisplay = (value: string | null | undefined): string => {
+  const normalized = (value ?? "").trim();
+  return normalized === "" ? "N/A" : normalized;
+};
+
+const normalizePatientStatus = (value: string | null | undefined): string => {
+  const raw = asDisplay(value);
+  if (raw === "N/A") return raw;
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const normalizePatientType = (value: string | null | undefined): string => {
+  const raw = asDisplay(value);
+  if (raw === "N/A") return raw;
+  return raw.toUpperCase();
+};
+
+const normalizeDate = (value: string | null | undefined): string => {
+  const raw = (value ?? "").trim();
+  if (!raw) return "N/A";
+  return raw.split(" ")[0] || "N/A";
 };
 
 const DISCHARGE_PENDING_EXPORT_COLUMNS: ExportColumn[] = [
@@ -70,6 +101,9 @@ const DISCHARGE_PENDING_EXPORT_COLUMNS: ExportColumn[] = [
 ];
 
 export default function DischargePendingPage() {
+  const dischargePendingPerm = usePermission("Discharge Pending", {
+    subModule: "Discharge Pending",
+  });
   const {
     selectedBranchFilter,
     setSelectedBranchFilter,
@@ -78,6 +112,7 @@ export default function DischargePendingPage() {
     isBranchFilterDisabled,
     isSuperAdmin: isBranchFilterSuperAdmin,
     branchFilterPersistReady,
+    filterBranchId,
   } = useBranchFilter();
   const { data: branchesData } = useGetBranchesQuery(undefined, {
     skip: !isBranchFilterSuperAdmin,
@@ -86,10 +121,18 @@ export default function DischargePendingPage() {
     () => branchFilterOptions.filter((o) => o.value !== ""),
     [branchFilterOptions]
   );
+  const effectiveBranchId = filterBranchId ?? 1;
   const router = useRouter();
+  const resolveSource = (rawType: string): string => {
+    if (rawType === "ipd") return "ipd";
+    if (rawType === "day_care" || rawType === "daycare") return "daycare";
+    return "ipd";
+  };
+
   const handleViewPatient = useCallback(
     (row: DischargePendingRow) => {
-      router.push(`/patient/details?id=${row.patientId ?? row.id}`);
+      const source = resolveSource(row.rawType);
+      router.push(`/patient/details?id=${row.patientId ?? row.id}&source=${source}`);
     },
     [router]
   );
@@ -104,52 +147,25 @@ export default function DischargePendingPage() {
   const [toDate, setToDate] = useState("");
   const [rows, setRows] = useState<DischargePendingRow[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [isLoadingRows, setIsLoadingRows] = useState(false);
+  const [isLoadingRows, setIsLoadingRows] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
-  const parseDdMmYyyy = (value: string): Date | null => {
-    if (!value) return null;
-    const [dd, mm, yyyy] = value.split("-");
-    if (!dd || !mm || !yyyy) return null;
-    const day = Number(dd);
-    const month = Number(mm);
-    const year = Number(yyyy);
-    if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return null;
-    const parsed = new Date(year, month - 1, day);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
-
-  const toApiDate = (value: string): string => {
-    if (!value) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-    const parsed = parseDdMmYyyy(value);
-    if (!parsed) return "";
-    const yyyy = parsed.getFullYear();
-    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-    const dd = String(parsed.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
   const mapApiItemToRow = (item: LegacyDischargeApiItem): DischargePendingRow => {
-    const dischargeRaw = (item.discharge_date ?? "").trim();
-    const fallbackRaw = (item.created_at ?? "").trim();
-    const rawDate = dischargeRaw || fallbackRaw;
-    const dischargedDate = rawDate ? rawDate.split(" ")[0] : "-";
-    const statusLabel = (item.status ?? "").trim();
     const patientIdRaw = item.patient_id?.trim();
     const patientIdParsed =
       patientIdRaw && patientIdRaw !== "" ? Number(patientIdRaw) : NaN;
     return {
-      id: Number(item.id) || 0,
+      id: Number(patientIdParsed) || 0,
       patientId: Number.isFinite(patientIdParsed) ? patientIdParsed : null,
-      branchId: item.branch_id ?? "",
-      uhid: item.uhid ?? "-",
-      patientName: item.patient_name ?? "-",
-      parentName: "-",
-      patientStatus: statusLabel ? statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1) : "-",
-      patientType: "-",
-      dischargedDate,
+      branchId: asDisplay(item.branch_id),
+      uhid: asDisplay(item.uhid),
+      patientName: asDisplay(item.patient),
+      parentName: asDisplay(item.parent_name),
+      patientStatus: normalizePatientStatus(item.patient_status),
+      patientType: normalizePatientType(item.type),
+      dischargedDate: normalizeDate(item.end_date),
+      rawType: (item.type ?? "").trim().toLowerCase(),
     };
   };
 
@@ -208,19 +224,15 @@ export default function DischargePendingPage() {
   const buildApiParams = useCallback(
     (page: number, limit: number) => {
       const params = new URLSearchParams({
-        branchId: "1",
-        patientId: "",
-        contactNumber: "",
+        branchId: String(effectiveBranchId),
         uhid: searchType === "uhid" ? debouncedSearch : "",
         patientName: searchType === "patientName" ? debouncedSearch : "",
-        startDate: toApiDate(fromDate),
-        endDate: toApiDate(toDate),
         limit: String(limit),
         page: String(page),
       });
       return params;
     },
-    [debouncedSearch, searchType, fromDate, toDate]
+    [debouncedSearch, searchType, effectiveBranchId]
   );
 
   const buildApiParamsRef = useRef(buildApiParams);
@@ -232,28 +244,35 @@ export default function DischargePendingPage() {
     const controller = new AbortController();
 
     const loadRows = async () => {
+      if (!dischargePendingPerm.canView) {
+        setRows([]);
+        setTotalRecords(0);
+        setLoadError(null);
+        setIsLoadingRows(false);
+        return;
+      }
       setIsLoadingRows(true);
       setLoadError(null);
       try {
         const params = buildApiParamsRef.current(currentPage, itemsPerPage);
-        const response = await fetch(`/api/legacy/dischargelist?${params.toString()}`, {
+        const response = await fetch(`/api/legacy/branchPendingDischarge?${params.toString()}`, {
           method: "GET",
           signal: controller.signal,
         });
 
         const payload = (await response.json()) as LegacyDischargeApiResponse;
         if (!response.ok || payload?.status === false) {
-          throw new Error(payload?.message || "Failed to fetch discharge list");
+          throw new Error(payload?.message || "Failed to fetch discharge pending list");
         }
 
         const mappedRows: DischargePendingRow[] = (payload.data ?? []).map(mapApiItemToRow);
         setRows(mappedRows);
-        setTotalRecords(Number(payload.total_records) || 0);
+        setTotalRecords(Number(payload.total_records) || mappedRows.length);
       } catch (error) {
         if ((error as { name?: string })?.name === "AbortError") return;
         setRows([]);
         setTotalRecords(0);
-        setLoadError(error instanceof Error ? error.message : "Failed to fetch discharge list");
+        setLoadError(error instanceof Error ? error.message : "Failed to fetch discharge pending list");
       } finally {
         setIsLoadingRows(false);
       }
@@ -261,7 +280,13 @@ export default function DischargePendingPage() {
 
     loadRows();
     return () => controller.abort();
-  }, [debouncedSearch, fromDate, toDate, currentPage, itemsPerPage]);
+  }, [
+    debouncedSearch,
+    currentPage,
+    itemsPerPage,
+    dischargePendingPerm.canView,
+    effectiveBranchId,
+  ]);
 
   useEffect(() => {
     if (!branchFilterPersistReady) return;
@@ -306,7 +331,7 @@ export default function DischargePendingPage() {
   const fetchDataForExport = useCallback(async (): Promise<DischargePendingRow[]> => {
     const exportLimit = Math.max(totalRecords || 0, 1000);
     const params = buildApiParamsRef.current(1, exportLimit);
-    const response = await fetch(`/api/legacy/dischargelist?${params.toString()}`, {
+    const response = await fetch(`/api/legacy/branchPendingDischarge?${params.toString()}`, {
       method: "GET",
     });
     const payload = (await response.json()) as LegacyDischargeApiResponse;
@@ -326,6 +351,16 @@ export default function DischargePendingPage() {
   });
 
   const COLUMN_COUNT = 8;
+
+  if (!dischargePendingPerm.canView) {
+    return (
+      <AppShell>
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+          You don&apos;t have permission to view Discharge Pending.
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -396,9 +431,11 @@ export default function DischargePendingPage() {
                     </div>
                   )}
                 </div>
-                <div className="shrink-0">
-                  <ExportButton onExportCSV={handleExportCSV} isLoadingCSV={isLoadingCSV} />
-                </div>
+                {dischargePendingPerm.canDownload && (
+                  <div className="shrink-0">
+                    <ExportButton onExportCSV={handleExportCSV} isLoadingCSV={isLoadingCSV} />
+                  </div>
+                )}
                 <RefreshButton onClick={handleRefresh} />
               </div>
             </div>
@@ -421,7 +458,9 @@ export default function DischargePendingPage() {
                 {isLoadingRows ? (
                   <TableRow>
                     <TableData colSpan={COLUMN_COUNT} className="py-12 text-center text-sm text-[#6B7280]">
-                      Loading discharge records...
+                      <div className="flex items-center justify-center">
+                        <SpinnerLoader />
+                      </div>
                     </TableData>
                   </TableRow>
                 ) : loadError ? (
@@ -441,7 +480,7 @@ export default function DischargePendingPage() {
                     <TableRow key={row.id} className="bg-white transition-colors hover:bg-[#F7FAF7]">
                       <TableData variant="primary">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
                       <TableData onClick={() => handleViewPatient(row)}>
-                        <span className="font-medium text-[#0B8C00]">{row.uhid}</span>
+                        <span className="cursor-pointer font-medium text-[#0B8C00]">{row.uhid}</span>
                       </TableData>
                       <TableData>{row.patientName}</TableData>
                       <TableData>{row.parentName}</TableData>

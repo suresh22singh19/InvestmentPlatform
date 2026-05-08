@@ -23,8 +23,8 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     dashboard: ["/dashboard"],
     settings: ["/settings"],
     registration: ["/registration"],
-    patient: ["/registration/registrationList", "/patient", "/discharge-pending", "/patient/details"],
-    patients: ["/registration/registrationList", "/patient", "/discharge-pending", "/patient/details"],
+    patient: ["/registration/registrationList", "/patient", "/patient/details"],
+    patients: ["/registration/registrationList", "/patient", "/patient/details"],
     reports: ["/reports"],
     token: ["/token"],
     tokens: ["/token"],
@@ -36,6 +36,8 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "roles-permission": ["/roles&permission"],
     "roles-permissions": ["/roles&permission"],
     gate: ["/gate"],
+    /** `slugify("Discharge Pending")` — branch pending discharge list */
+    "discharge-pending": ["/discharge-pending"],
 };
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
@@ -79,14 +81,16 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "approval-level-assignment": ["/roles&permission/approval-level-assignment"],
     registration: ["/registration", "/registration/hospital"],
     "registration-report": ["/reports"],
-    opd: ["/registration/registrationList", "/patient/opd", "/patient/ipd", "/patient/daycare", "/patient/details"],
-    ipd: ["/registration/hospital", "/patient/ipd", "/patient/details"],
+    opd: ["/registration/registrationList", "/patient/opd", "/patient/details"],
+    ipd: ["/patient/ipd", "/patient/details"],
     daycare: [
         "/registration/daycare-registration-cli",
         "/registration/daycare-registration-hos",
         "/patient/daycare",
         "/patient/details",
     ],
+    /** Patient submodule "Discharge" (`slugify("Discharge")`) */
+    discharge: ["/patient/discharge"],
     "new-patient": ["/gate/new-patient"],
     "revisit-patient": ["/gate/revisit-patient"],
     "opd-visitor": ["/gate/patient-visitor"],
@@ -94,6 +98,8 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "other-visitor": ["/gate/other"],
     "patient-medicine-type": ["/gate/patient-medicine-type"],
     "view-daily-reports": ["/gate/reports"],
+    /** Submodule key matches parent name "Discharge Pending" */
+    "discharge-pending": ["/discharge-pending"],
 };
 
 const RESTRICTED_ROOT_PREFIXES = [
@@ -109,7 +115,7 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/roles&permission",
     "/infrastructure",
     "/hospital-infrastructure",
-    // "/discharge-pending",
+    "/discharge-pending",
 ];
 
 /**

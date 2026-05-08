@@ -1103,6 +1103,13 @@ export default function GateReportsPage() {
           if (col.key === "sr" || col.key === "serial") {
             return String(index + 1);
           }
+          if (col.key === "contactNumber" || col.key === "visitorContactNumber") {
+            const v = row[col.key as keyof DailyReport];
+            if (v === undefined || v === null || String(v).trim() === "") {
+              return "N/A";
+            }
+            return maskPhoneNumber(String(v));
+          }
           const value = row[col.key as keyof DailyReport];
           return value !== undefined && value !== null ? String(value) : "N/A";
         },
@@ -1539,7 +1546,10 @@ export default function GateReportsPage() {
     }
     const value = report[column.key as keyof DailyReport];
     // Apply masking for contact number fields in table
-    if (column.key === "contactNumber" && value !== undefined && value !== null) {
+    if (column.key === "contactNumber" || column.key === "visitorContactNumber") {
+      if (value === undefined || value === null || String(value).trim() === "") {
+        return "N/A";
+      }
       return maskPhoneNumber(String(value));
     }
     if (column.key === "patientName") {

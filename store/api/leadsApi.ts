@@ -48,6 +48,10 @@ export interface GetAllLeadsParams {
     page?: number;
     limit?: number;
     search?: string;
+    /** Optional date range filter (YYYY-MM-DD), if supported by backend. */
+    fromDate?: string;
+    /** Optional date range filter (YYYY-MM-DD), if supported by backend. */
+    toDate?: string;
     sort?: string;
     order?: "ASC" | "DESC";
     status?: "active" | "shifted" | "confirmed";
@@ -56,13 +60,15 @@ export interface GetAllLeadsParams {
 export const leadsApi = baseApi.injectEndpoints({
     endpoints: (builder) => ({
         getAllLeads: builder.query<GetAllLeadsResponse, GetAllLeadsParams>({
-            query: ({ branchId, page, limit, search, sort, order, status }) => ({
+            query: ({ branchId, page, limit, search, fromDate, toDate, sort, order, status }) => ({
                 url: "/admin/leads/GetAllLeads",
                 params: {
                     ...(branchId !== undefined ? { branchId } : {}),
                     ...(page !== undefined ? { page } : {}),
                     ...(limit !== undefined ? { limit } : {}),
                     ...(search !== undefined ? { search } : {}),
+                    ...(fromDate ? { fromDate } : {}),
+                    ...(toDate ? { toDate } : {}),
                     ...(sort !== undefined ? { sort } : {}),
                     ...(order !== undefined ? { order } : {}),
                     ...(status !== undefined ? { status } : {}),

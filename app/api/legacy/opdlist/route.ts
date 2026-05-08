@@ -17,9 +17,14 @@ export async function GET(request: NextRequest) {
             return raw != null && raw.trim() !== "" ? raw : fallback;
         };
 
+        const doctorIdRaw = pick("doctorId", "");
+        const doctorIdParsed = Number(doctorIdRaw);
+
         const body = {
             branchId: Number(pick("branchId", pick("branchName", "1"))) || 1,
             uhid: pick("uhid", ""),
+            patientName: pick("patientName", ""),
+            doctorId: doctorIdRaw === "" || Number.isNaN(doctorIdParsed) ? "" : doctorIdParsed,
             startDate: pick("startDate", "2026-03-08"),
             endDate: pick("endDate", "2026-04-08"),
             page: Number(pick("page", "1")) || 1,

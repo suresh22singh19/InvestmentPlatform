@@ -14,6 +14,8 @@ export interface TableListingSection {
     titleRightContent?: ReactNode;
     columns: TableListingColumn[];
     rows: ReactNode[][];
+    /** When `rows` is empty, show headers + centered message in the table body */
+    emptyMessage?: string;
 }
 
 interface TableListingCardProps {
@@ -33,44 +35,57 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                         {section.titleRightContent}
                     </div>
 
-                    <div style={{ overflow: "visible" }}>
-                        <div className="mb-6 flex items-center justify-between" style={{ overflow: "visible" }}>
-                            <h2 className="text-lg font-semibold text-[#434956]" />
-                        </div>
+                        <div style={{ overflow: "visible" }}>
+                            <div className="mb-6 flex items-center justify-between" style={{ overflow: "visible" }}>
+                                <h2 className="text-lg font-semibold text-[#434956]" />
+                            </div>
 
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="bg-white">
-                                    {section.columns.map((column, columnIndex) => (
-                                        <TableHead
-                                            key={`${section.id}-header-${columnIndex}`}
-                                            position={
-                                                column.position ??
-                                                (columnIndex === 0
-                                                    ? "first"
-                                                    : columnIndex === section.columns.length - 1
-                                                        ? "last"
-                                                        : "middle")
-                                            }
-                                        >
-                                            {column.label}
-                                        </TableHead>
-                                    ))}
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {section.rows.map((row, rowIndex) => (
-                                    <TableRow key={`${section.id}-row-${rowIndex}`}>
-                                        {row.map((cell, cellIndex) => (
-                                            <TableData key={`${section.id}-row-${rowIndex}-cell-${cellIndex}`}>
-                                                {cell}
-                                            </TableData>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-white">
+                                        {section.columns.map((column, columnIndex) => (
+                                            <TableHead
+                                                key={`${section.id}-header-${columnIndex}`}
+                                                position={
+                                                    column.position ??
+                                                    (columnIndex === 0
+                                                        ? "first"
+                                                        : columnIndex === section.columns.length - 1
+                                                            ? "last"
+                                                            : "middle")
+                                                }
+                                            >
+                                                {column.label}
+                                            </TableHead>
                                         ))}
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
+                                </TableHeader>
+                                <TableBody>
+                                    {section.rows.length === 0 && section.emptyMessage ? (
+                                        <TableRow>
+                                            <TableData
+                                                colSpan={section.columns.length}
+                                                className="h-auto min-h-[120px] border-b-0 py-12 align-middle"
+                                            >
+                                                <p className="text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
+                                                    {section.emptyMessage}
+                                                </p>
+                                            </TableData>
+                                        </TableRow>
+                                    ) : (
+                                        section.rows.map((row, rowIndex) => (
+                                            <TableRow key={`${section.id}-row-${rowIndex}`}>
+                                                {row.map((cell, cellIndex) => (
+                                                    <TableData key={`${section.id}-row-${rowIndex}-cell-${cellIndex}`}>
+                                                        {cell}
+                                                    </TableData>
+                                                ))}
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
                 </div>
             ))}
         </div>

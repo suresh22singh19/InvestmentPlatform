@@ -7,9 +7,11 @@ import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
     Button,
+    Dialog,
     FormSelectField,
     Pagination,
     RefreshButton,
+    SpinnerLoader,
     Table,
     TableBody,
     TableData,
@@ -21,9 +23,21 @@ import {
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
+import { PaymentReceiptCapture } from "@/components/registration/PaymentReceiptCapture";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { usePermission } from "@/hooks/usePermission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import { useGetLegacyDoctorsByBranchQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import { downloadPaymentReceiptPdfFromElement } from "@/lib/utils/downloadPaymentReceiptPdf";
+import NewOPDPatientForm, {
+    type NewOPDPatientFormHandle,
+    type NewOPDPatientFormProps,
+} from "@/lib/utils/newOPDpatientForm";
+import PatientCGHS, {
+    type PatientCGHSHandle,
+    type PatientCGHSProps,
+} from "@/lib/utils/patientForm";
 
 type OldOpdRow = {
     id: number;
@@ -33,6 +47,7 @@ type OldOpdRow = {
     opdId: string;
     name: string;
     doctor: string;
+    doctorFee: string;
     appointmentDate: string;
     appointmentTime: string;
     gender: string;
@@ -48,8 +63,12 @@ type LegacyOpdApiItem = {
     id: string;
     uhid: string | null;
     branch_id: string | null;
+    patient_id?: string | null;
     patient_ipd_id: string | null;
     doctor_id: string | null;
+    doctor_name: string | null;
+    doctor_fee?: string | null;
+    entry_fee?: string | null;
     date_app: string | null;
     time_slot: string | null;
     token: string | null;
@@ -70,12 +89,12 @@ type LegacyOpdApiResponse = {
     data?: LegacyOpdApiItem[];
 };
 
-const DOCTOR_OPTIONS = [
-    { value: "all", label: "Select Doctor" },
-
-];
-
 export default function IpdPage() {
+    const patientPermission = usePermission("Patient");
+    const opdPermission = usePermission("Patient", { subModule: "Opd" });
+    const canView = patientPermission.canView || opdPermission.canView;
+    const canDownload = patientPermission.canDownload || opdPermission.canDownload;
+
     const {
         selectedBranchFilter,
         setSelectedBranchFilter,
@@ -84,6 +103,7 @@ export default function IpdPage() {
         isBranchFilterDisabled,
         isSuperAdmin: isBranchFilterSuperAdmin,
         branchFilterPersistReady,
+        filterBranchId,
     } = useBranchFilter();
     const { data: branchesData } = useGetBranchesQuery(undefined, {
         skip: !isBranchFilterSuperAdmin,
@@ -92,14 +112,32 @@ export default function IpdPage() {
         () => branchFilterOptions.filter((o) => o.value !== ""),
         [branchFilterOptions]
     );
+    const effectiveBranchId = filterBranchId ?? 1;
+    const { data: legacyDoctorsResponse, isLoading: isLoadingDoctors } = useGetLegacyDoctorsByBranchQuery(
+        effectiveBranchId,
+        { skip: !branchFilterPersistReady }
+    );
+    const doctorOptions: SelectOption[] = useMemo(() => {
+        const allDoctors: SelectOption = { value: "all", label: "All Doctor" };
+        const rows = legacyDoctorsResponse?.data ?? [];
+        if (rows.length === 0) return [allDoctors];
+        return [
+            allDoctors,
+            ...rows.map((d) => ({
+                value: d.id,
+                label: d.name?.trim() ? d.name.trim() : `Doctor ${d.id}`,
+            })),
+        ];
+    }, [legacyDoctorsResponse]);
     const router = useRouter();
     const handleViewPatient = useCallback(
         (row: OldOpdRow) => {
-            router.push(`/patient/details?id=${row.id}`);
+            router.push(`/patient/details?id=${row.id}&source=opd`);
         },
         [router]
     );
     const [selectedDoctor, setSelectedDoctor] = useState("all");
+    const [searchType, setSearchType] = useState<"uhid" | "patientName">("uhid");
     const [searchTerm, setSearchTerm] = useState("");
     const [debouncedUhid, setDebouncedUhid] = useState("");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,8 +148,18 @@ export default function IpdPage() {
     const [toDate, setToDate] = useState("");
     const [rows, setRows] = useState<OldOpdRow[]>([]);
     const [totalRecords, setTotalRecords] = useState(0);
-    const [isLoadingRows, setIsLoadingRows] = useState(false);
+    const [isLoadingRows, setIsLoadingRows] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [downloadingRowId, setDownloadingRowId] = useState<number | null>(null);
+    const [downloadFormPayload, setDownloadFormPayload] = useState<NewOPDPatientFormProps | null>(null);
+    const [prescriptionPadPayload, setPrescriptionPadPayload] = useState<PatientCGHSProps | null>(null);
+    const [isInvoicePrescriptionDialogOpen, setIsInvoicePrescriptionDialogOpen] = useState(false);
+    const [selectedInvoiceRow, setSelectedInvoiceRow] = useState<OldOpdRow | null>(null);
+    const [invoiceCaptureRow, setInvoiceCaptureRow] = useState<OldOpdRow | null>(null);
+    const [isInvoicePdfDownloading, setIsInvoicePdfDownloading] = useState(false);
+    const [isPrescriptionPadDownloading, setIsPrescriptionPadDownloading] = useState(false);
+    const downloadFormRef = useRef<NewOPDPatientFormHandle | null>(null);
+    const prescriptionPadRef = useRef<PatientCGHSHandle | null>(null);
     const filterRef = useRef<HTMLDivElement>(null);
 
     const parseDdMmYyyy = (value: string): Date | null => {
@@ -139,14 +187,30 @@ export default function IpdPage() {
         return `${yyyy}-${mm}-${dd}`;
     };
 
+    const SEARCH_TYPE_OPTIONS = [
+        { value: "uhid", label: "UHID", placeholder: "Search by UHID" },
+        { value: "patientName", label: "Patient Name", placeholder: "Search by Patient Name" },
+    ] as const;
+
+    const currentSearchConfig = SEARCH_TYPE_OPTIONS.find((o) => o.value === searchType) ?? SEARCH_TYPE_OPTIONS[0];
+
     const handleSearchChange = useCallback((value: string) => {
-        setSearchTerm(value);
+        const sanitized = searchType === "patientName" ? value.replace(/[^a-zA-Z\s]/g, "") : value;
+        setSearchTerm(sanitized);
         setCurrentPage(1);
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
-            setDebouncedUhid(value.trim());
+            setDebouncedUhid(sanitized.trim());
         }, 500);
-    }, []);
+    }, [searchType]);
+
+    const handleSearchTypeChange = (value: string) => {
+        setSearchType(value as "uhid" | "patientName");
+        setSearchTerm("");
+        setDebouncedUhid("");
+        setCurrentPage(1);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
 
     const handleFilterClick = () => setIsFilterOpen((prev) => !prev);
     const handleFilter = (newFromDate: string, newToDate: string) => {
@@ -166,6 +230,7 @@ export default function IpdPage() {
             setSelectedBranchFilter(String(branchOptions[0].value));
         }
         setSelectedDoctor("all");
+        setSearchType("uhid");
         setSearchTerm("");
         setDebouncedUhid("");
         if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -175,16 +240,137 @@ export default function IpdPage() {
         setIsFilterOpen(false);
     };
 
+    const buildDownloadPayload = useCallback((row: OldOpdRow): NewOPDPatientFormProps => {
+        return {
+            patient: {
+                patient: row.name?.trim() || "N/A",
+                parent_name: "N/A",
+                bp: "N/A",
+                sl: "N/A",
+                weight: "N/A",
+                height: "N/A",
+                uhid: row.uhid?.trim() || "N/A",
+                opdId: row.opdId?.trim() || "N/A",
+                age: row.age?.trim() || "N/A",
+                gender: row.gender?.trim() || "N/A",
+            },
+            doctor: {
+                name: row.doctor?.trim() || "N/A",
+                education: [],
+                reg_no: "",
+            },
+            appointment: {
+                created_at: row.createdAt?.trim() || new Date().toISOString(),
+            },
+        };
+    }, []);
+
+    const handleDownloadPatientForm = useCallback(async (row: OldOpdRow) => {
+        if (downloadingRowId !== null) return;
+        try {
+            setDownloadingRowId(row.id);
+            setDownloadFormPayload(buildDownloadPayload(row));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            await downloadFormRef.current?.downloadPdf();
+        } finally {
+            setDownloadingRowId(null);
+        }
+    }, [buildDownloadPayload, downloadingRowId]);
+
+    const openInvoicePrescriptionDialog = useCallback((row: OldOpdRow) => {
+        setSelectedInvoiceRow(row);
+        setIsInvoicePrescriptionDialogOpen(true);
+    }, []);
+
+    const buildPrescriptionPadPayload = useCallback((row: OldOpdRow): PatientCGHSProps => {
+        return {
+            patient: {
+                patient: row.name?.trim() || "N/A",
+                parent_name: "N/A",
+                bp: "N/A",
+                sl: "N/A",
+                weight: "N/A",
+                height: "N/A",
+                uhid: row.uhid?.trim() || "N/A",
+                opdId: row.opdId?.trim() || "N/A",
+                age: row.age?.trim() || "N/A",
+                gender: row.gender?.trim() || "N/A",
+            },
+            doctor: {
+                name: row.doctor?.trim() || "N/A",
+                education: [],
+                reg_no: "",
+            },
+            appointment: {
+                created_at: row.createdAt?.trim() || new Date().toISOString(),
+            },
+            showDownloadButton: false,
+        };
+    }, []);
+
+    const handleDownloadPrescriptionPad = useCallback(async (row: OldOpdRow) => {
+        try {
+            setIsPrescriptionPadDownloading(true);
+            setPrescriptionPadPayload(buildPrescriptionPadPayload(row));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            await prescriptionPadRef.current?.downloadPdf();
+        } finally {
+            setIsPrescriptionPadDownloading(false);
+        }
+    }, [buildPrescriptionPadPayload]);
+
+    useEffect(() => {
+        if (!invoiceCaptureRow) return;
+        let cancelled = false;
+        let raf2Id = 0;
+        let timeoutId: number | null = null;
+        const raf1Id = requestAnimationFrame(() => {
+            raf2Id = requestAnimationFrame(() => {
+                timeoutId = window.setTimeout(() => {
+                    if (cancelled) return;
+                    void (async () => {
+                        try {
+                            await downloadPaymentReceiptPdfFromElement(
+                                "opd-list-invoice-capture",
+                                invoiceCaptureRow.uhid || String(invoiceCaptureRow.id),
+                            );
+                        } finally {
+                            if (!cancelled) {
+                                setInvoiceCaptureRow(null);
+                                setIsInvoicePdfDownloading(false);
+                            }
+                        }
+                    })();
+                }, 0);
+            });
+        });
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf1Id);
+            cancelAnimationFrame(raf2Id);
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+        };
+    }, [invoiceCaptureRow]);
+
     useEffect(() => {
         const controller = new AbortController();
 
         const loadRows = async () => {
+            if (!canView) {
+                setRows([]);
+                setTotalRecords(0);
+                setLoadError(null);
+                setIsLoadingRows(false);
+                return;
+            }
             setIsLoadingRows(true);
             setLoadError(null);
             try {
                 const params = new URLSearchParams({
-                    branchId: "1",
-                    uhid: debouncedUhid,
+                    branchId: String(effectiveBranchId),
+                    uhid: searchType === "uhid" ? debouncedUhid : "",
+                    patientName: searchType === "patientName" ? debouncedUhid : "",
+                    doctorId: selectedDoctor === "all" ? "" : selectedDoctor,
                     startDate: toApiDate(fromDate),
                     endDate: toApiDate(toDate),
                     limit: String(itemsPerPage),
@@ -201,24 +387,32 @@ export default function IpdPage() {
                     throw new Error(payload?.message || "Failed to fetch OPD list");
                 }
 
-                const mappedRows: OldOpdRow[] = (payload.data ?? []).map((item) => ({
-                    id: Number(item.id) || 0,
-                    branchId: Number(item.branch_id) || 0,
-                    uhid: item.uhid ?? "-",
-                    token: item.token ?? "-",
-                    opdId: item.id ?? "-",
-                    name: item.patient_name ?? "-",
-                    doctor: item.doctor_id ? `Doctor ${item.doctor_id}` : "-",
-                    appointmentDate: item.date_app ?? "-",
-                    appointmentTime: item.time_slot ?? "-",
-                    gender: item.gender ?? "-",
-                    age: item.age ?? "-",
-                    type: item.patient_panel ?? "-",
-                    city: item.city?.trim() ? item.city : "-",
-                    state: item.state?.trim() ? item.state : "-",
-                    country: item.country?.trim() ? item.country : "-",
-                    createdAt: item.created_at ?? "-",
-                }));
+                const mappedRows: OldOpdRow[] = (payload.data ?? []).map((item) => {
+                    const doctorDisplay = item.doctor_name?.trim()
+                        ? item.doctor_name.trim()
+                        : item.doctor_id
+                          ? `Doctor ${item.doctor_id}`
+                          : "-";
+                    return {
+                        id: Number(item.id) || 0,
+                        branchId: Number(item.branch_id) || 0,
+                        uhid: item.uhid ?? "-",
+                        token: item.token ?? "-",
+                        opdId: item.id ?? "-",
+                        name: item.patient_name ?? "-",
+                        doctor: doctorDisplay,
+                        doctorFee: (item.doctor_fee ?? "").trim() || "-",
+                        appointmentDate: item.date_app ?? "-",
+                        appointmentTime: item.time_slot ?? "-",
+                        gender: item.gender ?? "-",
+                        age: item.age ?? "-",
+                        type: item.patient_panel ?? "-",
+                        city: item.city?.trim() ? item.city : "-",
+                        state: item.state?.trim() ? item.state : "-",
+                        country: item.country?.trim() ? item.country : "-",
+                        createdAt: item.created_at ?? "-",
+                    };
+                });
 
                 setRows(mappedRows);
                 setTotalRecords(Number(payload.total_records) || 0);
@@ -234,7 +428,11 @@ export default function IpdPage() {
 
         loadRows();
         return () => controller.abort();
-    }, [currentPage, debouncedUhid, fromDate, itemsPerPage, selectedDoctor, toDate]);
+    }, [branchFilterPersistReady, canView, currentPage, debouncedUhid, effectiveBranchId, fromDate, itemsPerPage, searchType, selectedDoctor, toDate]);
+
+    useEffect(() => {
+        setSelectedDoctor("all");
+    }, [effectiveBranchId]);
 
     useEffect(() => {
         if (!branchFilterPersistReady) return;
@@ -270,6 +468,16 @@ export default function IpdPage() {
         };
     }, []);
 
+    if (!canView) {
+        return (
+            <AppShell>
+                <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                    You don&apos;t have permission to view Old OPD.
+                </div>
+            </AppShell>
+        );
+    }
+
     return (
         <AppShell>
             <div className="space-y-8">
@@ -302,7 +510,7 @@ export default function IpdPage() {
                                 <FormSelectField
                                     label=""
                                     hideLabel
-                                    options={DOCTOR_OPTIONS}
+                                    options={doctorOptions}
                                     value={selectedDoctor}
                                     onChange={(value) => {
                                         setSelectedDoctor(Array.isArray(value) ? value[0] : value || "all");
@@ -310,16 +518,35 @@ export default function IpdPage() {
                                     }}
                                     mode="single"
                                     background="normal"
-                                    placeholder="Select Doctor"
+                                    placeholder={isLoadingDoctors ? "Loading doctors..." : "Select Doctor"}
+                                    disabled={isLoadingDoctors}
                                 />
                             </div>
 
                             <div className="flex items-center gap-3">
-                                <div className="w-[280px] max-w-full">
+                                <div className="w-[260px] max-w-full">
+                                    <FormSelectField
+                                        label=""
+                                        hideLabel
+                                        options={[
+                                            { value: "uhid", label: "UHID" },
+                                            { value: "patientName", label: "Patient Name" },
+                                        ]}
+                                        value={searchType}
+                                        onChange={(value) =>
+                                            handleSearchTypeChange(Array.isArray(value) ? value[0] : value || "uhid")
+                                        }
+                                        mode="single"
+                                        background="normal"
+                                        placeholder="Search by"
+                                    />
+                                </div>
+                                <div className="w-[260px] max-w-full">
                                     <TableSearchInput
                                         value={searchTerm}
                                         onChange={handleSearchChange}
-                                        placeholder="Search by UHID" />
+                                        placeholder={currentSearchConfig.placeholder}
+                                    />
                                 </div>
                                 <div className="relative" ref={filterRef}>
                                     <Button type="button" variant="outline" onClick={handleFilterClick}>
@@ -369,7 +596,9 @@ export default function IpdPage() {
                                 {isLoadingRows ? (
                                     <TableRow>
                                         <TableData colSpan={16} className="py-12 text-center text-sm text-[#9CA3AF]">
-                                            Loading...
+                                            <div className="flex items-center justify-center">
+                                                <SpinnerLoader />
+                                            </div>
                                         </TableData>
                                     </TableRow>
                                 ) : loadError ? (
@@ -388,7 +617,7 @@ export default function IpdPage() {
                                     rows.map((row, index) => (
                                         <TableRow key={row.id} className="bg-white transition-colors hover:bg-[#F7FAF7]">
                                             <TableData variant="primary">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                                            <TableData onClick={() => handleViewPatient(row)}>
+                                            <TableData onClick={canView ? () => handleViewPatient(row) : undefined}>
                                                 <span className="font-medium text-[#0B8C00]">{row.uhid}</span>
                                             </TableData>
                                             <TableData>{row.token}</TableData>
@@ -416,16 +645,36 @@ export default function IpdPage() {
                                                             <Image src="/icons/ViewEyeIcon.svg" alt="Patient View" width={18} height={18} />
                                                         </button>
                                                     </Tooltip>
+                                                    {canDownload && (
                                                     <Tooltip content="Patient Form" position="top" delay={0}>
                                                         <button
                                                             type="button"
                                                             className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                                                             aria-label="Patient Form"
+                                                            onClick={() => handleDownloadPatientForm(row)}
+                                                            disabled={downloadingRowId !== null}
                                                         >
-                                                            <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                                            {downloadingRowId === row.id ? (
+                                                                <SpinnerLoader className="h-[18px] w-[18px]" />
+                                                            ) : (
+                                                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                                            )}
                                                         </button>
                                                     </Tooltip>
-                                                    <Tooltip content="OPD Confirm" position="top" delay={0}>
+                                                    )}
+                                                    {canDownload && (
+                                                    <Tooltip content="Invoice & Prescription" position="top" delay={0}>
+                                                        <button
+                                                            type="button"
+                                                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                                            aria-label="Print Invoice & Prescription Pad"
+                                                            onClick={() => openInvoicePrescriptionDialog(row)}
+                                                        >
+                                                            <Image src="/icons/InvoiceDownloadIcon.svg" alt="Print Invoice & Prescription Pad" width={15} height={15} />
+                                                        </button>
+                                                    </Tooltip>
+                                                    )}
+                                                    {/* <Tooltip content="OPD Confirm" position="top" delay={0}>
                                                         <button
                                                             type="button"
                                                             className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
@@ -442,7 +691,7 @@ export default function IpdPage() {
                                                         >
                                                             <Image src="/icons/doctorIcon.svg" alt="Doctor Change" width={18} height={18} />
                                                         </button>
-                                                    </Tooltip>
+                                                    </Tooltip> */}
                                                 </div>
                                             </TableData>
                                         </TableRow>
@@ -465,6 +714,136 @@ export default function IpdPage() {
                     </div>
                 </ListBorder>
             </div>
+            {downloadFormPayload ? (
+                <div className="pointer-events-none fixed -left-[10000px] top-0 opacity-0">
+                    <NewOPDPatientForm
+                        ref={downloadFormRef}
+                        showDownloadButton={false}
+                        branch={downloadFormPayload.branch}
+                        patient={downloadFormPayload.patient}
+                        doctor={downloadFormPayload.doctor}
+                        appointment={downloadFormPayload.appointment}
+                        diagnosis={downloadFormPayload.diagnosis}
+                    />
+                </div>
+            ) : null}
+            <Dialog
+                open={isInvoicePrescriptionDialogOpen}
+                onClose={() => {
+                    setIsInvoicePrescriptionDialogOpen(false);
+                    setSelectedInvoiceRow(null);
+                }}
+                title="Appointment Receipt Details"
+                width={480}
+                contentPadding="px-6 pb-6 pt-2"
+            >
+                <div className="space-y-4">
+                    <div className="space-y-3 text-sm">
+                        <div className="text-[#434956]">
+                            Dr. {(selectedInvoiceRow?.doctor ?? "N/A")} Fee ₹{(selectedInvoiceRow?.doctorFee ?? "N/A")}
+                            <br />
+                            Token Number: {(selectedInvoiceRow?.token ?? "N/A")}
+                        </div>
+                        <p className="text-[#434956]">Transaction ID: N/A</p>
+                        <p className="text-[#434956]">
+                            Transaction Date: {(() => {
+                                const d = (selectedInvoiceRow?.appointmentDate ?? "").trim();
+                                if (d && d !== "-") return d;
+                                const created = (selectedInvoiceRow?.createdAt ?? "").trim();
+                                if (created && created !== "-") return created.split(" ")[0];
+                                return "N/A";
+                            })()}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!selectedInvoiceRow) return;
+                                setIsInvoicePdfDownloading(true);
+                                setInvoiceCaptureRow(selectedInvoiceRow);
+                            }}
+                            disabled={isInvoicePdfDownloading || isPrescriptionPadDownloading}
+                            className={`flex h-10 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 font-inter text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7] ${
+                                isInvoicePdfDownloading || isPrescriptionPadDownloading
+                                    ? "cursor-not-allowed opacity-60"
+                                    : "cursor-pointer"
+                            }`}
+                        >
+                            {isInvoicePdfDownloading ? (
+                                <SpinnerLoader className="h-4 w-4 text-[#9A7909]" />
+                            ) : (
+                                <>
+                                    <Image
+                                        src="/icons/DownloadExport.svg"
+                                        alt="Print invoice"
+                                        width={20}
+                                        height={20}
+                                        className="shrink-0"
+                                    />
+                                     Invoice
+                                </>
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            disabled={isInvoicePdfDownloading || isPrescriptionPadDownloading}
+                            className={`flex h-10 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 font-inter text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7] ${
+                                isInvoicePdfDownloading || isPrescriptionPadDownloading
+                                    ? "cursor-not-allowed opacity-60"
+                                    : "cursor-pointer"
+                            }`}
+                            onClick={() => {
+                                if (!selectedInvoiceRow) return;
+                                void handleDownloadPrescriptionPad(selectedInvoiceRow);
+                            }}
+                        >
+                            {isPrescriptionPadDownloading ? (
+                                <SpinnerLoader className="h-4 w-4 text-[#9A7909]" />
+                            ) : (
+                                <>
+                                    <Image
+                                        src="/icons/DownloadExport.svg"
+                                        alt="Print prescription pads"
+                                        width={20}
+                                        height={20}
+                                        className="shrink-0"
+                                    />
+                                    Prescription Pads
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </Dialog>
+            {prescriptionPadPayload ? (
+                <PatientCGHS ref={prescriptionPadRef} {...prescriptionPadPayload} />
+            ) : null}
+            {invoiceCaptureRow ? (
+                <div
+                    className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] w-[min(720px,100vw)] overflow-visible"
+                    aria-hidden
+                >
+                    <div className="invoice-content flex w-full min-w-0 flex-col gap-[16px]">
+                        <PaymentReceiptCapture
+                            captureId="opd-list-invoice-capture"
+                            patientName={invoiceCaptureRow.name || "N/A"}
+                            address="N/A"
+                            cityName={invoiceCaptureRow.city || "N/A"}
+                            stateName={invoiceCaptureRow.state || "N/A"}
+                            jsHealthCardNo={invoiceCaptureRow.uhid || "N/A"}
+                            uhid={invoiceCaptureRow.uhid || "N/A"}
+                            invoiceNumber={invoiceCaptureRow.opdId || "N/A"}
+                            consultationCharges={Number(invoiceCaptureRow.doctorFee) || 0}
+                            subtotal={Number(invoiceCaptureRow.doctorFee) || 0}
+                            tax={0}
+                            totalAmount={Number(invoiceCaptureRow.doctorFee) || 0}
+                            billDate={invoiceCaptureRow.appointmentDate || "N/A"}
+                            transactionId="N/A"
+                        />
+                    </div>
+                </div>
+            ) : null}
         </AppShell>
     );
 }

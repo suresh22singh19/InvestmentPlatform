@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import ScrollableContainer from "./ScrollableContainer";
 
 type TabOption = {
   value: string;
@@ -18,29 +18,34 @@ type TabsProps = {
 
 export const Tabs = ({ options, value, onChange, className = "", disabled = false , tabBorder = true}: TabsProps) => {
   return (
-    <div
-      className={`flex h-[41px] w-full items-center gap-[5px] rounded-[100px] border border-[#DFE0E2]  p-1 ${disabled ? "opacity-60" : ""} ${className}`}
+    <ScrollableContainer
+      maxHeight="none"
+      overflowY="hidden"
+      overflowX="auto"
+      className={`h-[41px] w-full rounded-[100px] border border-[#DFE0E2] p-1 ${disabled ? "opacity-60" : ""} ${className}`}
     >
-      {options.map((option) => {
-        const isActive = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            disabled={disabled}
-            onClick={() => {
-              if (!disabled) onChange(option.value);
-            }}
-            className={`text-nowrap flex h-[33px] flex-1 items-center justify-center rounded-[100px] px-4 text-sm font-medium leading-[120%] transition-colors disabled:cursor-not-allowed  ${tabBorder ? "border border-[#DFE0E2]" : ""} ${
-              isActive
-                ? "bg-[#0B8C00] text-white"
-                : "bg-white text-[#434956] hover:bg-[#F2F8F2]"
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+      <div className="flex h-[33px] w-full min-w-max items-center gap-[5px]">
+        {options.map((option) => {
+          const isActive = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                if (!disabled) onChange(option.value);
+              }}
+              className={`text-nowrap flex h-[33px] min-w-max flex-1 items-center justify-center rounded-[100px] px-4 text-sm font-medium leading-[120%] transition-colors disabled:cursor-not-allowed ${tabBorder ? "border border-[#DFE0E2]" : ""} ${
+                isActive
+                  ? "bg-[#0B8C00] text-white"
+                  : "bg-white text-[#434956] hover:bg-[#F2F8F2]"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </ScrollableContainer>
   );
 };

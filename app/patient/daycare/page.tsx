@@ -10,6 +10,7 @@ import {
   FormSelectField,
   Pagination,
   RefreshButton,
+  SpinnerLoader,
   Table,
   TableBody,
   TableData,
@@ -23,7 +24,12 @@ import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import { useGetLegacyDoctorsByBranchQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import PatientDaycareForm, {
+  type PatientForm2Handle,
+  type PatientForm2Props,
+} from "@/lib/utils/patientDaycareForm";
 
 type DayCareRow = {
   id: number;
@@ -33,6 +39,8 @@ type DayCareRow = {
   name: string;
   doctorId: string;
   doctor: string;
+  address: string;
+  contactNumber: string;
   sex: string;
   age: string;
   bloodGroup: string;
@@ -54,6 +62,8 @@ type LegacyDayCareApiItem = {
   gender: string | null;
   age: string | null;
   blood_group: string | null;
+  address: string | null;
+  contact_number: string | null;
   vip: string | null;
   status: string | null;
   created_at: string | null;
@@ -67,14 +77,13 @@ type LegacyDayCareApiResponse = {
   data?: LegacyDayCareApiItem[];
 };
 
-const DOCTOR_OPTIONS = [
-  { value: "all", label: "Select Doctor" },
-  // { value: "122", label: "Doctor ID 122" },
-  // { value: "913", label: "Doctor ID 913" },
-  // { value: "135", label: "Doctor ID 135" },
-  // { value: "191", label: "Doctor ID 191" },
-  // { value: "916", label: "Doctor ID 916" },
-];
+const maskPhoneNumber = (phoneNumber: string | null | undefined): string => {
+  if (!phoneNumber) return "N/A";
+  const cleaned = phoneNumber.replace(/\D/g, "");
+  if (cleaned.length < 4) return phoneNumber;
+  const last4 = cleaned.slice(-4);
+  return "XXXXXX" + last4;
+};
 
 export default function DayCarePage() {
   const {
@@ -85,6 +94,7 @@ export default function DayCarePage() {
     isBranchFilterDisabled,
     isSuperAdmin: isBranchFilterSuperAdmin,
     branchFilterPersistReady,
+    filterBranchId,
   } = useBranchFilter();
   const { data: branchesData } = useGetBranchesQuery(undefined, {
     skip: !isBranchFilterSuperAdmin,
@@ -93,10 +103,27 @@ export default function DayCarePage() {
     () => branchFilterOptions.filter((o) => o.value !== ""),
     [branchFilterOptions]
   );
+  const effectiveBranchId = filterBranchId ?? 1;
+  const { data: legacyDoctorsResponse, isLoading: isLoadingDoctors } = useGetLegacyDoctorsByBranchQuery(
+    effectiveBranchId,
+    { skip: !branchFilterPersistReady }
+  );
+  const doctorOptions: SelectOption[] = useMemo(() => {
+    const allDoctors: SelectOption = { value: "all", label: "All Doctor" };
+    const rows = legacyDoctorsResponse?.data ?? [];
+    if (rows.length === 0) return [allDoctors];
+    return [
+      allDoctors,
+      ...rows.map((d) => ({
+        value: d.id,
+        label: d.name?.trim() ? d.name.trim() : `Doctor ${d.id}`,
+      })),
+    ];
+  }, [legacyDoctorsResponse]);
   const router = useRouter();
   const handleViewPatient = useCallback(
     (row: DayCareRow) => {
-      router.push(`/patient/details?id=${row.id}`);
+      router.push(`/patient/details?id=${row.id}&source=daycare`);
     },
     [router]
   );
@@ -112,8 +139,11 @@ export default function DayCarePage() {
   const [toDate, setToDate] = useState("");
   const [rows, setRows] = useState<DayCareRow[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [isLoadingRows, setIsLoadingRows] = useState(false);
+  const [isLoadingRows, setIsLoadingRows] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [downloadingRowId, setDownloadingRowId] = useState<number | null>(null);
+  const [downloadFormPayload, setDownloadFormPayload] = useState<PatientForm2Props | null>(null);
+  const downloadFormRef = useRef<PatientForm2Handle | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
   const parseDdMmYyyy = (value: string): Date | null => {
@@ -198,6 +228,53 @@ export default function DayCarePage() {
     setIsFilterOpen(false);
   };
 
+  const buildDownloadPayload = useCallback((row: DayCareRow): PatientForm2Props => {
+    return {
+      patient: {
+        patient: row.name?.trim() || "N/A",
+        parent_name: "N/A",
+        bp: "N/A",
+        sl: "N/A",
+        weight: "N/A",
+        height: "N/A",
+        uhid: row.uhid?.trim() || "N/A",
+        opdId: row.regId?.trim() || "N/A",
+        age: row.age?.trim() || "N/A",
+        gender: row.sex?.trim() || "N/A",
+        contactNumber: row.contactNumber?.trim() && row.contactNumber !== "-" ? row.contactNumber.trim() : "",
+        address: row.address?.trim() && row.address !== "-" ? row.address.trim() : "N/A",
+        city: "N/A",
+        state: "N/A",
+        pinCode: "N/A",
+        bloodGroup: row.bloodGroup?.trim() && row.bloodGroup !== "-" ? row.bloodGroup.trim() : "N/A",
+      },
+      doctor: {
+        name: row.doctor?.trim() || "N/A",
+        education: [],
+        reg_no: "",
+      },
+      appointment: {
+        created_at: row.admitDate?.trim() || new Date().toISOString(),
+      },
+      diagnosis: "",
+    };
+  }, []);
+
+  const handleDownloadPatientForm = useCallback(
+    async (row: DayCareRow) => {
+      if (downloadingRowId !== null) return;
+      try {
+        setDownloadingRowId(row.id);
+        setDownloadFormPayload(buildDownloadPayload(row));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await downloadFormRef.current?.downloadPdf();
+      } finally {
+        setDownloadingRowId(null);
+      }
+    },
+    [buildDownloadPayload, downloadingRowId]
+  );
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -206,7 +283,7 @@ export default function DayCarePage() {
       setLoadError(null);
       try {
         const params = new URLSearchParams({
-          branchId: "1",
+          branchId: String(effectiveBranchId),
           uhid: searchType === "uhid" ? debouncedSearch : "",
           doctorId: selectedDoctor === "all" ? "" : selectedDoctor,
           contactNumber: searchType === "contactNumber" ? debouncedSearch : "",
@@ -241,6 +318,8 @@ export default function DayCarePage() {
             name: item.patient_name ?? "-",
             doctorId: item.doctor_id ?? "",
             doctor: doctorDisplay,
+            address: item.address?.trim() ? item.address.trim() : "-",
+            contactNumber: item.contact_number?.trim() ? item.contact_number.trim() : "-",
             sex: item.gender ?? "-",
             age: item.age ?? "-",
             bloodGroup: item.blood_group?.trim() ? item.blood_group : "-",
@@ -263,7 +342,11 @@ export default function DayCarePage() {
 
     loadRows();
     return () => controller.abort();
-  }, [currentPage, debouncedSearch, fromDate, itemsPerPage, selectedDoctor, toDate]);
+  }, [currentPage, debouncedSearch, effectiveBranchId, fromDate, itemsPerPage, selectedDoctor, toDate, searchType]);
+
+  useEffect(() => {
+    setSelectedDoctor("all");
+  }, [effectiveBranchId]);
 
   useEffect(() => {
     if (!branchFilterPersistReady) return;
@@ -333,7 +416,7 @@ export default function DayCarePage() {
                 <FormSelectField
                   label=""
                   hideLabel
-                  options={DOCTOR_OPTIONS}
+                  options={doctorOptions}
                   value={selectedDoctor}
                   onChange={(value) => {
                     setSelectedDoctor(Array.isArray(value) ? value[0] : value || "all");
@@ -341,7 +424,8 @@ export default function DayCarePage() {
                   }}
                   mode="single"
                   background="normal"
-                  placeholder="Select Doctor"
+                  placeholder={isLoadingDoctors ? "Loading doctors..." : "Select Doctor"}
+                  disabled={isLoadingDoctors}
                 />
               </div>
 
@@ -414,7 +498,9 @@ export default function DayCarePage() {
                 {isLoadingRows ? (
                   <TableRow>
                     <TableData colSpan={COLUMN_COUNT} className="py-12 text-center text-sm text-[#6B7280]">
-                      Loading Day Care patients...
+                      <div className="flex items-center justify-center">
+                        <SpinnerLoader />
+                      </div>
                     </TableData>
                   </TableRow>
                 ) : loadError ? (
@@ -439,8 +525,14 @@ export default function DayCarePage() {
                       <TableData>{row.regId}</TableData>
                       <TableData>{row.name}</TableData>
                       <TableData>{row.doctor}</TableData>
-                      <TableData>-</TableData>
-                      <TableData>-</TableData>
+                      <TableData className="max-w-[min(28rem,40vw)]">
+                        <span className="block whitespace-normal break-words" title={row.address !== "-" ? row.address : undefined}>
+                          {row.address}
+                        </span>
+                      </TableData>
+                      <TableData className="whitespace-nowrap">
+                        {row.contactNumber === "-" ? "-" : maskPhoneNumber(row.contactNumber)}
+                      </TableData>
                       <TableData>{row.sex}</TableData>
                       <TableData>{row.age}</TableData>
                       <TableData>{row.bloodGroup}</TableData>
@@ -463,8 +555,14 @@ export default function DayCarePage() {
                               type="button"
                               className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                               aria-label="Download"
+                              onClick={() => handleDownloadPatientForm(row)}
+                              disabled={downloadingRowId !== null}
                             >
-                              <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                              {downloadingRowId === row.id ? (
+                                <SpinnerLoader className="h-[18px] w-[18px]" />
+                              ) : (
+                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                              )}
                             </button>
                           </Tooltip>
                         </div>
@@ -489,6 +587,19 @@ export default function DayCarePage() {
           </div>
         </ListBorder>
       </div>
+      {downloadFormPayload ? (
+        <div className="pointer-events-none fixed -left-[10000px] top-0 opacity-0">
+          <PatientDaycareForm
+            ref={downloadFormRef}
+            showDownloadButton={false}
+            branch={downloadFormPayload.branch}
+            patient={downloadFormPayload.patient}
+            doctor={downloadFormPayload.doctor}
+            appointment={downloadFormPayload.appointment}
+            diagnosis={downloadFormPayload.diagnosis}
+          />
+        </div>
+      ) : null}
     </AppShell>
   );
 }

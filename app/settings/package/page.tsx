@@ -1155,7 +1155,7 @@ export default function PackagePage() {
                   placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
                   mode="single"
                   background="normal"
-                  width={200}
+                  width={280}
                   disabled={isBranchFilterDisabled || isLoadingBranchFilter}
                 />
                 <FormSelectField
@@ -1174,7 +1174,7 @@ export default function PackagePage() {
                   placeholder="Package Type"
                   mode="single"
                   background="normal"
-                  width={180}
+                  width={280}
                 />
                 <TableSearchInput
                   value={searchTerm}

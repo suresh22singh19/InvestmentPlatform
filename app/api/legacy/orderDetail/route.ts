@@ -1,0 +1,31 @@
+import { NextRequest } from "next/server";
+import {
+    LEGACY_PROJECT_API_BASE_URL,
+    LEGACY_PROJECT_API_TOKEN,
+    LEGACY_PROJECT_ENDPOINTS,
+} from "@/lib/legacyProjectApi";
+import { parseLegacyResponse, sendLegacyGetWithBody } from "@/lib/legacyHttp";
+
+export const runtime = "nodejs";
+
+export async function GET(request: NextRequest) {
+    try {
+        const incoming = request.nextUrl.searchParams;
+        const orderId = incoming.get("orderId")?.trim() || "";
+        const body = { orderId };
+
+        const url = `${LEGACY_PROJECT_API_BASE_URL}${LEGACY_PROJECT_ENDPOINTS.orderDetail}`;
+        const upstream = await sendLegacyGetWithBody(url, JSON.stringify(body), LEGACY_PROJECT_API_TOKEN);
+
+        return Response.json(parseLegacyResponse(upstream.text), { status: upstream.status });
+    } catch (error) {
+        return Response.json(
+            {
+                status: false,
+                message: "Failed to fetch order detail",
+                error: error instanceof Error ? error.message : "Unknown error",
+            },
+            { status: 500 }
+        );
+    }
+}

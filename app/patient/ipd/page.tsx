@@ -10,6 +10,7 @@ import {
   FormSelectField,
   Pagination,
   RefreshButton,
+  SpinnerLoader,
   Table,
   TableBody,
   TableData,
@@ -24,7 +25,12 @@ import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { usePermission } from "@/hooks/usePermission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import { useGetLegacyDoctorsByBranchQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import NewOPDPatientForm, {
+  type NewOPDPatientFormHandle,
+  type NewOPDPatientFormProps,
+} from "@/lib/utils/newOPDpatientForm";
 
 type IpdRow = {
   id: number;
@@ -42,7 +48,15 @@ type IpdRow = {
   bloodGroup: string;
   admitDate: string;
   isVip: boolean;
+  consent: string;
 };
+
+function disclaimerToConsent(value: string | null | undefined): string {
+  const v = (value ?? "").trim();
+  if (v === "1") return "Yes";
+  if (v === "0") return "No";
+  return "-";
+}
 
 type LegacyIpdApiItem = {
   id: string;
@@ -62,6 +76,7 @@ type LegacyIpdApiItem = {
   room_number: string | null;
   bed_number: string | null;
   vip: string | null;
+  disclaimer: string | null;
   status: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -74,25 +89,17 @@ type LegacyIpdApiResponse = {
   data?: LegacyIpdApiItem[];
 };
 
-const DOCTOR_OPTIONS = [
-  { value: "all", label: "Select Doctor" },
-  // { value: "122", label: "Doctor ID 122" },
-  // { value: "135", label: "Doctor ID 135" },
-  // { value: "191", label: "Doctor ID 191" },
-  // { value: "121", label: "Doctor ID 121" },
-  // { value: "916", label: "Doctor ID 916" },
-];
-
 export default function IpdPage() {
   const router = useRouter();
   const patientPermission = usePermission("Patient");
-  const opdPermission = usePermission("Patient", { subModule: "Opd" });
-  const canView = patientPermission.canView || opdPermission.canView;
+  const ipdPermission = usePermission("Patient", { subModule: "Ipd" });
+  const canView = patientPermission.canView || ipdPermission.canView;
+  const canDownload = patientPermission.canDownload || ipdPermission.canDownload;
 
   const handleView = useCallback(
     (row: IpdRow) => {
       if (!canView || !row.id) return;
-      router.push(`/patient/details?id=${row.id}`);
+      router.push(`/patient/details?id=${row.id}&source=ipd`);
     },
     [canView, router]
   );
@@ -105,6 +112,7 @@ export default function IpdPage() {
     isBranchFilterDisabled,
     isSuperAdmin: isBranchFilterSuperAdmin,
     branchFilterPersistReady,
+    filterBranchId,
   } = useBranchFilter();
   const { data: branchesData } = useGetBranchesQuery(undefined, {
     skip: !isBranchFilterSuperAdmin,
@@ -113,6 +121,23 @@ export default function IpdPage() {
     () => branchFilterOptions.filter((o) => o.value !== ""),
     [branchFilterOptions]
   );
+  const effectiveBranchId = filterBranchId ?? 1;
+  const { data: legacyDoctorsResponse, isLoading: isLoadingDoctors } = useGetLegacyDoctorsByBranchQuery(
+    effectiveBranchId,
+    { skip: !branchFilterPersistReady }
+  );
+  const doctorOptions: SelectOption[] = useMemo(() => {
+    const allDoctors: SelectOption = { value: "all", label: "All Doctor" };
+    const rows = legacyDoctorsResponse?.data ?? [];
+    if (rows.length === 0) return [allDoctors];
+    return [
+      allDoctors,
+      ...rows.map((d) => ({
+        value: d.id,
+        label: d.name?.trim() ? d.name.trim() : `Doctor ${d.id}`,
+      })),
+    ];
+  }, [legacyDoctorsResponse]);
   const [selectedDoctor, setSelectedDoctor] = useState("all");
   const [searchType, setSearchType] = useState<"uhid" | "contactNumber" | "patientName">("uhid");
   const [searchTerm, setSearchTerm] = useState("");
@@ -125,8 +150,11 @@ export default function IpdPage() {
   const [toDate, setToDate] = useState("");
   const [rows, setRows] = useState<IpdRow[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [isLoadingRows, setIsLoadingRows] = useState(false);
+  const [isLoadingRows, setIsLoadingRows] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [downloadingRowId, setDownloadingRowId] = useState<number | null>(null);
+  const [downloadFormPayload, setDownloadFormPayload] = useState<NewOPDPatientFormProps | null>(null);
+  const downloadFormRef = useRef<NewOPDPatientFormHandle | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
   const parseDdMmYyyy = (value: string): Date | null => {
@@ -211,15 +239,59 @@ export default function IpdPage() {
     setIsFilterOpen(false);
   };
 
+  const buildDownloadPayload = useCallback((row: IpdRow): NewOPDPatientFormProps => {
+    return {
+      patient: {
+        patient: row.name?.trim() || "N/A",
+        parent_name: "N/A",
+        bp: "N/A",
+        sl: "N/A",
+        weight: "N/A",
+        height: "N/A",
+        uhid: row.uhid?.trim() || "N/A",
+        opdId: row.ipdId?.trim() || "N/A",
+        age: row.age?.trim() || "N/A",
+        gender: row.sex?.trim() || "N/A",
+      },
+      doctor: {
+        name: row.doctor?.trim() || "N/A",
+        education: [],
+        reg_no: "",
+      },
+      appointment: {
+        created_at: row.admitDate?.trim() || new Date().toISOString(),
+      },
+    };
+  }, []);
+
+  const handleDownloadPatientForm = useCallback(async (row: IpdRow) => {
+    if (downloadingRowId !== null) return;
+    try {
+      setDownloadingRowId(row.id);
+      setDownloadFormPayload(buildDownloadPayload(row));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await downloadFormRef.current?.downloadPdf();
+    } finally {
+      setDownloadingRowId(null);
+    }
+  }, [buildDownloadPayload, downloadingRowId]);
+
   useEffect(() => {
     const controller = new AbortController();
 
     const loadRows = async () => {
+      if (!canView) {
+        setRows([]);
+        setTotalRecords(0);
+        setLoadError(null);
+        setIsLoadingRows(false);
+        return;
+      }
       setIsLoadingRows(true);
       setLoadError(null);
       try {
         const params = new URLSearchParams({
-          branchId: "1",
+          branchId: String(effectiveBranchId),
           uhid: searchType === "uhid" ? debouncedSearch : "",
           doctorId: selectedDoctor === "all" ? "" : selectedDoctor,
           contactNumber: searchType === "contactNumber" ? debouncedSearch : "",
@@ -270,6 +342,7 @@ export default function IpdPage() {
             bloodGroup: item.blood_group?.trim() ? item.blood_group : "-",
             admitDate: (item.created_at ?? "").split(" ")[0] || "-",
             isVip: (item.vip ?? "").toLowerCase() === "yes",
+            consent: disclaimerToConsent(item.disclaimer),
           };
         });
 
@@ -287,7 +360,11 @@ export default function IpdPage() {
 
     loadRows();
     return () => controller.abort();
-  }, [currentPage, debouncedSearch, fromDate, itemsPerPage, selectedDoctor, toDate]);
+  }, [canView, currentPage, debouncedSearch, effectiveBranchId, fromDate, itemsPerPage, selectedDoctor, toDate, searchType]);
+
+  useEffect(() => {
+    setSelectedDoctor("all");
+  }, [effectiveBranchId]);
 
   useEffect(() => {
     if (!branchFilterPersistReady) return;
@@ -325,6 +402,16 @@ export default function IpdPage() {
 
   const COLUMN_COUNT = 14;
 
+  if (!canView) {
+    return (
+      <AppShell>
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+          You don&apos;t have permission to view IPD.
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="space-y-8">
@@ -357,7 +444,7 @@ export default function IpdPage() {
                 <FormSelectField
                   label=""
                   hideLabel
-                  options={DOCTOR_OPTIONS}
+                  options={doctorOptions}
                   value={selectedDoctor}
                   onChange={(value) => {
                     setSelectedDoctor(Array.isArray(value) ? value[0] : value || "all");
@@ -365,7 +452,8 @@ export default function IpdPage() {
                   }}
                   mode="single"
                   background="normal"
-                  placeholder="Select Doctor"
+                  placeholder={isLoadingDoctors ? "Loading doctors..." : "Select Doctor"}
+                  disabled={isLoadingDoctors}
                 />
               </div>
 
@@ -439,7 +527,9 @@ export default function IpdPage() {
                 {isLoadingRows ? (
                   <TableRow>
                     <TableData colSpan={COLUMN_COUNT} className="py-12 text-center text-sm text-[#6B7280]">
-                      Loading IPD patients...
+                      <div className="flex items-center justify-center">
+                        <SpinnerLoader />
+                      </div>
                     </TableData>
                   </TableRow>
                 ) : loadError ? (
@@ -470,7 +560,7 @@ export default function IpdPage() {
                       <TableData>{row.sex}</TableData>
                       <TableData>{row.age}</TableData>
                       <TableData>{row.bloodGroup}</TableData>
-                      <TableData>-</TableData>
+                      <TableData>{row.consent}</TableData>
                       <TableData>{row.admitDate}</TableData>
                       <TableData>
                         <div className="flex items-center gap-2">
@@ -498,15 +588,23 @@ export default function IpdPage() {
                               <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
                             </button>
                           </Tooltip>
+                          {canDownload && (
                           <Tooltip content="Patient Form" position="top" delay={0}>
                             <button
                               type="button"
                               className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                               aria-label="Download"
+                              onClick={() => handleDownloadPatientForm(row)}
+                              disabled={downloadingRowId !== null}
                             >
-                              <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                              {downloadingRowId === row.id ? (
+                                <SpinnerLoader className="h-[18px] w-[18px]" />
+                              ) : (
+                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                              )}
                             </button>
                           </Tooltip>
+                          )}
                         </div>
                       </TableData>
                     </TableRow>
@@ -529,6 +627,19 @@ export default function IpdPage() {
           </div>
         </ListBorder>
       </div>
+      {downloadFormPayload ? (
+        <div className="pointer-events-none fixed -left-[10000px] top-0 opacity-0">
+          <NewOPDPatientForm
+            ref={downloadFormRef}
+            showDownloadButton={false}
+            branch={downloadFormPayload.branch}
+            patient={downloadFormPayload.patient}
+            doctor={downloadFormPayload.doctor}
+            appointment={downloadFormPayload.appointment}
+            diagnosis={downloadFormPayload.diagnosis}
+          />
+        </div>
+      ) : null}
     </AppShell>
   );
 }

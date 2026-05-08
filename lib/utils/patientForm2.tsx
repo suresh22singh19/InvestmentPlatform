@@ -717,12 +717,12 @@ const PatientForm2 = forwardRef<PatientForm2Handle, PatientForm2Props>(function 
         {/* ══════ PAGE BREAK ══════ */}
         <div style={{ pageBreakBefore: "always", breakBefore: "page" }} />
 
-        {/* ══════ PAGE 7 – Nutritional Assessment Form ══════ */}
+        {/* ══════ PAGE 7 – Medical History Form ══════ */}
         <div style={PAGE}>
           <HeaderBlock branch={branch} />
           <hr style={{ border: "none", borderTop: "2px solid #999", margin: "6px 0 8px" }} />
 
-          <div style={{ fontWeight: "700", fontSize: "16px", textAlign: "center", marginBottom: "10px" }}>Nutritional Assessment Form</div>
+          <div style={{ fontWeight: "700", fontSize: "16px", textAlign: "center", marginBottom: "10px" }}>Medical History Form</div>
 
           <div style={{ fontWeight: "700", fontSize: "11px", marginBottom: "6px" }}>I. Identifying Information</div>
           <div style={{ display: "flex", gap: "24px", fontSize: "11px", marginBottom: "4px" }}>

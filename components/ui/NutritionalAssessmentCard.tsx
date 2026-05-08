@@ -18,7 +18,7 @@ interface NutritionalAssessmentCardProps {
 }
 
 export function NutritionalAssessmentCard({
-    title = "Nutritional Assessment",
+    title = "Medical History",
     iconSrc = "/icons/Bedicon.svg",
     iconAlt = "Appointment",
     items,

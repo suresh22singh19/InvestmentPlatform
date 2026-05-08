@@ -42,7 +42,7 @@ export function DietPlanCard({
                     <Image src={iconSrc} alt={iconAlt} width={20} height={20} />
                     <h2 className="font-inter font-medium text-base leading-[120%] text-[#262D3B]">{title}</h2>
                 </div>
-                <div className="flex gap-3 items-center">
+                {/* <div className="flex gap-3 items-center">
                     <div className="flex items-center gap-2">
                         <span className="not-italic font-medium text-[12px] leading-[120%] text-[#434956]">{decoctionLabel}</span>
                         <span className="not-italic font-medium text-[14px] leading-[120%] text-[#262D3B]">{decoctionValue}</span>
@@ -52,34 +52,40 @@ export function DietPlanCard({
                             <Image src={action.iconSrc} alt={action.iconAlt} width={24} height={24} />
                         </a>
                     ))}
-                </div>
+                </div> */}
             </div>
 
             <div className="data mt-5">
-                {rows.map((row, rowIndex) => (
-                    <div
-                        key={`diet-row-${rowIndex}`}
-                        className={`flex justify-between items-center gap-3 ${rowIndex === rows.length - 1 ? "" : "mb-3"}`}
-                    >
-                        {row.map((entry, entryIndex) => (
-                            <div key={`${entry.label}-${entryIndex}`} className="contents">
-                                <div className="flex flex-col w-[150px]">
-                                    <span
-                                        className={`not-italic font-medium text-[14px] leading-[120%] ${entry.hidden ? "text-[#fff]" : "text-[#434956]"}`}
-                                    >
-                                        {entry.label}
-                                    </span>
-                                    <span
-                                        className={`not-italic font-medium text-[16px] leading-[120%] ${entry.hidden ? "text-[#fff]" : "text-[#262D3B]"}`}
-                                    >
-                                        {entry.value}
-                                    </span>
+                {rows.length === 0 ? (
+                    <p className="py-6 text-center font-inter text-sm font-medium leading-[120%] text-[#6E7480]">
+                        No Data Available
+                    </p>
+                ) : (
+                    rows.map((row, rowIndex) => (
+                        <div
+                            key={`diet-row-${rowIndex}`}
+                            className={`flex justify-between items-center gap-3 ${rowIndex === rows.length - 1 ? "" : "mb-3"}`}
+                        >
+                            {row.map((entry, entryIndex) => (
+                                <div key={`${entry.label}-${entryIndex}`} className="contents">
+                                    <div className="flex flex-col w-[150px]">
+                                        <span
+                                            className={`not-italic font-medium text-[14px] leading-[120%] ${entry.hidden ? "text-[#fff]" : "text-[#434956]"}`}
+                                        >
+                                            {entry.label}
+                                        </span>
+                                        <span
+                                            className={`not-italic font-medium text-[16px] leading-[120%] ${entry.hidden ? "text-[#fff]" : "text-[#262D3B]"}`}
+                                        >
+                                            {entry.value}
+                                        </span>
+                                    </div>
+                                    {entryIndex < row.length - 1 ? <div className="h-[20px] w-[1px] bg-[#DFE0E2]"></div> : null}
                                 </div>
-                                {entryIndex < row.length - 1 ? <div className="h-[20px] w-[1px] bg-[#DFE0E2]"></div> : null}
-                            </div>
-                        ))}
-                    </div>
-                ))}
+                            ))}
+                        </div>
+                    ))
+                )}
             </div>
         </div>
     );

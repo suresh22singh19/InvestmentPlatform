@@ -795,6 +795,8 @@ const page = () => {
         width={1300}
         contentPadding="px-6 py-6"
         contentOverflow="hidden"
+        closeOnOutsideClick={false}
+        closeOnEscape={false}
       >
         <div className="flex min-h-0 flex-1 flex-col gap-6">
           <ScrollableContainer maxHeight="none" className="flex min-h-0 flex-1 flex-col gap-6 pr-1">

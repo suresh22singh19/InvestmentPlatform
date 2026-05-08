@@ -245,8 +245,8 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
             // Fallback to default options if API data is not available
             return [
                 { value: "0", label: "0" },
-                { value: "300", label: "300" },
-                { value: "500", label: "500" },
+                // { value: "300", label: "300" },
+                // { value: "500", label: "500" },
             ];
         }
         return services.map((service) => {

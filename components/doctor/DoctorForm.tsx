@@ -40,6 +40,7 @@ import { sanitizeEmailInput } from "@/lib/utils/emailValidation";
 import { fileNameFromUrl } from "@/lib/doctor/doctorPhoto";
 
 const MAX_FIELD_LEN = 100;
+const MAX_EMPLOYEE_ID_LEN = 20;
 /** Max repeatable rows for education, specialization, and registration (same as Visitors Details). */
 const MAX_DYNAMIC_ROWS = 5;
 
@@ -106,7 +107,7 @@ function digitsOnly(raw: string, maxLen: number): string {
 
 /** Employee id: letters, digits, hyphen (e.g. JS20752). */
 function formatEmployeeIdInput(raw: string): string {
-    return raw.replace(/[^a-zA-Z0-9\-]/g, "").slice(0, MAX_FIELD_LEN);
+    return raw.replace(/[^a-zA-Z0-9\-]/g, "").slice(0, MAX_EMPLOYEE_ID_LEN);
 }
 
 /** Same as BranchBankInformation: uppercase A–Z / 0–9 only, max 11 (IFSC). */
@@ -857,7 +858,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             onBlur={() => blurAndValidate("employeeId")}
                             height={44}
                             placeholder="Employee Id"
-                            maxLength={MAX_FIELD_LEN}
+                            maxLength={MAX_EMPLOYEE_ID_LEN}
                             error={formErrors.employeeId}
                             disabled={mode === "edit"}
                         />

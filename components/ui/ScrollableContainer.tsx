@@ -7,6 +7,8 @@ interface ScrollableContainerProps {
     showScrollbar?: boolean;
     /** Default auto; use hidden for horizontal-only strips to avoid a vertical scrollbar thumb. */
     overflowY?: "auto" | "hidden" | "visible";
+    /** Default auto; set hidden when horizontal scroll is not desired. */
+    overflowX?: "auto" | "hidden" | "visible";
 }
 
 const ScrollableContainer = React.forwardRef<HTMLDivElement, ScrollableContainerProps>(({
@@ -15,10 +17,13 @@ const ScrollableContainer = React.forwardRef<HTMLDivElement, ScrollableContainer
     className = "",
     showScrollbar = true,
     overflowY = "auto",
+    overflowX = "auto",
 }, ref) => {
     const heightStyle = typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight;
     const overflowYClass =
         overflowY === "hidden" ? "overflow-y-hidden" : overflowY === "visible" ? "overflow-y-visible" : "overflow-y-auto";
+    const overflowXClass =
+        overflowX === "hidden" ? "overflow-x-hidden" : overflowX === "visible" ? "overflow-x-visible" : "overflow-x-auto";
 
     return (
         <>
@@ -50,7 +55,7 @@ const ScrollableContainer = React.forwardRef<HTMLDivElement, ScrollableContainer
             `}</style>
             <div
                 ref={ref}
-                className={`${overflowYClass} ${showScrollbar ? "custom-scrollbar cstm-hidden" : "scrollbar-hide"} ${className}`}
+                className={`${overflowYClass} ${overflowXClass} ${showScrollbar ? "custom-scrollbar cstm-hidden" : "scrollbar-hide"} ${className}`}
                 style={{
                     maxHeight: heightStyle,
                 }}

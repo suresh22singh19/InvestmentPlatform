@@ -19,13 +19,19 @@ const addMonths = (dateStr: string, months: number): string => {
     return d.toISOString().slice(0, 10);
 };
 
+const getTodayYmd = (): string => new Date().toISOString().slice(0, 10);
+
+const minYmd = (a: string, b: string): string => (a <= b ? a : b);
+
 export default function DateFilterDropdown({ onFilter, onClear, initialFromDate = "", initialToDate = "" }: DateFilterDropdownProps) {
     const [fromDate, setFromDate] = useState<string>(initialFromDate);
     const [toDate, setToDate] = useState<string>(initialToDate);
+    const todayYmd = getTodayYmd();
 
     const maxToDate = fromDate ? addMonths(fromDate, MAX_MONTHS) : undefined;
+    const toDateMax = maxToDate ? minYmd(maxToDate, todayYmd) : todayYmd;
     const isInvalidDateRange = !!(fromDate && toDate && toDate < fromDate);
-    const isExceedsMaxRange = !!(fromDate && toDate && maxToDate && toDate > maxToDate);
+    const isExceedsMaxRange = !!(fromDate && toDate && toDate > toDateMax);
     const isDisabled = isInvalidDateRange || isExceedsMaxRange;
 
     // Update internal state when initial values change
@@ -79,7 +85,7 @@ export default function DateFilterDropdown({ onFilter, onClear, initialFromDate 
                         required={false}
                         background="white"
                         width="100%"
-                        maxDate={toDate || undefined}
+                        maxDate={todayYmd}
                     />
                 </div>
 
@@ -93,7 +99,7 @@ export default function DateFilterDropdown({ onFilter, onClear, initialFromDate 
                         background="white"
                         width="100%"
                         minDate={fromDate || undefined}
-                        maxDate={maxToDate}
+                        maxDate={toDateMax}
                     />
                 </div>
             </div>
