@@ -28,6 +28,10 @@ import { useExport, type ExportColumn } from "@/hooks/useExport";
 import { usePermission } from "@/hooks/usePermission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import PatientDischargeForm, {
+  type PatientForm2Handle,
+  type PatientForm2Props,
+} from "@/lib/utils/patinetDischargeForm";
 
 type DischargePendingRow = {
   id: number;
@@ -43,6 +47,12 @@ type DischargePendingRow = {
   dischargedDate: string;
   patientType: string;
   rawPatientType: string;
+  gender: string;
+  age: string;
+  address: string;
+  city: string;
+  state: string;
+  pinCode: string;
 };
 
 type LegacyDischargeApiItem = {
@@ -57,6 +67,11 @@ type LegacyDischargeApiItem = {
   contact_number?: string | null;
   mobile?: string | null;
   phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pin_code?: string | null;
+  blood_group?: string | null;
   gender: string | null;
   age: string | null;
   status: string | null;
@@ -73,6 +88,12 @@ type LegacyDischargeApiResponse = {
   message?: string;
   total_records?: number;
   data?: LegacyDischargeApiItem[] | LegacyDischargeApiItem | null;
+};
+
+const maskPhone = (phone: string): string => {
+  const cleaned = phone.replace(/\D/g, "");
+  if (cleaned.length < 4) return phone;
+  return "XXXXXX" + cleaned.slice(-4);
 };
 
 const DISCHARGE_PENDING_EXPORT_COLUMNS: ExportColumn[] = [
@@ -134,6 +155,9 @@ export default function DischargePendingPage() {
   const [totalRecords, setTotalRecords] = useState(0);
   const [isLoadingRows, setIsLoadingRows] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [downloadingRowId, setDownloadingRowId] = useState<number | null>(null);
+  const [downloadFormPayload, setDownloadFormPayload] = useState<PatientForm2Props | null>(null);
+  const downloadFormRef = useRef<PatientForm2Handle | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
   const parseDdMmYyyy = (value: string): Date | null => {
@@ -202,6 +226,12 @@ export default function DischargePendingPage() {
       dischargedDate: dischargedDate || "N/A",
       patientType,
       rawPatientType,
+      gender: (item.gender ?? "").trim() || "N/A",
+      age: (item.age ?? "").trim() || "N/A",
+      address: (item.address ?? "").trim() || "N/A",
+      city: (item.city ?? "").trim() || "N/A",
+      state: (item.state ?? "").trim() || "N/A",
+      pinCode: (item.pin_code ?? "").trim() || "N/A",
     };
   };
 
@@ -256,6 +286,52 @@ export default function DischargePendingPage() {
     setCurrentPage(1);
     setIsFilterOpen(false);
   };
+
+  const buildDownloadPayload = useCallback((row: DischargePendingRow): PatientForm2Props => {
+    return {
+      patient: {
+        patient: row.patientName?.trim() || "N/A",
+        parent_name: row.parentName?.trim() || "N/A",
+        bp: "N/A",
+        sl: "N/A",
+        weight: "N/A",
+        height: "N/A",
+        uhid: row.uhid?.trim() || "N/A",
+        opdId: row.dcId?.trim() || "N/A",
+        age: row.age?.trim() || "N/A",
+        gender: row.gender?.trim() || "N/A",
+        contactNumber: row.contactNumber?.trim() && row.contactNumber !== "N/A" ? row.contactNumber.trim() : "",
+        address: row.address?.trim() || "N/A",
+        city: row.city?.trim() || "N/A",
+        state: row.state?.trim() || "N/A",
+        pinCode: row.pinCode?.trim() || "N/A",
+      },
+      doctor: {
+        name: row.dischargedBy?.trim() || "N/A",
+        education: [],
+        reg_no: "",
+      },
+      appointment: {
+        created_at: row.dischargedDate?.trim() || new Date().toISOString(),
+      },
+      diagnosis: row.dischargedRemark?.trim() && row.dischargedRemark !== "N/A" ? row.dischargedRemark : "",
+    };
+  }, []);
+
+  const handleDownloadPatientForm = useCallback(
+    async (row: DischargePendingRow) => {
+      if (downloadingRowId !== null) return;
+      try {
+        setDownloadingRowId(row.id);
+        setDownloadFormPayload(buildDownloadPayload(row));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await downloadFormRef.current?.downloadPdf();
+      } finally {
+        setDownloadingRowId(null);
+      }
+    },
+    [buildDownloadPayload, downloadingRowId]
+  );
 
   const buildApiParams = useCallback(
     (page: number, limit: number) => {
@@ -532,7 +608,9 @@ export default function DischargePendingPage() {
                       <TableData>{row.dcId}</TableData>
                       <TableData>{row.patientName}</TableData>
                       <TableData>{row.parentName}</TableData>
-                      <TableData>{row.contactNumber}</TableData>
+                      <TableData>
+                        {row.contactNumber === "N/A" ? "N/A" : maskPhone(row.contactNumber)}
+                      </TableData>
                       <TableData>{row.dischargedBy}</TableData>
                       <TableData>{row.dischargedRemark}</TableData>
                       <TableData>{row.dischargedDate}</TableData>
@@ -555,8 +633,14 @@ export default function DischargePendingPage() {
                                 type="button"
                                 className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
                                 aria-label="Patient Form"
+                                onClick={() => handleDownloadPatientForm(row)}
+                                disabled={downloadingRowId !== null}
                               >
-                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                {downloadingRowId === row.id ? (
+                                  <SpinnerLoader className="h-[18px] w-[18px]" />
+                                ) : (
+                                  <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                )}
                               </button>
                             </Tooltip>
                           )}
@@ -582,6 +666,19 @@ export default function DischargePendingPage() {
           </div>
         </ListBorder>
       </div>
+      {downloadFormPayload ? (
+        <div className="pointer-events-none fixed -left-[10000px] top-0 opacity-0">
+          <PatientDischargeForm
+            ref={downloadFormRef}
+            showDownloadButton={false}
+            branch={downloadFormPayload.branch}
+            patient={downloadFormPayload.patient}
+            doctor={downloadFormPayload.doctor}
+            appointment={downloadFormPayload.appointment}
+            diagnosis={downloadFormPayload.diagnosis}
+          />
+        </div>
+      ) : null}
     </AppShell>
   );
 }

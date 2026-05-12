@@ -23,6 +23,7 @@ interface DietPlanCardProps {
     headerActions?: DietPlanHeaderAction[];
     rows: DietPlanEntry[][];
     className?: string;
+    roomService?: string | null;
 }
 
 export function DietPlanCard({
@@ -34,6 +35,7 @@ export function DietPlanCard({
     headerActions = [],
     rows,
     className = "",
+    roomService,
 }: DietPlanCardProps) {
     return (
         <div className={`mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] ${className}`}>
@@ -42,6 +44,12 @@ export function DietPlanCard({
                     <Image src={iconSrc} alt={iconAlt} width={20} height={20} />
                     <h2 className="font-inter font-medium text-base leading-[120%] text-[#262D3B]">{title}</h2>
                 </div>
+                {roomService && rows.length > 0 ? (
+                    <div className="flex items-center gap-1 font-inter text-sm font-medium leading-[120%] ">
+                        <span>Room Service :</span>
+                        <span>{roomService}</span>
+                    </div>
+                ) : null}
                 {/* <div className="flex gap-3 items-center">
                     <div className="flex items-center gap-2">
                         <span className="not-italic font-medium text-[12px] leading-[120%] text-[#434956]">{decoctionLabel}</span>

@@ -60,26 +60,9 @@ export function PatientRoomListingCard({
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {isLoading ? (
-                        <TableRow>
-                            <TableData colSpan={10} className="py-10 text-center text-sm text-[#6B7280]">
-                                Loading room data...
-                            </TableData>
-                        </TableRow>
-                    ) : error ? (
-                        <TableRow>
-                            <TableData colSpan={10} className="py-10 text-center text-sm text-[#DC2626]">
-                                {error}
-                            </TableData>
-                        </TableRow>
-                    ) : items.length === 0 ? (
-                        <TableRow>
-                            <TableData colSpan={10} className="py-10 text-center text-sm text-[#9FA2AB]">
-                                No Data Available
-                            </TableData>
-                        </TableRow>
-                    ) : (
-                        items.map((item, index) => (
+                    {isLoading || error || items.length === 0
+                        ? null
+                        : items.map((item, index) => (
                             <TableRow key={`patient-room-row-${index}`}>
                                 <TableData>{String(index + 1)}</TableData>
                                 <TableData>{asDisplay(item.building)}</TableData>
@@ -92,10 +75,16 @@ export function PatientRoomListingCard({
                                 <TableData>{asDisplay(item.status)}</TableData>
                                 <TableData>{asDisplay(item.allotmentDate)}</TableData>
                             </TableRow>
-                        ))
-                    )}
+                        ))}
                 </TableBody>
             </Table>
+            {isLoading ? (
+                <p className="py-10 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">Loading room data...</p>
+            ) : error ? (
+                <p className="py-10 text-center text-sm font-normal leading-[120%] text-[#DC2626]">{error}</p>
+            ) : items.length === 0 ? (
+                <p className="py-10 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">No Data Available</p>
+            ) : null}
         </div>
     );
 }

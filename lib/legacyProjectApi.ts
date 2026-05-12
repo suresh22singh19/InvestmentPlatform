@@ -29,5 +29,10 @@ export const LEGACY_PROJECT_ENDPOINTS = {
   orderDetail: "/order_detail",
   orders: "/orders",
   patientForm: "/patientForm",
+  openFreeMedicine: "/openFreeMedicine",
+  patientPayment: "/patientPayment",
+  healthCardPoints: "/healthCardPoints",
+  healthCardTransaction: "/healthCardTransaction",
+  panelPatientServicesInvoices: "/panelPatientServicesInvoices",
 } as const;
 

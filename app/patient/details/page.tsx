@@ -91,6 +91,7 @@ import {
     buildReferralItems,
     buildVitals,
     buildWalletTabTableSections,
+    maskContact,
     type LegacyOpdPatientDetailData,
     type LegacyPatientFileApi,
     type LegacyPatientWalletData,
@@ -109,6 +110,11 @@ import {
     useLazyGetLegacyPatientHistoryQuery,
     useLazyGetLegacyPatientRevisitQuery,
     useLazyGetLegacyPatientDietQuery,
+    useLazyGetLegacyOpenFreeMedicineQuery,
+    useLazyGetLegacyPatientPaymentQuery,
+    useLazyGetLegacyPanelPatientServicesInvoicesQuery,
+    useLazyGetLegacyHealthCardPointsQuery,
+    useLazyGetLegacyHealthCardTransactionQuery,
 } from "@/store/api/v3OldHiimsApis";
 import BillOfSupplyPDF, { type BillOfSupplyHandle, type BillOfSupplyProps } from "@/lib/utils/billOfSupplypdf";
 import TaxInvoice, { type TaxInvoiceHandle, type TaxInvoiceProps } from "@/lib/utils/taxInvoice";
@@ -1168,10 +1174,17 @@ export default function IpdPage() {
     const [reportLoadError, setReportLoadError] = useState<string | null>(null);
     const [billServiceOrders, setBillServiceOrders] = useState<WalletOrderDetailRecord[]>([]);
     const [billProductOrders, setBillProductOrders] = useState<WalletOrderDetailRecord[]>([]);
+    const [panelPatientServiceInvoices, setPanelPatientServiceInvoices] = useState<WalletOrderDetailRecord[]>([]);
+    const [panelPatientServiceInvoicesLoadState, setPanelPatientServiceInvoicesLoadState] = useState<
+        "idle" | "loading" | "error" | "ready"
+    >("idle");
+    const [panelPatientServiceInvoicesLoadError, setPanelPatientServiceInvoicesLoadError] = useState<string | null>(null);
     const [billOrdersLoadState, setBillOrdersLoadState] = useState<"idle" | "loading" | "error" | "ready">("idle");
     const [billOrdersLoadError, setBillOrdersLoadError] = useState<string | null>(null);
     const [downloadingServiceOrderId, setDownloadingServiceOrderId] = useState<string | null>(null);
     const [downloadingProductOrderId, setDownloadingProductOrderId] = useState<string | null>(null);
+    const [downloadingWalletPackageRowKey, setDownloadingWalletPackageRowKey] = useState<string | null>(null);
+    const [downloadingWalletInstallmentRowKey, setDownloadingWalletInstallmentRowKey] = useState<string | null>(null);
     const [billOfSupplyPayload, setBillOfSupplyPayload] = useState<BillOfSupplyProps | null>(null);
     const [taxInvoicePayload, setTaxInvoicePayload] = useState<TaxInvoiceProps | null>(null);
     const billOfSupplyRef = useRef<BillOfSupplyHandle | null>(null);
@@ -1189,6 +1202,11 @@ export default function IpdPage() {
     const [getLegacyPatientHistory] = useLazyGetLegacyPatientHistoryQuery();
     const [getLegacyPatientRevisit] = useLazyGetLegacyPatientRevisitQuery();
     const [getLegacyPatientDiet] = useLazyGetLegacyPatientDietQuery();
+    const [getLegacyOpenFreeMedicine] = useLazyGetLegacyOpenFreeMedicineQuery();
+    const [getLegacyPatientPayment] = useLazyGetLegacyPatientPaymentQuery();
+    const [getLegacyPanelPatientServicesInvoices] = useLazyGetLegacyPanelPatientServicesInvoicesQuery();
+    const [getLegacyHealthCardPoints] = useLazyGetLegacyHealthCardPointsQuery();
+    const [getLegacyHealthCardTransaction] = useLazyGetLegacyHealthCardTransactionQuery();
 
     const [patientFormRows, setPatientFormRows] = useState<
         { uhid: string; reportUrl: string; remark: string; createdAt: string }[]
@@ -1262,6 +1280,71 @@ export default function IpdPage() {
     >([]);
     const [dietLoadState, setDietLoadState] = useState<"idle" | "loading" | "error" | "ready">("idle");
     const [dietLoadError, setDietLoadError] = useState<string | null>(null);
+    const [openFreeMedicineRows, setOpenFreeMedicineRows] = useState<
+        {
+            medicine: string;
+            qty: string;
+            doctor: string;
+            dosage: string;
+            frequency: string;
+            days: string;
+            type: string;
+            remark: string;
+            status: string;
+            date: string;
+        }[]
+    >([]);
+    const [openFreeMedicineLoadState, setOpenFreeMedicineLoadState] = useState<"idle" | "loading" | "error" | "ready">(
+        "idle"
+    );
+    const [openFreeMedicineLoadError, setOpenFreeMedicineLoadError] = useState<string | null>(null);
+    const [patientPaymentRows, setPatientPaymentRows] = useState<
+        {
+            title: string;
+            price: string;
+            mode: string;
+            method: string;
+            transactionId: string;
+            transactionDate: string;
+            status: string;
+            remark: string;
+            createdAt: string;
+        }[]
+    >([]);
+    const [patientPaymentLoadState, setPatientPaymentLoadState] = useState<"idle" | "loading" | "error" | "ready">(
+        "idle"
+    );
+    const [patientPaymentLoadError, setPatientPaymentLoadError] = useState<string | null>(null);
+    const [healthCardPointsRow, setHealthCardPointsRow] = useState<
+        | {
+            id: string;
+            uhid: string;
+            contactNumber: string;
+            points: string;
+            cardNo: string;
+            status: string;
+        }
+        | null
+    >(null);
+    const [healthCardPointsLoadState, setHealthCardPointsLoadState] = useState<
+        "idle" | "loading" | "error" | "ready"
+    >("idle");
+    const [healthCardPointsLoadError, setHealthCardPointsLoadError] = useState<string | null>(null);
+    const [healthCardTransactionRows, setHealthCardTransactionRows] = useState<
+        {
+            points: string;
+            earnBy: string;
+            txn: string;
+            orderId: string;
+            orderReturn: string;
+            isExpired: string;
+            createdAt: string;
+        }[]
+    >([]);
+    const [healthCardTransactionLoadState, setHealthCardTransactionLoadState] = useState<
+        "idle" | "loading" | "error" | "ready"
+    >("idle");
+    const [healthCardTransactionLoadError, setHealthCardTransactionLoadError] = useState<string | null>(null);
     const [iafMedicalItems, setIafMedicalItems] = useState<NutritionalAssessmentItem[]>(NUTRITIONAL_ASSESSMENT_ITEMS);
     const [iafDietVisits, setIafDietVisits] = useState<DietHistoryVisit[]>(DIET_HISTORY_VISITS);
     const [iafLoadState, setIafLoadState] = useState<"idle" | "loading" | "error" | "ready">("idle");
@@ -1545,6 +1628,141 @@ export default function IpdPage() {
             cancelled = true;
         };
     }, [activeTab, isIpdPatientDetailRoute, isLegacyPatientDetailRoute, opdRouteOpdId, getLegacyPatientDiet]);
+
+    useEffect(() => {
+        if (activeTab !== "medicine") return;
+        if (!isLegacyPatientDetailRoute) return;
+        const patientId = opdRouteOpdId.trim();
+        if (!patientId) return;
+
+        let cancelled = false;
+        (async () => {
+            setOpenFreeMedicineLoadState("loading");
+            setOpenFreeMedicineLoadError(null);
+            setOpenFreeMedicineRows([]);
+            try {
+                const payload = await getLegacyOpenFreeMedicine(patientId).unwrap();
+                const message = String(payload?.message ?? "").toLowerCase();
+                const isNoRecord = message.includes("no record") || message.includes("not found");
+                if (payload?.status === false && !isNoRecord) {
+                    throw new Error(payload?.message || "Failed to load open free medicine details");
+                }
+                const rows = Array.isArray(payload?.data) ? payload.data : [];
+                if (cancelled) return;
+                const asDisplay = (value: string | null | undefined) => (value ?? "").trim() || "N/A";
+                const formatType = (value: string | null | undefined) => {
+                    const raw = (value ?? "").trim();
+                    if (!raw) return "N/A";
+                    return raw
+                        .split(/[_\s]+/)
+                        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                        .join(" ");
+                };
+                const formatStatus = (value: string | null | undefined) => {
+                    const raw = (value ?? "").trim();
+                    if (!raw) return "N/A";
+                    return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+                };
+                setOpenFreeMedicineRows(
+                    rows.map((row) => ({
+                        medicine: asDisplay(row.medicine_name),
+                        qty: asDisplay(row.qty),
+                        doctor: asDisplay(row.doctor_name ?? (row.doctor_id ? `Doctor ${row.doctor_id}` : undefined)),
+                        dosage: asDisplay(row.dosage),
+                        frequency: asDisplay(row.frequency),
+                        days: asDisplay(row.days),
+                        type: formatType(row.patient_type),
+                        remark: asDisplay(row.remark),
+                        status: formatStatus(row.status),
+                        date: asDisplay(row.created_at),
+                    }))
+                );
+                setOpenFreeMedicineLoadState("ready");
+            } catch (e) {
+                if (cancelled) return;
+                setOpenFreeMedicineRows([]);
+                setOpenFreeMedicineLoadState("error");
+                setOpenFreeMedicineLoadError(
+                    e instanceof Error ? e.message : "Failed to load open free medicine details"
+                );
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, isLegacyPatientDetailRoute, opdRouteOpdId, getLegacyOpenFreeMedicine]);
+
+    useEffect(() => {
+        if (activeTab !== "bill Details") return;
+        if (!isLegacyPatientDetailRoute) return;
+        const patientId = opdRouteOpdId.trim();
+        if (!patientId) return;
+        const paymentType: "opd" | "ipd" | "day_care" | null = isOpdPatientDetailRoute
+            ? "opd"
+            : isIpdPatientDetailRoute
+                ? "ipd"
+                : isDayCarePatientDetailRoute
+                    ? "day_care"
+                    : null;
+        if (!paymentType) return;
+
+        let cancelled = false;
+        (async () => {
+            setPatientPaymentLoadState("loading");
+            setPatientPaymentLoadError(null);
+            setPatientPaymentRows([]);
+            try {
+                const payload = await getLegacyPatientPayment({ patientId, type: paymentType }).unwrap();
+                const message = String(payload?.message ?? "").toLowerCase();
+                const isNoRecord = message.includes("no record") || message.includes("not found");
+                if (payload?.status === false && !isNoRecord) {
+                    throw new Error(payload?.message || "Failed to load patient payment details");
+                }
+                const rows = Array.isArray(payload?.data) ? payload.data : [];
+                if (cancelled) return;
+                const asDisplay = (value: string | null | undefined) => (value ?? "").trim() || "N/A";
+                const capitalize = (value: string | null | undefined) => {
+                    const raw = (value ?? "").trim();
+                    if (!raw) return "N/A";
+                    return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+                };
+                setPatientPaymentRows(
+                    rows.map((row) => ({
+                        title: asDisplay(row.title),
+                        price: asDisplay((row.Price ?? row.price) as string | null | undefined),
+                        mode: capitalize(row.mode),
+                        method: asDisplay(row.payment_method),
+                        transactionId: asDisplay(row.transaction_id),
+                        transactionDate: asDisplay(row.transaction_date),
+                        status: capitalize(row.status),
+                        remark: asDisplay(row.remark),
+                        createdAt: asDisplay(row.created_at),
+                    }))
+                );
+                setPatientPaymentLoadState("ready");
+            } catch (e) {
+                if (cancelled) return;
+                setPatientPaymentRows([]);
+                setPatientPaymentLoadState("error");
+                setPatientPaymentLoadError(
+                    e instanceof Error ? e.message : "Failed to load patient payment details"
+                );
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        activeTab,
+        isLegacyPatientDetailRoute,
+        isOpdPatientDetailRoute,
+        isIpdPatientDetailRoute,
+        isDayCarePatientDetailRoute,
+        opdRouteOpdId,
+        getLegacyPatientPayment,
+    ]);
 
     useEffect(() => {
         if (activeTab !== "iaf") return;
@@ -2033,6 +2251,58 @@ export default function IpdPage() {
     }, [activeTab, isLegacyPatientDetailRoute, opdDetailLoadState, opdDetailData, opdRouteOpdId, getLegacyOrders]);
 
     useEffect(() => {
+        if (activeTab !== "bill Details") return;
+        if (!isLegacyPatientDetailRoute) return;
+        if (opdDetailLoadState !== "ready") return;
+        const patientId = opdRouteOpdId.trim();
+        const panel = String(opdDetailData?.appointment?.patient_panel ?? "").trim().toLowerCase();
+        const isNormalOrTpaPanel = panel === "normal" || panel === "tpa" || panel === "npa";
+
+        if (!patientId || isNormalOrTpaPanel) {
+            setPanelPatientServiceInvoices([]);
+            setPanelPatientServiceInvoicesLoadState("ready");
+            setPanelPatientServiceInvoicesLoadError(null);
+            return;
+        }
+
+        let cancelled = false;
+        (async () => {
+            setPanelPatientServiceInvoicesLoadState("loading");
+            setPanelPatientServiceInvoicesLoadError(null);
+            setPanelPatientServiceInvoices([]);
+            try {
+                const payload = await getLegacyPanelPatientServicesInvoices(patientId).unwrap();
+                const msg = String(payload?.message ?? "").trim().toLowerCase();
+                const isNoRecord = msg.includes("no record");
+                if (payload?.status === false && !isNoRecord) {
+                    throw new Error(payload?.message || "Failed to load patient care");
+                }
+                if (cancelled) return;
+                setPanelPatientServiceInvoices(Array.isArray(payload?.data) ? payload.data : []);
+                setPanelPatientServiceInvoicesLoadState("ready");
+            } catch (error) {
+                if (cancelled) return;
+                setPanelPatientServiceInvoices([]);
+                setPanelPatientServiceInvoicesLoadState("error");
+                setPanelPatientServiceInvoicesLoadError(
+                    error instanceof Error ? error.message : "Failed to load patient care"
+                );
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        activeTab,
+        isLegacyPatientDetailRoute,
+        opdDetailLoadState,
+        opdRouteOpdId,
+        opdDetailData,
+        getLegacyPanelPatientServicesInvoices,
+    ]);
+
+    useEffect(() => {
         if (activeTab !== "package") return;
         if (!isIpdPatientDetailRoute && !isDayCarePatientDetailRoute) return;
         const patientId = opdRouteOpdId.trim();
@@ -2089,7 +2359,9 @@ export default function IpdPage() {
             setRoomItems([]);
             try {
                 const payload = await getLegacyPatientRoom(patientId).unwrap();
-                if (payload?.status === false) {
+                const message = String(payload?.message ?? "").toLowerCase();
+                const isNoRecord = message.includes("no record") || message.includes("not found");
+                if (payload?.status === false && !isNoRecord) {
                     throw new Error(payload?.message || "Failed to load room details");
                 }
                 const rows = Array.isArray(payload?.data) ? payload.data : [];
@@ -2211,6 +2483,126 @@ export default function IpdPage() {
     const summaryUhid = (reg?.uhid ?? appt?.uhid ?? "") as string;
     const summaryContact = (reg?.contact_number ?? "") as string;
 
+    useEffect(() => {
+        if (activeTab !== "wallet") return;
+        if (!isLegacyPatientDetailRoute) return;
+        const uhid = (summaryUhid ?? "").trim();
+        if (!uhid) return;
+
+        let cancelled = false;
+        const asDisplay = (value: string | null | undefined) => (value ?? "").trim() || "N/A";
+        const yesNoFlag = (value: string | null | undefined) => {
+            const raw = (value ?? "").trim();
+            if (!raw) return "N/A";
+            if (raw === "1" || raw.toLowerCase() === "yes") return "Yes";
+            if (raw === "0" || raw.toLowerCase() === "no") return "No";
+            return raw;
+        };
+        const earnByLabel = (slug: string | null | undefined) => {
+            const raw = (slug ?? "").trim();
+            if (!raw) return "N/A";
+            const base = raw.replace(/_(to|from|in|out)$/i, "");
+            const pretty = base
+                .split(/[_\s]+/)
+                .filter(Boolean)
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(" ");
+            return pretty ? `${pretty} (Earn)` : "N/A";
+        };
+
+        (async () => {
+            setHealthCardPointsLoadState("loading");
+            setHealthCardPointsLoadError(null);
+            setHealthCardPointsRow(null);
+            setHealthCardTransactionLoadState("loading");
+            setHealthCardTransactionLoadError(null);
+            setHealthCardTransactionRows([]);
+
+            const [pointsResult, txnResult] = await Promise.allSettled([
+                getLegacyHealthCardPoints(uhid).unwrap(),
+                getLegacyHealthCardTransaction(uhid).unwrap(),
+            ]);
+
+            if (cancelled) return;
+
+            if (pointsResult.status === "fulfilled") {
+                const payload = pointsResult.value;
+                const msg = String(payload?.message ?? "").toLowerCase();
+                const isNoRecord = msg.includes("no record") || msg.includes("not found");
+                if (payload?.status === false && !isNoRecord) {
+                    setHealthCardPointsLoadError(payload?.message || "Failed to load health card points");
+                    setHealthCardPointsLoadState("error");
+                } else {
+                    const data = payload?.data && typeof payload.data === "object" ? payload.data : null;
+                    if (data && (data.uhid || data.coins || data.card || data.contact_number)) {
+                        const rawContact = (data.contact_number ?? "").trim();
+                        setHealthCardPointsRow({
+                            id: asDisplay(data.id),
+                            uhid: asDisplay(data.uhid),
+                            contactNumber: rawContact ? maskContact(rawContact) : "N/A",
+                            points: asDisplay(data.coins),
+                            cardNo: asDisplay(data.card),
+                            status: "Active",
+                        });
+                    } else {
+                        setHealthCardPointsRow(null);
+                    }
+                    setHealthCardPointsLoadState("ready");
+                }
+            } else {
+                setHealthCardPointsLoadError(
+                    pointsResult.reason instanceof Error
+                        ? pointsResult.reason.message
+                        : "Failed to load health card points"
+                );
+                setHealthCardPointsLoadState("error");
+            }
+
+            if (txnResult.status === "fulfilled") {
+                const payload = txnResult.value;
+                const msg = String(payload?.message ?? "").toLowerCase();
+                const isNoRecord = msg.includes("no record") || msg.includes("not found");
+                if (payload?.status === false && !isNoRecord) {
+                    setHealthCardTransactionLoadError(
+                        payload?.message || "Failed to load health card transactions"
+                    );
+                    setHealthCardTransactionLoadState("error");
+                } else {
+                    const rows = Array.isArray(payload?.data) ? payload.data : [];
+                    setHealthCardTransactionRows(
+                        rows.map((row) => ({
+                            points: asDisplay(row.coins),
+                            earnBy: earnByLabel(row.slug_type),
+                            txn: asDisplay(row.entry),
+                            orderId: asDisplay(row.order_id),
+                            orderReturn: yesNoFlag(row.order_status),
+                            isExpired: yesNoFlag(row.is_expired),
+                            createdAt: asDisplay(row.created_at),
+                        }))
+                    );
+                    setHealthCardTransactionLoadState("ready");
+                }
+            } else {
+                setHealthCardTransactionLoadError(
+                    txnResult.reason instanceof Error
+                        ? txnResult.reason.message
+                        : "Failed to load health card transactions"
+                );
+                setHealthCardTransactionLoadState("error");
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        activeTab,
+        isLegacyPatientDetailRoute,
+        summaryUhid,
+        getLegacyHealthCardPoints,
+        getLegacyHealthCardTransaction,
+    ]);
+
     const opdAppointmentItems = useMemo(() => {
         if (!isLegacyPatientDetailRoute) return null;
         if (opdDetailLoadState === "loading" || opdDetailLoadState === "idle") {
@@ -2279,8 +2671,82 @@ export default function IpdPage() {
 
     const opdWalletTabTableSections = useMemo(() => {
         if (!isLegacyPatientDetailRoute || opdDetailLoadState !== "ready") return null;
-        return buildWalletTabTableSections(opdWalletPayload, openWalletOrderDetails);
-    }, [isLegacyPatientDetailRoute, opdDetailLoadState, opdWalletPayload, openWalletOrderDetails]);
+        const baseSections = buildWalletTabTableSections(opdWalletPayload, openWalletOrderDetails);
+        return baseSections.map((section) => {
+            if (section.id === "wallet-package") {
+                const rows = section.rows.map((row, idx) => {
+                    const rowKey = `wallet-package-${idx}`;
+                    const withAction = [...row];
+                    withAction[withAction.length - 1] = (
+                        <div key={`wallet-package-action-${rowKey}`} className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                aria-label="View package"
+                            >
+                                <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                aria-label="Download package"
+                                onClick={() => handleWalletPackageDownload(rowKey)}
+                                disabled={Boolean(downloadingWalletPackageRowKey)}
+                            >
+                                {downloadingWalletPackageRowKey === rowKey ? (
+                                    <SpinnerLoader className="h-[18px] w-[18px]" />
+                                ) : (
+                                    <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                )}
+                            </button>
+                        </div>
+                    );
+                    return withAction;
+                });
+                return { ...section, rows };
+            }
+
+            if (section.id === "wallet-installment") {
+                const columns: TableListingSection["columns"] = section.columns.map((column, index) => {
+                    if (index === 0) return { ...column, position: "first" as const };
+                    return { ...column, position: "middle" as const };
+                });
+                columns.push({ label: "Action", position: "last" as const });
+                const rows = section.rows.map((row, idx) => {
+                    const rowKey = `wallet-installment-${idx}`;
+                    return [
+                        ...row,
+                        <button
+                            key={`wallet-installment-download-${rowKey}`}
+                            type="button"
+                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                            aria-label="Download payment history"
+                            onClick={() => handleWalletInstallmentDownload(rowKey)}
+                            disabled={Boolean(downloadingWalletInstallmentRowKey)}
+                        >
+                            {downloadingWalletInstallmentRowKey === rowKey ? (
+                                <SpinnerLoader className="h-[18px] w-[18px]" />
+                            ) : (
+                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                            )}
+                        </button>,
+                    ];
+                });
+                return { ...section, columns, rows };
+            }
+
+            return section;
+        });
+    }, [
+        isLegacyPatientDetailRoute,
+        opdDetailLoadState,
+        opdWalletPayload,
+        openWalletOrderDetails,
+        handleWalletPackageDownload,
+        handleWalletInstallmentDownload,
+        downloadingWalletPackageRowKey,
+        downloadingWalletInstallmentRowKey,
+    ]);
 
     const opdJsHealthItems = useMemo(() => {
         if (!isLegacyPatientDetailRoute || opdDetailLoadState !== "ready") return JS_HEALTH_CARD_POINTS_ITEMS;
@@ -2378,6 +2844,91 @@ export default function IpdPage() {
             setDownloadingProductOrderId(null);
         }
     };
+
+    async function handleWalletPackageDownload(rowKey: string) {
+        if (!rowKey || downloadingWalletPackageRowKey) return;
+        try {
+            setDownloadingWalletPackageRowKey(rowKey);
+            // Placeholder until package-specific PDF endpoint is provided.
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        } finally {
+            setDownloadingWalletPackageRowKey(null);
+        }
+    }
+
+    async function handleWalletInstallmentDownload(rowKey: string) {
+        if (!rowKey || downloadingWalletInstallmentRowKey) return;
+        try {
+            setDownloadingWalletInstallmentRowKey(rowKey);
+            // Placeholder until installment-specific PDF endpoint is provided.
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        } finally {
+            setDownloadingWalletInstallmentRowKey(null);
+        }
+    }
+
+    const shouldShowPatientCareSection = useMemo(() => {
+        if (!isLegacyPatientDetailRoute || opdDetailLoadState !== "ready") return false;
+        const panel = String(appt?.patient_panel ?? "").trim().toLowerCase();
+        return panel !== "normal" && panel !== "tpa" && panel !== "npa";
+    }, [isLegacyPatientDetailRoute, opdDetailLoadState, appt]);
+
+    const patientCareSections = useMemo<TableListingSection[]>(() => {
+        const asDisplay = (value: string | null | undefined) => (value ?? "").trim() || "N/A";
+        if (panelPatientServiceInvoicesLoadState === "loading") {
+            return [
+                {
+                    id: "patient-care",
+                    title: "Patient Care",
+                    columns: [
+                        { label: "Sr no.", position: "first" },
+                        { label: "Services" },
+                        { label: "Total Amount" },
+                        { label: "Created Date", position: "last" },
+                    ],
+                    rows: [],
+                    emptyMessage: "Loading...",
+                },
+            ];
+        }
+        if (panelPatientServiceInvoicesLoadState === "error") {
+            return [
+                {
+                    id: "patient-care",
+                    title: "Patient Care",
+                    columns: [
+                        { label: "Sr no.", position: "first" },
+                        { label: "Services" },
+                        { label: "Total Amount" },
+                        { label: "Created Date", position: "last" },
+                    ],
+                    rows: [],
+                    emptyMessage: panelPatientServiceInvoicesLoadError || "Failed to load",
+                },
+            ];
+        }
+
+        const rows = panelPatientServiceInvoices.map((item, idx) => [
+            String(idx + 1),
+            `${asDisplay(item.payment_type)} (${asDisplay(item.order_id ?? item.id)})`,
+            asDisplay(item.amount_with_tax),
+            asDisplay(item.created),
+        ]);
+        return [
+            {
+                id: "patient-care",
+                title: "Patient Care",
+                columns: [
+                    { label: "Sr no.", position: "first" },
+                    { label: "Services" },
+                    { label: "Total Amount" },
+                    { label: "Created Date", position: "last" },
+                ],
+                rows,
+                emptyMessage: rows.length === 0 ? "No Data Available" : undefined,
+            },
+        ];
+    }, [panelPatientServiceInvoices, panelPatientServiceInvoicesLoadState, panelPatientServiceInvoicesLoadError]);
 
     const serviceInvoiceSections = useMemo<TableListingSection[]>(() => {
         const asDisplay = (value: string | null | undefined) => (value ?? "").trim() || "N/A";
@@ -2620,6 +3171,178 @@ export default function IpdPage() {
         ];
     }, [reg?.created_at, dietRows, dietLoadState, dietLoadError]);
 
+    const medicineTabSections = useMemo<TableListingSection[]>(() => {
+        const freeRows = openFreeMedicineRows.map((row, idx) => [
+            String(idx + 1),
+            row.medicine,
+            row.qty,
+            row.doctor,
+            row.dosage,
+            row.frequency,
+            row.days,
+            row.type,
+            row.remark,
+            row.status,
+            row.date,
+        ]);
+        const freeEmptyMessage =
+            openFreeMedicineLoadState === "loading"
+                ? "Loading..."
+                : openFreeMedicineLoadState === "error"
+                    ? openFreeMedicineLoadError || "Failed to load"
+                    : "No Data Available";
+        return [
+            MEDICINE_TAB_STATIC_SECTIONS[0],
+            {
+                id: "medicine-tab-table-2",
+                title: "Patient Open Free Medicine Details",
+                columns: MEDICINE_FREE_COLUMNS,
+                rows: freeRows,
+                emptyMessage: freeEmptyMessage,
+            },
+            MEDICINE_TAB_STATIC_SECTIONS[2],
+        ];
+    }, [openFreeMedicineRows, openFreeMedicineLoadState, openFreeMedicineLoadError]);
+
+    const healthCardPointsSections = useMemo<TableListingSection[]>(() => {
+        const row = healthCardPointsRow;
+        const rows: TableListingSection["rows"] = row
+            ? [
+                [
+                    row.id,
+                    row.uhid,
+                    row.contactNumber,
+                    row.points,
+                    row.cardNo,
+                    <span
+                        key="health-card-points-status"
+                        className="inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#0B8C00]/20 bg-white text-[#0B8C00]"
+                    >
+                        {row.status}
+                    </span>,
+                ],
+            ]
+            : [];
+        return [
+            {
+                id: "wallet-js-health-card-points",
+                title: "JS Health Card Points",
+                columns: [
+                    { label: "#", position: "first" as const },
+                    { label: "UHID" },
+                    { label: "Contact Number" },
+                    { label: "Points" },
+                    { label: "Card No" },
+                    { label: "Status", position: "last" as const },
+                ],
+                rows,
+                emptyMessage:
+                    healthCardPointsLoadState === "loading"
+                        ? "Loading..."
+                        : healthCardPointsLoadState === "error"
+                            ? healthCardPointsLoadError || "Failed to load"
+                            : "No Data Available",
+            },
+        ];
+    }, [healthCardPointsRow, healthCardPointsLoadState, healthCardPointsLoadError]);
+
+    const healthCardTransactionSections = useMemo<TableListingSection[]>(() => {
+        return [
+            {
+                id: "wallet-js-health-card-transaction",
+                title: "JS Health Card Transaction",
+                columns: [
+                    { label: "Sr no.", position: "first" as const },
+                    { label: "Points" },
+                    { label: "Earn By" },
+                    { label: "TXN" },
+                    { label: "Order ID" },
+                    { label: "Order Return" },
+                    { label: "Is Expired" },
+                    { label: "Created at", position: "last" as const },
+                ],
+                rows: healthCardTransactionRows.map((row, idx) => [
+                    String(idx + 1),
+                    row.points,
+                    row.earnBy,
+                    <span
+                        key={`health-card-txn-entry-${idx}`}
+                        className="inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#0B8C00]/20 bg-white text-[#0B8C00] capitalize"
+                    >
+                        {row.txn}
+                    </span>,
+                    row.orderId,
+                    row.orderReturn,
+                    row.isExpired,
+                    row.createdAt,
+                ]),
+                emptyMessage:
+                    healthCardTransactionLoadState === "loading"
+                        ? "Loading..."
+                        : healthCardTransactionLoadState === "error"
+                            ? healthCardTransactionLoadError || "Failed to load"
+                            : "No Data Available",
+            },
+        ];
+    }, [healthCardTransactionRows, healthCardTransactionLoadState, healthCardTransactionLoadError]);
+
+    const patientDepositSections = useMemo<TableListingSection[]>(() => {
+        const statusCellClass = (status: string) => {
+            const normalized = status.toLowerCase();
+            if (normalized === "paid" || normalized === "success") {
+                return "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#0B8C00]/20 bg-white text-[#0B8C00]";
+            }
+            if (normalized === "pending") {
+                return "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#9A7909]/20 bg-white text-[#9A7909]";
+            }
+            if (normalized === "failed" || normalized === "cancelled") {
+                return "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#DC2626]/20 bg-white text-[#DC2626]";
+            }
+            return "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#6B7280]/20 bg-white text-[#374151]";
+        };
+        return [
+            {
+                id: "patient-deposit-details",
+                title: "Patient Deposit Details",
+                columns: [
+                    { label: "Sr no.", position: "first" as const },
+                    { label: "Payment Title" },
+                    { label: "Price" },
+                    { label: "Mode" },
+                    { label: "Method" },
+                    { label: "Transaction ID" },
+                    { label: "Transaction Date" },
+                    { label: "Status" },
+                    { label: "Remark" },
+                    { label: "Created Date", position: "last" as const },
+                ],
+                rows: patientPaymentRows.map((row, idx) => [
+                    String(idx + 1),
+                    row.title,
+                    row.price,
+                    row.mode,
+                    row.method,
+                    row.transactionId,
+                    row.transactionDate,
+                    <span
+                        key={`patient-deposit-status-${idx}`}
+                        className={statusCellClass(row.status)}
+                    >
+                        {row.status}
+                    </span>,
+                    row.remark,
+                    row.createdAt,
+                ]),
+                emptyMessage:
+                    patientPaymentLoadState === "loading"
+                        ? "Loading..."
+                        : patientPaymentLoadState === "error"
+                            ? patientPaymentLoadError || "Failed to load"
+                            : "No Data Available",
+            },
+        ];
+    }, [patientPaymentRows, patientPaymentLoadState, patientPaymentLoadError]);
+
     const overviewDietPlanRows = useMemo<DietPlanEntry[][]>(() => {
         const entries: DietPlanEntry[] = dietRows.map((row) => ({
             label: row.schedule,
@@ -2780,7 +3503,7 @@ export default function IpdPage() {
                             <AppointmentDetailCard items={opdAppointmentItems ?? APPOINTMENT_DETAIL_ITEMS} />
 
                             <PatientWalletInformationCard
-                                remainingAmount={opdWalletCard?.remainingAmount ?? "Rs. 7000.00"}
+                                remainingAmount={opdWalletCard?.remainingAmount ?? "Rs. 0"}
                                 details={opdWalletCard?.details ?? PATIENT_WALLET_DETAILS}
                                 onActionClick={() => setActiveTab("wallet")}
                             />
@@ -2809,7 +3532,11 @@ export default function IpdPage() {
                                         }
                                     />
 
-                                <PatientFilesCard
+                              
+                                </div>
+                                {showOverviewVitals ? <VitalsCard items={opdVitalsItems ?? VITALS_ITEMS} /> : null}
+                            </div>
+                            <PatientFilesCard
                                     items={opdFileCardItems ?? (isLegacyPatientDetailRoute ? [] : PATIENT_FILE_ITEMS)}
                                     emptyMessage={
                                         isLegacyPatientDetailRoute && opdDetailLoadState === "loading"
@@ -2818,19 +3545,21 @@ export default function IpdPage() {
                                     }
                                     plainEmptyState={true}
                                 />
-                                </div>
-                                {showOverviewVitals ? <VitalsCard items={opdVitalsItems ?? VITALS_ITEMS} /> : null}
-                            </div>
-
                             {showOverviewDietPlan ? (
                                 <DietPlanCard
                                     decoctionValue="Kadha"
                                     headerActions={DIET_PLAN_HEADER_ACTIONS}
                                     rows={overviewDietPlanRows}
+                                    roomService={(() => {
+                                        const raw = String(appt?.room_service ?? "").trim().toLowerCase();
+                                        if (raw === "yes" || raw === "1") return "Yes";
+                                        if (raw === "no" || raw === "0") return "No";
+                                        return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "N/A";
+                                    })()}
                                 />
                             ) : null}
 
-                            <PatientInformationTimelineCard items={PATIENT_INFORMATION_TIMELINE_ITEMS} />
+                            {/* <PatientInformationTimelineCard items={PATIENT_INFORMATION_TIMELINE_ITEMS} /> */}
                         </div>
 
                         <div className="col-span-1">
@@ -3013,7 +3742,7 @@ export default function IpdPage() {
                             infoItems={opdSummaryInfoItems}
                         // balanceValue={opdWalletCard?.remainingAmount ?? "Rs. 7000.00"}
                         />
-                        {MEDICINE_TAB_STATIC_SECTIONS.map((section) => (
+                        {medicineTabSections.map((section) => (
                             <TableListingCard key={section.id} sections={[section]} />
                         ))}
                         <TableListingCard sections={productInvoiceSections} />
@@ -3126,7 +3855,8 @@ export default function IpdPage() {
                             infoItems={opdSummaryInfoItems}
                         // balanceValue="662"
                         />
-                        {/* <TableListingCard sections={PATIENT_DEPOSIT_DETAILS_SECTIONS} /> */}
+                        {shouldShowPatientCareSection ? <TableListingCard sections={patientCareSections} /> : null}
+                        <TableListingCard sections={patientDepositSections} />
                         <TableListingCard sections={serviceInvoiceSections} />
                         {/* <TableListingCard sections={PRODUCT_BILL_DETAILS_SECTIONS} /> */}
                         <TableListingCard sections={productInvoiceSections} />
@@ -3195,21 +3925,17 @@ export default function IpdPage() {
                             />
                         ) : isLegacyPatientDetailRoute && opdDetailLoadState === "ready" ? (
                             <>
-                                <JsHealthCardPointsCard
-                                    remainingAmount={opdWalletCard?.remainingAmount ?? "Rs. 0.00"}
-                                    items={opdJsHealthItems}
-                                    emptyMessage={
-                                        opdWalletPayload?.package && opdWalletPayload.package.length > 0
-                                            ? undefined
-                                            : "No Data Available"
-                                    }
-                                />
-                                <TableListingCard sections={opdWalletTabTableSections ?? []} />
+                              
+                                {(opdWalletTabTableSections ?? []).map((section) => (
+                                    <TableListingCard key={section.id} sections={[section]} />
+                                ))}
+                                  <TableListingCard sections={healthCardPointsSections} />
+                                  <TableListingCard sections={healthCardTransactionSections} />
                             </>
                         ) : (
                             <>
                                 <JsHealthCardPointsCard
-                                    remainingAmount="Rs. 7000.00"
+                                    remainingAmount="Rs. 0"
                                     items={JS_HEALTH_CARD_POINTS_ITEMS}
                                 />
                                 <TableListingCard sections={WALLET_PACKAGE_SECTIONS} />

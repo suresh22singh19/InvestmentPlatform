@@ -125,7 +125,7 @@ function decodeHtmlEntities(s: string): string {
         .replace(/&amp;/g, "&");
 }
 
-function maskContact(phone: string | null | undefined): string {
+export function maskContact(phone: string | null | undefined): string {
     const cleaned = (phone ?? "").replace(/\D/g, "");
     if (cleaned.length < 4) return dash(phone);
     return "XXXXXX" + cleaned.slice(-4);
@@ -501,7 +501,7 @@ export function buildWalletTabTableSections(
         },
         {
             id: "wallet-installment",
-            title: "Installments",
+            title: "Payment History",
             columns: WALLET_INSTALLMENT_COLUMNS,
             rows: installmentRows,
             emptyMessage: installmentRows.length === 0 ? TABLE_EMPTY : undefined,

@@ -251,6 +251,135 @@ export type LegacyV3PatientDietResponse = {
     data?: LegacyV3PatientDietItem[];
 };
 
+export type LegacyV3OpenFreeMedicineItem = {
+    id?: string | null;
+    patient_id?: string | null;
+    medicine_id?: string | null;
+    product_id?: string | null;
+    medicine_name?: string | null;
+    qty?: string | null;
+    doctor_id?: string | null;
+    doctor_name?: string | null;
+    dosage?: string | null;
+    frequency?: string | null;
+    days?: string | null;
+    remark?: string | null;
+    patient_type?: string | null;
+    status?: string | null;
+    added_by?: string | null;
+    group_id?: string | null;
+    created_at?: string | null;
+};
+
+export type LegacyV3OpenFreeMedicineResponse = {
+    status?: boolean;
+    message?: string;
+    data?: LegacyV3OpenFreeMedicineItem[];
+};
+
+export type LegacyV3PatientPaymentType = "opd" | "ipd" | "day_care";
+
+export type LegacyV3PatientPaymentRequest = {
+    patientId: string;
+    type: LegacyV3PatientPaymentType;
+};
+
+export type LegacyV3PatientPaymentItem = {
+    id?: string | null;
+    uhid?: string | null;
+    patient_id?: string | null;
+    payment_category_id?: string | null;
+    title?: string | null;
+    Price?: string | null;
+    price?: string | null;
+    mode?: string | null;
+    payment_method?: string | null;
+    transaction_id?: string | null;
+    response_data?: string | null;
+    transaction_date?: string | null;
+    status?: string | null;
+    remark?: string | null;
+    patient_type?: string | null;
+    added_by?: string | null;
+    group_id?: string | null;
+    pre_booking_id?: string | null;
+    pre_booking?: string | null;
+    payment_url?: string | null;
+    receipt_url?: string | null;
+    expire_date?: string | null;
+    invoice_id?: string | null;
+    order_id?: string | null;
+    discharge?: string | null;
+    created_at?: string | null;
+};
+
+export type LegacyV3PatientPaymentResponse = {
+    status?: boolean;
+    message?: string;
+    data?: LegacyV3PatientPaymentItem[];
+};
+
+export type LegacyV3PanelPatientServicesInvoiceItem = {
+    id?: string | null;
+    patient_id?: string | null;
+    branch_id?: string | null;
+    uhid?: string | null;
+    order_id?: string | null;
+    amount_with_tax?: string | null;
+    amount_without_tax?: string | null;
+    discount?: string | null;
+    gst_amount?: string | null;
+    payment_type?: string | null;
+    payment_status?: string | null;
+    patient_type?: string | null;
+    status?: string | null;
+    created?: string | null;
+    modified?: string | null;
+};
+
+export type LegacyV3PanelPatientServicesInvoicesResponse = {
+    status?: boolean;
+    message?: string;
+    data?: LegacyV3PanelPatientServicesInvoiceItem[];
+};
+
+export type LegacyV3HealthCardPointsItem = {
+    id?: string | null;
+    uhid?: string | null;
+    contact_number?: string | null;
+    coins?: string | null;
+    card?: string | null;
+};
+
+export type LegacyV3HealthCardPointsResponse = {
+    status?: boolean;
+    message?: string;
+    data?: LegacyV3HealthCardPointsItem | null;
+};
+
+export type LegacyV3HealthCardTransactionItem = {
+    id?: string | null;
+    arogya_id?: string | null;
+    branch_id?: string | null;
+    uhid?: string | null;
+    phone?: string | null;
+    coins?: string | null;
+    slug_type?: string | null;
+    entry?: string | null;
+    order_id?: string | null;
+    refference_table?: string | null;
+    order_status?: string | null;
+    is_expired?: string | null;
+    remark?: string | null;
+    created_at?: string | null;
+};
+
+export type LegacyV3HealthCardTransactionResponse = {
+    status?: boolean;
+    message?: string;
+    data?: LegacyV3HealthCardTransactionItem[];
+};
+
 export type LegacyV3PrebookingListRequest = {
     contactNumber: string;
     patientName: string;
@@ -670,6 +799,118 @@ export const v3OldHiimsApi = baseApi.injectEndpoints({
                 }
             },
         }),
+        getLegacyOpenFreeMedicine: builder.query<LegacyV3OpenFreeMedicineResponse, string>({
+            queryFn: async (patientId) => {
+                const safePatientId = String(patientId ?? "").trim();
+                try {
+                    const params = new URLSearchParams({
+                        patientId: safePatientId,
+                    });
+                    const res = await fetch(`/api/legacy/openFreeMedicine?${params.toString()}`);
+                    const json = (await res.json()) as LegacyV3OpenFreeMedicineResponse;
+                    if (!res.ok) {
+                        return { error: { status: res.status, data: json } };
+                    }
+                    return { data: json };
+                } catch (e) {
+                    return {
+                        error: {
+                            status: "FETCH_ERROR" as const,
+                            error: e instanceof Error ? e.message : "Network error",
+                        },
+                    };
+                }
+            },
+        }),
+        getLegacyPatientPayment: builder.query<LegacyV3PatientPaymentResponse, LegacyV3PatientPaymentRequest>({
+            queryFn: async ({ patientId, type }) => {
+                const safePatientId = String(patientId ?? "").trim();
+                try {
+                    const params = new URLSearchParams({
+                        patientId: safePatientId,
+                        type,
+                    });
+                    const res = await fetch(`/api/legacy/patientPayment?${params.toString()}`);
+                    const json = (await res.json()) as LegacyV3PatientPaymentResponse;
+                    if (!res.ok) {
+                        return { error: { status: res.status, data: json } };
+                    }
+                    return { data: json };
+                } catch (e) {
+                    return {
+                        error: {
+                            status: "FETCH_ERROR" as const,
+                            error: e instanceof Error ? e.message : "Network error",
+                        },
+                    };
+                }
+            },
+        }),
+        getLegacyPanelPatientServicesInvoices: builder.query<LegacyV3PanelPatientServicesInvoicesResponse, string>({
+            queryFn: async (patientId) => {
+                const safePatientId = String(patientId ?? "").trim();
+                try {
+                    const params = new URLSearchParams({
+                        patientId: safePatientId,
+                    });
+                    const res = await fetch(`/api/legacy/panelPatientServicesInvoices?${params.toString()}`);
+                    const json = (await res.json()) as LegacyV3PanelPatientServicesInvoicesResponse;
+                    if (!res.ok) {
+                        return { error: { status: res.status, data: json } };
+                    }
+                    return { data: json };
+                } catch (e) {
+                    return {
+                        error: {
+                            status: "FETCH_ERROR" as const,
+                            error: e instanceof Error ? e.message : "Network error",
+                        },
+                    };
+                }
+            },
+        }),
+        getLegacyHealthCardPoints: builder.query<LegacyV3HealthCardPointsResponse, string>({
+            queryFn: async (uhid) => {
+                const safeUhid = String(uhid ?? "").trim();
+                try {
+                    const params = new URLSearchParams({ uhid: safeUhid });
+                    const res = await fetch(`/api/legacy/healthCardPoints?${params.toString()}`);
+                    const json = (await res.json()) as LegacyV3HealthCardPointsResponse;
+                    if (!res.ok) {
+                        return { error: { status: res.status, data: json } };
+                    }
+                    return { data: json };
+                } catch (e) {
+                    return {
+                        error: {
+                            status: "FETCH_ERROR" as const,
+                            error: e instanceof Error ? e.message : "Network error",
+                        },
+                    };
+                }
+            },
+        }),
+        getLegacyHealthCardTransaction: builder.query<LegacyV3HealthCardTransactionResponse, string>({
+            queryFn: async (uhid) => {
+                const safeUhid = String(uhid ?? "").trim();
+                try {
+                    const params = new URLSearchParams({ uhid: safeUhid });
+                    const res = await fetch(`/api/legacy/healthCardTransaction?${params.toString()}`);
+                    const json = (await res.json()) as LegacyV3HealthCardTransactionResponse;
+                    if (!res.ok) {
+                        return { error: { status: res.status, data: json } };
+                    }
+                    return { data: json };
+                } catch (e) {
+                    return {
+                        error: {
+                            status: "FETCH_ERROR" as const,
+                            error: e instanceof Error ? e.message : "Network error",
+                        },
+                    };
+                }
+            },
+        }),
         getLegacyPrebookingList: builder.query<LegacyV3PrebookingListResponse, LegacyV3PrebookingListRequest>({
             queryFn: async (payload) => {
                 try {
@@ -769,6 +1010,11 @@ export const {
     useLazyGetLegacyPatientHistoryQuery,
     useLazyGetLegacyPatientRevisitQuery,
     useLazyGetLegacyPatientDietQuery,
+    useLazyGetLegacyOpenFreeMedicineQuery,
+    useLazyGetLegacyPatientPaymentQuery,
+    useLazyGetLegacyPanelPatientServicesInvoicesQuery,
+    useLazyGetLegacyHealthCardPointsQuery,
+    useLazyGetLegacyHealthCardTransactionQuery,
     useGetLegacyPrebookingListQuery,
     useLazyGetLegacyPrebookingDetailQuery,
     useGetLegacyLeadListQuery,
