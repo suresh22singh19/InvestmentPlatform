@@ -9,14 +9,10 @@ import Image from "next/image";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSendAddressSmsMutation } from "@/store/api/preBookingApi";
-import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useAppSelector } from "@/store/hooks";
 import { selectUserBranchId, selectUserEmail } from "@/store/slices/authSlice";
 import { usePermission } from "@/hooks/usePermission";
-import {
-    PRE_BOOKING_LIST_BRANCH_STORAGE_KEY,
-    useBranchFilter,
-} from "@/hooks/useBranchFilter";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
 
 // Same email → route mapping as in TopNavigationBar
 const EMAIL_REGISTRATION_ROUTE: Record<string, string> = {
@@ -25,7 +21,7 @@ const EMAIL_REGISTRATION_ROUTE: Record<string, string> = {
 };
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useGetLegacyPrebookingListQuery, useLazyGetLegacyPrebookingDetailQuery } from "@/store/api/v3OldHiimsApis";
+import { useGetLegacyBranchListQuery, useGetLegacyPrebookingListQuery, useLazyGetLegacyPrebookingDetailQuery } from "@/store/api/v3OldHiimsApis";
 
 type PreBookingRow = {
     id: number;
@@ -192,68 +188,37 @@ export default function PreBookingPage() {
     const {
         selectedBranchFilter: selectedBranchId,
         setSelectedBranchFilter: setSelectedBranchId,
-        branchFilterOptions: branchOptions,
-        isLoadingBranches: isLoadingBranches,
+        branchFilterOptions,
         isBranchFilterDisabled,
         filterBranchId: hookFilterBranchId,
         isSuperAdmin: isBranchFilterSuperAdmin,
-        branchFilterPersistReady,
-    } = useBranchFilter({ persistSuperAdminSelectionKey: PRE_BOOKING_LIST_BRANCH_STORAGE_KEY });
+    } = useBranchFilter();
 
-    const { data: branchesData } = useGetBranchesQuery();
+    const { data: legacyBranchData, isLoading: isLoadingLegacyBranches } = useGetLegacyBranchListQuery(
+        undefined,
+        { skip: !isBranchFilterSuperAdmin }
+    );
 
-    /** Pre-booking branch filter: append facility `type`; superadmin has no "All Branches" (first branch is default). */
     const branchOptionsWithType = useMemo((): SelectOption[] => {
-        const rows = branchesData?.data;
-        const mapped =
-            !Array.isArray(rows) || rows.length === 0
-                ? branchOptions
-                : branchOptions.map((opt) => {
-                      if (opt.value === "") return opt;
-                      const id = parseInt(String(opt.value), 10);
-                      if (!Number.isFinite(id)) return opt;
-                      const b = rows.find((x) => Number(x.id) === id);
-                      const t = b?.type?.trim();
-                      if (!b || !t) return opt;
-                      return {
-                          value: opt.value,
-                          label: `${b.name} (${capitalizeFirst(t)})`,
-                      };
-                  });
-        if (isBranchFilterSuperAdmin) {
-            return mapped.filter((o) => o.value !== "");
-        }
-        return mapped;
-    }, [branchOptions, branchesData, isBranchFilterSuperAdmin]);
+        if (!isBranchFilterSuperAdmin) return branchFilterOptions;
+        const rows = legacyBranchData?.data ?? [];
+        return [
+            { value: "", label: "All Branches" },
+            ...rows.map((b) => {
+                const name = b.name?.trim() || `Branch ${b.id}`;
+                const type = b.type?.trim();
+                const label = type
+                    ? `${name} (${type.charAt(0).toUpperCase()}${type.slice(1)})`
+                    : name;
+                return { value: b.id ?? "", label };
+            }),
+        ];
+    }, [isBranchFilterSuperAdmin, branchFilterOptions, legacyBranchData]);
 
-    /** Superadmin on Pre Booking: restore from session, validate id, else default to first branch (no "All Branches"). */
-    useEffect(() => {
-        if (!branchFilterPersistReady) return;
-        if (!isBranchFilterSuperAdmin) return;
-        if (isLoadingBranches) return;
-        const rows = branchesData?.data;
-        if (!Array.isArray(rows) || rows.length === 0) return;
-        if (selectedBranchId !== "") {
-            const valid = rows.some((b) => String(b.id) === selectedBranchId);
-            if (!valid) {
-                setSelectedBranchId(String(rows[0].id));
-            }
-            return;
-        }
-        setSelectedBranchId(String(rows[0].id));
-    }, [
-        branchFilterPersistReady,
-        isBranchFilterSuperAdmin,
-        isLoadingBranches,
-        branchesData,
-        selectedBranchId,
-        setSelectedBranchId,
-    ]);
-
-    /** Continue booking → registration URL from settings branch `type` (skip facility dialog when type is known). */
+    /** Continue booking → registration URL from legacy branch `type`. */
     const resolveContinueRouteFromBranchId = useCallback((branchId?: number | null): string | null => {
         if (branchId == null || !Number.isFinite(Number(branchId))) return null;
-        const rows = branchesData?.data;
+        const rows = legacyBranchData?.data;
         if (!Array.isArray(rows)) return null;
         const b = rows.find((x) => Number(x.id) === Number(branchId));
         if (!b) return null;
@@ -263,9 +228,9 @@ export default function PreBookingPage() {
         if (t === "clinic") return "/registration";
         if (t === "daycare") return "/registration/daycare-registration-cli";
         return null;
-    }, [branchesData]);
+    }, [legacyBranchData]);
 
-    const listQueryBranchId: number | null = hookFilterBranchId ?? (userBranchId ?? 1);
+    const effectiveBranchId = hookFilterBranchId ?? 0;
 
     const tabOptions = [
         { value: "opd", label: "OPD" },
@@ -333,8 +298,9 @@ export default function PreBookingPage() {
 
     const { data, isFetching, isError } = useGetLegacyPrebookingListQuery(
         {
+            branchId: effectiveBranchId,
             contactNumber: "",
-            patientName: debouncedSearchTerm,
+            patientName: debouncedSearchTerm.trim(),
             bookingType: bookingTypeQuery,
             bookingStatus: bookingStatusQuery,
             startDate: startDateQuery,
@@ -713,6 +679,21 @@ export default function PreBookingPage() {
                                 )}
                                
                                     <div className="flex items-center gap-3">
+                                        <FormSelectField
+                                            label=""
+                                            hideLabel
+                                            options={branchOptionsWithType}
+                                            value={selectedBranchId}
+                                            onChange={(value) => {
+                                                setSelectedBranchId(Array.isArray(value) ? value[0] : value || "");
+                                                setCurrentPage(1);
+                                            }}
+                                            placeholder={isLoadingLegacyBranches ? "Loading branches..." : "Select Branch"}
+                                            mode="single"
+                                            background="normal"
+                                            width={300}
+                                            disabled={isBranchFilterDisabled || isLoadingLegacyBranches}
+                                        />
                                         <div className="relative" ref={filterRef}>
                                             <button
                                                 onClick={handleFilterClick}
@@ -893,7 +874,7 @@ export default function PreBookingPage() {
 
             {isViewPreBooking && selectedPreBooking && (() => {
                 const vb = selectedPreBooking;
-                const branchName = branchesData?.data?.find((b) => b.id === vb.branch_id)?.name ?? (vb.branch_id != null ? String(vb.branch_id) : "N/A");
+                const branchName = legacyBranchData?.data?.find((b) => Number(b.id) === vb.branch_id)?.name ?? (vb.branch_id != null ? String(vb.branch_id) : "N/A");
                 const appointmentDateTime = [formatDate(vb.appointment_date), vb.appointment_time].filter(Boolean).join(" ") || "N/A";
                 const addr = {
                     country: vb.country,

@@ -34,5 +34,8 @@ export const LEGACY_PROJECT_ENDPOINTS = {
   healthCardPoints: "/healthCardPoints",
   healthCardTransaction: "/healthCardTransaction",
   panelPatientServicesInvoices: "/panelPatientServicesInvoices",
+  branchList: "/branchList",
+  walletPackageDetail: "/walletPackageDetail",
+  walletPackagePayment: "/walletPackagePayment",
 } as const;
 

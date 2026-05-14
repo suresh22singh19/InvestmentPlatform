@@ -26,8 +26,7 @@ import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { PaymentReceiptCapture } from "@/components/registration/PaymentReceiptCapture";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { usePermission } from "@/hooks/usePermission";
-import { useGetBranchesQuery } from "@/store/api/settingsApi";
-import { useGetLegacyDoctorsByBranchQuery } from "@/store/api/v3OldHiimsApis";
+import { useGetLegacyDoctorsByBranchQuery, useGetLegacyBranchListQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { downloadPaymentReceiptPdfFromElement } from "@/lib/utils/downloadPaymentReceiptPdf";
 import NewOPDPatientForm, {
@@ -99,20 +98,29 @@ export default function IpdPage() {
         selectedBranchFilter,
         setSelectedBranchFilter,
         branchFilterOptions,
-        isLoadingBranches,
         isBranchFilterDisabled,
         isSuperAdmin: isBranchFilterSuperAdmin,
         branchFilterPersistReady,
         filterBranchId,
     } = useBranchFilter();
-    const { data: branchesData } = useGetBranchesQuery(undefined, {
-        skip: !isBranchFilterSuperAdmin,
-    });
-    const branchOptions: SelectOption[] = useMemo(
-        () => branchFilterOptions.filter((o) => o.value !== ""),
-        [branchFilterOptions]
+    const { data: legacyBranchData, isLoading: isLoadingLegacyBranches } = useGetLegacyBranchListQuery(
+        undefined,
+        { skip: !isBranchFilterSuperAdmin }
     );
-    const effectiveBranchId = filterBranchId ?? 1;
+    const branchOptions: SelectOption[] = useMemo(() => {
+        if (!isBranchFilterSuperAdmin) return branchFilterOptions;
+        const rows = legacyBranchData?.data ?? [];
+        return [
+            { value: "", label: "All Branches" },
+            ...rows.map((b) => {
+                const name = b.name?.trim() || `Branch ${b.id}`;
+                const type = b.type?.trim();
+                const label = type ? `${name} (${type.charAt(0).toUpperCase()}${type.slice(1)})` : name;
+                return { value: b.id ?? "", label };
+            }),
+        ];
+    }, [isBranchFilterSuperAdmin, branchFilterOptions, legacyBranchData]);
+    const effectiveBranchId = filterBranchId ?? 0;
     const { data: legacyDoctorsResponse, isLoading: isLoadingDoctors } = useGetLegacyDoctorsByBranchQuery(
         effectiveBranchId,
         { skip: !branchFilterPersistReady }
@@ -434,26 +442,6 @@ export default function IpdPage() {
         setSelectedDoctor("all");
     }, [effectiveBranchId]);
 
-    useEffect(() => {
-        if (!branchFilterPersistReady) return;
-        if (!isBranchFilterSuperAdmin) return;
-        if (isLoadingBranches) return;
-        const rows = branchesData?.data;
-        if (!Array.isArray(rows) || rows.length === 0) return;
-        if (selectedBranchFilter !== "") {
-            const valid = rows.some((b) => String(b.id) === selectedBranchFilter);
-            if (!valid) setSelectedBranchFilter(String(rows[0].id));
-            return;
-        }
-        setSelectedBranchFilter(String(rows[0].id));
-    }, [
-        branchFilterPersistReady,
-        isBranchFilterSuperAdmin,
-        isLoadingBranches,
-        branchesData,
-        selectedBranchFilter,
-        setSelectedBranchFilter,
-    ]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -488,7 +476,7 @@ export default function IpdPage() {
                 <ListBorder as="section" className="px-4 py-4">
                     <div className="w-full rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
                         <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
-                            {/* <div className="w-[300px] max-w-full">
+                            <div className="w-[260px] max-w-full">
                                 <FormSelectField
                                     label=""
                                     hideLabel
@@ -498,13 +486,13 @@ export default function IpdPage() {
                                         setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
                                         setCurrentPage(1);
                                     }}
-                                    placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                                    placeholder={isLoadingLegacyBranches ? "Loading branches..." : "Select Branch"}
                                     mode="single"
                                     background="normal"
-                                    width={300}
-                                    disabled={isBranchFilterDisabled || isLoadingBranches}
+                                    width={260}
+                                    disabled={isBranchFilterDisabled || isLoadingLegacyBranches}
                                 />
-                            </div> */}
+                            </div>
 
                             <div className="w-[260px] max-w-full">
                                 <FormSelectField

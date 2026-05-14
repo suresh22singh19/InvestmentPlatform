@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     try {
         const q = request.nextUrl.searchParams;
         const body = {
+            branchId: Number(q.get("branchId") ?? 0),
             contactNumber: q.get("contactNumber")?.trim() || "",
             patientName: q.get("patientName")?.trim() || "",
             bookingType: q.get("bookingType")?.trim() || "opd",

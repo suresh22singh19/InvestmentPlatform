@@ -26,7 +26,7 @@ import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { useExport, type ExportColumn } from "@/hooks/useExport";
 import { usePermission } from "@/hooks/usePermission";
-import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import { useGetLegacyBranchListQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import PatientDischargeForm, {
   type PatientForm2Handle,
@@ -120,18 +120,30 @@ export default function DischargePendingPage() {
     selectedBranchFilter,
     setSelectedBranchFilter,
     branchFilterOptions,
-    isLoadingBranches,
     isBranchFilterDisabled,
     isSuperAdmin: isBranchFilterSuperAdmin,
-    branchFilterPersistReady,
+    filterBranchId,
   } = useBranchFilter();
-  const { data: branchesData } = useGetBranchesQuery(undefined, {
-    skip: !isBranchFilterSuperAdmin,
-  });
-  const branchOptions: SelectOption[] = useMemo(
-    () => branchFilterOptions.filter((o) => o.value !== ""),
-    [branchFilterOptions]
+  const { data: legacyBranchData, isLoading: isLoadingLegacyBranches } = useGetLegacyBranchListQuery(
+    undefined,
+    { skip: !isBranchFilterSuperAdmin }
   );
+  const branchOptions: SelectOption[] = useMemo(() => {
+    if (!isBranchFilterSuperAdmin) return branchFilterOptions;
+    const rows = legacyBranchData?.data ?? [];
+    return [
+      { value: "", label: "All Branches" },
+      ...rows.map((b) => {
+        const name = b.name?.trim() || `Branch ${b.id}`;
+        const type = b.type?.trim();
+        const label = type
+          ? `${name} (${type.charAt(0).toUpperCase()}${type.slice(1)})`
+          : name;
+        return { value: b.id ?? "", label };
+      }),
+    ];
+  }, [isBranchFilterSuperAdmin, branchFilterOptions, legacyBranchData]);
+  const effectiveBranchId = filterBranchId ?? 0;
   const router = useRouter();
   const handleViewPatient = useCallback(
     (row: DischargePendingRow) => {
@@ -274,9 +286,7 @@ export default function DischargePendingPage() {
     setIsFilterOpen(false);
   };
   const handleRefresh = () => {
-    if (branchOptions.length > 0) {
-      setSelectedBranchFilter(String(branchOptions[0].value));
-    }
+    if (isBranchFilterSuperAdmin) setSelectedBranchFilter("");
     setSearchType("uhid");
     setSearchTerm("");
     setDebouncedSearch("");
@@ -336,7 +346,7 @@ export default function DischargePendingPage() {
   const buildApiParams = useCallback(
     (page: number, limit: number) => {
       const params = new URLSearchParams({
-        branchId: "1",
+        branchId: String(effectiveBranchId),
         patientId: "",
         contactNumber: "",
         uhid: searchType === "uhid" ? debouncedSearch : "",
@@ -348,7 +358,7 @@ export default function DischargePendingPage() {
       });
       return params;
     },
-    [debouncedSearch, searchType, fromDate, toDate]
+    [effectiveBranchId, debouncedSearch, searchType, fromDate, toDate]
   );
 
   const buildApiParamsRef = useRef(buildApiParams);
@@ -401,28 +411,7 @@ export default function DischargePendingPage() {
 
     loadRows();
     return () => controller.abort();
-  }, [debouncedSearch, fromDate, toDate, currentPage, itemsPerPage, canView]);
-
-  useEffect(() => {
-    if (!branchFilterPersistReady) return;
-    if (!isBranchFilterSuperAdmin) return;
-    if (isLoadingBranches) return;
-    const branchRows = branchesData?.data;
-    if (!Array.isArray(branchRows) || branchRows.length === 0) return;
-    if (selectedBranchFilter !== "") {
-      const valid = branchRows.some((b) => String(b.id) === selectedBranchFilter);
-      if (!valid) setSelectedBranchFilter(String(branchRows[0].id));
-      return;
-    }
-    setSelectedBranchFilter(String(branchRows[0].id));
-  }, [
-    branchFilterPersistReady,
-    isBranchFilterSuperAdmin,
-    isLoadingBranches,
-    branchesData,
-    selectedBranchFilter,
-    setSelectedBranchFilter,
-  ]);
+  }, [effectiveBranchId, debouncedSearch, fromDate, toDate, currentPage, itemsPerPage, canView]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -492,7 +481,9 @@ export default function DischargePendingPage() {
         <ListBorder as="section" className="px-4 py-4">
           <div className="w-full rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
             <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
-              {/* <div className="w-[300px] max-w-full">
+              
+              <div className="flex items-center gap-3">
+              <div className="w-[260px] max-w-full">
                 <FormSelectField
                   label=""
                   hideLabel
@@ -502,15 +493,13 @@ export default function DischargePendingPage() {
                     setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
                     setCurrentPage(1);
                   }}
-                  placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                  placeholder={isLoadingLegacyBranches ? "Loading branches..." : "Select Branch"}
                   mode="single"
                   background="normal"
-                  width={300}
-                  disabled={isBranchFilterDisabled || isLoadingBranches}
+                  width={260}
+                  disabled={isBranchFilterDisabled || isLoadingLegacyBranches}
                 />
-              </div> */}
-
-              <div className="flex items-center gap-3">
+              </div>
                 <div className="w-[260px] max-w-full">
                   <FormSelectField
                     label=""

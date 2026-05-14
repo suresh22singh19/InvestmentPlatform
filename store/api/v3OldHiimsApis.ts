@@ -157,9 +157,18 @@ export type LegacyV3NursingNoteItem = {
     updated_at?: string | null;
 };
 
+export type LegacyV3NursingNoteRequest = {
+    patientId: string;
+    metakey?: string;
+    metavalue?: string;
+    limit: number;
+    page: number;
+};
+
 export type LegacyV3NursingNoteResponse = {
     status?: boolean;
     message?: string;
+    total_records?: number;
     data?: LegacyV3NursingNoteItem[];
 };
 
@@ -381,6 +390,7 @@ export type LegacyV3HealthCardTransactionResponse = {
 };
 
 export type LegacyV3PrebookingListRequest = {
+    branchId?: number;
     contactNumber: string;
     patientName: string;
     bookingType: "opd" | "ipd";
@@ -479,6 +489,24 @@ export type LegacyV3LeadListResponse = {
     message?: string;
     total_records?: number;
     data?: LegacyV3LeadItem[];
+};
+
+export type LegacyV3BranchItem = {
+    id?: string | null;
+    name?: string | null;
+    phone_number?: string | null;
+    address?: string | null;
+    state?: string | null;
+    district?: string | null;
+    type?: string | null;
+    branch_code?: string | null;
+};
+
+export type LegacyV3BranchListResponse = {
+    status?: boolean;
+    message?: string;
+    total_records?: number;
+    data?: LegacyV3BranchItem[];
 };
 
 export const v3OldHiimsApi = baseApi.injectEndpoints({
@@ -684,13 +712,17 @@ export const v3OldHiimsApi = baseApi.injectEndpoints({
                 }
             },
         }),
-        getLegacyNursingNote: builder.query<LegacyV3NursingNoteResponse, string>({
-            queryFn: async (patientId) => {
+        getLegacyNursingNote: builder.query<LegacyV3NursingNoteResponse, LegacyV3NursingNoteRequest>({
+            queryFn: async ({ patientId, metakey, metavalue, limit, page }) => {
                 const safePatientId = String(patientId ?? "").trim();
                 try {
                     const params = new URLSearchParams({
                         patientId: safePatientId,
+                        limit: String(limit),
+                        page: String(page),
                     });
+                    if (metakey) params.set("metakey", metakey);
+                    if (metavalue) params.set("metavalue", metavalue);
                     const res = await fetch(`/api/legacy/nursingNote?${params.toString()}`);
                     const json = (await res.json()) as LegacyV3NursingNoteResponse;
                     if (!res.ok) {
@@ -915,6 +947,7 @@ export const v3OldHiimsApi = baseApi.injectEndpoints({
             queryFn: async (payload) => {
                 try {
                     const params = new URLSearchParams({
+                        branchId: String(payload.branchId ?? 0),
                         contactNumber: payload.contactNumber,
                         patientName: payload.patientName,
                         bookingType: payload.bookingType,
@@ -990,6 +1023,25 @@ export const v3OldHiimsApi = baseApi.injectEndpoints({
                 }
             },
         }),
+        getLegacyBranchList: builder.query<LegacyV3BranchListResponse, void>({
+            queryFn: async () => {
+                try {
+                    const res = await fetch(`/api/legacy/branchList?branchId=0`);
+                    const json = (await res.json()) as LegacyV3BranchListResponse;
+                    if (!res.ok) {
+                        return { error: { status: res.status, data: json } };
+                    }
+                    return { data: json };
+                } catch (e) {
+                    return {
+                        error: {
+                            status: "FETCH_ERROR" as const,
+                            error: e instanceof Error ? e.message : "Network error",
+                        },
+                    };
+                }
+            },
+        }),
     }),
     overrideExisting: false,
 });
@@ -1018,4 +1070,5 @@ export const {
     useGetLegacyPrebookingListQuery,
     useLazyGetLegacyPrebookingDetailQuery,
     useGetLegacyLeadListQuery,
+    useGetLegacyBranchListQuery,
 } = v3OldHiimsApi;

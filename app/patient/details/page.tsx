@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -76,6 +76,7 @@ import {
 import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import {
@@ -118,6 +119,8 @@ import {
 } from "@/store/api/v3OldHiimsApis";
 import BillOfSupplyPDF, { type BillOfSupplyHandle, type BillOfSupplyProps } from "@/lib/utils/billOfSupplypdf";
 import TaxInvoice, { type TaxInvoiceHandle, type TaxInvoiceProps } from "@/lib/utils/taxInvoice";
+import InvoiceSinglePaymentReceipt, { type BillOfSupplyHandle as SankalpSingleHandle, type WalletInvoiceData } from "@/lib/utils/invoiceShuddhiSankalpSinglePaymentReceipt";
+import InvoiceWallet, { type BillOfSupplyHandle as SankalpWalletHandle } from "@/lib/utils/invoiceShuddhiSankalpWallet";
 
 type OldOpdRow = {
     id: number;
@@ -902,12 +905,26 @@ const WALLET_PACKAGE_SECTIONS: TableListingSection[] = [
                     Active
                 </span>,
                 <div key="wallet-package-actions" className="flex items-center gap-2">
-                    <button className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]">
-                        <Image src="/icons/EditIconBlack.svg" alt="edit" width={20} height={20} />
-                    </button>
-                    <button className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]">
-                        <Image src="/icons/trashicon.svg" alt="delete" width={24} height={24} />
-                    </button>
+                    <Tooltip content="View Package" position="top">
+                        <button className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]">
+                            <Image src="/icons/ViewEyeIcon.svg" alt="view" width={20} height={20} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Download" position="top">
+                        <button className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]">
+                            <Image src="/icons/Download.svg" alt="download" width={20} height={20} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Edit" position="top">
+                        <button className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]">
+                            <Image src="/icons/EditIconBlack.svg" alt="edit" width={20} height={20} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Delete" position="top">
+                        <button className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]">
+                            <Image src="/icons/trashicon.svg" alt="delete" width={24} height={24} />
+                        </button>
+                    </Tooltip>
                 </div>,
             ],
         ],
@@ -990,14 +1007,26 @@ const WALLET_ORDER_HISTORY_SECTIONS: TableListingSection[] = [
                     Pending
                 </span>,
                 "20-04-2026",
-                <button
-                    key="wallet-order-view-demo"
-                    type="button"
-                    className="flex h-6 w-6 items-center justify-center cursor-pointer rounded transition-colors hover:bg-[#F7FAF7]"
-                    aria-label="View order details"
-                >
-                    <Image src="/icons/ViewEyeIcon.svg" alt="View" width={20} height={20} />
-                </button>,
+                <div key="wallet-order-actions" className="flex items-center gap-2">
+                    <Tooltip content="View Order Details" position="top">
+                        <button
+                            type="button"
+                            className="flex h-6 w-6 items-center justify-center cursor-pointer rounded transition-colors hover:bg-[#F7FAF7]"
+                            aria-label="View order details"
+                        >
+                            <Image src="/icons/ViewEyeIcon.svg" alt="View" width={20} height={20} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Download Invoice" position="top">
+                        <button
+                            type="button"
+                            className="flex h-6 w-6 items-center justify-center cursor-pointer rounded transition-colors hover:bg-[#F7FAF7]"
+                            aria-label="Download invoice"
+                        >
+                            <Image src="/icons/Download.svg" alt="Download" width={20} height={20} />
+                        </button>
+                    </Tooltip>
+                </div>,
             ],
         ],
     },
@@ -1044,6 +1073,19 @@ const PATIENT_FORM_STATIC_ROWS = [
         remark: "N/A",
         date: "N/A",
     },
+];
+
+const NURSING_NOTE_SEARCH_KEY_OPTIONS: SelectOption[] = [
+    { value: "", label: "None" },
+    { value: "on_examination", label: "ON Examination" },
+    { value: "vitals", label: "Vitals" },
+    { value: "therapy", label: "Therapy" },
+    { value: "meals", label: "Meal" },
+    { value: "medication", label: "Medication" },
+    { value: "doctor_round", label: "Doctor Round" },
+    { value: "current_status", label: "Current Status" },
+    { value: "new_order", label: "New Order" },
+    { value: "handover_to", label: "Handover to" },
 ];
 
 const NURSING_NOTE_COLUMNS = [
@@ -1187,8 +1229,14 @@ export default function IpdPage() {
     const [downloadingWalletInstallmentRowKey, setDownloadingWalletInstallmentRowKey] = useState<string | null>(null);
     const [billOfSupplyPayload, setBillOfSupplyPayload] = useState<BillOfSupplyProps | null>(null);
     const [taxInvoicePayload, setTaxInvoicePayload] = useState<TaxInvoiceProps | null>(null);
+    const [walletSinglePayload, setWalletSinglePayload] = useState<WalletInvoiceData | null>(null);
+    const [walletAdvancePayload, setWalletAdvancePayload] = useState<WalletInvoiceData | null>(null);
+    const [walletAdvanceShowDate, setWalletAdvanceShowDate] = useState(true);
+    const [walletSingleShowDate, setWalletSingleShowDate] = useState(true);
     const billOfSupplyRef = useRef<BillOfSupplyHandle | null>(null);
     const taxInvoiceRef = useRef<TaxInvoiceHandle | null>(null);
+    const sankalpSingleRef = useRef<SankalpSingleHandle | null>(null);
+    const sankalpWalletRef = useRef<SankalpWalletHandle | null>(null);
     const [getLegacyOrderDetail] = useLazyGetLegacyOrderDetailQuery();
     const [getLegacyOpdIaForm] = useLazyGetLegacyOpdIaFormQuery();
     const [getLegacyOrders] = useLazyGetLegacyOrdersQuery();
@@ -1230,6 +1278,9 @@ export default function IpdPage() {
     >([]);
     const [nursingNoteLoadState, setNursingNoteLoadState] = useState<"idle" | "loading" | "error" | "ready">("idle");
     const [nursingNoteLoadError, setNursingNoteLoadError] = useState<string | null>(null);
+    const [nursingNoteFilters, setNursingNoteFilters] = useState({ page: 1, limit: 10, metakey: "", metavalue: "" });
+    const [nursingNoteTotalRecords, setNursingNoteTotalRecords] = useState(0);
+    const debouncedNursingNoteMetavalue = useDebounce(nursingNoteFilters.metavalue, 300);
     const [doctorVisitRows, setDoctorVisitRows] = useState<
         {
             doctor: string;
@@ -1395,6 +1446,7 @@ export default function IpdPage() {
         if (!isLegacyPatientDetailRoute) return;
         const patientId = opdRouteOpdId.trim();
         if (!patientId) return;
+        if (nursingNoteFilters.metakey && !debouncedNursingNoteMetavalue.trim()) return;
 
         let cancelled = false;
         (async () => {
@@ -1402,7 +1454,13 @@ export default function IpdPage() {
             setNursingNoteLoadError(null);
             setNursingNoteRows([]);
             try {
-                const payload = await getLegacyNursingNote(patientId).unwrap();
+                const payload = await getLegacyNursingNote({
+                    patientId,
+                    metakey: nursingNoteFilters.metakey || undefined,
+                    metavalue: debouncedNursingNoteMetavalue.trim() || undefined,
+                    limit: nursingNoteFilters.limit,
+                    page: nursingNoteFilters.page,
+                }).unwrap();
                 const message = String(payload?.message ?? "").toLowerCase();
                 if (payload?.status === false && !message.includes("no record")) {
                     throw new Error(payload?.message || "Failed to load nursing note");
@@ -1425,6 +1483,7 @@ export default function IpdPage() {
                         createdAt: asDisplay(row.created_at),
                     }))
                 );
+                setNursingNoteTotalRecords(payload?.total_records ?? rows.length);
                 setNursingNoteLoadState("ready");
             } catch (e) {
                 if (cancelled) return;
@@ -1437,7 +1496,16 @@ export default function IpdPage() {
         return () => {
             cancelled = true;
         };
-    }, [activeTab, isLegacyPatientDetailRoute, opdRouteOpdId, getLegacyNursingNote]);
+    }, [
+        activeTab,
+        isLegacyPatientDetailRoute,
+        opdRouteOpdId,
+        getLegacyNursingNote,
+        nursingNoteFilters.page,
+        nursingNoteFilters.limit,
+        nursingNoteFilters.metakey,
+        debouncedNursingNoteMetavalue,
+    ]);
 
     useEffect(() => {
         if (activeTab !== "doctor_visit") return;
@@ -2669,6 +2737,64 @@ export default function IpdPage() {
         return [buildPatientFilesTableSection(opdFilesList)];
     }, [isLegacyPatientDetailRoute, opdDetailLoadState, opdFilesList]);
 
+    const handleWalletPackageDownload = useCallback(async (idx: number) => {
+        if (downloadingWalletPackageRowKey) return;
+        const pkg = opdWalletPayload?.package?.[idx];
+        const packageId = String(pkg?.id ?? pkg?.pwid ?? "").trim();
+        if (!packageId) return;
+        const rowKey = `wallet-package-${idx}`;
+        try {
+            setDownloadingWalletPackageRowKey(rowKey);
+            const res = await fetch(`/api/legacy/walletPackageDetail?packageId=${encodeURIComponent(packageId)}`);
+            const json = await res.json();
+            const invoiceData: WalletInvoiceData = json?.data ?? {};
+            const isAdvance = (invoiceData.sanklp_type ?? "").toLowerCase() === "advance"
+                || (invoiceData.type ?? "").toLowerCase().includes("jeena sikho wallet");
+            if (isAdvance) {
+                setWalletAdvanceShowDate(true);
+                setWalletAdvancePayload(invoiceData);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                await sankalpWalletRef.current?.downloadPdf();
+            } else {
+                setWalletSingleShowDate(true);
+                setWalletSinglePayload(invoiceData);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                await sankalpSingleRef.current?.downloadPdf();
+            }
+        } finally {
+            setDownloadingWalletPackageRowKey(null);
+        }
+    }, [downloadingWalletPackageRowKey, opdWalletPayload]);
+
+    const handleWalletInstallmentDownload = useCallback(async (idx: number) => {
+        if (downloadingWalletInstallmentRowKey) return;
+        const ins = opdWalletPayload?.installment?.[idx];
+        const paymentId = String(ins?.id ?? ins?.receipt_no ?? ins?.transaction ?? "").trim();
+        if (!paymentId) return;
+        const rowKey = `wallet-installment-${idx}`;
+        try {
+            setDownloadingWalletInstallmentRowKey(rowKey);
+            const res = await fetch(`/api/legacy/walletPackagePayment?paymentId=${encodeURIComponent(paymentId)}`);
+            const json = await res.json();
+            const invoiceData: WalletInvoiceData = json?.data ?? {};
+            const isAdvance = (invoiceData.sanklp_type ?? "").toLowerCase() === "advance"
+                || (invoiceData.type ?? "").toLowerCase().includes("jeena sikho wallet");
+            if (isAdvance) {
+                setWalletAdvanceShowDate(false);
+                setWalletAdvancePayload(invoiceData);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                await sankalpWalletRef.current?.downloadPdf();
+            } else {
+                setWalletSingleShowDate(false);
+                setWalletSinglePayload(invoiceData);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                await sankalpSingleRef.current?.downloadPdf();
+            }
+        } finally {
+            setDownloadingWalletInstallmentRowKey(null);
+        }
+    }, [downloadingWalletInstallmentRowKey, opdWalletPayload]);
+
     const opdWalletTabTableSections = useMemo(() => {
         if (!isLegacyPatientDetailRoute || opdDetailLoadState !== "ready") return null;
         const baseSections = buildWalletTabTableSections(opdWalletPayload, openWalletOrderDetails);
@@ -2679,26 +2805,30 @@ export default function IpdPage() {
                     const withAction = [...row];
                     withAction[withAction.length - 1] = (
                         <div key={`wallet-package-action-${rowKey}`} className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
-                                aria-label="View package"
-                            >
-                                <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
-                            </button>
-                            <button
-                                type="button"
-                                className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
-                                aria-label="Download package"
-                                onClick={() => handleWalletPackageDownload(rowKey)}
-                                disabled={Boolean(downloadingWalletPackageRowKey)}
-                            >
-                                {downloadingWalletPackageRowKey === rowKey ? (
-                                    <SpinnerLoader className="h-[18px] w-[18px]" />
-                                ) : (
-                                    <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
-                                )}
-                            </button>
+                            <Tooltip content="View Package" position="top">
+                                <button
+                                    type="button"
+                                    className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                    aria-label="View package"
+                                >
+                                    <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip content="Download Invoice" position="top">
+                                <button
+                                    type="button"
+                                    className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                    aria-label="Download invoice"
+                                    onClick={() => handleWalletPackageDownload(idx)}
+                                    disabled={Boolean(downloadingWalletPackageRowKey)}
+                                >
+                                    {downloadingWalletPackageRowKey === rowKey ? (
+                                        <SpinnerLoader className="h-[18px] w-[18px]" />
+                                    ) : (
+                                        <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                    )}
+                                </button>
+                            </Tooltip>
                         </div>
                     );
                     return withAction;
@@ -2716,20 +2846,32 @@ export default function IpdPage() {
                     const rowKey = `wallet-installment-${idx}`;
                     return [
                         ...row,
-                        <button
-                            key={`wallet-installment-download-${rowKey}`}
-                            type="button"
-                            className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
-                            aria-label="Download payment history"
-                            onClick={() => handleWalletInstallmentDownload(rowKey)}
-                            disabled={Boolean(downloadingWalletInstallmentRowKey)}
-                        >
-                            {downloadingWalletInstallmentRowKey === rowKey ? (
-                                <SpinnerLoader className="h-[18px] w-[18px]" />
-                            ) : (
-                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
-                            )}
-                        </button>,
+                        <div key={`wallet-installment-action-${rowKey}`} className="flex items-center gap-2">
+                            <Tooltip content="View Payment Details" position="top">
+                                <button
+                                    type="button"
+                                    className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                    aria-label="View payment details"
+                                >
+                                    <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip content="Download Invoice" position="top">
+                                <button
+                                    type="button"
+                                    className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                    aria-label="Download invoice"
+                                    onClick={() => handleWalletInstallmentDownload(idx)}
+                                    disabled={Boolean(downloadingWalletInstallmentRowKey)}
+                                >
+                                    {downloadingWalletInstallmentRowKey === rowKey ? (
+                                        <SpinnerLoader className="h-[18px] w-[18px]" />
+                                    ) : (
+                                        <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                    )}
+                                </button>
+                            </Tooltip>
+                        </div>,
                     ];
                 });
                 return { ...section, columns, rows };
@@ -2844,28 +2986,6 @@ export default function IpdPage() {
             setDownloadingProductOrderId(null);
         }
     };
-
-    async function handleWalletPackageDownload(rowKey: string) {
-        if (!rowKey || downloadingWalletPackageRowKey) return;
-        try {
-            setDownloadingWalletPackageRowKey(rowKey);
-            // Placeholder until package-specific PDF endpoint is provided.
-            await new Promise((resolve) => setTimeout(resolve, 500));
-        } finally {
-            setDownloadingWalletPackageRowKey(null);
-        }
-    }
-
-    async function handleWalletInstallmentDownload(rowKey: string) {
-        if (!rowKey || downloadingWalletInstallmentRowKey) return;
-        try {
-            setDownloadingWalletInstallmentRowKey(rowKey);
-            // Placeholder until installment-specific PDF endpoint is provided.
-            await new Promise((resolve) => setTimeout(resolve, 500));
-        } finally {
-            setDownloadingWalletInstallmentRowKey(null);
-        }
-    }
 
     const shouldShowPatientCareSection = useMemo(() => {
         if (!isLegacyPatientDetailRoute || opdDetailLoadState !== "ready") return false;
@@ -3023,16 +3143,47 @@ export default function IpdPage() {
     }, [billProductOrders, billOrdersLoadState, billOrdersLoadError, downloadingProductOrderId]);
 
     const nursingNoteSections = useMemo<TableListingSection[]>(() => {
-        const patientName = (summaryName || "N/A").trim();
         const createdAt = ((reg?.created_at as string | undefined) ?? "").trim() || "N/A";
         return [
             {
                 id: "nursing-note-details",
                 title: ` Registration Date: ${createdAt}`,
+                titleRightContent: (
+                    <div className="flex items-center gap-3">
+                        <FormSelectField
+                            label=""
+                            hideLabel
+                            options={NURSING_NOTE_SEARCH_KEY_OPTIONS}
+                            value={nursingNoteFilters.metakey}
+                            onChange={(value) => {
+                                const v = Array.isArray(value) ? value[0] : value || "";
+                                setNursingNoteFilters((prev) => ({ ...prev, metakey: v, page: 1 }));
+                            }}
+                            placeholder="Select Column"
+                            mode="single"
+                            background="normal"
+                            width={300}
+                        />
+                        <div className="flex-shrink-0" style={{ width: "300px" }}>
+                            <TableSearchInput
+                                value={nursingNoteFilters.metavalue}
+                                onChange={(value) =>
+                                    setNursingNoteFilters((prev) => ({
+                                        ...prev,
+                                        metavalue: value,
+                                        metakey: value.trim() ? prev.metakey : "",
+                                        page: prev.metavalue !== value ? 1 : prev.page,
+                                    }))
+                                }
+                                placeholder="Search Here..."
+                            />
+                        </div>
+                    </div>
+                ),
                 columns: NURSING_NOTE_COLUMNS,
                 rows: nursingNoteRows.map((row, idx) => [
-                    String(idx + 1),
-                    row.patientFrom,
+                    String((nursingNoteFilters.page - 1) * nursingNoteFilters.limit + idx + 1),
+                    (summaryName || "N/A").trim(),
                     row.onExamination,
                     row.vitals,
                     row.therapy,
@@ -3053,7 +3204,7 @@ export default function IpdPage() {
                             : "No Data Available",
             },
         ];
-    }, [summaryName, reg?.created_at, nursingNoteRows, nursingNoteLoadState, nursingNoteLoadError]);
+    }, [reg?.created_at, summaryName, nursingNoteRows, nursingNoteLoadState, nursingNoteLoadError, nursingNoteFilters, setNursingNoteFilters]);
 
     const doctorVisitSections = useMemo<TableListingSection[]>(() => {
         const patientName = (summaryName || "N/A").trim();
@@ -3761,6 +3912,19 @@ export default function IpdPage() {
                             infoItems={opdSummaryInfoItems}
                         />
                         <TableListingCard sections={nursingNoteSections} />
+                        {nursingNoteTotalRecords > 0 && (
+                            <Pagination
+                                currentPage={nursingNoteFilters.page}
+                                totalItems={nursingNoteTotalRecords}
+                                itemsPerPage={nursingNoteFilters.limit}
+                                onPageChange={(page) =>
+                                    setNursingNoteFilters((prev) => ({ ...prev, page }))
+                                }
+                                onItemsPerPageChange={(limit) =>
+                                    setNursingNoteFilters((prev) => ({ ...prev, limit, page: 1 }))
+                                }
+                            />
+                        )}
                     </div>
                 </div>
             )}
@@ -3951,6 +4115,8 @@ export default function IpdPage() {
 
             {billOfSupplyPayload ? <BillOfSupplyPDF ref={billOfSupplyRef} {...billOfSupplyPayload} /> : null}
             {taxInvoicePayload ? <TaxInvoice ref={taxInvoiceRef} {...taxInvoicePayload} /> : null}
+            {walletSinglePayload ? <InvoiceSinglePaymentReceipt ref={sankalpSingleRef} data={walletSinglePayload} showDownloadButton={false} showDateColumn={walletSingleShowDate} /> : null}
+            {walletAdvancePayload ? <InvoiceWallet ref={sankalpWalletRef} data={walletAdvancePayload} showDownloadButton={false} showDateColumn={walletAdvanceShowDate} /> : null}
         </AppShell>
     );
 }

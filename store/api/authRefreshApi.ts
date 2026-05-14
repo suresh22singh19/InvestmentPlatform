@@ -5,6 +5,7 @@ export type { RefreshTokenResponse };
 
 const refreshBaseQuery = fetchBaseQuery({
   baseUrl: "https://newhiims.dikonia.in/api/v2",
+  // baseUrl: "https://hiims.dikonia.in/api/v2",
   // NOTE: credentials: "include" removed — the refresh_token cookie is
   // SameSite=Strict so the browser blocks it on cross-origin requests anyway,
   // and it was causing a CORS preflight failure.

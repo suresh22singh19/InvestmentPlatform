@@ -21,14 +21,13 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { LeadItem } from "@/store/api/leadsApi";
-import { useGetLegacyLeadListQuery, type LegacyV3LeadItem } from "@/store/api/v3OldHiimsApis";
+import { useGetLegacyBranchListQuery, useGetLegacyLeadListQuery, type LegacyV3LeadItem } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useAppSelector } from "@/store/hooks";
-import { selectUserBranchId, selectUserEmail } from "@/store/slices/authSlice";
+import { selectUserEmail } from "@/store/slices/authSlice";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
-import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { registrationListPathFromBranchType } from "@/lib/utils/registrationBranchRoutes";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 
@@ -155,8 +154,6 @@ export default function LeadRequestPage() {
     const leadRequestSubPermission = usePermission("Lead Request", { subModule: "Lead Request" });
     const canView = leadRequestPermission.canView || leadRequestSubPermission.canView;
     const canEdit = leadRequestPermission.canEdit || leadRequestSubPermission.canEdit;
-    const userBranchId = useAppSelector(selectUserBranchId);
-    const branchId = userBranchId ?? 1;
     const userEmail = useAppSelector(selectUserEmail);
 
     const [activeTab, setActiveTab] = useState("active-leads");
@@ -171,54 +168,31 @@ export default function LeadRequestPage() {
         selectedBranchFilter,
         setSelectedBranchFilter,
         branchFilterOptions,
-        isLoadingBranches,
         isBranchFilterDisabled,
         filterBranchId: hookFilterBranchId,
         isSuperAdmin: isBranchFilterSuperAdmin,
     } = useBranchFilter();
 
-    const { data: branchesListData } = useGetBranchesQuery(undefined);
+    const { data: legacyBranchData, isLoading: isLoadingLegacyBranches } = useGetLegacyBranchListQuery(
+        undefined,
+        { skip: !isBranchFilterSuperAdmin }
+    );
 
-    /** Superadmin: no "All Branches"; labels include facility type (e.g. Hospital / Clinic). */
     const leadRequestBranchOptions = useMemo((): SelectOption[] => {
-        const rows = branchesListData?.data;
-        if (!isBranchFilterSuperAdmin) {
-            if (!Array.isArray(rows) || rows.length === 0) return branchFilterOptions;
-            return branchFilterOptions.map((opt) => {
-                const id = parseInt(String(opt.value), 10);
-                if (!Number.isFinite(id)) return opt;
-                const b = rows.find((x) => Number(x.id) === id) as { name?: string; type?: string } | undefined;
-                if (!b?.name) return opt;
-                return {
-                    value: opt.value,
-                    label: branchSelectLabel(String(b.name), b.type),
-                };
-            });
-        }
-        if (!Array.isArray(rows) || rows.length === 0) return [];
-        return rows.map((b) => {
-            const row = b as { id: number; name?: string; type?: string };
-            return {
-                value: String(row.id),
-                label: branchSelectLabel(String(row.name ?? ""), row.type),
-            };
-        });
-    }, [isBranchFilterSuperAdmin, branchesListData, branchFilterOptions]);
-
-    useEffect(() => {
-        if (!isBranchFilterSuperAdmin) return;
-        if (isLoadingBranches) return;
-        const rows = branchesListData?.data;
-        if (!Array.isArray(rows) || rows.length === 0) return;
-        if (selectedBranchFilter !== "") return;
-        setSelectedBranchFilter(String(rows[0].id));
-    }, [
-        isBranchFilterSuperAdmin,
-        isLoadingBranches,
-        branchesListData,
-        selectedBranchFilter,
-        setSelectedBranchFilter,
-    ]);
+        if (!isBranchFilterSuperAdmin) return branchFilterOptions;
+        const rows = legacyBranchData?.data ?? [];
+        return [
+            { value: "", label: "All Branches" },
+            ...rows.map((b) => {
+                const name = b.name?.trim() || `Branch ${b.id}`;
+                const type = b.type?.trim();
+                const label = type
+                    ? `${name} (${type.charAt(0).toUpperCase()}${type.slice(1)})`
+                    : name;
+                return { value: b.id ?? "", label };
+            }),
+        ];
+    }, [isBranchFilterSuperAdmin, branchFilterOptions, legacyBranchData]);
 
     const [viewLead, setViewLead] = useState<LeadItem | null>(null);
 
@@ -226,12 +200,9 @@ export default function LeadRequestPage() {
 
     const apiStatus = TAB_STATUS_MAP[activeTab] ?? "active";
 
-    const effectiveBranchId =
-        isBranchFilterSuperAdmin && hookFilterBranchId && Number.isFinite(hookFilterBranchId) && hookFilterBranchId > 0
-            ? hookFilterBranchId
-            : branchId;
+    const effectiveBranchId = hookFilterBranchId ?? 0;
 
-    const leadsQuerySkip = !canView || !effectiveBranchId || effectiveBranchId < 1;
+    const leadsQuerySkip = !canView;
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -268,7 +239,7 @@ export default function LeadRequestPage() {
 
     const { data, isFetching, isError, refetch } = useGetLegacyLeadListQuery(
         {
-            branchId: effectiveBranchId || 1,
+            branchId: effectiveBranchId,
             status: apiStatus,
             patientName: debouncedSearch.trim(),
             startDate: fromDate,
@@ -339,8 +310,7 @@ export default function LeadRequestPage() {
 
         const regQuery = branchIdNum != null ? `?regBranch=${branchIdNum}` : "";
 
-        // Same order as pre-booking Confirm: branch type from settings API wins over email-only route.
-        const rows = branchesListData?.data;
+        const rows = legacyBranchData?.data;
         let targetPath: "/registration" | "/registration/hospital" =
             registrationListPathFromBranchType(undefined);
         let routedFromSelectedBranch = false;
@@ -395,7 +365,7 @@ export default function LeadRequestPage() {
                                 <Tabs options={tabOptions} value={activeTab} onChange={handleTabChange} />
                             </div>
                             <div className="flex items-center gap-3">
-                                {/* <FormSelectField
+                                <FormSelectField
                                     label=""
                                     hideLabel
                                     options={leadRequestBranchOptions}
@@ -404,12 +374,12 @@ export default function LeadRequestPage() {
                                         setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
                                         setCurrentPage(1);
                                     }}
-                                    placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                                    placeholder={isLoadingLegacyBranches ? "Loading branches..." : "Select Branch"}
                                     mode="single"
                                     background="normal"
                                     width={300}
-                                    disabled={isBranchFilterDisabled || isLoadingBranches}
-                                /> */}
+                                    disabled={isBranchFilterDisabled || isLoadingLegacyBranches}
+                                />
                                 <div className="relative" ref={filterRef}>
                                     <button
                                         onClick={handleFilterClick}

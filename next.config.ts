@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "newhiims.dikonia.in",
+        // hostname: "hiims.dikonia.in",
       },
     ],
   },
