@@ -113,7 +113,7 @@ const PatientWalletPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
         const handleDownloadPDF = useCallback(async () => {
             const html2pdf = (await import("html2pdf.js")).default;
             if (!printRef.current) return;
-            await html2pdf()
+            const blobUrl = await html2pdf()
                 .set({
                     margin: 0,
                     filename: `wallet_invoice_${data?.patient_id || data?.pwid || "receipt"}.pdf`,
@@ -122,7 +122,8 @@ const PatientWalletPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
                     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                 })
                 .from(printRef.current)
-                .save();
+                .outputPdf("bloburl");
+            window.open(blobUrl, "_blank");
         }, [data?.patient_id, data?.pwid]);
 
         useImperativeHandle(ref, () => ({ downloadPdf: handleDownloadPDF }), [handleDownloadPDF]);
@@ -139,7 +140,9 @@ const PatientWalletPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
         const branchState = data?.branchstate || "";
         const stateCode = data?.state_code || "";
 
-        const title = isMmb ? "Madhumeh Mukt Bharat Program" : "Shuddhi Membership Receipt";
+        const title = isMmb
+            ? "Madhumeh Mukt Bharat Program"
+            : (showDateColumn ? "Shuddhi Membership Report" : "Shuddhi Membership Receipt");
 
         const walletNo = data?.pwid || "N/A";
         const installReceiptNo = data?.pwInstallId || data?.pwid || "N/A";
@@ -330,14 +333,17 @@ const PatientWalletPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
                             {installments.length > 0 && (
                                 <>
                                     <div style={{ textAlign: "center", width: "100%", padding: "4px 0 8px 0" }}>
-                                        <h3 style={{ textAlign: "center", fontSize: "12px", margin: 0 }}>Mode of Payment</h3>
+                                        <h3 style={{ textAlign: "center", fontSize: "12px", margin: 0 }}>{showDateColumn ? "Payment History" : "Mode of Payment"}</h3>
                                     </div>
                                     <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #000" }}>
                                         <thead>
                                             <tr>
-                                                {["Deposit", "Payment Method", "Payment Date", "Transaction ID"].map((h, i) => (
-                                                    <th key={h} style={{ backgroundColor: "#17a2b8", fontWeight: "400", padding: "0 8px", border: "1px solid #000", borderBottom: "none", borderRight: i < 3 ? "none" : "1px solid #000", borderLeft: i === 0 ? "none" : "1px solid #000", fontSize: "9.5px" }}>
-                                                        <div style={{ height: "6px", display: "flex", fontSize: "9.5px", fontWeight: "400", alignItems: "center", justifyContent: i === 3 ? "center" : "start", marginBottom: "10px" }}>{h}</div>
+                                                {(showDateColumn
+                                                    ? ["Date", "Receipt No", "Amount", "Payment Method", "Transaction ID"]
+                                                    : ["Deposit", "Payment Method", "Payment Date", "Transaction ID"]
+                                                ).map((h, i, arr) => (
+                                                    <th key={h} style={{ backgroundColor: "#17a2b8", fontWeight: "400", padding: "0 8px", border: "1px solid #000", borderBottom: "none", borderRight: i < arr.length - 1 ? "none" : "1px solid #000", borderLeft: i === 0 ? "none" : "1px solid #000", fontSize: "9.5px" }}>
+                                                        <div style={{ height: "6px", display: "flex", fontSize: "9.5px", fontWeight: "400", alignItems: "center", justifyContent: i === arr.length - 1 ? "center" : "start", marginBottom: "10px" }}>{h}</div>
                                                     </th>
                                                 ))}
                                             </tr>
@@ -346,11 +352,14 @@ const PatientWalletPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
                                             {installments.map((ins, i) => {
                                                 const dateStr = fmtDDMMYYYY(ins.payment_date);
                                                 const remark = ins.remark || "N/A";
+                                                const cells = showDateColumn
+                                                    ? [dateStr, String(ins.receipt_no ?? "N/A"), String(ins.deposit ?? ""), ins.payment_medthod || "", remark]
+                                                    : [String(ins.deposit ?? ""), ins.payment_medthod || "", dateStr, remark];
                                                 return (
                                                     <tr key={i}>
-                                                        {[String(ins.deposit ?? ""), ins.payment_medthod || "", dateStr, remark].map((c, ci) => (
-                                                            <td key={ci} style={{ border: "1px solid #000", fontWeight: "400", padding: "0 8px", fontSize: "9.5px", borderRight: ci < 3 ? "none" : "1px solid #000", borderLeft: ci === 0 ? "none" : "1px solid #000" }}>
-                                                                <div style={{ height: "6px", display: "flex", fontSize: "9.5px", fontWeight: "400", alignItems: "center", justifyContent: ci === 3 ? "center" : "start", marginBottom: "10px" }}>{c}</div>
+                                                        {cells.map((c, ci) => (
+                                                            <td key={ci} style={{ border: "1px solid #000", fontWeight: "400", padding: "0 8px", fontSize: "9.5px", borderRight: ci < cells.length - 1 ? "none" : "1px solid #000", borderLeft: ci === 0 ? "none" : "1px solid #000" }}>
+                                                                <div style={{ height: "6px", display: "flex", fontSize: "9.5px", fontWeight: "400", alignItems: "center", justifyContent: ci === cells.length - 1 ? "center" : "start", marginBottom: "10px" }}>{c}</div>
                                                             </td>
                                                         ))}
                                                     </tr>

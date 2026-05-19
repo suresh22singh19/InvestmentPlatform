@@ -87,16 +87,20 @@ export function useBranchFilter(options?: UseBranchFilterOptions): UseBranchFilt
       const options: SelectOption[] = [{ value: "", label: "All Branches" }];
       if (branchesData?.data) {
         for (const b of branchesData.data) {
-          options.push({ value: b.id.toString(), label: b.name });
+          const typeLabel = b.type ? b.type.charAt(0).toUpperCase() + b.type.slice(1).toLowerCase() : "";
+          const label = typeLabel ? `${b.name} (${typeLabel})` : b.name;
+          options.push({ value: b.id.toString(), label });
         }
       }
       return options;
     }
     if (selectedBranch) {
+      const typeLabel = selectedBranch.type ? selectedBranch.type.charAt(0).toUpperCase() + selectedBranch.type.slice(1).toLowerCase() : "";
+      const label = typeLabel ? `${selectedBranch.name} (${typeLabel})` : selectedBranch.name;
       return [
         {
           value: selectedBranch.id.toString(),
-          label: selectedBranch.name,
+          label,
         },
       ];
     }

@@ -354,15 +354,19 @@ export default function IpdPage() {
           };
         });
 
-        setRows(mappedRows);
-        setTotalRecords(Number(payload.total_records) || 0);
+        if (!controller.signal.aborted) {
+          setRows(mappedRows);
+          setTotalRecords(Number(payload.total_records) || 0);
+        }
       } catch (error) {
-        if ((error as { name?: string })?.name === "AbortError") return;
+        if (controller.signal.aborted || (error as { name?: string })?.name === "AbortError") return;
         setRows([]);
         setTotalRecords(0);
         setLoadError(error instanceof Error ? error.message : "Failed to fetch IPD list");
       } finally {
-        setIsLoadingRows(false);
+        if (!controller.signal.aborted) {
+          setIsLoadingRows(false);
+        }
       }
     };
 

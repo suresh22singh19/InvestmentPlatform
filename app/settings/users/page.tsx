@@ -254,7 +254,11 @@ export default function UsersPage() {
 
   const branchOptions: SelectOption[] = useMemo(() => {
     const rows = branchesRes?.success && Array.isArray(branchesRes.data) ? branchesRes.data : [];
-    return rows.map((b) => ({ value: String(b.id), label: b.name }));
+    return rows.map((b) => {
+      const typeLabel = b.type ? b.type.charAt(0).toUpperCase() + b.type.slice(1).toLowerCase() : "";
+      const label = typeLabel ? `${b.name} (${typeLabel})` : b.name;
+      return { value: String(b.id), label };
+    });
   }, [branchesRes]);
 
   /** None + API branches: toolbar filter and facility user branch field */

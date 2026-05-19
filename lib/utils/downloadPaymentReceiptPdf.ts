@@ -64,7 +64,7 @@ export async function downloadPaymentReceiptPdfFromElement(
         }
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
-        await html2pdf()
+        const blobUrl = await html2pdf()
             .set({
                 margin: 8,
                 filename,
@@ -88,7 +88,8 @@ export async function downloadPaymentReceiptPdfFromElement(
                 jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
             })
             .from(clone)
-            .save();
+            .outputPdf("bloburl");
+        window.open(blobUrl, "_blank");
     } finally {
         host.remove();
     }

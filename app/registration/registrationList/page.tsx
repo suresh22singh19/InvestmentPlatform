@@ -1152,7 +1152,9 @@ export default function RegistrationListPage() {
                                             colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
-                                            Loading appointments...
+                                            <div className="flex items-center justify-center">
+                                                <SpinnerLoader />
+                                            </div>
                                         </TableData>
                                     </TableRow>
                                 ) : isError ? (

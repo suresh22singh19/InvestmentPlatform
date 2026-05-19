@@ -275,15 +275,19 @@ export default function DischargePendingPage() {
         }
 
         const mappedRows: DischargePendingRow[] = (payload.data ?? []).map(mapApiItemToRow);
-        setRows(mappedRows);
-        setTotalRecords(Number(payload.total_records) || mappedRows.length);
+        if (!controller.signal.aborted) {
+          setRows(mappedRows);
+          setTotalRecords(Number(payload.total_records) || mappedRows.length);
+        }
       } catch (error) {
-        if ((error as { name?: string })?.name === "AbortError") return;
+        if (controller.signal.aborted || (error as { name?: string })?.name === "AbortError") return;
         setRows([]);
         setTotalRecords(0);
         setLoadError(error instanceof Error ? error.message : "Failed to fetch discharge pending list");
       } finally {
-        setIsLoadingRows(false);
+        if (!controller.signal.aborted) {
+          setIsLoadingRows(false);
+        }
       }
     };
 

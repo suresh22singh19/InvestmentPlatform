@@ -2,7 +2,7 @@
 
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Table, TableHeader, TableBody, TableRow, TableHead, Tooltip, TableData, TableSearchInput, Tabs, Pagination, FormSelectField, BackToPreviousPageButton, Button, Dialog, MessageDialog } from "@/components/ui";
+import { Table, TableHeader, TableBody, TableRow, TableHead, Tooltip, TableData, TableSearchInput, Tabs, Pagination, FormSelectField, BackToPreviousPageButton, Button, Dialog, MessageDialog, SpinnerLoader } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import Image from "next/image";
@@ -759,7 +759,9 @@ export default function PreBookingPage() {
                                                 colSpan={canView || canEdit ? 15 : 14}
                                                 className="py-12 text-center text-sm text-[#9CA3AF]"
                                             >
-                                                Loading...
+                                                <div className="flex items-center justify-center">
+                                                    <SpinnerLoader />
+                                                </div>
                                             </TableData>
                                         </TableRow>
                                     ) : isError ? (

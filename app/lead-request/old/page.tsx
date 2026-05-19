@@ -14,7 +14,8 @@ import {
     FormSelectField,
     Tabs,
     Tooltip,
-    Dialog
+    Dialog,
+    SpinnerLoader
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -439,7 +440,9 @@ export default function LeadRequestPage() {
                                 {isFetching ? (
                                     <TableRow>
                                         <TableData colSpan={tableColumnCount} className="py-12 text-center text-sm text-[#9CA3AF]">
-                                            Loading...
+                                            <div className="flex items-center justify-center">
+                                                <SpinnerLoader />
+                                            </div>
                                         </TableData>
                                     </TableRow>
                                 ) : isError ? (

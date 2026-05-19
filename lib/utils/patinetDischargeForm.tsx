@@ -423,7 +423,7 @@ const PatientForm3 = forwardRef<PatientForm2Handle, PatientForm2Props>(function 
   const handleDownloadPDF = useCallback(async () => {
     const html2pdf = (await import("html2pdf.js")).default;
     if (!printRef.current) return;
-    await html2pdf()
+    const blobUrl = await html2pdf()
       .set({
         margin: 0,
         filename: `patient_form3_${patient.uhid || "form"}.pdf`,
@@ -432,7 +432,8 @@ const PatientForm3 = forwardRef<PatientForm2Handle, PatientForm2Props>(function 
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       })
       .from(printRef.current)
-      .save();
+      .outputPdf("bloburl");
+    window.open(blobUrl, "_blank");
   }, [patient.uhid]);
 
 //   const handleDownloadPDF = useCallback(async () => {

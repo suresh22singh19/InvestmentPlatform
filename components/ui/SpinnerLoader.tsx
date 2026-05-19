@@ -2,12 +2,24 @@
 
 type SpinnerLoaderProps = {
     className?: string;
+    size?: number | string;
+    color?: string;
 };
 
-export function SpinnerLoader({ className = "" }: SpinnerLoaderProps) {
+export function SpinnerLoader({ className = "", size, color }: SpinnerLoaderProps) {
+    const style: React.CSSProperties = {};
+    if (size) {
+        style.width = typeof size === "number" ? `${size}px` : size;
+        style.height = typeof size === "number" ? `${size}px` : size;
+    }
+    if (color) {
+        style.color = color;
+    }
+
     return (
         <svg
             className={`h-5 w-5 shrink-0 animate-spin text-[#0B8C00] ${className}`.trim()}
+            style={style}
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"

@@ -87,6 +87,7 @@ export interface GetAllPackagesParams {
   branchId?: number;
   isPackageActive?: boolean;
   diseaseCategoryType?: string;
+  packageType?: string;
 }
 
 export interface PackageItem {
@@ -94,6 +95,7 @@ export interface PackageItem {
   branchId: number;
   branchRoomTypeId: number;
   diseaseCategoryType: string;
+  packageType: "ipd" | "daycare" | string;
   packageName: string;
   remark: string;
   medicineEnabled: number;
@@ -130,9 +132,10 @@ export interface GetAllPackagesResponse {
 }
 
 export interface CreatePackageRequest {
-  branchRoomTypeId: number;
+  branchRoomTypeId?: number;
   branchId: number;
   diseaseCategoryType: string;
+  packageType: string;
   packageName: string;
   remark?: string;
   medicineEnabled: boolean;
@@ -3116,6 +3119,7 @@ export const settingsApi = baseApi.injectEndpoints({
         if (params?.branchId != null && Number.isFinite(params.branchId)) queryParams.append("branchId", params.branchId.toString());
         if (params?.isPackageActive != null) queryParams.append("isPackageActive", params.isPackageActive.toString());
         if (params?.diseaseCategoryType) queryParams.append("diseaseCategoryType", params.diseaseCategoryType);
+        if (params?.packageType) queryParams.append("packageType", params.packageType);
         const queryString = queryParams.toString();
         return {
           url: `/admin/settings/package/getAllPackages${queryString ? `?${queryString}` : ""}`,

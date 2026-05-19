@@ -225,7 +225,7 @@ const PATIENT_DETAILS_BADGES: PatientDetailsBadge[] = [
             "inline-flex h-[30px] min-w-[86px] me-2 items-center justify-center rounded-[30px] border px-5 text-xs font-medium border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]",
     },
     {
-        label: "Private",
+        label: "N/A",
         className:
             "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#0B8C00]/20 bg-white text-[#0B8C00]",
     },
@@ -1100,8 +1100,8 @@ const NURSING_NOTE_COLUMNS = [
     { label: "Current Status" },
     { label: "New Order" },
     { label: "Handover to" },
-    { label: "Created At" },
-    { label: "Action", position: "last" as const },
+    { label: "Created At", position: "last" as const },
+    // { label: "Action", position: "last" as const },
 ];
 
 const DOCTOR_VISIT_COLUMNS = [
@@ -2745,7 +2745,10 @@ export default function IpdPage() {
         const rowKey = `wallet-package-${idx}`;
         try {
             setDownloadingWalletPackageRowKey(rowKey);
-            const res = await fetch(`/api/legacy/walletPackageDetail?packageId=${encodeURIComponent(packageId)}`);
+            setWalletAdvancePayload(null);
+            setWalletSinglePayload(null);
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
+            const res = await fetch(`/api/legacy/walletPackageDetail?packageId=${encodeURIComponent(packageId)}`, { cache: "no-store" });
             const json = await res.json();
             const invoiceData: WalletInvoiceData = json?.data ?? {};
             const isAdvance = (invoiceData.sanklp_type ?? "").toLowerCase() === "advance"
@@ -2753,12 +2756,12 @@ export default function IpdPage() {
             if (isAdvance) {
                 setWalletAdvanceShowDate(true);
                 setWalletAdvancePayload(invoiceData);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
                 await sankalpWalletRef.current?.downloadPdf();
             } else {
                 setWalletSingleShowDate(true);
                 setWalletSinglePayload(invoiceData);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
                 await sankalpSingleRef.current?.downloadPdf();
             }
         } finally {
@@ -2774,7 +2777,10 @@ export default function IpdPage() {
         const rowKey = `wallet-installment-${idx}`;
         try {
             setDownloadingWalletInstallmentRowKey(rowKey);
-            const res = await fetch(`/api/legacy/walletPackagePayment?paymentId=${encodeURIComponent(paymentId)}`);
+            setWalletAdvancePayload(null);
+            setWalletSinglePayload(null);
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
+            const res = await fetch(`/api/legacy/walletPackagePayment?paymentId=${encodeURIComponent(paymentId)}`, { cache: "no-store" });
             const json = await res.json();
             const invoiceData: WalletInvoiceData = json?.data ?? {};
             const isAdvance = (invoiceData.sanklp_type ?? "").toLowerCase() === "advance"
@@ -2782,12 +2788,12 @@ export default function IpdPage() {
             if (isAdvance) {
                 setWalletAdvanceShowDate(false);
                 setWalletAdvancePayload(invoiceData);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
                 await sankalpWalletRef.current?.downloadPdf();
             } else {
                 setWalletSingleShowDate(false);
                 setWalletSinglePayload(invoiceData);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
                 await sankalpSingleRef.current?.downloadPdf();
             }
         } finally {
@@ -3194,7 +3200,7 @@ export default function IpdPage() {
                     row.newOrder,
                     row.handoverTo,
                     row.createdAt,
-                    "N/A",
+                    // "N/A",
                 ]),
                 emptyMessage:
                     nursingNoteLoadState === "loading"
@@ -3666,20 +3672,22 @@ export default function IpdPage() {
                             <div className="grid grid-cols-2 gap-3">
                                 <div className={showOverviewVitals ? "" : "col-span-2"}>
                                     <PatientDetailsCard
-                                        name={opdPatientDetailsView?.name ?? "Jacob Jones"}
+                                        name={opdPatientDetailsView?.name ?? "N/A"}
                                         subtitle={
                                             opdPatientDetailsView?.subtitle ??
-                                            "Contact Number: XXXXX35353 • Age : 40 Years • Gender : Male"
+                                            "Contact Number: XXXXXXXXXX • Age : N/A • Gender : N/A"
                                         }
                                         badges={
                                             opdPatientDetailsView && opdPatientDetailsView.badges.length > 0
                                                 ? opdPatientDetailsView.badges
-                                                : PATIENT_DETAILS_BADGES
+                                                : []
+                                                // : PATIENT_DETAILS_BADGES
                                         }
                                         infoItems={
                                             opdPatientDetailsView && opdPatientDetailsView.infoItems.length > 0
                                                 ? opdPatientDetailsView.infoItems
-                                                : PATIENT_DETAILS_INFO_ITEMS
+                                                :[]
+                                                // : PATIENT_DETAILS_INFO_ITEMS
                                         }
                                     />
 

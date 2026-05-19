@@ -14,6 +14,7 @@ import {
     TableHeader,
     TableBody,
     TableRow,
+    SpinnerLoader,
     TableHead,
     TableData,
     TableSearchInput,

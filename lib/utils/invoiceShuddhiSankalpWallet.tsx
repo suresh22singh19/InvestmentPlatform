@@ -66,7 +66,7 @@ const PatientReportPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
         const handleDownloadPDF = useCallback(async () => {
             const html2pdf = (await import("html2pdf.js")).default;
             if (!printRef.current) return;
-            await html2pdf()
+            const blobUrl = await html2pdf()
                 .set({
                     margin: 0,
                     filename: `wallet_advance_${data?.patient_id || data?.pwid || "receipt"}.pdf`,
@@ -75,7 +75,8 @@ const PatientReportPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
                     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                 })
                 .from(printRef.current)
-                .save();
+                .outputPdf("bloburl");
+            window.open(blobUrl, "_blank");
         }, [data?.patient_id, data?.pwid]);
 
         useImperativeHandle(ref, () => ({ downloadPdf: handleDownloadPDF }), [handleDownloadPDF]);
@@ -135,7 +136,7 @@ const PatientReportPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
                                 {/* Title */}
                                 <div style={{ textAlign: "center", width: "100%", marginTop: "30px" }}>
                                     <h3 style={{ textAlign: "center", color: "#28a745", letterSpacing: ".8px", fontSize: "16px", fontWeight: "800" }}>
-                                        Jeena Sikho Payment Receipt
+                                        {showDateColumn ? "Jeena Sikho Payment Report" : "Jeena Sikho Payment Receipt"}
                                     </h3>
                                 </div>
                             </div>
@@ -192,7 +193,7 @@ const PatientReportPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(
                             {installments.length > 0 && (
                                 <>
                                     <div style={{ textAlign: "center", width: "100%", padding: "10px 0 30px 0" }}>
-                                        <h3 style={{ textAlign: "center", fontSize: "14px" }}>Payment History</h3>
+                                        <h3 style={{ textAlign: "center", fontSize: "14px" }}>{showDateColumn ? "Payment History" : "Mode of Payment"}</h3>
                                     </div>
                                     <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #000" }}>
                                         <thead>

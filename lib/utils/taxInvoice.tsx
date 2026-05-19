@@ -114,7 +114,7 @@ const TaxInvoice = forwardRef<TaxInvoiceHandle, TaxInvoiceProps>(function TaxInv
   const handleDownloadPDF = useCallback(async () => {
     const html2pdf = (await import("html2pdf.js")).default;
     if (!printRef.current) return;
-    await html2pdf()
+    const blobUrl = await html2pdf()
       .set({
         margin: 0,
         filename: `prescription_${patient.uhid}.pdf`,
@@ -123,7 +123,8 @@ const TaxInvoice = forwardRef<TaxInvoiceHandle, TaxInvoiceProps>(function TaxInv
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       })
       .from(printRef.current)
-      .save();
+      .outputPdf("bloburl");
+    window.open(blobUrl, "_blank");
   }, [patient.uhid]);
 
   useImperativeHandle(ref, () => ({ downloadPdf: handleDownloadPDF }), [handleDownloadPDF]);
