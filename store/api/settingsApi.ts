@@ -184,6 +184,119 @@ export interface UpdatePackageStatusResponse {
   statusCode: number;
 }
 
+// ─── Offer Master ────────────────────────────────────────────────────────────
+
+export type OfferPromotionType = "bundled_stay" | "flat_discount" | "conditional_billing";
+
+export interface GetAllOfferMastersParams {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  order?: "ASC" | "DESC";
+  search?: string;
+  branchId?: number;
+  promotionType?: OfferPromotionType | "";
+  isActive?: boolean;
+}
+
+export interface OfferMasterItem {
+  id: number;
+  branch_id: number;
+  panel_id: number | null;
+  offer_name: string;
+  promotion_type: OfferPromotionType;
+  bundled_stay_duration: number | null;
+  bundled_free_days: number | null;
+  flat_discount_percentage: number | null;
+  cond_min_billing_amount: number | null;
+  cond_discount_value: number | null;
+  cond_max_discount_cap: number | null;
+  valid_from: string;
+  valid_to: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  branchName: string;
+  panelName: string | null;
+}
+
+export interface GetAllOfferMastersResponse {
+  success: boolean;
+  data: OfferMasterItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface CreateOfferMasterRequest {
+  branchId: number;
+  panelId?: number;
+  promotionType: OfferPromotionType;
+  offerName: string;
+  // bundled_stay
+  bundledStayDuration?: number;
+  bundledFreeDays?: number;
+  // flat_discount
+  flatDiscountPercentage?: number;
+  // conditional_billing
+  condMinBillingAmount?: number;
+  condDiscountValue?: number;
+  condMaxDiscountCap?: number;
+  validFrom: string;
+  validTo: string;
+}
+
+export interface CreateOfferMasterResponse {
+  success: boolean;
+  data: string | null;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface UpdateOfferMasterRequest {
+  id: number;
+  offerName: string;
+  // bundled_stay
+  bundledStayDuration?: number;
+  bundledFreeDays?: number;
+  // flat_discount
+  flatDiscountPercentage?: number;
+  // conditional_billing
+  condMinBillingAmount?: number;
+  condDiscountValue?: number;
+  condMaxDiscountCap?: number;
+  validFrom: string;
+  validTo: string;
+}
+
+export interface UpdateOfferMasterResponse {
+  success: boolean;
+  data: null;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface UpdateOfferMasterStatusRequest {
+  id: number;
+  isActive: boolean;
+}
+
+export interface UpdateOfferMasterStatusResponse {
+  success: boolean;
+  data: null;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+// ─── End Offer Master ─────────────────────────────────────────────────────────
+
 /** GET /admin/settings/getBranchRoleByCategoryType */
 export interface BranchAssignableRole {
   id: number;
@@ -3152,6 +3265,49 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Settings"],
     }),
+    getAllOfferMasters: builder.query<GetAllOfferMastersResponse, GetAllOfferMastersParams | void>({
+      query: (params) => {
+        const q = new URLSearchParams();
+        if (params?.page != null) q.append("page", params.page.toString());
+        if (params?.limit != null) q.append("limit", params.limit.toString());
+        if (params?.sortBy) q.append("sortBy", params.sortBy);
+        if (params?.order) q.append("order", params.order);
+        if (params?.search) q.append("search", params.search);
+        if (params?.branchId != null) q.append("branchId", params.branchId.toString());
+        if (params?.promotionType) q.append("promotionType", params.promotionType);
+        if (params?.isActive != null) q.append("isActive", params.isActive.toString());
+        const qs = q.toString();
+        return {
+          url: `/admin/settings/offer-master/getAllOfferMasters${qs ? `?${qs}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createOfferMaster: builder.mutation<CreateOfferMasterResponse, CreateOfferMasterRequest>({
+      query: (body) => ({
+        url: "/admin/settings/offer-master/createOfferMaster",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateOfferMaster: builder.mutation<UpdateOfferMasterResponse, UpdateOfferMasterRequest>({
+      query: ({ id, ...body }) => ({
+        url: `/admin/settings/offer-master/updateOfferMaster/${id}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateOfferMasterStatus: builder.mutation<UpdateOfferMasterStatusResponse, UpdateOfferMasterStatusRequest>({
+      query: ({ id, isActive }) => ({
+        url: `/admin/settings/offer-master/updateOfferMasterStatus/${id}`,
+        method: "PATCH",
+        body: { isActive },
+      }),
+      invalidatesTags: ["Settings"],
+    }),
   }),
 });
 
@@ -3246,5 +3402,9 @@ export const {
   useCreatePackageMutation,
   useUpdatePackageMutation,
   useUpdatePackageStatusMutation,
+  useGetAllOfferMastersQuery,
+  useCreateOfferMasterMutation,
+  useUpdateOfferMasterMutation,
+  useUpdateOfferMasterStatusMutation,
 } = settingsApi;
 

@@ -75,6 +75,8 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     hardware: ["/settings/hardware"],
     "room-type-master": ["/settings/room-type"],
     "consultancy-service": ["/settings/consultancy-service"],
+    "offer-master": ["/settings/offer-master"],
+    offer: ["/settings/offer-master"],
     "role-master": ["/roles&permission/role-master"],
     "branch-role-master": ["/roles&permission/banch-role-master"],
     "approval-level-setup": ["/roles&permission/approval-level-setup"],
@@ -370,7 +372,11 @@ export const useRouteProtection = () => {
             const isSettingsPackageOpenAccess =
                 pathname === "/settings/package" ||
                 pathname?.startsWith("/settings/package/");
-            if (!canAccessCurrentRoute && !isSettingsPackageOpenAccess) {
+            // offer-master permission not yet implemented in backend — allow access unconditionally
+            const isSettingsOfferMasterOpenAccess =
+                pathname === "/settings/offer-master" ||
+                pathname?.startsWith("/settings/offer-master/");
+            if (!canAccessCurrentRoute && !isSettingsPackageOpenAccess && !isSettingsOfferMasterOpenAccess) {
                 const fallbackRoute =
                     getFirstAccessibleRouteFromPermissions(
                         userPermissionsMap,

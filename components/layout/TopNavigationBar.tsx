@@ -226,6 +226,12 @@ const getAllSettingsItems = (): SettingsItem[] => [
     href: "/settings/package",
     iconSrc: "/icons/PackageDarkIcon.svg",
   },
+  {
+    key: "offer-master",
+    label: "Offer Master",
+    href: "/settings/offer-master",
+    iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
+  },
   // {
   //   key: "field-users",
   //   label: "Field Users",
@@ -733,6 +739,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   "discharge-pending": ["discharge-pending"],
   doctors: ["doctor", "doctors"],
   registration: ["registration"],
+
 };
 
 const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
@@ -758,6 +765,7 @@ const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
   hardware: ["hardware"],
   "room-type": ["room-type-master", "room-type"],
   "consultancy-service": ["consultancy-service"],
+  "offer-master": ["offer-master", "offer"],
 };
 
 const ROLES_SUBMODULE_ALIASES: Record<string, string[]> = {
@@ -906,14 +914,17 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     ["settings"],
     SETTINGS_SUBMODULE_ALIASES
   );
-  const labIdx = filtered.findIndex((i) => i.key === "lab-tests");
-  const insertAt = labIdx >= 0 ? labIdx + 1 : filtered.length;
 
-  return [
-    ...filtered.slice(0, insertAt),
-    ...filtered.slice(insertAt),
-  ];
+  // Force-include offer-master until its permission is implemented in the backend
+  const offerMaster = all.find((i) => i.key === "offer-master");
+  let result = filtered;
+  if (offerMaster && !filtered.some((i) => i.key === "offer-master")) {
+    const pkgIdx = filtered.findIndex((i) => i.key === "package");
+    const insertAt = pkgIdx >= 0 ? pkgIdx + 1 : filtered.length;
+    result = [...filtered.slice(0, insertAt), offerMaster, ...filtered.slice(insertAt)];
+  }
 
+  return result;
 }, [permissionsMap]);
   const rolesPermissionItems = filterBySubModuleAccess(
     getRolesPermissionItems(),

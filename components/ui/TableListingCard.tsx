@@ -2,20 +2,43 @@
 
 import type { ReactNode } from "react";
 import { Table, TableBody, TableData, TableHead, TableHeader, TableRow } from "./Table";
+import { Pagination } from "./Pagination";
+import { SpinnerLoader } from "./SpinnerLoader";
+
+type PaginationConfig = {
+    currentPage: number;
+    totalItems: number;
+    itemsPerPage: number;
+    onPageChange: (page: number) => void;
+    onItemsPerPageChange: (itemsPerPage: number) => void;
+    itemsPerPageOptions?: number[];
+};
 
 export interface TableListingColumn {
     label: string;
     position?: "first" | "middle" | "last";
+    sortable?: boolean;
+    sortDirection?: "asc" | "desc" | null;
+    onSort?: () => void;
+    className?: string;
 }
 
 export interface TableListingSection {
     id: string;
-    title: string;
+    /** Shown on the left of the header row. If omitted, leftSideContent fills that slot instead. */
+    title?: string;
+    /** Shown on the left when title is absent. Use for filters, buttons, tabs, etc. */
+    leftSideContent?: ReactNode;
+    /** Always shown on the right of the header row. */
     titleRightContent?: ReactNode;
     columns: TableListingColumn[];
     rows: ReactNode[][];
     /** When `rows` is empty, show headers + centered message in the table body */
     emptyMessage?: string;
+    /** When provided, renders Pagination inside the card below the table */
+    pagination?: PaginationConfig;
+    /** Shows a centered spinner in the table body while data is loading */
+    isLoading?: boolean;
 }
 
 interface TableListingCardProps {
@@ -25,21 +48,25 @@ interface TableListingCardProps {
 
 export function TableListingCard({ sections, className = "" }: TableListingCardProps) {
     return (
-        <div className={`mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 ${className}`}>
+        <div className={`mb-4 w-full rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 ${className}`}>
             {sections.map((section, index) => (
                 <div key={section.id} className={index === sections.length - 1 ? "" : "mb-4"}>
-                    <div className="flex items-center justify-between gap-2 cursor-pointer">
-                        <div className="flex items-center gap-2">
-                            <h2 className="font-inter font-medium text-base leading-[120%] text-[#262D3B]">{section.title}</h2>
-                        </div>
-                        {section.titleRightContent}
-                    </div>
+                    {(() => {
+                        const leftContent = section.title
+                            ? <h2 className="font-inter font-medium text-base leading-[120%] text-[#262D3B]">{section.title}</h2>
+                            : section.leftSideContent ?? null;
+                        const hasLeft = leftContent !== null;
+                        const hasRight = !!section.titleRightContent;
+                        if (!hasLeft && !hasRight) return null;
+                        return (
+                            <div className={`flex items-center gap-2 pb-6 ${hasLeft && hasRight ? "justify-between" : hasRight ? "justify-end" : "justify-start"}`}>
+                                {hasLeft && <div className="flex items-center gap-2">{leftContent}</div>}
+                                {hasRight && section.titleRightContent}
+                            </div>
+                        );
+                    })()}
 
                         <div style={{ overflow: "visible" }}>
-                            <div className="mb-6 flex items-center justify-between" style={{ overflow: "visible" }}>
-                                <h2 className="text-lg font-semibold text-[#434956]" />
-                            </div>
-
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-white">
@@ -54,6 +81,10 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                                             ? "last"
                                                             : "middle")
                                                 }
+                                                sortable={column.sortable}
+                                                sortDirection={column.sortDirection}
+                                                onSort={column.onSort}
+                                                className={column.className}
                                             >
                                                 {column.label}
                                             </TableHead>
@@ -61,7 +92,18 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {section.rows.length === 0 && section.emptyMessage ? (
+                                    {section.isLoading ? (
+                                        <TableRow>
+                                            <TableData
+                                                colSpan={section.columns.length}
+                                                className="h-auto min-h-[120px] border-b-0 py-12 align-middle"
+                                            >
+                                                <div className="flex items-center justify-center">
+                                                    <SpinnerLoader size={28} />
+                                                </div>
+                                            </TableData>
+                                        </TableRow>
+                                    ) : section.rows.length === 0 && section.emptyMessage ? (
                                         <TableRow>
                                             <TableData
                                                 colSpan={section.columns.length}
@@ -86,6 +128,16 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                 </TableBody>
                             </Table>
                         </div>
+                    {section.pagination && (section.rows.length > 0 || section.isLoading) && (
+                        <Pagination
+                            currentPage={section.pagination.currentPage}
+                            totalItems={section.pagination.totalItems}
+                            itemsPerPage={section.pagination.itemsPerPage}
+                            onPageChange={section.pagination.onPageChange}
+                            onItemsPerPageChange={section.pagination.onItemsPerPageChange}
+                            itemsPerPageOptions={section.pagination.itemsPerPageOptions}
+                        />
+                    )}
                 </div>
             ))}
         </div>

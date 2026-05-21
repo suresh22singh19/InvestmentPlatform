@@ -29,7 +29,7 @@ export interface RoleAccessPayload {
 }
 
 export interface RolePermissionPayload {
-    moduleId: number;
+    subModuleId: number;
     canDownload: boolean;
     canView: boolean;
     canAdd: boolean;
@@ -98,7 +98,7 @@ export interface RoleModuleNested {
 export interface RolePermissionDetail {
     id: string;
     roleId: string;
-    moduleId: string;
+    subModuleId: string;
     canDownload?: boolean;
     canView: boolean;
     canAdd: boolean;

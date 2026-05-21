@@ -283,7 +283,7 @@ function permissionsFromRoleDetail(
 ): Record<string, PermCell[]> {
     const permByMod = new Map(
         detail.permissions.map((p) => [
-            String(p.moduleId),
+            String(p.subModuleId),
             {
                 download: Boolean(p.canDownload),
                 view: Boolean(p.canView),
@@ -329,10 +329,10 @@ function snapshotFromRoleDetail(
         scope:
             group === "corporate"
                 ? {
-                      dataScope: detail.mainScope || "—",
-                      zone: String(zoneFromAccess),
-                      regions: regionNames.length ? regionNames.join(", ") : "—",
-                  }
+                    dataScope: detail.mainScope || "—",
+                    zone: String(zoneFromAccess),
+                    regions: regionNames.length ? regionNames.join(", ") : "—",
+                }
                 : undefined,
         permissions: permState,
         permissionSections: sections,
@@ -368,7 +368,7 @@ function buildPermissionsPayload(
             const idNum = Number(ids[i]);
             if (Number.isNaN(idNum)) continue;
             out.push({
-                moduleId: idNum,
+                subModuleId: idNum,
                 canDownload: cells[i].download,
                 canView: cells[i].view,
                 canAdd: cells[i].add,
@@ -472,17 +472,18 @@ type ManagePermissionsSnapshot = {
     permissions: Record<string, PermCell[]>;
     /** Module/sub-module rows for read-only matrix (from GET getListOfmodules for this role’s branch). */
     permissionSections: PermSectionDef[];
+    moduleIdsBySection?: Record<string, string[]>;
+    roleSubModuleIds?: string[];
 };
 
 function ReadOnlyPermBox({ allowed }: { allowed: boolean }) {
     return (
         <span
             aria-hidden
-            className={`inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded border align-middle ${
-                allowed
-                    ? "border-[#0B8C00] bg-[rgba(11,140,0,0.1)]"
-                    : "border-[#DFE0E2] bg-white"
-            }`}
+            className={`inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded border align-middle ${allowed
+                ? "border-[#0B8C00] bg-[rgba(11,140,0,0.1)]"
+                : "border-[#DFE0E2] bg-white"
+                }`}
         >
             {allowed ? (
                 <svg
@@ -523,11 +524,10 @@ function AlignedCheckbox({
         <label
             htmlFor={id}
             aria-disabled={disabled}
-            className={`inline-flex select-none items-center gap-2 align-middle ${
-                disabled
-                    ? "cursor-not-allowed opacity-55"
-                    : "cursor-pointer"
-            } ${className}`}
+            className={`inline-flex select-none items-center gap-2 align-middle ${disabled
+                ? "cursor-not-allowed opacity-55"
+                : "cursor-pointer"
+                } ${className}`}
         >
             <span className="relative inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center">
                 <input
@@ -538,21 +538,19 @@ function AlignedCheckbox({
                     onChange={() => {
                         if (!disabled) onChange();
                     }}
-                    className={`absolute inset-0 z-[1] m-0 h-[14px] w-[14px] opacity-0 ${
-                        disabled ? "cursor-not-allowed" : "cursor-pointer"
-                    }`}
+                    className={`absolute inset-0 z-[1] m-0 h-[14px] w-[14px] opacity-0 ${disabled ? "cursor-not-allowed" : "cursor-pointer"
+                        }`}
                 />
                 <span
                     aria-hidden
-                    className={`pointer-events-none flex h-[14px] w-[14px] items-center justify-center rounded border transition-colors ${
-                        disabled
-                            ? checked
-                                ? "border-[#0B8C00]/40 bg-[rgba(11,140,0,0.06)]"
-                                : "border-[#DFE0E2] bg-[#F8F9FA]"
-                            : checked
-                              ? "border-[#0B8C00] bg-[rgba(11,140,0,0.1)]"
-                              : "border-[#DFE0E2] bg-white"
-                    }`}
+                    className={`pointer-events-none flex h-[14px] w-[14px] items-center justify-center rounded border transition-colors ${disabled
+                        ? checked
+                            ? "border-[#0B8C00]/40 bg-[rgba(11,140,0,0.06)]"
+                            : "border-[#DFE0E2] bg-[#F8F9FA]"
+                        : checked
+                            ? "border-[#0B8C00] bg-[rgba(11,140,0,0.1)]"
+                            : "border-[#DFE0E2] bg-white"
+                        }`}
                 >
                     {checked ? (
                         <svg
@@ -680,8 +678,8 @@ export default function RoleMasterPage() {
             ...(roleListSearchDebounced ? { search: roleListSearchDebounced } : {}),
             ...(roleListRoleCatType ? { roleCatType: roleListRoleCatType } : {}),
             ...(roleListRoleCatType === "facility" &&
-            getRoleListQueryBranchId != null &&
-            getRoleListQueryBranchId > 0
+                getRoleListQueryBranchId != null &&
+                getRoleListQueryBranchId > 0
                 ? { branchId: getRoleListQueryBranchId }
                 : {}),
         }),
@@ -755,7 +753,7 @@ export default function RoleMasterPage() {
     const [roleDescription, setRoleDescription] = useState("");
 
     /** Inline field-level errors for the "Define Role Name" step. */
-    const [defineErrors, setDefineErrors] = useState({ roleName: "", branch: "" });
+    const [defineErrors, setDefineErrors] = useState({ roleName: "", branch: "", modules: "" });
 
     /** Autocomplete for define-step role name field (all presets) */
     const [roleDropdownItems, setRoleDropdownItems] = useState<RoleDropdownItem[]>([]);
@@ -889,6 +887,7 @@ export default function RoleMasterPage() {
 
     /** Facility Role create/edit: single branch for scope + branch-scoped module list. */
     const [facilitySelectedBranchId, setFacilitySelectedBranchId] = useState("");
+    const [facilitySelectedModuleIds, setFacilitySelectedModuleIds] = useState<string[]>([]);
 
     const [dataScope, setDataScope] = useState<DataScopeLevel | null>(null);
     const [corporateFacilityTypes, setCorporateFacilityTypes] = useState({
@@ -924,10 +923,14 @@ export default function RoleMasterPage() {
 
     const branchSelectOptions = useMemo(() => {
         if (!branchesEnvelope?.success || !Array.isArray(branchesEnvelope.data)) return [];
-        return branchesEnvelope.data.map((b) => ({
-            label: `${b.name} (${b.branchCode})`,
-            value: String(b.id),
-        }));
+        return branchesEnvelope.data.map((b) => {
+            const typeLabel = b.type ? b.type.charAt(0).toUpperCase() + b.type.slice(1).toLowerCase() : "";
+            const suffix = typeLabel ? ` (${typeLabel})` : "";
+            return {
+                label: `${b.name}${suffix}`,
+                value: String(b.id),
+            };
+        });
     }, [branchesEnvelope]);
 
     const facilityBranchIdNumeric = useMemo(() => {
@@ -935,16 +938,15 @@ export default function RoleMasterPage() {
         return Number.isFinite(n) && n > 0 ? n : undefined;
     }, [facilitySelectedBranchId]);
 
-    /** Wizard Facility “Assign Permissions” step uses the selected facility branch for the module list. */
-    const isWizardFacilityPermissionsStep = Boolean(
+    /** Wizard Facility step uses the selected facility branch for the module list. */
+    const isWizardFacilityOpen = Boolean(
         isRoleWizardOpen &&
-            selectedGroup === "facility" &&
-            (wizardMode === "create" ? phaseStep === 3 : phaseStep === 2)
+        selectedGroup === "facility"
     );
 
     /** Always scope GET getListOfmodules with a branchId (required for nested subModules). */
     const resolvedModulesBranchId = useMemo((): number | undefined => {
-        if (isWizardFacilityPermissionsStep && facilityBranchIdNumeric != null) {
+        if (isWizardFacilityOpen && facilityBranchIdNumeric != null) {
             return facilityBranchIdNumeric;
         }
         if (filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId > 0) {
@@ -957,7 +959,7 @@ export default function RoleMasterPage() {
         const first = branchesEnvelope?.data?.[0]?.id;
         return first != null && Number(first) > 0 ? Number(first) : undefined;
     }, [
-        isWizardFacilityPermissionsStep,
+        isWizardFacilityOpen,
         facilityBranchIdNumeric,
         filterBranchId,
         headerSelectedBranch?.id,
@@ -1000,6 +1002,13 @@ export default function RoleMasterPage() {
         return { permissionSections: [] as PermSectionDef[], moduleIdsBySection: {} as Record<string, string[]> };
     }, [modulesEnvelope]);
 
+    const facilityModuleOptions = useMemo(() => {
+        return permissionSections.map((sec) => ({
+            label: sec.title,
+            value: sec.id,
+        }));
+    }, [permissionSections]);
+
     const [hospitalStateOptions, setHospitalStateOptions] = useState<StateByZoneItem[]>([]);
     const [clinicStateOptions, setClinicStateOptions] = useState<StateByZoneItem[]>([]);
 
@@ -1027,11 +1036,12 @@ export default function RoleMasterPage() {
 
     const permissionSectionKeyRef = useRef("");
     const managePermissionsBusyRef = useRef(false);
-    const editingRoleDetailRef = useRef<RoleByIdData | null>(null);
+    const [editingRoleDetail, setEditingRoleDetail] = useState<RoleByIdData | null>(null);
     const facilityEditPermHydrateKeyRef = useRef("");
     const facilityPermCatalogKeyRef = useRef("");
     const corporatePermCatalogKeyRef = useRef("");
     const corporateEditPermHydrateKeyRef = useRef("");
+    const facilitySelectedModulesHydrateKeyRef = useRef("");
 
     useEffect(() => {
         const key = permissionSections.map((s) => s.id).join("|");
@@ -1045,7 +1055,7 @@ export default function RoleMasterPage() {
     /** Facility permissions matrix: when the module catalog changes (e.g. branch-scoped list loads), reset cells. */
     useEffect(() => {
         if (!isRoleWizardOpen || selectedGroup !== "facility") return;
-        const permStep = wizardMode === "create" ? 3 : 2;
+        const permStep = wizardMode === "create" ? 4 : 3;
         if (phaseStep !== permStep) return;
         const key = permissionSections.map((s) => s.id).join("|");
         if (key === facilityPermCatalogKeyRef.current) return;
@@ -1083,9 +1093,9 @@ export default function RoleMasterPage() {
     /** Edit Facility: after branch-scoped catalog matches, hydrate checkboxes from GET role by id. */
     useEffect(() => {
         if (!isRoleWizardOpen || wizardMode !== "edit" || selectedGroup !== "facility") return;
-        const permStep = 2;
+        const permStep = 3;
         if (phaseStep !== permStep || modulesLoading) return;
-        const d = editingRoleDetailRef.current;
+        const d = editingRoleDetail;
         if (!d || editingRoleId == null || d.id !== editingRoleId) return;
         const k = `${d.id}|${permissionSections.map((s) => s.id).join("|")}`;
         if (facilityEditPermHydrateKeyRef.current === k) return;
@@ -1100,6 +1110,38 @@ export default function RoleMasterPage() {
         permissionSections,
         moduleIdsBySection,
         editingRoleId,
+        editingRoleDetail,
+    ]);
+
+    /** Edit Facility Modules: hydrate multiselect dropdown choices from GET role by id. */
+    useEffect(() => {
+        if (!isRoleWizardOpen || wizardMode !== "edit" || selectedGroup !== "facility") return;
+        if (modulesLoading) return;
+        const d = editingRoleDetail;
+        if (!d || editingRoleId == null || d.id !== editingRoleId) return;
+        const k = `${d.id}|${permissionSections.map((s) => s.id).join("|")}`;
+        if (facilitySelectedModulesHydrateKeyRef.current === k) return;
+        facilitySelectedModulesHydrateKeyRef.current = k;
+
+        const activeSubModuleIds = new Set(d.permissions.map((p) => String(p.subModuleId)));
+        const preselectedModuleIds: string[] = [];
+        for (const sec of permissionSections) {
+            const subs = moduleIdsBySection[sec.id] ?? [];
+            const hasAnyPermission = subs.some((mid) => activeSubModuleIds.has(mid));
+            if (hasAnyPermission) {
+                preselectedModuleIds.push(sec.id);
+            }
+        }
+        setFacilitySelectedModuleIds(preselectedModuleIds);
+    }, [
+        isRoleWizardOpen,
+        wizardMode,
+        selectedGroup,
+        modulesLoading,
+        permissionSections,
+        moduleIdsBySection,
+        editingRoleId,
+        editingRoleDetail,
     ]);
 
     /** Edit Corporate: after module catalog matches, hydrate checkboxes from GET role by id. */
@@ -1107,7 +1149,7 @@ export default function RoleMasterPage() {
         if (!isRoleWizardOpen || wizardMode !== "edit" || selectedGroup !== "corporate") return;
         const permStep = 4;
         if (phaseStep !== permStep || modulesLoading) return;
-        const d = editingRoleDetailRef.current;
+        const d = editingRoleDetail;
         if (!d || editingRoleId == null || d.id !== editingRoleId) return;
         const k = `${d.id}|${permissionSections.map((s) => s.id).join("|")}`;
         if (corporateEditPermHydrateKeyRef.current === k) return;
@@ -1123,6 +1165,7 @@ export default function RoleMasterPage() {
         permissionSections,
         moduleIdsBySection,
         editingRoleId,
+        editingRoleDetail,
     ]);
 
     useEffect(() => {
@@ -1195,8 +1238,8 @@ export default function RoleMasterPage() {
                 )
             ).sort((a, b) => a.localeCompare(b))
             : hospitalStateOptions.length > 0
-              ? hospitalStateOptions.map((s) => s.name)
-              : [...REGIONS];
+                ? hospitalStateOptions.map((s) => s.name)
+                : [...REGIONS];
     const clinicRegionSource: string[] =
         dataScope === "Regional"
             ? Array.from(
@@ -1207,8 +1250,8 @@ export default function RoleMasterPage() {
                 )
             ).sort((a, b) => a.localeCompare(b))
             : clinicStateOptions.length > 0
-              ? clinicStateOptions.map((s) => s.name)
-              : [...REGIONS];
+                ? clinicStateOptions.map((s) => s.name)
+                : [...REGIONS];
 
     const openDataScopeViewAllDialog = (items: string[]) => {
         setDataScopeDialogItems(items);
@@ -1225,9 +1268,11 @@ export default function RoleMasterPage() {
     const resetForm = useCallback(() => {
         setRoleName("");
         setRoleNameOption("Doctor");
-        setDefineErrors({ roleName: "", branch: "" });
+        setDefineErrors({ roleName: "", branch: "", modules: "" });
         setRoleDescription("");
-        setFacilitySelectedBranchId("");
+        setFacilitySelectedBranchId(
+            !isRoleListSuperAdmin && selectedBranchFilter ? selectedBranchFilter : ""
+        );
         setDataScope(null);
         setCorporateFacilityTypes({ hospital: false, clinic: false });
         setHospitalZones([]);
@@ -1241,7 +1286,8 @@ export default function RoleMasterPage() {
         setExpandedPermSections(initExpandedForSections(permissionSections));
         setEditingRoleId(null);
         setEditingIsActive(true);
-    }, [permissionSections]);
+        setFacilitySelectedModuleIds([]);
+    }, [permissionSections, isRoleListSuperAdmin, selectedBranchFilter]);
 
     const selectCorporateDataScope = useCallback((id: DataScopeLevel) => {
         setDataScope(id);
@@ -1257,11 +1303,12 @@ export default function RoleMasterPage() {
     }, []);
 
     const closeWizard = useCallback(() => {
-        editingRoleDetailRef.current = null;
+        setEditingRoleDetail(null);
         facilityEditPermHydrateKeyRef.current = "";
         facilityPermCatalogKeyRef.current = "";
         corporatePermCatalogKeyRef.current = "";
         corporateEditPermHydrateKeyRef.current = "";
+        facilitySelectedModulesHydrateKeyRef.current = "";
         setIsRoleWizardOpen(false);
         setWizardMode("create");
         setSelectedGroup(null);
@@ -1271,11 +1318,12 @@ export default function RoleMasterPage() {
 
     const openCreateRole = () => {
         if (!canAdd || !canView) return;
-        editingRoleDetailRef.current = null;
+        setEditingRoleDetail(null);
         facilityEditPermHydrateKeyRef.current = "";
         facilityPermCatalogKeyRef.current = "";
         corporatePermCatalogKeyRef.current = "";
         corporateEditPermHydrateKeyRef.current = "";
+        facilitySelectedModulesHydrateKeyRef.current = "";
         setWizardMode("create");
         setEditingRoleId(null);
         setEditingIsActive(true);
@@ -1389,7 +1437,11 @@ export default function RoleMasterPage() {
             }
             const perms = permissionsFromRoleDetail(d, built.sections, built.moduleIdsBySection);
             setManageSectionOpen(initExpandedForSections(built.sections));
-            setManageView(snapshotFromRoleDetail(d, perms, built.sections));
+            setManageView({
+                ...snapshotFromRoleDetail(d, perms, built.sections),
+                moduleIdsBySection: built.moduleIdsBySection,
+                roleSubModuleIds: d.permissions.map((p) => String(p.subModuleId)),
+            });
         } catch (e: unknown) {
             showMessage("error", loadPermissionFlowErrorMessage(e, "Could not load role permissions."));
         } finally {
@@ -1400,6 +1452,12 @@ export default function RoleMasterPage() {
 
     const openEditRole = async (roleId: number) => {
         if (!canEdit || !canView) return;
+        setEditingRoleDetail(null);
+        facilityEditPermHydrateKeyRef.current = "";
+        facilityPermCatalogKeyRef.current = "";
+        corporatePermCatalogKeyRef.current = "";
+        corporateEditPermHydrateKeyRef.current = "";
+        facilitySelectedModulesHydrateKeyRef.current = "";
         setWizardMode("edit");
         setEditingRoleId(roleId);
         setIsRoleWizardOpen(true);
@@ -1417,9 +1475,9 @@ export default function RoleMasterPage() {
             setRoleName(d.name);
             const presetMatch: "Doctor" | "Nurse" | "Therapist" | "Other" =
                 cat === "facility_doctor" ? "Doctor"
-                : cat === "facility_nurse" ? "Nurse"
-                : cat === "facility_therapist" ? "Therapist"
-                : "Other";
+                    : cat === "facility_nurse" ? "Nurse"
+                        : cat === "facility_therapist" ? "Therapist"
+                            : "Other";
             setRoleNameOption(presetMatch);
             setRoleDescription((d as any).roleDescription || "");
             const rawScope = (d.mainScope || "Zonal").trim();
@@ -1464,7 +1522,7 @@ export default function RoleMasterPage() {
                 setHospitalRegions([]);
                 setClinicZones([]);
                 setClinicRegions([]);
-                editingRoleDetailRef.current = d;
+                setEditingRoleDetail(d);
                 facilityEditPermHydrateKeyRef.current = "";
                 facilityPermCatalogKeyRef.current = "";
             } else {
@@ -1488,12 +1546,12 @@ export default function RoleMasterPage() {
                 setClinicZones(zones.length ? zones : []);
                 setClinicRegions(regions.length ? regions : []);
                 setFacilitySelectedBranchId("");
-                editingRoleDetailRef.current = d;
+                setEditingRoleDetail(d);
                 corporateEditPermHydrateKeyRef.current = "";
                 corporatePermCatalogKeyRef.current = "";
             }
             if (grp === "corporate") {
-                editingRoleDetailRef.current = d;
+                setEditingRoleDetail(d);
                 const detailPerms = permissionsFromRoleDetail(
                     d,
                     permissionSections,
@@ -1521,11 +1579,13 @@ export default function RoleMasterPage() {
     const defineStepNumber = wizardMode === "create" ? 2 : 1;
     const chooseScopeStepNumber = wizardMode === "create" ? 3 : 2;
     const configureScopeStepNumber = wizardMode === "create" ? 4 : 3;
-    const permissionsStepNumber = wizardMode === "create" ? (activeGroup === "facility" ? 3 : 5) : activeGroup === "facility" ? 2 : 4;
+    const facilitySelectModulesStepNumber = wizardMode === "create" ? 3 : 2;
+    const permissionsStepNumber = wizardMode === "create" ? (activeGroup === "facility" ? 4 : 5) : activeGroup === "facility" ? 3 : 4;
 
     const isDefineStep = activeGroup && phaseStep === defineStepNumber;
     const isChooseScopeStep = activeGroup === "corporate" && phaseStep === chooseScopeStepNumber;
     const isConfigureScopeStep = activeGroup === "corporate" && phaseStep === configureScopeStepNumber;
+    const isFacilitySelectModulesStep = activeGroup === "facility" && phaseStep === facilitySelectModulesStepNumber;
     const isPermissionsStep = activeGroup && phaseStep === permissionsStepNumber;
 
     const isCorporatePermMatrix = activeGroup === "corporate" && Boolean(isPermissionsStep);
@@ -1565,7 +1625,7 @@ export default function RoleMasterPage() {
     const stepperLabels = useMemo(() => {
         if (!activeGroup) return [];
         if (activeGroup === "facility") {
-            return ["Create the Role", "Assign Permissions"];
+            return ["Create the Role", "Select Modules", "Assign Permissions"];
         }
         return ["Define Role Name", "Choose Data Scope", "Configure Scope", "Assign Permissions"];
     }, [activeGroup]);
@@ -1573,8 +1633,9 @@ export default function RoleMasterPage() {
     const facilityStepperIndex = useMemo(() => {
         if (!activeGroup || activeGroup !== "facility") return 0;
         if (phaseStep <= defineStepNumber) return 0;
-        return 1;
-    }, [activeGroup, phaseStep, defineStepNumber]);
+        if (phaseStep === facilitySelectModulesStepNumber) return 1;
+        return 2;
+    }, [activeGroup, phaseStep, defineStepNumber, facilitySelectModulesStepNumber]);
 
     const corporateStepperIndex = useMemo(() => {
         if (!activeGroup || activeGroup !== "corporate") return 0;
@@ -1620,7 +1681,7 @@ export default function RoleMasterPage() {
     };
 
     const validateDefineFacility = () => {
-        const errors = { roleName: "", branch: "" };
+        const errors = { roleName: "", branch: "", modules: "" };
         if (!roleName.trim()) {
             errors.roleName = "Please enter role name.";
         }
@@ -1629,10 +1690,23 @@ export default function RoleMasterPage() {
             errors.branch = "Please select a branch.";
         }
         if (errors.roleName || errors.branch) {
-            setDefineErrors(errors);
+            setDefineErrors((prev) => ({ ...prev, roleName: errors.roleName, branch: errors.branch }));
             return false;
         }
-        setDefineErrors({ roleName: "", branch: "" });
+        setDefineErrors((prev) => ({ ...prev, roleName: "", branch: "" }));
+        return true;
+    };
+
+    const validateSelectModulesFacility = () => {
+        const errors = { roleName: "", branch: "", modules: "" };
+        if (facilitySelectedModuleIds.length === 0) {
+            errors.modules = "Please select at least one module.";
+        }
+        if (errors.modules) {
+            setDefineErrors((prev) => ({ ...prev, modules: errors.modules }));
+            return false;
+        }
+        setDefineErrors((prev) => ({ ...prev, modules: "" }));
         return true;
     };
 
@@ -1641,7 +1715,7 @@ export default function RoleMasterPage() {
             setDefineErrors((prev) => ({ ...prev, roleName: "Please enter role name." }));
             return false;
         }
-        setDefineErrors({ roleName: "", branch: "" });
+        setDefineErrors({ roleName: "", branch: "", modules: "" });
         return true;
     };
 
@@ -1719,6 +1793,12 @@ export default function RoleMasterPage() {
             return;
         }
 
+        if (activeGroup === "facility" && isFacilitySelectModulesStep) {
+            if (!validateSelectModulesFacility()) return;
+            setPhaseStep(phaseStep + 1);
+            return;
+        }
+
         if (activeGroup === "corporate" && isDefineStep) {
             if (!validateDefineCorporate()) return;
             setPhaseStep(phaseStep + 1);
@@ -1760,6 +1840,21 @@ export default function RoleMasterPage() {
                 canDelete: false,
             }));
         }
+        if (selectedGroup === "facility") {
+            const selectedSet = new Set(facilitySelectedModuleIds);
+            permsPayload = permsPayload.filter((p) => {
+                let isSelected = false;
+                for (const [secId, subIds] of Object.entries(moduleIdsBySection)) {
+                    if (subIds.includes(String(p.subModuleId))) {
+                        if (selectedSet.has(secId)) {
+                            isSelected = true;
+                        }
+                        break;
+                    }
+                }
+                return isSelected;
+            });
+        }
         if (permsPayload.length === 0) {
             showMessage(
                 "error",
@@ -1785,21 +1880,21 @@ export default function RoleMasterPage() {
             const facilityBranchForAccess =
                 selectedGroup === "facility"
                     ? (() => {
-                          const n = Number.parseInt(facilitySelectedBranchId.trim(), 10);
-                          return Number.isFinite(n) && n > 0 ? n : null;
-                      })()
+                        const n = Number.parseInt(facilitySelectedBranchId.trim(), 10);
+                        return Number.isFinite(n) && n > 0 ? n : null;
+                    })()
                     : null;
             if (wizardMode === "create") {
                 const createRoleCategoryType =
                     selectedGroup === "corporate"
                         ? "CORPORATE"
                         : roleNameOption === "Doctor"
-                          ? "facility_doctor"
-                          : roleNameOption === "Nurse"
-                            ? "facility_nurse"
-                            : roleNameOption === "Therapist"
-                              ? "facility_therapist"
-                              : "FACILITY";
+                            ? "facility_doctor"
+                            : roleNameOption === "Nurse"
+                                ? "facility_nurse"
+                                : roleNameOption === "Therapist"
+                                    ? "facility_therapist"
+                                    : "FACILITY";
 
                 await createRoles({
                     name: roleName.trim(),
@@ -2012,20 +2107,21 @@ export default function RoleMasterPage() {
     };
 
     const renderStepperFacility = () => (
-        <div className="grid grid-cols-2 gap-2">
+        <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${stepperLabels.length}, minmax(0, 1fr))` }}
+        >
             {stepperLabels.map((label, i) => (
                 <div key={label} className="flex-1">
                     <p
-                        className={`mb-2 text-[12px] leading-[18px] ${
-                            i <= facilityStepperIndex ? "font-medium text-[#313131]" : "text-[#313131]"
-                        }`}
+                        className={`mb-2 text-[12px] leading-[18px] ${i <= facilityStepperIndex ? "font-medium text-[#313131]" : "text-[#313131]"
+                            }`}
                     >
                         {label}
                     </p>
                     <div
-                        className={`h-2 rounded-full ${
-                            i <= facilityStepperIndex ? "bg-[#0B8C00]" : "bg-[#EBEBEB]"
-                        }`}
+                        className={`h-2 rounded-full ${i <= facilityStepperIndex ? "bg-[#0B8C00]" : "bg-[#EBEBEB]"
+                            }`}
                     />
                 </div>
             ))}
@@ -2037,16 +2133,14 @@ export default function RoleMasterPage() {
             {stepperLabels.map((label, i) => (
                 <div key={label} className="flex-1">
                     <p
-                        className={`mb-2 text-[12px] leading-[18px] ${
-                            i <= corporateStepperIndex ? "font-medium text-[#313131]" : "text-[#313131]"
-                        }`}
+                        className={`mb-2 text-[12px] leading-[18px] ${i <= corporateStepperIndex ? "font-medium text-[#313131]" : "text-[#313131]"
+                            }`}
                     >
                         {label}
                     </p>
                     <div
-                        className={`h-2 rounded-full ${
-                            i <= corporateStepperIndex ? "bg-[#0B8C00]" : "bg-[#EBEBEB]"
-                        }`}
+                        className={`h-2 rounded-full ${i <= corporateStepperIndex ? "bg-[#0B8C00]" : "bg-[#EBEBEB]"
+                            }`}
                     />
                 </div>
             ))}
@@ -2161,8 +2255,8 @@ export default function RoleMasterPage() {
         wizardMode === "edit"
             ? "Edit Role"
             : phaseStep === 1 && wizardMode === "create"
-              ? "Create Roles Master"
-              : "Create Role";
+                ? "Create Roles Master"
+                : "Create Role";
 
     const nextArrow = (
         <svg width={20} fill="white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640">
@@ -2208,89 +2302,89 @@ export default function RoleMasterPage() {
                     </div>
                     <ListBorder as="section" className="px-4 py-4">
                         {!canView ? (
-                        <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
-                            You don&apos;t have permission to view role master.
-                        </div>
+                            <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                                You don&apos;t have permission to view role master.
+                            </div>
                         ) : (
-                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-                            <div className="mb-6 flex items-center justify-between">
-                                <h2 className="text-lg font-semibold text-[#434956]"></h2>
+                            <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+                                <div className="mb-6 flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
-                                <div className="flex items-center gap-3">
-                                <div className="flex-shrink-0" style={{ width: "300px" }}>
-                                        <FormSelectField
-                                            label=""
-                                            hideLabel
-                                            options={[
-                                                // { label: "None", value: "" },
-                                                { label: "Facility", value: "facility" },
-                                                { label: "Corporate", value: "corporate" },
-                                            ]}
-                                            placeholder="Select Group Role"
-                                            mode="single"
-                                            background="normal"
-                                            width={300}
-                                            value={roleListRoleCatType ?? "none"}
-                                            onChange={(val) => {
-                                                const v = typeof val === "string" ? val : "";
-                                                if (v === "facility" || v === "corporate") {
-                                                    setRoleListRoleCatType(v);
-                                                } else {
-                                                    setRoleListRoleCatType(null);
-                                                }
-                                            }}
-                                        />
-                                    </div>
-                                    {roleListRoleCatType === "facility" ? (
+                                    <div className="flex items-center gap-3">
                                         <div className="flex-shrink-0" style={{ width: "300px" }}>
                                             <FormSelectField
                                                 label=""
                                                 hideLabel
-                                                options={branchFilterOptions.filter((option) => option.label !== "All Branches")}
-                                                value={selectedBranchFilter}
-                                                onChange={(value) => {
-                                                    setSelectedBranchFilter(
-                                                        Array.isArray(value) ? value[0] ?? "" : value || ""
-                                                    );
-                                                    setListPage(1);
-                                                }}
-                                                placeholder={
-                                                    isLoadingBranchFilter ? "Loading branches…" : "Select branch"
-                                                }
+                                                options={[
+                                                    // { label: "None", value: "" },
+                                                    { label: "Facility", value: "facility" },
+                                                    { label: "Corporate", value: "corporate" },
+                                                ]}
+                                                placeholder="Select Group Role"
                                                 mode="single"
                                                 background="normal"
                                                 width={300}
-                                                disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                                value={roleListRoleCatType ?? "none"}
+                                                onChange={(val) => {
+                                                    const v = typeof val === "string" ? val : "";
+                                                    if (v === "facility" || v === "corporate") {
+                                                        setRoleListRoleCatType(v);
+                                                    } else {
+                                                        setRoleListRoleCatType(null);
+                                                    }
+                                                }}
                                             />
                                         </div>
-                                    ) : null}
-                                    
-                                    <div className="flex-shrink-0" style={{ width: "300px" }}>
-                                        <TableSearchInput
-                                            value={roleListSearchInput}
-                                            placeholder="Search Here..."
-                                            onChange={setRoleListSearchInput}
-                                            isLoading={rolesFetching && !rolesLoading}
-                                        />
-                                    </div>
-                                    {canAdd ? (
-                                    <button
-                                        type="button"
-                                        onClick={openCreateRole}
-                                        className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
-                                    >
-                                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
-                                        <span className="text-hide">Create Role</span>
-                                    </button>
-                                    ) : null}
-                                </div>
-                            </div>
+                                        {roleListRoleCatType === "facility" ? (
+                                            <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                                <FormSelectField
+                                                    label=""
+                                                    hideLabel
+                                                    options={branchFilterOptions.filter((option) => option.label !== "All Branches")}
+                                                    value={selectedBranchFilter}
+                                                    onChange={(value) => {
+                                                        setSelectedBranchFilter(
+                                                            Array.isArray(value) ? value[0] ?? "" : value || ""
+                                                        );
+                                                        setListPage(1);
+                                                    }}
+                                                    placeholder={
+                                                        isLoadingBranchFilter ? "Loading branches…" : "Select branch"
+                                                    }
+                                                    mode="single"
+                                                    background="normal"
+                                                    width={300}
+                                                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                                />
+                                            </div>
+                                        ) : null}
 
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="bg-white">
-                                        <TableHead position="first">Sr no.</TableHead>
-                                        <TableHead
+                                        <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                            <TableSearchInput
+                                                value={roleListSearchInput}
+                                                placeholder="Search Here..."
+                                                onChange={setRoleListSearchInput}
+                                                isLoading={rolesFetching && !rolesLoading}
+                                            />
+                                        </div>
+                                        {canAdd ? (
+                                            <button
+                                                type="button"
+                                                onClick={openCreateRole}
+                                                className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                                            >
+                                                <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
+                                                <span className="text-hide">Create Role</span>
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                </div>
+
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-white">
+                                            <TableHead position="first">Sr no.</TableHead>
+                                            <TableHead
                                             // sortable
                                             // sortDirection={
                                             //     rolesListSort.field === "rolename"
@@ -2298,10 +2392,10 @@ export default function RoleMasterPage() {
                                             //         : null
                                             // }
                                             // onSort={() => setRolesListSortByColumn("rolename")}
-                                        >
-                                            Role Name
-                                        </TableHead>
-                                        <TableHead
+                                            >
+                                                Role Name
+                                            </TableHead>
+                                            <TableHead
                                             // sortable
                                             // sortDirection={
                                             //     rolesListSort.field === "roleGroup"
@@ -2309,10 +2403,10 @@ export default function RoleMasterPage() {
                                             //         : null
                                             // }
                                             // onSort={() => setRolesListSortByColumn("roleGroup")}
-                                        >
-                                            Role Group
-                                        </TableHead>
-                                        <TableHead
+                                            >
+                                                Role Group
+                                            </TableHead>
+                                            <TableHead
                                             // sortable
                                             // sortDirection={
                                             //     rolesListSort.field === "zonal"
@@ -2320,142 +2414,140 @@ export default function RoleMasterPage() {
                                             //         : null
                                             // }
                                             // onSort={() => setRolesListSortByColumn("zonal")}
-                                        >
-                                            Data Scope
-                                        </TableHead>
-                                        <TableHead>Permissions</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead position="last">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {rolesLoading ? (
-                                        <TableRow>
-                                            <TableData colSpan={7}>
-                                                <span className="text-sm text-[#525763]">Loading roles…</span>
-                                            </TableData>
+                                            >
+                                                Data Scope
+                                            </TableHead>
+                                            <TableHead>Permissions</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead position="last">Action</TableHead>
                                         </TableRow>
-                                    ) : roles.length === 0 ? (
-                                        <TableRow>
-                                            <TableData colSpan={7}>
-                                                <span className="text-sm text-[#525763]">No roles found.</span>
-                                            </TableData>
-                                        </TableRow>
-                                    ) : (
-                                        roles.map((row, idx) => {
-                                            const scopeItems = row.roleScopeTypes ?? [];
-                                            const preview = scopeItems.slice(0, 4);
-                                            const rest = Math.max(0, scopeItems.length - preview.length);
-                                            const groupLabel = formatRoleGroupColumnLabel(row.roleCategoryType);
-                                            const superAdminLocked = isSuperAdminRoleRow(row);
-                                            const doctorLocked = isDoctorRoleRow(row);
-                                            const roleActionsLocked = superAdminLocked || doctorLocked;
-                                            const managePermissionsTitle = superAdminLocked
-                                                ? "Super Admin roles cannot be managed here"
-                                                : doctorLocked
-                                                  ? "Doctor roles cannot be managed here"
-                                                  : undefined;
-                                            const editRoleTitle = superAdminLocked
-                                                ? "Super Admin roles cannot be edited here"
-                                                : doctorLocked
-                                                  ? "Doctor roles cannot be edited here"
-                                                  : undefined;
-                                            const permissionCountDisplay =
-                                                typeof row.permissionCount === "number" &&
-                                                !Number.isNaN(row.permissionCount)
-                                                    ? row.permissionCount
-                                                    : "—";
-                                            return (
-                                                <TableRow key={row.id}>
-                                                    <TableData>{(listPage - 1) * listLimit + idx + 1}</TableData>
-                                                    <TableData>{row.name}</TableData>
-                                                    <TableData>{groupLabel}</TableData>
-                                                    <TableData>
-                                                        <div className="flex flex-row flex-wrap items-center gap-1">
-                                                            {preview.map((raw, scopeIdx) => (
-                                                                <span
-                                                                    key={`${raw}-${scopeIdx}`}
-                                                                    className="rounded-full border border-[rgba(253,199,15,0.32)] bg-[rgba(253,199,15,0.05)] px-5 py-2 text-[12px] font-normal leading-[120%] text-[#434956]"
-                                                                >
-                                                                    {formatRoleScopeTypeLabel(raw)}
-                                                                </span>
-                                                            ))}
-                                                            {rest > 0 ? (
+                                    </TableHeader>
+                                    <TableBody>
+                                        {rolesLoading ? (
+                                            <TableRow>
+                                                <TableData colSpan={7} className="text-center">
+                                                    <span className="text-sm text-[#525763]">Loading roles…</span>
+                                                </TableData>
+                                            </TableRow>
+                                        ) : roles.length === 0 ? (
+                                            <TableRow>
+                                                <TableData colSpan={7} className="text-center">
+                                                    <span className="text-sm text-[#525763]">No roles found.</span>
+                                                </TableData>
+                                            </TableRow>
+                                        ) : (
+                                            roles.map((row, idx) => {
+                                                const scopeItems = row.roleScopeTypes ?? [];
+                                                const preview = scopeItems.slice(0, 4);
+                                                const rest = Math.max(0, scopeItems.length - preview.length);
+                                                const groupLabel = formatRoleGroupColumnLabel(row.roleCategoryType);
+                                                const superAdminLocked = isSuperAdminRoleRow(row);
+                                                const doctorLocked = isDoctorRoleRow(row);
+                                                const roleActionsLocked = superAdminLocked || doctorLocked;
+                                                const managePermissionsTitle = superAdminLocked
+                                                    ? "Super Admin roles cannot be managed here"
+                                                    : doctorLocked
+                                                        ? "Doctor roles cannot be managed here"
+                                                        : undefined;
+                                                const editRoleTitle = superAdminLocked
+                                                    ? "Super Admin roles cannot be edited here"
+                                                    : doctorLocked
+                                                        ? "Doctor roles cannot be edited here"
+                                                        : undefined;
+                                                const permissionCountDisplay =
+                                                    typeof row.permissionCount === "number" &&
+                                                        !Number.isNaN(row.permissionCount)
+                                                        ? row.permissionCount
+                                                        : "—";
+                                                return (
+                                                    <TableRow key={row.id}>
+                                                        <TableData>{(listPage - 1) * listLimit + idx + 1}</TableData>
+                                                        <TableData>{row.name}</TableData>
+                                                        <TableData>{groupLabel}</TableData>
+                                                        <TableData>
+                                                            <div className="flex flex-row flex-wrap items-center gap-1">
+                                                                {preview.map((raw, scopeIdx) => (
+                                                                    <span
+                                                                        key={`${raw}-${scopeIdx}`}
+                                                                        className="rounded-full border border-[rgba(253,199,15,0.32)] bg-[rgba(253,199,15,0.05)] px-5 py-2 text-[12px] font-normal leading-[120%] text-[#434956]"
+                                                                    >
+                                                                        {formatRoleScopeTypeLabel(raw)}
+                                                                    </span>
+                                                                ))}
+                                                                {rest > 0 ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            openDataScopeViewAllDialog(
+                                                                                scopeItems.map(formatRoleScopeTypeLabel)
+                                                                            )
+                                                                        }
+                                                                        className="rounded-full border border-[rgba(253,199,15,0.32)] bg-[rgba(253,199,15,0.05)] px-5 py-2 text-left text-[12px] font-semibold leading-[120%] text-[#9A7909] opacity-90 transition-opacity hover:opacity-100"
+                                                                    >
+                                                                        View all +{rest}
+                                                                    </button>
+                                                                ) : null}
+                                                            </div>
+                                                        </TableData>
+                                                        <TableData>{permissionCountDisplay}</TableData>
+                                                        <TableData>
+                                                            <span className="inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border border-[#0B8C00]/20 bg-white py-2 px-5 text-xs leading-[120%] text-[#0B8C00]">
+                                                                Active
+                                                            </span>
+                                                        </TableData>
+                                                        <TableData>
+                                                            <div className="flex flex-wrap items-center gap-2">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() =>
-                                                                        openDataScopeViewAllDialog(
-                                                                            scopeItems.map(formatRoleScopeTypeLabel)
-                                                                        )
-                                                                    }
-                                                                    className="rounded-full border border-[rgba(253,199,15,0.32)] bg-[rgba(253,199,15,0.05)] px-5 py-2 text-left text-[12px] font-semibold leading-[120%] text-[#9A7909] opacity-90 transition-opacity hover:opacity-100"
-                                                                >
-                                                                    View all +{rest}
-                                                                </button>
-                                                            ) : null}
-                                                        </div>
-                                                    </TableData>
-                                                    <TableData>{permissionCountDisplay}</TableData>
-                                                    <TableData>
-                                                        <span className="inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border border-[#0B8C00]/20 bg-white py-2 px-5 text-xs leading-[120%] text-[#0B8C00]">
-                                                            Active
-                                                        </span>
-                                                    </TableData>
-                                                    <TableData>
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            <button
-                                                                type="button"
-                                                                disabled={roleActionsLocked}
-                                                                title={managePermissionsTitle}
-                                                                onClick={() => {
-                                                                    if (roleActionsLocked) return;
-                                                                    void openManagePermissions(row.id);
-                                                                }}
-                                                                className={`flex h-9 items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] bg-[#0B8C00] px-4 text-sm font-medium text-white transition-colors ${
-                                                                    roleActionsLocked
+                                                                    disabled={roleActionsLocked}
+                                                                    title={managePermissionsTitle}
+                                                                    onClick={() => {
+                                                                        if (roleActionsLocked) return;
+                                                                        void openManagePermissions(row.id);
+                                                                    }}
+                                                                    className={`flex h-9 items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] bg-[#0B8C00] px-4 text-sm font-medium text-white transition-colors ${roleActionsLocked
                                                                         ? "cursor-not-allowed opacity-50"
                                                                         : "cursor-pointer hover:bg-[#18751b]"
-                                                                }`}
-                                                            >
-                                                                View Permissions
-                                                            </button>
-                                                            {canEdit ? (
-                                                            <button
-                                                                type="button"
-                                                                disabled={roleActionsLocked}
-                                                                title={editRoleTitle}
-                                                                onClick={() => {
-                                                                    if (roleActionsLocked) return;
-                                                                    void openEditRole(row.id);
-                                                                }}
-                                                                className={`flex h-9 items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] bg-white px-4 text-sm font-medium text-[#0B8C00] transition-colors ${
-                                                                    roleActionsLocked
-                                                                        ? "cursor-not-allowed opacity-50"
-                                                                        : "cursor-pointer hover:bg-[#0B8C00] hover:text-white"
-                                                                }`}
-                                                            >
-                                                                Edit Role
-                                                            </button>
-                                                            ) : null}
-                                                        </div>
-                                                    </TableData>
-                                                </TableRow>
-                                            );
-                                        })
-                                    )}
-                                </TableBody>
-                            </Table>
-                            {!rolesLoading && roles.length > 0 ? (
-                                <Pagination
-                                    currentPage={listPage}
-                                    totalItems={Math.max(rolesListTotalItems, roles.length)}
-                                    itemsPerPage={listLimit}
-                                    onPageChange={setListPage}
-                                    onItemsPerPageChange={setListLimit}
-                                    itemsPerPageOptions={[10, 20, 50, 100]}
-                                />
-                            ) : null}
-                        </div>
+                                                                        }`}
+                                                                >
+                                                                    View Permissions
+                                                                </button>
+                                                                {canEdit ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={roleActionsLocked}
+                                                                        title={editRoleTitle}
+                                                                        onClick={() => {
+                                                                            if (roleActionsLocked) return;
+                                                                            void openEditRole(row.id);
+                                                                        }}
+                                                                        className={`flex h-9 items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] bg-white px-4 text-sm font-medium text-[#0B8C00] transition-colors ${roleActionsLocked
+                                                                            ? "cursor-not-allowed opacity-50"
+                                                                            : "cursor-pointer hover:bg-[#0B8C00] hover:text-white"
+                                                                            }`}
+                                                                    >
+                                                                        Edit Role
+                                                                    </button>
+                                                                ) : null}
+                                                            </div>
+                                                        </TableData>
+                                                    </TableRow>
+                                                );
+                                            })
+                                        )}
+                                    </TableBody>
+                                </Table>
+                                {!rolesLoading && roles.length > 0 ? (
+                                    <Pagination
+                                        currentPage={listPage}
+                                        totalItems={Math.max(rolesListTotalItems, roles.length)}
+                                        itemsPerPage={listLimit}
+                                        onPageChange={setListPage}
+                                        onItemsPerPageChange={setListLimit}
+                                        itemsPerPageOptions={[10, 20, 50, 100]}
+                                    />
+                                ) : null}
+                            </div>
                         )}
                     </ListBorder>
                 </div>
@@ -2475,11 +2567,10 @@ export default function RoleMasterPage() {
                                 <button
                                     type="button"
                                     onClick={() => setSelectedGroup("facility")}
-                                    className={`flex h-auto w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-[20px] border p-4 text-center transition-colors ${
-                                        selectedGroup === "facility"
-                                            ? "border-2 border-[#0B8C00] bg-[rgba(11,140,0,0.04)]"
-                                            : "border border-[#E3EEE1]"
-                                    }`}
+                                    className={`flex h-auto w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-[20px] border p-4 text-center transition-colors ${selectedGroup === "facility"
+                                        ? "border-2 border-[#0B8C00] bg-[rgba(11,140,0,0.04)]"
+                                        : "border border-[#E3EEE1]"
+                                        }`}
                                 >
                                     <img src="/icons/FacilityRole.svg" alt="Facility Role" />
                                     <p className="text-center font-['Inter'] text-[16px] font-semibold leading-[120%] text-[#434956]">
@@ -2489,11 +2580,10 @@ export default function RoleMasterPage() {
                                 <button
                                     type="button"
                                     onClick={() => setSelectedGroup("corporate")}
-                                    className={`flex h-auto w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-[20px] border p-4 text-center transition-colors ${
-                                        selectedGroup === "corporate"
-                                            ? "border-2 border-[#0B8C00] bg-[rgba(11,140,0,0.04)]"
-                                            : "border border-[#E3EEE1]"
-                                    }`}
+                                    className={`flex h-auto w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-[20px] border p-4 text-center transition-colors ${selectedGroup === "corporate"
+                                        ? "border-2 border-[#0B8C00] bg-[rgba(11,140,0,0.04)]"
+                                        : "border border-[#E3EEE1]"
+                                        }`}
                                 >
                                     <img src="/icons/CorporateRole.svg" alt="Corporate Role" />
                                     <p className="text-center font-['Inter'] text-[16px] font-semibold leading-[120%] text-[#434956]">
@@ -2529,18 +2619,21 @@ export default function RoleMasterPage() {
                         <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
                             {renderStepperFacility()}
                             <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
-                                <div className="mb-5">
-                                    <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
+                                <div className="mb-3">
+                                    <label className="mb-1 block text-[13px] font-medium text-[#434956]">
+                                        Select Branch <span className="text-[#F6776E]"></span>
+                                    </label>
+                                    {/* <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
                                         Define Role Name
                                     </h4>
                                     <p className="text-[12px] font-normal leading-[120%] text-[#525763]">
                                         Provide a suitable name for the role based on its scope and
                                         responsibility.
-                                    </p>
+                                    </p> */}
                                 </div>
                                 <div className="mb-3">
                                     <FormSelectField
-                                        label="Branches *"
+                                        label="Branch *"
                                         options={branchSelectOptions}
                                         value={facilitySelectedBranchId || null}
                                         onChange={(v) => {
@@ -2554,7 +2647,7 @@ export default function RoleMasterPage() {
                                         width="100%"
                                         emptyMessage="No branches found."
                                         error={defineErrors.branch || undefined}
-                                        disabled={wizardMode === "edit"}
+                                        disabled={wizardMode === "edit" || (!isRoleListSuperAdmin && Boolean(selectedBranchFilter))}
                                     />
                                 </div>
                                 <div className="mb-5">
@@ -2595,32 +2688,32 @@ export default function RoleMasterPage() {
                                         {roleDropdownOpen &&
                                             roleDropdownItems.length > 0 &&
                                             isRoleNameSearchSynced && (
-                                            <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-[#DFE0E2] bg-white py-1 shadow-lg">
-                                                {roleDropdownItems.map((item) => (
-                                                    <li
-                                                        key={item.id}
-                                                        onMouseDown={(e) => {
-                                                            e.preventDefault();
-                                                            const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
-                                                                (o) => o.toLowerCase() === item.name.trim().toLowerCase()
-                                                            );
-                                                            if (presetMatch) {
-                                                                setRoleNameOption(presetMatch);
-                                                                setRoleName(presetMatch);
-                                                            } else {
-                                                                setRoleName(item.name);
-                                                            }
-                                                            setRoleDropdownOpen(false);
-                                                            setRoleDropdownItems([]);
-                                                            setDefineErrors((prev) => ({ ...prev, roleName: "" }));
-                                                        }}
-                                                        className="cursor-pointer px-5 py-2 text-sm text-[#434956] hover:bg-[#F0FAF0]"
-                                                    >
-                                                        {item.name}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
+                                                <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-[#DFE0E2] bg-white py-1 shadow-lg">
+                                                    {roleDropdownItems.map((item) => (
+                                                        <li
+                                                            key={item.id}
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
+                                                                    (o) => o.toLowerCase() === item.name.trim().toLowerCase()
+                                                                );
+                                                                if (presetMatch) {
+                                                                    setRoleNameOption(presetMatch);
+                                                                    setRoleName(presetMatch);
+                                                                } else {
+                                                                    setRoleName(item.name);
+                                                                }
+                                                                setRoleDropdownOpen(false);
+                                                                setRoleDropdownItems([]);
+                                                                setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+                                                            }}
+                                                            className="cursor-pointer px-5 py-2 text-sm text-[#434956] hover:bg-[#F0FAF0]"
+                                                        >
+                                                            {item.name}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
                                     </div>
                                 </div>
                                 <div className="mb-5">
@@ -2634,7 +2727,64 @@ export default function RoleMasterPage() {
                                         onBlur={onRoleDescriptionBlur}
                                     />
                                 </div>
-                               
+
+                                <div className="mt-4 flex gap-2">
+                                    <BackToPreviousPageButton onClick={handleWizardBack} />
+                                    <button
+                                        type="button"
+                                        onClick={handlePrimaryAction}
+                                        className="flex cursor-pointer flex-row items-center justify-center gap-2 rounded-[32px] bg-[#0B8C00] px-6 py-3 text-center font-inter text-sm font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7A00] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <span>Next </span>
+                                        {nextArrow}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </ListBorder>
+                </div>
+            )}
+
+            {isRoleWizardOpen && activeGroup === "facility" && isFacilitySelectModulesStep && (
+                <div className="mx-auto w-full space-y-8 lg:w-[850px]">
+                    <div className="flex items-center justify-between">
+                        <PageHeading title={wizardTitle} />
+                        {wizardMode === "edit" && (
+                            <BackToPreviousPageButton onClick={closeWizard} />
+                        )}
+                    </div>
+                    <ListBorder as="section" className="px-4 py-4">
+                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
+                            {renderStepperFacility()}
+                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
+                                <div className="mb-5">
+                                    <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
+                                        Select Modules
+                                    </h4>
+                                    <p className="text-[12px] font-normal leading-[120%] text-[#525763]">
+                                        Select one or more modules that this role should be allowed to access.
+                                    </p>
+                                </div>
+                                <div className="mb-5">
+                                    <FormSelectField
+                                        label="Select Modules *"
+                                        options={facilityModuleOptions}
+                                        mode="multiple"
+                                        value={facilitySelectedModuleIds}
+                                        onChange={(vals) => {
+                                            setFacilitySelectedModuleIds(
+                                                Array.isArray(vals) ? vals : vals ? [vals] : []
+                                            );
+                                            setDefineErrors((prev) => ({ ...prev, modules: "" }));
+                                        }}
+                                        placeholder="Select one or more modules"
+                                        background="white"
+                                        width="100%"
+                                        emptyMessage={modulesLoading ? "Loading modules..." : "No modules found."}
+                                        error={defineErrors.modules || undefined}
+                                    />
+                                </div>
+
                                 <div className="mt-4 flex gap-2">
                                     <BackToPreviousPageButton onClick={handleWizardBack} />
                                     <button
@@ -2689,24 +2839,24 @@ export default function RoleMasterPage() {
                                         {roleDropdownOpen &&
                                             roleDropdownItems.length > 0 &&
                                             isRoleNameSearchSynced && (
-                                            <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-[#DFE0E2] bg-white py-1 shadow-lg">
-                                                {roleDropdownItems.map((item) => (
-                                                    <li
-                                                        key={item.id}
-                                                        onMouseDown={(e) => {
-                                                            e.preventDefault();
-                                                            setRoleName(item.name);
-                                                            setRoleDropdownOpen(false);
-                                                            setRoleDropdownItems([]);
-                                                            setDefineErrors((prev) => ({ ...prev, roleName: "" }));
-                                                        }}
-                                                        className="cursor-pointer px-5 py-2 text-sm text-[#434956] hover:bg-[#F0FAF0]"
-                                                    >
-                                                        {item.name}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
+                                                <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-[#DFE0E2] bg-white py-1 shadow-lg">
+                                                    {roleDropdownItems.map((item) => (
+                                                        <li
+                                                            key={item.id}
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                setRoleName(item.name);
+                                                                setRoleDropdownOpen(false);
+                                                                setRoleDropdownItems([]);
+                                                                setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+                                                            }}
+                                                            className="cursor-pointer px-5 py-2 text-sm text-[#434956] hover:bg-[#F0FAF0]"
+                                                        >
+                                                            {item.name}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
                                     </div>
                                 </div>
                                 <div className="mb-5">
@@ -2778,29 +2928,29 @@ export default function RoleMasterPage() {
                                     </div>
                                 </div>
                                 {isZonalOrRegionalScope(dataScope) ? (
-                                <div className="mb-5">
-                                    <label className="mb-2 block text-[12px] font-normal leading-[120%] text-[#525763]">
-                                        Facility Type
-                                    </label>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <div>
-                                            {renderPillCheckbox(
-                                                corporateFacilityTypes.hospital,
-                                                () => toggleCorporateFacilityType("hospital"),
-                                                "Hospital",
-                                                "corp-ft-hospital"
-                                            )}
-                                        </div>
-                                        <div>
-                                            {renderPillCheckbox(
-                                                corporateFacilityTypes.clinic,
-                                                () => toggleCorporateFacilityType("clinic"),
-                                                "Clinic",
-                                                "corp-ft-clinic"
-                                            )}
+                                    <div className="mb-5">
+                                        <label className="mb-2 block text-[12px] font-normal leading-[120%] text-[#525763]">
+                                            Facility Type
+                                        </label>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div>
+                                                {renderPillCheckbox(
+                                                    corporateFacilityTypes.hospital,
+                                                    () => toggleCorporateFacilityType("hospital"),
+                                                    "Hospital",
+                                                    "corp-ft-hospital"
+                                                )}
+                                            </div>
+                                            <div>
+                                                {renderPillCheckbox(
+                                                    corporateFacilityTypes.clinic,
+                                                    () => toggleCorporateFacilityType("clinic"),
+                                                    "Clinic",
+                                                    "corp-ft-clinic"
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
                                 ) : null}
                                 {dataScope === "Specific" ? (
                                     <div className="mb-5">
@@ -2842,85 +2992,85 @@ export default function RoleMasterPage() {
                 activeGroup === "corporate" &&
                 isConfigureScopeStep &&
                 isZonalOrRegionalScope(dataScope) && (
-                <div className="mx-auto w-full space-y-8 lg:w-[850px]">
-                    <div className="flex items-center justify-between">
-                        <PageHeading title={wizardTitle} />
-                        {wizardMode === "edit" && (
-                            <BackToPreviousPageButton onClick={closeWizard} />
-                        )}
-                    </div>
-                    <ListBorder as="section" className="px-4 py-4">
-                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
-                            {renderStepperCorporate()}
-                            <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
-                                <div className="mb-5">
-                                    <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
-                                        Configure Scope
-                                    </h4>
-                                    <p className="text-[12px] font-normal leading-[120%] text-[#525763]">
-                                        Based on the selected data scope, the Admin configures access as
-                                        follows.
-                                    </p>
-                                </div>
-                                <div className="mb-5 space-y-3">
-                                    <div>
-                                        <label className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                            Data Scope
-                                        </label>
-                                        <h5 className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                            {dataScope
-                                                ? DATA_SCOPE_OPTIONS.find((o) => o.id === dataScope)?.label
-                                                : "—"}
-                                        </h5>
-                                    </div>
-                                    <div>
-                                        <label className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                            Facility Type
-                                        </label>
-                                        <h5 className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                            {[
-                                                corporateFacilityTypes.hospital ? "Hospital" : null,
-                                                corporateFacilityTypes.clinic ? "Clinic" : null,
-                                            ]
-                                                .filter(Boolean)
-                                                .join(", ") || "—"}
-                                        </h5>
-                                    </div>
-                                </div>
-                                {corporateFacilityTypes.hospital &&
-                                    renderScopeFacilityCard(
-                                        "Hospital",
-                                        "hospital",
-                                        dataScope === "Zonal",
-                                        hospitalZones,
-                                        hospitalRegions,
-                                        hospitalRegionSource
-                                    )}
-                                {corporateFacilityTypes.clinic &&
-                                    renderScopeFacilityCard(
-                                        "Clinic",
-                                        "clinic",
-                                        dataScope === "Zonal",
-                                        clinicZones,
-                                        clinicRegions,
-                                        clinicRegionSource
-                                    )}
-                                <div className="mt-4 flex gap-2">
-                                    <BackToPreviousPageButton onClick={handleWizardBack} />
-                                    <button
-                                        type="button"
-                                        onClick={handlePrimaryAction}
-                                        className="flex cursor-pointer flex-row items-center justify-center gap-2 rounded-[32px] bg-[#0B8C00] px-6 py-3 text-center font-inter text-sm font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7A00] disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        <span>Next </span>
-                                        {nextArrow}
-                                    </button>
-                                </div>
-                            </form>
+                    <div className="mx-auto w-full space-y-8 lg:w-[850px]">
+                        <div className="flex items-center justify-between">
+                            <PageHeading title={wizardTitle} />
+                            {wizardMode === "edit" && (
+                                <BackToPreviousPageButton onClick={closeWizard} />
+                            )}
                         </div>
-                    </ListBorder>
-                </div>
-            )}
+                        <ListBorder as="section" className="px-4 py-4">
+                            <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
+                                {renderStepperCorporate()}
+                                <form className="mt-6" onSubmit={(e) => e.preventDefault()}>
+                                    <div className="mb-5">
+                                        <h4 className="text-[16px] font-medium leading-[120%] text-[#434956]">
+                                            Configure Scope
+                                        </h4>
+                                        <p className="text-[12px] font-normal leading-[120%] text-[#525763]">
+                                            Based on the selected data scope, the Admin configures access as
+                                            follows.
+                                        </p>
+                                    </div>
+                                    <div className="mb-5 space-y-3">
+                                        <div>
+                                            <label className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                Data Scope
+                                            </label>
+                                            <h5 className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                {dataScope
+                                                    ? DATA_SCOPE_OPTIONS.find((o) => o.id === dataScope)?.label
+                                                    : "—"}
+                                            </h5>
+                                        </div>
+                                        <div>
+                                            <label className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                Facility Type
+                                            </label>
+                                            <h5 className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                {[
+                                                    corporateFacilityTypes.hospital ? "Hospital" : null,
+                                                    corporateFacilityTypes.clinic ? "Clinic" : null,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(", ") || "—"}
+                                            </h5>
+                                        </div>
+                                    </div>
+                                    {corporateFacilityTypes.hospital &&
+                                        renderScopeFacilityCard(
+                                            "Hospital",
+                                            "hospital",
+                                            dataScope === "Zonal",
+                                            hospitalZones,
+                                            hospitalRegions,
+                                            hospitalRegionSource
+                                        )}
+                                    {corporateFacilityTypes.clinic &&
+                                        renderScopeFacilityCard(
+                                            "Clinic",
+                                            "clinic",
+                                            dataScope === "Zonal",
+                                            clinicZones,
+                                            clinicRegions,
+                                            clinicRegionSource
+                                        )}
+                                    <div className="mt-4 flex gap-2">
+                                        <BackToPreviousPageButton onClick={handleWizardBack} />
+                                        <button
+                                            type="button"
+                                            onClick={handlePrimaryAction}
+                                            className="flex cursor-pointer flex-row items-center justify-center gap-2 rounded-[32px] bg-[#0B8C00] px-6 py-3 text-center font-inter text-sm font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7A00] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <span>Next </span>
+                                            {nextArrow}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </ListBorder>
+                    </div>
+                )}
 
             {isRoleWizardOpen && isPermissionsStep && activeGroup && (
                 <div className="mx-auto w-full space-y-8 lg:w-[850px]">
@@ -2957,205 +3107,210 @@ export default function RoleMasterPage() {
                                         Permissions
                                     </label>
                                     <div className="flex flex-col gap-4">
-                                        {permissionSections.map((section) => {
-                                            const rowCells = permissions[section.id] ?? [];
-                                            return (
-                                            <div
-                                                key={section.id}
-                                                className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5"
-                                            >
-                                                <button
-                                                    type="button"
-                                                    className="mb-4 flex w-full cursor-pointer items-center justify-between text-left"
-                                                    onClick={() =>
-                                                        setExpandedPermSections((e) => ({
-                                                            ...e,
-                                                            [section.id]: !e[section.id],
-                                                        }))
-                                                    }
-                                                >
-                                                    <h3 className="text-[16px] font-semibold leading-[24px] text-[#344054]">
-                                                        {section.title}
-                                                    </h3>
-                                                    <span className="text-lg text-green-600">
-                                                        <svg
-                                                            width="17"
-                                                            height="10"
-                                                            viewBox="0 0 17 10"
-                                                            fill="none"
-                                                            xmlns="http://www.w3.org/2000/svg"
-                                                            className={`transition-transform ${expandedPermSections[section.id] ? "" : "rotate-180"}`}
+                                        {permissionSections
+                                            .filter((section) => {
+                                                if (activeGroup === "facility") {
+                                                    return facilitySelectedModuleIds.includes(section.id);
+                                                }
+                                                return true;
+                                            })
+                                            .map((section) => {
+                                                const rowCells = permissions[section.id] ?? [];
+                                                return (
+                                                    <div
+                                                        key={section.id}
+                                                        className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5"
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            className="mb-4 flex w-full cursor-pointer items-center justify-between text-left"
+                                                            onClick={() =>
+                                                                setExpandedPermSections((e) => ({
+                                                                    ...e,
+                                                                    [section.id]: !e[section.id],
+                                                                }))
+                                                            }
                                                         >
-                                                            <path
-                                                                d="M1.2002 1.19922L8.4002 8.39922L15.6002 1.19922"
-                                                                stroke="#0B8C00"
-                                                                strokeWidth={2.4}
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                            />
-                                                        </svg>
-                                                    </span>
-                                                </button>
-                                                {expandedPermSections[section.id] && (
-                                                    <table className="w-full table-fixed border-separate border-spacing-y-2">
-                                                        <colgroup>
-                                                            <col className="min-w-0" />
-                                                            {visiblePermColumns.map((_, ci) => (
-                                                                <col key={ci} style={{ width: 88 }} />
-                                                            ))}
-                                                        </colgroup>
-                                                        <thead>
-                                                            <tr className="border border-[#DFE0E2] text-[12px] text-[#262D3B]">
-                                                                <th className="rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 text-left align-middle">
-                                                                    <AlignedCheckbox
-                                                                        id={`${section.id}-hdr-select-all-rows`}
-                                                                        checked={
-                                                                            isCorporatePermMatrix
-                                                                                ? section.rows.every((_, ri) => {
-                                                                                      const r = rowCells[ri];
-                                                                                      return Boolean(
-                                                                                          r?.download && r?.view
-                                                                                      );
-                                                                                  })
-                                                                                : section.rows.every(
-                                                                                      (_, ri) => {
-                                                                                          const r = rowCells[ri];
-                                                                                          return (
-                                                                                              Boolean(
-                                                                                                  r?.download
-                                                                                              ) &&
-                                                                                              Boolean(r?.view) &&
-                                                                                              Boolean(r?.add) &&
-                                                                                              Boolean(r?.edit) &&
-                                                                                              Boolean(r?.delete)
-                                                                                          );
-                                                                                      }
-                                                                                  )
-                                                                        }
-                                                                        onChange={() =>
-                                                                            toggleSectionRowSelectAll(section.id)
-                                                                        }
-                                                                        label={<span>Select All</span>}
+                                                            <h3 className="text-[16px] font-semibold leading-[24px] text-[#344054]">
+                                                                {section.title}
+                                                            </h3>
+                                                            <span className="text-lg text-green-600">
+                                                                <svg
+                                                                    width="17"
+                                                                    height="10"
+                                                                    viewBox="0 0 17 10"
+                                                                    fill="none"
+                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                    className={`transition-transform ${expandedPermSections[section.id] ? "" : "rotate-180"}`}
+                                                                >
+                                                                    <path
+                                                                        d="M1.2002 1.19922L8.4002 8.39922L15.6002 1.19922"
+                                                                        stroke="#0B8C00"
+                                                                        strokeWidth={2.4}
+                                                                        strokeLinecap="round"
+                                                                        strokeLinejoin="round"
                                                                     />
-                                                                </th>
-                                                                {visiblePermColumns.map((col, ci) => (
-                                                                        <th
-                                                                            key={col}
-                                                                            className={`border border-[#DFE0E2] border-l-0 border-r-0 px-0 py-3 text-center align-middle ${
-                                                                                ci ===
-                                                                                visiblePermColumns.length - 1
+                                                                </svg>
+                                                            </span>
+                                                        </button>
+                                                        {expandedPermSections[section.id] && (
+                                                            <table className="w-full table-fixed border-separate border-spacing-y-2">
+                                                                <colgroup>
+                                                                    <col className="min-w-0" />
+                                                                    {visiblePermColumns.map((_, ci) => (
+                                                                        <col key={ci} style={{ width: 88 }} />
+                                                                    ))}
+                                                                </colgroup>
+                                                                <thead>
+                                                                    <tr className="border border-[#DFE0E2] text-[12px] text-[#262D3B]">
+                                                                        <th className="rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 text-left align-middle">
+                                                                            <AlignedCheckbox
+                                                                                id={`${section.id}-hdr-select-all-rows`}
+                                                                                checked={
+                                                                                    isCorporatePermMatrix
+                                                                                        ? section.rows.every((_, ri) => {
+                                                                                            const r = rowCells[ri];
+                                                                                            return Boolean(
+                                                                                                r?.download && r?.view
+                                                                                            );
+                                                                                        })
+                                                                                        : section.rows.every(
+                                                                                            (_, ri) => {
+                                                                                                const r = rowCells[ri];
+                                                                                                return (
+                                                                                                    Boolean(
+                                                                                                        r?.download
+                                                                                                    ) &&
+                                                                                                    Boolean(r?.view) &&
+                                                                                                    Boolean(r?.add) &&
+                                                                                                    Boolean(r?.edit) &&
+                                                                                                    Boolean(r?.delete)
+                                                                                                );
+                                                                                            }
+                                                                                        )
+                                                                                }
+                                                                                onChange={() =>
+                                                                                    toggleSectionRowSelectAll(section.id)
+                                                                                }
+                                                                                label={<span>Select All</span>}
+                                                                            />
+                                                                        </th>
+                                                                        {visiblePermColumns.map((col, ci) => (
+                                                                            <th
+                                                                                key={col}
+                                                                                className={`border border-[#DFE0E2] border-l-0 border-r-0 px-0 py-3 text-center align-middle ${ci ===
+                                                                                    visiblePermColumns.length - 1
                                                                                     ? "rounded-r-[10px] border-r-1"
                                                                                     : ""
-                                                                            }`}
-                                                                        >
-                                                                            <div className="flex h-full flex-col items-center justify-center gap-1 px-1">
-                                                                                <AlignedCheckbox
-                                                                                    id={`${section.id}-hdr-${col}`}
-                                                                                    disabled={
-                                                                                        isCorporatePermMatrix &&
-                                                                                        !corporatePermColEnabled(col)
-                                                                                    }
-                                                                                    checked={permAllSelectedForSection(
-                                                                                        section.id,
-                                                                                        col
-                                                                                    )}
-                                                                                    onChange={() =>
-                                                                                        togglePermHeaderCol(
-                                                                                            section.id,
-                                                                                            col
-                                                                                        )
-                                                                                    }
-                                                                                />
-                                                                                <span className="text-center text-[11px] font-normal leading-none text-[#262D3B]">
-                                                                                    {PERM_COL_LABELS[col]}
-                                                                                </span>
-                                                                            </div>
-                                                                        </th>
-                                                                    ))}
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {section.rows.map((rowLabel, rowIndex) => (
-                                                                <tr
-                                                                    key={rowLabel}
-                                                                    className="border border-[#F1F5F3] bg-white"
-                                                                >
-                                                                    <td className="min-w-0 rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 align-middle text-[13px] text-[#434956]">
-                                                                        <AlignedCheckbox
-                                                                            id={`${section.id}-row-${rowIndex}-all`}
-                                                                            checked={(() => {
-                                                                                const r = rowCells[rowIndex];
-                                                                                if (isCorporatePermMatrix) {
-                                                                                    return Boolean(
-                                                                                        r?.download && r?.view
-                                                                                    );
-                                                                                }
-                                                                                return (
-                                                                                    Boolean(r?.download) &&
-                                                                                    Boolean(r?.view) &&
-                                                                                    Boolean(r?.add) &&
-                                                                                    Boolean(r?.edit) &&
-                                                                                    Boolean(r?.delete)
-                                                                                );
-                                                                            })()}
-                                                                            onChange={() =>
-                                                                                togglePermRowAll(
-                                                                                    section.id,
-                                                                                    rowIndex
-                                                                                )
-                                                                            }
-                                                                            label={
-                                                                                <span className="min-w-0 break-words text-[13px] text-[#434956]">
-                                                                                    {rowLabel}
-                                                                                </span>
-                                                                            }
-                                                                        />
-                                                                    </td>
-                                                                    {visiblePermColumns.map((col, ci) => (
-                                                                            <td
-                                                                                key={col}
-                                                                                className={`border border-[#DFE0E2] border-l-0 px-0 py-2 text-center align-middle ${
-                                                                                    ci ===
-                                                                                    visiblePermColumns.length - 1
-                                                                                        ? "rounded-r-[10px] border-r-1"
-                                                                                        : "border-r-0"
-                                                                                }`}
+                                                                                    }`}
                                                                             >
-                                                                                <div className="flex min-h-[36px] items-center justify-center px-1">
+                                                                                <div className="flex h-full flex-col items-center justify-center gap-1 px-1">
                                                                                     <AlignedCheckbox
-                                                                                        id={`${section.id}-r${rowIndex}-${col}`}
+                                                                                        id={`${section.id}-hdr-${col}`}
                                                                                         disabled={
                                                                                             isCorporatePermMatrix &&
-                                                                                            !corporatePermColEnabled(
-                                                                                                col
-                                                                                            )
+                                                                                            !corporatePermColEnabled(col)
                                                                                         }
-                                                                                        checked={
-                                                                                            Boolean(
-                                                                                                rowCells[rowIndex]?.[
-                                                                                                    col
-                                                                                                ]
-                                                                                            )
-                                                                                        }
+                                                                                        checked={permAllSelectedForSection(
+                                                                                            section.id,
+                                                                                            col
+                                                                                        )}
                                                                                         onChange={() =>
-                                                                                            togglePermCell(
+                                                                                            togglePermHeaderCol(
                                                                                                 section.id,
-                                                                                                rowIndex,
                                                                                                 col
                                                                                             )
                                                                                         }
                                                                                     />
+                                                                                    <span className="text-center text-[11px] font-normal leading-none text-[#262D3B]">
+                                                                                        {PERM_COL_LABELS[col]}
+                                                                                    </span>
                                                                                 </div>
-                                                                            </td>
+                                                                            </th>
                                                                         ))}
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                )}
-                                            </div>
-                                        );
-                                        })}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {section.rows.map((rowLabel, rowIndex) => (
+                                                                        <tr
+                                                                            key={rowLabel}
+                                                                            className="border border-[#F1F5F3] bg-white"
+                                                                        >
+                                                                            <td className="min-w-0 rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 align-middle text-[13px] text-[#434956]">
+                                                                                <AlignedCheckbox
+                                                                                    id={`${section.id}-row-${rowIndex}-all`}
+                                                                                    checked={(() => {
+                                                                                        const r = rowCells[rowIndex];
+                                                                                        if (isCorporatePermMatrix) {
+                                                                                            return Boolean(
+                                                                                                r?.download && r?.view
+                                                                                            );
+                                                                                        }
+                                                                                        return (
+                                                                                            Boolean(r?.download) &&
+                                                                                            Boolean(r?.view) &&
+                                                                                            Boolean(r?.add) &&
+                                                                                            Boolean(r?.edit) &&
+                                                                                            Boolean(r?.delete)
+                                                                                        );
+                                                                                    })()}
+                                                                                    onChange={() =>
+                                                                                        togglePermRowAll(
+                                                                                            section.id,
+                                                                                            rowIndex
+                                                                                        )
+                                                                                    }
+                                                                                    label={
+                                                                                        <span className="min-w-0 break-words text-[13px] text-[#434956]">
+                                                                                            {rowLabel}
+                                                                                        </span>
+                                                                                    }
+                                                                                />
+                                                                            </td>
+                                                                            {visiblePermColumns.map((col, ci) => (
+                                                                                <td
+                                                                                    key={col}
+                                                                                    className={`border border-[#DFE0E2] border-l-0 px-0 py-2 text-center align-middle ${ci ===
+                                                                                        visiblePermColumns.length - 1
+                                                                                        ? "rounded-r-[10px] border-r-1"
+                                                                                        : "border-r-0"
+                                                                                        }`}
+                                                                                >
+                                                                                    <div className="flex min-h-[36px] items-center justify-center px-1">
+                                                                                        <AlignedCheckbox
+                                                                                            id={`${section.id}-r${rowIndex}-${col}`}
+                                                                                            disabled={
+                                                                                                isCorporatePermMatrix &&
+                                                                                                !corporatePermColEnabled(
+                                                                                                    col
+                                                                                                )
+                                                                                            }
+                                                                                            checked={
+                                                                                                Boolean(
+                                                                                                    rowCells[rowIndex]?.[
+                                                                                                    col
+                                                                                                    ]
+                                                                                                )
+                                                                                            }
+                                                                                            onChange={() =>
+                                                                                                togglePermCell(
+                                                                                                    section.id,
+                                                                                                    rowIndex,
+                                                                                                    col
+                                                                                                )
+                                                                                            }
+                                                                                        />
+                                                                                    </div>
+                                                                                </td>
+                                                                            ))}
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                     </div>
                                 </div>
                                 <div className="mt-4 flex gap-2">
@@ -3201,220 +3356,239 @@ export default function RoleMasterPage() {
                                 Loading permissions…
                             </p>
                         ) : manageView ? (
-                        <>
-                        {manageView.roleGroup === "corporate" && manageView.scope ? (
-                            <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <>
+                                {manageView.roleGroup === "corporate" && manageView.scope ? (
+                                    <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
+                                            <div className="mb-3">
+                                                <h4 className="text-[18px] font-medium leading-[120%] text-[#262D3B]">
+                                                    Scope information
+                                                </h4>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Data Scope
+                                                    </p>
+                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                        {formatMainScopeForDisplay(manageView.scope.dataScope)}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Zone
+                                                    </p>
+                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                        {manageView.scope.zone}
+                                                    </p>
+                                                </div>
+                                                <div className="col-span-2">
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Regions / States
+                                                    </p>
+                                                    <p className="break-words text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                        {manageView.scope.regions}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
+                                            <div className="mb-3">
+                                                <h4 className="text-[18px] font-medium leading-[120%] text-[#262D3B]">
+                                                    Role Information
+                                                </h4>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Role Name
+                                                    </p>
+                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                        {manageView.roleName}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Role Description
+                                                    </p>
+                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                        {manageView.roleDescription}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mb-6 w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
+                                        <div className="mb-3">
+                                            <h4 className="text-[18px] font-medium leading-[120%] text-[#262D3B]">
+                                                Role Information
+                                            </h4>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                            <div>
+                                                <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                    Role Name
+                                                </p>
+                                                <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                    {manageView.roleName}
+                                                </p>
+                                            </div>
+                                            {manageView.facilityTypeLabel ? (
+                                                <div>
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Facility Type
+                                                    </p>
+                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                        {manageView.facilityTypeLabel}
+                                                    </p>
+                                                </div>
+                                            ) : null}
+                                            <div className="sm:col-span-2">
+                                                <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                    Role Description
+                                                </p>
+                                                <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                    {manageView.roleDescription}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
-                                    <div className="mb-3">
-                                        <h4 className="text-[18px] font-medium leading-[120%] text-[#262D3B]">
-                                            Scope information
-                                        </h4>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                Data Scope
-                                            </p>
-                                            <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {formatMainScopeForDisplay(manageView.scope.dataScope)}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                Zone
-                                            </p>
-                                            <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {manageView.scope.zone}
-                                            </p>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                Regions / States
-                                            </p>
-                                            <p className="break-words text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {manageView.scope.regions}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
-                                    <div className="mb-3">
-                                        <h4 className="text-[18px] font-medium leading-[120%] text-[#262D3B]">
-                                            Role Information
-                                        </h4>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <div>
-                                            <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                Role Name
-                                            </p>
-                                            <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {manageView.roleName}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                Role Description
-                                            </p>
-                                            <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {manageView.roleDescription}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="mb-6 w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
-                                <div className="mb-3">
-                                    <h4 className="text-[18px] font-medium leading-[120%] text-[#262D3B]">
-                                        Role Information
+                                    <h4 className="mb-6 text-[18px] font-medium leading-[120%] text-[#262D3B]">
+                                        Permissions
                                     </h4>
-                                </div>
-                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                            Role Name
-                                        </p>
-                                        <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                            {manageView.roleName}
-                                        </p>
-                                    </div>
-                                    {manageView.facilityTypeLabel ? (
-                                        <div>
-                                            <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                Facility Type
-                                            </p>
-                                            <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                {manageView.facilityTypeLabel}
-                                            </p>
-                                        </div>
-                                    ) : null}
-                                    <div className="sm:col-span-2">
-                                        <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                            Role Description
-                                        </p>
-                                        <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                            {manageView.roleDescription}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                                    <div className="flex flex-col gap-4">
+                                        {manageView.permissionSections
+                                            .map((section) => {
+                                                const activeRows = section.rows
+                                                    .map((rowLabel, rowIndex) => {
+                                                        const cell = manageView.permissions[section.id]?.[rowIndex];
+                                                        const subModuleId = manageView.moduleIdsBySection?.[section.id]?.[rowIndex];
+                                                        const hasAccess = manageView.roleSubModuleIds && subModuleId
+                                                            ? manageView.roleSubModuleIds.includes(String(subModuleId))
+                                                            : Boolean(cell && (cell.download || cell.view || cell.add || cell.edit || cell.delete));
+                                                        return { rowLabel, rowIndex, hasAccess };
+                                                    })
+                                                    .filter((item) => item.hasAccess);
 
-                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5">
-                            <h4 className="mb-6 text-[18px] font-medium leading-[120%] text-[#262D3B]">
-                                Permissions
-                            </h4>
-                            <div className="flex flex-col gap-4">
-                                {manageView.permissionSections.map((section) => (
-                                    <div
-                                        key={section.id}
-                                        className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5"
-                                    >
-                                        <button
-                                            type="button"
-                                            className="mb-4 flex w-full cursor-pointer items-center justify-between text-left"
-                                            onClick={() =>
-                                                setManageSectionOpen((prev) => ({
-                                                    ...prev,
-                                                    [section.id]: !prev[section.id],
-                                                }))
-                                            }
-                                        >
-                                            <h3 className="text-[16px] font-semibold leading-[24px] text-[#344054]">
-                                                {section.title}
-                                            </h3>
-                                            <span className="text-lg text-green-600">
-                                                <svg
-                                                    width="17"
-                                                    height="10"
-                                                    viewBox="0 0 17 10"
-                                                    fill="none"
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    className={`transition-transform ${manageSectionOpen[section.id] ? "" : "rotate-180"}`}
+                                                if (activeRows.length === 0) return null;
+
+                                                return {
+                                                    id: section.id,
+                                                    title: section.title,
+                                                    activeRows,
+                                                };
+                                            })
+                                            .filter((s): s is { id: string; title: string; activeRows: { rowLabel: string; rowIndex: number; hasAccess: boolean }[] } => s !== null)
+                                            .map((section) => (
+                                                <div
+                                                    key={section.id}
+                                                    className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white p-5"
                                                 >
-                                                    <path
-                                                        d="M1.2002 1.19922L8.4002 8.39922L15.6002 1.19922"
-                                                        stroke="#0B8C00"
-                                                        strokeWidth={2.4}
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                    />
-                                                </svg>
-                                            </span>
-                                        </button>
-
-                                        {manageSectionOpen[section.id] && manageView.permissions[section.id] ? (
-                                                    <table className="w-full table-fixed border-separate border-spacing-y-2">
-                                                <colgroup>
-                                                    <col className="min-w-0" />
-                                                    {visiblePermColumns.map((_, ci) => (
-                                                        <col key={ci} style={{ width: 88 }} />
-                                                    ))}
-                                                </colgroup>
-                                                <thead>
-                                                    <tr className="border border-[#DFE0E2] text-[12px] text-[#262D3B]">
-                                                        <th className="rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 text-left align-middle font-normal">
-                                                            <span>Select All</span>
-                                                        </th>
-                                                        {visiblePermColumns.map((col, ci) => (
-                                                                <th
-                                                                    key={col}
-                                                                    className={`border border-[#DFE0E2] border-l-0 border-r-0 px-0 py-3 text-center align-middle font-normal ${
-                                                                        ci === visiblePermColumns.length - 1
-                                                                            ? "rounded-r-[10px] border-r-1"
-                                                                            : ""
-                                                                    }`}
-                                                                >
-                                                                    <div className="flex flex-col items-center justify-center gap-1 px-1">
-                                                                        <span className="text-center text-[11px] leading-none text-[#262D3B]">
-                                                                            {PERM_COL_LABELS[col]}
-                                                                        </span>
-                                                                    </div>
-                                                                </th>
-                                                            ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {section.rows.map((rowLabel, rowIndex) => {
-                                                        const cell =
-                                                            manageView.permissions[section.id][rowIndex];
-                                                        if (!cell) return null;
-                                                        return (
-                                                            <tr
-                                                                key={rowLabel}
-                                                                className="border border-[#F1F5F3] bg-white"
+                                                    <button
+                                                        type="button"
+                                                        className="mb-4 flex w-full cursor-pointer items-center justify-between text-left"
+                                                        onClick={() =>
+                                                            setManageSectionOpen((prev) => ({
+                                                                ...prev,
+                                                                [section.id]: !prev[section.id],
+                                                            }))
+                                                        }
+                                                    >
+                                                        <h3 className="text-[16px] font-semibold leading-[24px] text-[#344054]">
+                                                            {section.title}
+                                                        </h3>
+                                                        <span className="text-lg text-green-600">
+                                                            <svg
+                                                                width="17"
+                                                                height="10"
+                                                                viewBox="0 0 17 10"
+                                                                fill="none"
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                className={`transition-transform ${manageSectionOpen[section.id] ? "" : "rotate-180"}`}
                                                             >
-                                                                <td className="min-w-0 rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 align-middle text-[13px] text-[#434956]">
-                                                                    <span className="break-words">{rowLabel}</span>
-                                                                </td>
-                                                                {visiblePermColumns.map((colKey, ci) => (
-                                                                        <td
-                                                                            key={colKey}
-                                                                            className={`border border-[#DFE0E2] border-l-0 px-0 py-2 text-center align-middle ${
-                                                                                ci === visiblePermColumns.length - 1
-                                                                                    ? "rounded-r-[10px] border-r-1"
-                                                                                    : "border-r-0"
-                                                                            }`}
+                                                                <path
+                                                                    d="M1.2002 1.19922L8.4002 8.39922L15.6002 1.19922"
+                                                                    stroke="#0B8C00"
+                                                                    strokeWidth={2.4}
+                                                                    strokeLinecap="round"
+                                                                    strokeLinejoin="round"
+                                                                />
+                                                            </svg>
+                                                        </span>
+                                                    </button>
+
+                                                    {manageSectionOpen[section.id] && manageView.permissions[section.id] ? (
+                                                        <table className="w-full table-fixed border-separate border-spacing-y-2">
+                                                            <colgroup>
+                                                                <col className="min-w-0" />
+                                                                {visiblePermColumns.map((_, ci) => (
+                                                                    <col key={ci} style={{ width: 88 }} />
+                                                                ))}
+                                                            </colgroup>
+                                                            <thead>
+                                                                <tr className="border border-[#DFE0E2] text-[12px] text-[#262D3B]">
+                                                                    <th className="rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 text-left align-middle font-normal">
+                                                                        <span>Select All</span>
+                                                                    </th>
+                                                                    {visiblePermColumns.map((col, ci) => (
+                                                                        <th
+                                                                            key={col}
+                                                                            className={`border border-[#DFE0E2] border-l-0 border-r-0 px-0 py-3 text-center align-middle font-normal ${ci === visiblePermColumns.length - 1
+                                                                                ? "rounded-r-[10px] border-r-1"
+                                                                                : ""
+                                                                                }`}
                                                                         >
-                                                                            <div className="flex min-h-[36px] items-center justify-center px-1">
-                                                                                <ReadOnlyPermBox
-                                                                                    allowed={cell[colKey]}
-                                                                                />
+                                                                            <div className="flex flex-col items-center justify-center gap-1 px-1">
+                                                                                <span className="text-center text-[11px] leading-none text-[#262D3B]">
+                                                                                    {PERM_COL_LABELS[col]}
+                                                                                </span>
                                                                             </div>
-                                                                        </td>
+                                                                        </th>
                                                                     ))}
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        ) : null}
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {section.activeRows.map(({ rowLabel, rowIndex }) => {
+                                                                    const cell =
+                                                                        manageView.permissions[section.id][rowIndex];
+                                                                    if (!cell) return null;
+                                                                    return (
+                                                                        <tr
+                                                                            key={rowLabel}
+                                                                            className="border border-[#F1F5F3] bg-white"
+                                                                        >
+                                                                            <td className="min-w-0 rounded-l-[10px] border border-[#DFE0E2] border-r-0 px-3 py-3 align-middle text-[13px] text-[#434956]">
+                                                                                <span className="break-words">{rowLabel}</span>
+                                                                            </td>
+                                                                            {visiblePermColumns.map((colKey, ci) => (
+                                                                                <td
+                                                                                    key={colKey}
+                                                                                    className={`border border-[#DFE0E2] border-l-0 px-0 py-2 text-center align-middle ${ci === visiblePermColumns.length - 1
+                                                                                        ? "rounded-r-[10px] border-r-1"
+                                                                                        : "border-r-0"
+                                                                                        }`}
+                                                                                >
+                                                                                    <div className="flex min-h-[36px] items-center justify-center px-1">
+                                                                                        <ReadOnlyPermBox
+                                                                                            allowed={cell[colKey]}
+                                                                                        />
+                                                                                    </div>
+                                                                                </td>
+                                                                            ))}
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    ) : null}
+                                                </div>
+                                            ))}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                        </>
+                                </div>
+                            </>
                         ) : null}
                     </ListBorder>
                 </div>

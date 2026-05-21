@@ -15,6 +15,7 @@ type DatePickerProps = {
   minDate?: string; // Minimum selectable date (YYYY-MM-DD format). If not provided, defaults to today
   maxDate?: string; // Maximum selectable date (YYYY-MM-DD format)
   disablePastDates?: boolean; // If true, sets min date to today
+  error?: string;
 };
 
 const normalizeSize = (value: number | string | undefined) => {
@@ -41,6 +42,7 @@ export const DatePicker = ({
   minDate,
   maxDate,
   disablePastDates = false,
+  error,
 }: DatePickerProps) => {
   const [selectedDate, setSelectedDate] = useState(value || "");
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -198,7 +200,7 @@ export const DatePicker = ({
         }
       `}</style>
       <div className="inline-flex flex-col gap-2" style={{ width: normalizeSize(width) || "100%" }}>
-        <div className="group relative inline-flex w-full">
+        <div className={`group relative inline-flex w-full ${error ? "ring-1 ring-[#F87171] rounded-[32px]" : ""}`}>
           {label && (
             <span className="pointer-events-none absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
               {label}
@@ -296,6 +298,7 @@ export const DatePicker = ({
             </div>
           </div>
         </div>
+        {error ? <span className="text-xs text-[#F87171]">{error}</span> : null}
       </div>
     </>
   );

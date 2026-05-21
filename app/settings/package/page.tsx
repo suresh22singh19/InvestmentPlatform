@@ -547,6 +547,8 @@ export default function PackagePage() {
   const [updatePackage, { isLoading: isUpdatingPackage }] = useUpdatePackageMutation();
   const [updatePackageStatus, { isLoading: isUpdatingPackageStatus }] = useUpdatePackageStatusMutation();
 
+  const isSavingPackage = isCreatingPackage || isUpdatingPackage;
+
   /** Corporate: only `roleCategoryType` (no `branchId` key). Facility: include `branchId` only when a valid branch is selected. */
   const assignableRolesQueryArgs = useMemo((): GetBranchRoleByCategoryTypeParams => {
     if (formValues.userType === "Corporate") {
@@ -1018,6 +1020,7 @@ export default function PackagePage() {
     e.preventDefault();
     if (packageDialogMode === "add" && !canAdd) return;
     if (packageDialogMode === "edit" && !canEdit) return;
+    if (isSavingPackage) return;
     if (!validatePackageForm()) {
       return;
     }
@@ -1759,7 +1762,7 @@ export default function PackagePage() {
               </Button>
             ) : (
               <>
-                <Button type="submit" variant="primary">
+                <Button type="submit" variant="primary" isLoading={isSavingPackage}>
                   {packageDialogMode === "edit" ? "Update Package" : "Add Package"}
                 </Button>
                 <Button type="button" variant="outline" onClick={closeAddPackageDialog}>
