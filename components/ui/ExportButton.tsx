@@ -154,13 +154,14 @@ export const ExportButton = ({
         )
       : null;
 
+  const Check_Cursor_pointer = className ? className : "";
   return (
     <div ref={rootRef} className={`relative ${className}`}>
       <button
         ref={buttonRef}
         type="button"
         onClick={() => setIsMenuOpen((prev) => !prev)}
-        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7]"
+        className={`flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7] ${Check_Cursor_pointer}`}
       >
         <Image src="/icons/DownloadExport.svg" alt="Export" width={20} height={20} className="shrink-0" />
         <span className="text-hide">Export</span>

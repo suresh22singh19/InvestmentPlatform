@@ -2656,7 +2656,8 @@ export default function RoleMasterPage() {
                                     </label>
                                     <div className="flex flex-wrap gap-4">
                                         {ROLE_NAME_PRESET_OPTIONS.map((opt) => {
-                                            const isDisabled = wizardMode === "edit" || opt === "Nurse" || opt === "Therapist";
+                                            // const isDisabled = wizardMode === "edit" || opt === "Nurse" || opt === "Therapist";
+                                            const isDisabled = wizardMode === "edit" || opt === "Therapist";
                                             return (
                                                 <label key={opt} className={`flex items-center gap-2 ${isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                                     <input

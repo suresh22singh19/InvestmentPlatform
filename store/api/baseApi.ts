@@ -211,6 +211,7 @@ export const baseApi = createApi({
     "BranchServices",
     "PatientTokenDisplay",
     "Doctors",
+    "Nurses",
   ],
   endpoints: () => ({}),
 });
