@@ -13,6 +13,7 @@ import authReducer from "./slices/authSlice";
 import { baseApi } from "./api/baseApi";
 import { authRefreshApi } from "./api/authRefreshApi";
 import "./api/doctorApi";
+import "./api/nurseApi";
 import "./api/v3OldHiimsApis";
 
 // Redux Persist config - only persist auth slice

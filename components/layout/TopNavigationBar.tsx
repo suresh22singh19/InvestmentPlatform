@@ -42,6 +42,7 @@ const NAV_ICON_SRC: Record<string, string> = {
   doctors: "/icons/DoctorDarkIcon.svg",
   "roles-master": "/icons/RoleMasterDarkIcon.svg",
   "branch-role-master": "/icons/BranchRoleMasterIcon.svg",
+  nurses: "/icons/UsersDarkIcon.svg",
 };
 
 type TopNavigationBarProps = {
@@ -423,6 +424,15 @@ const getAllDoctorItems = (): SettingsItem[] => [
   // },
 ];
 
+const getAllNurseItems = (): SettingsItem[] => [
+  {
+    key: "nurse-main",
+    label: "Nurse",
+    href: "/nurse",
+    iconSrc: "/icons/UsersDarkIcon.svg",
+  },
+];
+
 const getPreBookingItems = (): SettingsItem[] => [
   {
     key: "pre-booking-new",
@@ -716,6 +726,7 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
   { key: "doctors", label: "Doctor", hasDropdown: true },
+  { key: "nurses", label: "Nurse", hasDropdown: true },
   { key: "reports", label: "Reports", href: "/reports" },
   { key: "infrastructure-view", label: "Infrastructure", href: "/infrastructure" },
   { key: "pre-booking", label: "Pre Booking", hasDropdown: true },
@@ -738,6 +749,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   token: ["token", "tokens"],
   "discharge-pending": ["discharge-pending"],
   doctors: ["doctor", "doctors"],
+  nurses: ["nurse", "nurses"],
   registration: ["registration"],
 
 };
@@ -792,6 +804,12 @@ const DOCTOR_SUBMODULE_ALIASES: Record<string, string[]> = {
   "doctor-main": ["doctor", "doctors"],
   "doctor-camp": ["doctor", "doctors", "camp-doctor", "camp"],
   "doctor-visit": ["doctor", "doctors", "doctor-visit", "visit"],
+};
+
+const NURSE_SUBMODULE_ALIASES: Record<string, string[]> = {
+  "nurse-main": ["nurse", "nurses"],
+  "nurse-camp": ["nurse", "nurses", "camp-nurse", "camp"],
+  "nurse-visit": ["nurse", "nurses", "nurse-visit", "visit"],
 };
 
 const normalizeName = (value: string) =>
@@ -949,6 +967,14 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   );
   const doctorItems =
     doctorItemsFiltered.length > 0 ? doctorItemsFiltered : getAllDoctorItems();
+  const nurseItemsFiltered = filterBySubModuleAccess(
+    getAllNurseItems(),
+    permissionsMap,
+    ["nurse", "nurses"],
+    NURSE_SUBMODULE_ALIASES
+  );
+  const nurseItems =
+    nurseItemsFiltered.length > 0 ? nurseItemsFiltered : getAllNurseItems();
   const preBookingItems = useMemo(() => getPreBookingItems(), []);
   const leadRequestItems = useMemo(() => getLeadRequestItems(), []);
   useEffect(() => {
@@ -1142,6 +1168,8 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
             isActive = pathname === "/voucher" || pathname?.startsWith("/voucher/");
           } else if (item.key === "doctors" && pathname) {
             isActive = pathname === "/doctor" || pathname?.startsWith("/doctor/");
+          } else if (item.key === "nurses" && pathname) {
+            isActive = pathname === "/nurse" || pathname?.startsWith("/nurse/");
           } else if (sidebarItem && pathname) {
             isActive = shouldItemBeActive(pathname, sidebarItem);
           }
@@ -1154,6 +1182,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               (item.key === "settings" && settingsItems.length > 0) ||
               (item.key === "patient" && patientItems.length > 0) ||
               (item.key === "doctors" && doctorItems.length > 0) ||
+              (item.key === "nurses" && nurseItems.length > 0) ||
               (item.key === "pre-booking" && preBookingItems.length > 0) ||
               (item.key === "lead-request" && leadRequestItems.length > 0) ||
               item.key === "hospital-infrastructure" ||
@@ -1361,6 +1390,18 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                     onNavigate?.();
                   }}
                   title="Doctor"
+                />
+              )}
+              {openDropdownKey === "nurses" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={nurseItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="Nurse"
                 />
               )}
             </div>

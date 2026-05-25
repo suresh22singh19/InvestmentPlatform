@@ -44,6 +44,7 @@ export type FormSelectFieldProps = {
   error?: string;
   emptyMessage?: string; // Custom message when no options are available
   hideLabel?: boolean; // When true, do not render label (e.g. for compact header use)
+  className?: string;
 };
 
 const normalizeSize = (value: SizeValue | undefined) => {
@@ -118,6 +119,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       error,
       emptyMessage = "No results found",
       hideLabel = false,
+      className="",
       onBlur,
       onOpen,
       ...props
@@ -125,6 +127,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
     ref
   ) => {
   const isMultiple = props.mode === "multiple";
+  const Check_Cursor_pointer = className ? className : "";
   
   const renderLabel = useMemo(() => {
     if (label.includes("*")) {
@@ -832,7 +835,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       ? createPortal(
           <div
             ref={panelRef}
-            className="z-[1000] flex max-h-[calc(100vh-96px)] flex-col rounded-[16px] border border-[#E6E8EC] bg-white shadow-[0px_28px_60px_rgba(47,72,61,0.16)]"
+            className={`z-[1000] flex max-h-[calc(100vh-96px)] flex-col rounded-[16px] border border-[#E6E8EC] bg-white shadow-[0px_28px_60px_rgba(47,72,61,0.16)]`}
             style={{
               position: "fixed",
               top: dropdownStyle.top,
@@ -1295,7 +1298,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       <button
         ref={buttonRef}
         type="button"
-        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""}`}
+        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""} ${Check_Cursor_pointer}`}
         onClick={toggleOpen}
         onKeyDown={handleKeyDown}
         onBlur={(e) => {
