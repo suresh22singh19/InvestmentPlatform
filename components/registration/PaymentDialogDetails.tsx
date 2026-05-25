@@ -44,6 +44,14 @@ interface PaymentDialogDetailsProps {
     canDownload?: boolean;
     /** When true, only Download and Print are shown (post-success receipt). */
     receiptActionsOnly?: boolean;
+    submitLabel?: string;
+    splitCashAmount?: string;
+    splitCashStatus?: string;
+    splitUpiAmount?: string;
+    splitUpiStatus?: string;
+    splitCardAmount?: string;
+    splitCardStatus?: string;
+    selectedOnlineSplitMethod?: "razorpay" | "payu";
 }
 
 export default function PaymentDialogDetails({
@@ -81,6 +89,14 @@ export default function PaymentDialogDetails({
     isDownloadingInvoice = false,
     canDownload = true,
     receiptActionsOnly = false,
+    submitLabel = "Submit",
+    splitCashAmount,
+    splitCashStatus,
+    splitUpiAmount,
+    splitUpiStatus,
+    splitCardAmount,
+    splitCardStatus,
+    selectedOnlineSplitMethod,
 }: PaymentDialogDetailsProps) {
     // Add print styles for proper spacing - single page only
     useEffect(() => {
@@ -225,6 +241,13 @@ export default function PaymentDialogDetails({
                     billingStateName={billingStateName}
                     billingCityName={billingCityName}
                     billingPincode={billingPincode}
+                    splitCashAmount={splitCashAmount}
+                    splitCashStatus={splitCashStatus}
+                    splitUpiAmount={splitUpiAmount}
+                    splitUpiStatus={splitUpiStatus}
+                    splitCardAmount={splitCardAmount}
+                    splitCardStatus={splitCardStatus}
+                    selectedOnlineSplitMethod={selectedOnlineSplitMethod}
                 />
 
                 {/* Action Buttons */}
@@ -241,16 +264,15 @@ export default function PaymentDialogDetails({
                         className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#0B8C00] hover:bg-[#0B8C00]/10 transition-colors"
                     >
                         <Image src="/icons/Printer.svg" alt="Print invoice" width={20} height={20} />
-                        Print
+                        Print Invoice
                     </button>
                     {canDownload ? (
                         <button
                             type="button"
                             onClick={() => void onDownload()}
                             disabled={isSubmitting || isDownloadingInvoice}
-                            className={`flex h-10 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 font-inter text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7] disabled:cursor-not-allowed disabled:opacity-60 ${
-                                isDownloadingInvoice ? "cursor-wait" : "cursor-pointer"
-                            }`}
+                            className={`flex h-10 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#9A7909] bg-white px-6 font-inter text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FEF9E7] disabled:cursor-not-allowed disabled:opacity-60 ${isDownloadingInvoice ? "cursor-wait" : "cursor-pointer"
+                                }`}
                         >
                             {isDownloadingInvoice ? (
                                 <ThreeDotLoader color="green" size="small" />
@@ -263,7 +285,7 @@ export default function PaymentDialogDetails({
                                         height={20}
                                         className="shrink-0"
                                     />
-                                    Download
+                                    Download Now
                                 </>
                             )}
                         </button>
@@ -272,18 +294,17 @@ export default function PaymentDialogDetails({
                         <button
                             onClick={onSaveAndNext}
                             disabled={isSubmitting}
-                            className={`flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border bg-[#0B8C00] border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#ffffff] transition-colors ${
-                                isSubmitting
-                                    ? "opacity-50 cursor-not-allowed"
-                                    : "cursor-pointer hover:bg-[#0A7A00]"
-                            }`}
+                            className={`flex flex-row justify-center items-center px-6 py-3 gap-2 h-[41px] border bg-[#0B8C00] border-[#0B8C00] rounded-[32px] font-inter text-[14px] leading-[120%] text-center text-[#ffffff] transition-colors ${isSubmitting
+                                ? "opacity-50 cursor-not-allowed"
+                                : "cursor-pointer hover:bg-[#0A7A00]"
+                                }`}
                         >
                             {isSubmitting ? (
                                 <ThreeDotLoader color="white" size="small" />
                             ) : (
                                 <>
-                                    <Image src="/icons/save.svg" alt="Submit" width={20} height={20} />
-                                    <span>Submit</span>
+                                    <Image src="/icons/save.svg" alt={submitLabel} width={20} height={20} />
+                                    <span>{submitLabel}</span>
                                 </>
                             )}
                         </button>

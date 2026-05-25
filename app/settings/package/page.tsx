@@ -1045,7 +1045,7 @@ export default function PackagePage() {
       attendantFeePrice: addPackageForm.attendantFeesEnabled ? parseNum(addPackageForm.attendantFeesPrice) : 0,
       therapyEnabled: addPackageForm.therapyEnabled,
       therapyLoad: 1,
-      therapySessionsPerDay: addPackageForm.therapyEnabled ? parseIntSafe(addPackageForm.therapySessionsPerDay) : 0,
+      therapySessionsPerDay: addPackageForm.therapyEnabled ? (parseIntSafe(addPackageForm.therapySessionsPerDay) || 1) : 0,
       therapyPrice: addPackageForm.therapyEnabled ? parseNum(addPackageForm.therapyPrice) : 0,
     };
     try {
@@ -1688,10 +1688,35 @@ export default function PackagePage() {
                   disabled={isViewMode}
                 />
               </div>
+              {addPackageForm.therapyEnabled && (
+                <div className="flex flex-col gap-1">
+                  <div className="relative w-[216px]">
+                    <FormInputField
+                      label={""}
+                      value={addPackageForm.therapyPrice}
+                      onChange={(e) => {
+                        const val = sanitizePriceInput(e.target.value);
+                        setAddPackageForm((p) => ({ ...p, therapyPrice: val }));
+                        if (val.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
+                      }}
+                      placeholder="Price"
+                      type="text"
+                      inputMode="decimal"
+                      height={37}
+                      disabled={isViewMode}
+                    />
+                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
+                      ₹
+                    </span>
+                  </div>
+                  {packageFormErrors.therapyPrice && <span className="text-xs text-[#F87171]">{packageFormErrors.therapyPrice}</span>}
+                </div>
+              )}
             </div>
 
           </div>
 
+          {/*
           {addPackageForm.therapyEnabled && (
             <div className="grid grid-cols-2 gap-6">
               <div className="relative">
@@ -1720,27 +1745,9 @@ export default function PackagePage() {
                 </span>
                 <p className="mt-1 text-[11px] leading-snug text-[#7B8089]">Maximum allowed: 5 sessions based on staff availability.</p>
               </div>
-              <div className="relative">
-                <FormInputField
-                  label={"Price"}
-                  value={addPackageForm.therapyPrice}
-                  onChange={(e) => {
-                    const val = sanitizePriceInput(e.target.value);
-                    setAddPackageForm((p) => ({ ...p, therapyPrice: val }));
-                    if (val.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
-                  }}
-                  placeholder="Price"
-                  type="text"
-                  inputMode="decimal"
-                  disabled={isViewMode}
-                />
-                <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
-                  ₹
-                </span>
-                {packageFormErrors.therapyPrice && <span className="mt-1 text-xs text-[#F87171]">{packageFormErrors.therapyPrice}</span>}
-              </div>
             </div>
           )}
+          */}
 
           <div className="w-[300px] p-4 bg-[#0B8C00] shadow-[0px_6px_40px_rgba(0,0,0,0.02)] rounded-2xl">
             <div className="flex items-center gap-2 ">

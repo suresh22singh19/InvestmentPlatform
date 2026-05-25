@@ -89,3 +89,7 @@ export { PatientRoomListingCard } from "./PatientRoomListingCard";
 export type { PatientRoomListingItem } from "./PatientRoomListingCard";
 export { PatientReportListingCard } from "./PatientReportListingCard";
 export type { PatientReportListingItem } from "./PatientReportListingCard";
+export { Badge } from "./Badge";
+export type { BadgeProps, BadgeVariant } from "./Badge";
+export { SegmentedToggle } from "./SegmentedToggle";
+

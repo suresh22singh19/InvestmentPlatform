@@ -18,15 +18,18 @@ const sizeClasses = {
   large: "h-11 px-8 text-sm",
   medium: "h-10 px-6 text-sm",
   small: "h-9 px-5 text-xs",
+  xsmall: "h-8 px-4 text-xs",
 };
 
 export type ButtonVariant = keyof typeof variantClasses;
 export type ButtonSize = keyof typeof sizeClasses;
 
+
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  width?: string | number;
   children: React.ReactNode;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
@@ -38,6 +41,7 @@ export const Button: React.FC<ButtonProps> = ({
   variant = "primary",
   size = "large",
   fullWidth = false,
+  width,
   className = "",
   children,
   leftIcon,
@@ -46,17 +50,29 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const widthClass = fullWidth ? "w-full" : "min-w-[132px]";
+  const widthClass = width !== undefined
+    ? ""
+    : fullWidth
+    ? "w-full"
+    : size === "xsmall"
+    ? "min-w-[180px]"
+    : "min-w-[132px]";
   const isDisabled = disabled || isLoading;
-  
+
   // Determine loader color: white for primary (green) buttons, green for others
   const loaderColor = variant === "primary" ? "white" : "green";
-  const loaderSize = size === "small" ? "small" : size === "medium" ? "medium" : "large";
+  const loaderSize = size === "small" || size === "xsmall" ? "small" : size === "medium" ? "medium" : "large";
+
+  const buttonStyle = {
+    ...(width !== undefined ? { width: typeof width === "number" ? `${width}px` : width } : {}),
+    ...props.style,
+  };
 
   return (
     <button
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${widthClass} gap-2 ${className} cursor-pointer`}
       disabled={isDisabled}
+      style={buttonStyle}
       {...props}
     >
       {isLoading ? (

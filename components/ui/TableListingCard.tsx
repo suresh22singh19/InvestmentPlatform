@@ -31,15 +31,22 @@ export interface TableListingSection {
     leftSideContent?: ReactNode;
     /** Always shown on the right of the header row. */
     titleRightContent?: ReactNode;
-    columns: TableListingColumn[];
-    rows: ReactNode[][];
+    columns?: TableListingColumn[];
+    rows?: ReactNode[][];
     /** When `rows` is empty, show headers + centered message in the table body */
     emptyMessage?: string;
     /** When provided, renders Pagination inside the card below the table */
     pagination?: PaginationConfig;
     /** Shows a centered spinner in the table body while data is loading */
     isLoading?: boolean;
+    /** Custom content to render instead of the standard Table */
+    customContent?: ReactNode;
+    /** If true, renders a styled error state container instead of the table or customContent */
+    isError?: boolean;
+    /** The error message to display in the error state. */
+    errorMessage?: string;
 }
+
 
 interface TableListingCardProps {
     sections: TableListingSection[];
@@ -66,18 +73,32 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                         );
                     })()}
 
+                    {section.isError ? (
+                        <div className="py-12 text-center text-sm font-medium leading-[120%] text-[#F6776E]">
+                            {section.errorMessage || "Facing server API error"}
+                        </div>
+                    ) : section.customContent ? (
+                        section.isLoading ? (
+                            <div className="flex h-[240px] items-center justify-center">
+                                <SpinnerLoader size={28} />
+                            </div>
+                        ) : (
+                            section.customContent
+                        )
+                    ) : (
+
                         <div style={{ overflow: "visible" }}>
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-white">
-                                        {section.columns.map((column, columnIndex) => (
+                                        {(section.columns ?? []).map((column, columnIndex) => (
                                             <TableHead
                                                 key={`${section.id}-header-${columnIndex}`}
                                                 position={
                                                     column.position ??
                                                     (columnIndex === 0
                                                         ? "first"
-                                                        : columnIndex === section.columns.length - 1
+                                                        : columnIndex === (section.columns ?? []).length - 1
                                                             ? "last"
                                                             : "middle")
                                                 }
@@ -95,7 +116,7 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                     {section.isLoading ? (
                                         <TableRow>
                                             <TableData
-                                                colSpan={section.columns.length}
+                                                colSpan={(section.columns ?? []).length}
                                                 className="h-auto min-h-[120px] border-b-0 py-12 align-middle"
                                             >
                                                 <div className="flex items-center justify-center">
@@ -103,10 +124,10 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                                 </div>
                                             </TableData>
                                         </TableRow>
-                                    ) : section.rows.length === 0 && section.emptyMessage ? (
+                                    ) : (section.rows ?? []).length === 0 && section.emptyMessage ? (
                                         <TableRow>
                                             <TableData
-                                                colSpan={section.columns.length}
+                                                colSpan={(section.columns ?? []).length}
                                                 className="h-auto min-h-[120px] border-b-0 py-12 align-middle"
                                             >
                                                 <p className="text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
@@ -115,7 +136,7 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                             </TableData>
                                         </TableRow>
                                     ) : (
-                                        section.rows.map((row, rowIndex) => (
+                                        (section.rows ?? []).map((row, rowIndex) => (
                                             <TableRow key={`${section.id}-row-${rowIndex}`}>
                                                 {row.map((cell, cellIndex) => (
                                                     <TableData key={`${section.id}-row-${rowIndex}-cell-${cellIndex}`}>
@@ -128,7 +149,8 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                                 </TableBody>
                             </Table>
                         </div>
-                    {section.pagination && (section.rows.length > 0 || section.isLoading) && (
+                    )}
+                    {section.pagination && !section.isError && (section.customContent || (section.rows ?? []).length > 0 || section.isLoading) && (
                         <Pagination
                             currentPage={section.pagination.currentPage}
                             totalItems={section.pagination.totalItems}

@@ -31,6 +31,13 @@ export interface PaymentReceiptCaptureProps {
     billingStateName?: string;
     billingCityName?: string;
     billingPincode?: string;
+    splitCashAmount?: string;
+    splitCashStatus?: string;
+    splitUpiAmount?: string;
+    splitUpiStatus?: string;
+    splitCardAmount?: string;
+    splitCardStatus?: string;
+    selectedOnlineSplitMethod?: "razorpay" | "payu";
 }
 
 export function PaymentReceiptCapture({
@@ -60,6 +67,13 @@ export function PaymentReceiptCapture({
     billingStateName,
     billingCityName,
     billingPincode,
+    splitCashAmount,
+    splitCashStatus,
+    splitUpiAmount,
+    splitUpiStatus,
+    splitCardAmount,
+    splitCardStatus,
+    selectedOnlineSplitMethod,
 }: PaymentReceiptCaptureProps) {
     const invoiceDisplay =
         invoiceNumber != null && String(invoiceNumber).trim() !== ""
@@ -240,15 +254,133 @@ export function PaymentReceiptCapture({
                         </td>
                     </tr>
                     <tr>
-                        <td className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] border-b-0 border-l-0 py-[12px] px-[24px] text-right">
-                            Total Amount:
+                        <td className="font-inter not-italic text-[#434956] border border-[#C0C3C8] border-l-0 py-[10px] px-[24px] text-right">
+                            <div className="font-extrabold text-[14px] leading-[120%] mb-1">
+                                Total Amount:
+                            </div>
+                            <div className="font-medium text-[11px] text-[#787E8C]">
+                                Amount in Words: <span className="text-[#0B8C00] font-extrabold select-all">{numberToWords(totalAmount)}</span>
+                            </div>
                         </td>
-                        <td className="border border-[#C0C3C8] border-b-0 border-r-0 py-[12px] px-[24px] text-right font-inter text-[14px] font-semibold not-italic leading-[120%] text-[#434956]">
+                        <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-right font-inter text-[14px] font-semibold not-italic leading-[120%] text-[#434956] align-middle">
                             {formatCurrency(totalAmount)}
                         </td>
                     </tr>
                 </tbody>
             </table>
+
+            {_paymentMode === "split" && (
+                <div className="flex flex-col w-full  mt-0">
+                    <h3 className="font-inter not-italic font-extrabold text-[15px] leading-[130%] text-[#434956] py-[12px] px-[24px] pb-3 bg-gray-50/50">
+                        Payment Details (Split Payment)
+                    </h3>
+                    <table className="w-full border-collapse border-t border-[#C0C3C8]">
+                        <thead>
+                            <tr className="bg-white">
+                                <th className="border border-[#C0C3C8] border-l-0 py-[12px] px-[24px] text-start font-inter text-[13px] font-extrabold text-[#434956]">
+                                    Payment Mode
+                                </th>
+                                <th className="border border-[#C0C3C8] py-[12px] px-[16px] text-center font-inter text-[13px] font-extrabold text-[#434956]">
+                                    Transaction/Reference No.
+                                </th>
+                                <th className="border border-[#C0C3C8] border-r-0 py-[12px] px-[24px] text-end font-inter text-[13px] font-extrabold text-[#434956] w-[160px]">
+                                    Amount
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {splitCashStatus === "verified" && (
+                                <tr className="hover:bg-gray-50/30">
+                                    <td className="border border-[#C0C3C8] border-l-0 py-[10px] px-[24px] text-start font-inter text-[13px] font-semibold text-[#434956]">
+                                        Cash
+                                    </td>
+                                    <td className="border border-[#C0C3C8] py-[10px] px-[16px] text-center font-inter text-[13px] font-medium text-[#434956]">
+                                        -
+                                    </td>
+                                    <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
+                                        ₹ {Number(splitCashAmount).toLocaleString("en-IN")}
+                                    </td>
+                                </tr>
+                            )}
+                            {selectedOnlineSplitMethod === "razorpay" && splitUpiStatus === "success" && (
+                                <tr className="hover:bg-gray-50/30">
+                                    <td className="border border-[#C0C3C8] border-l-0 py-[10px] px-[24px] text-start font-inter text-[13px] font-semibold text-[#434956]">
+                                        Razorpay (UPI)
+                                    </td>
+                                    <td className="border border-[#C0C3C8] py-[10px] px-[16px] text-center font-inter text-[13px] font-medium text-[#434956]">
+                                        UPI/312345678901
+                                    </td>
+                                    <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
+                                        ₹ {Number(splitUpiAmount).toLocaleString("en-IN")}
+                                    </td>
+                                </tr>
+                            )}
+                            {selectedOnlineSplitMethod === "payu" && splitCardStatus === "success" && (
+                                <tr className="hover:bg-gray-50/30">
+                                    <td className="border border-[#C0C3C8] border-l-0 py-[10px] px-[24px] text-start font-inter text-[13px] font-semibold text-[#434956]">
+                                        PayU (Credit Card)
+                                    </td>
+                                    <td className="border border-[#C0C3C8] py-[10px] px-[16px] text-center font-inter text-[13px] font-medium text-[#434956]">
+                                        HDFC/1234 **** **** 5678
+                                    </td>
+                                    <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
+                                        ₹ {Number(splitCardAmount).toLocaleString("en-IN")}
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function numberToWords(num: number): string {
+    if (num === 0) return "Zero Rupees Only";
+    const a = [
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+        "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"
+    ];
+    const b = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+    const format = (n: number): string => {
+        if (n < 20) return a[n];
+        const digit = n % 10;
+        return b[Math.floor(n / 10)] + (digit !== 0 ? " " + a[digit] : "");
+    };
+
+    let words = "";
+
+    const crore = Math.floor(num / 10000000);
+    num %= 10000000;
+    if (crore > 0) {
+        words += format(crore) + " Crore ";
+    }
+
+    const lakh = Math.floor(num / 100000);
+    num %= 100000;
+    if (lakh > 0) {
+        words += format(lakh) + " Lakh ";
+    }
+
+    const thousand = Math.floor(num / 1000);
+    num %= 1000;
+    if (thousand > 0) {
+        words += format(thousand) + " Thousand ";
+    }
+
+    const hundred = Math.floor(num / 100);
+    num %= 100;
+    if (hundred > 0) {
+        words += format(hundred) + " Hundred ";
+    }
+
+    if (num > 0) {
+        if (words !== "") words += "and ";
+        words += format(num) + " ";
+    }
+
+    return words.trim() + " Rupees Only";
 }

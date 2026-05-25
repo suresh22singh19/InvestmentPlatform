@@ -2806,7 +2806,7 @@ export default function IpdPage() {
         const baseSections = buildWalletTabTableSections(opdWalletPayload, openWalletOrderDetails);
         return baseSections.map((section) => {
             if (section.id === "wallet-package") {
-                const rows = section.rows.map((row, idx) => {
+                const rows = (section.rows ?? []).map((row, idx) => {
                     const rowKey = `wallet-package-${idx}`;
                     const withAction = [...row];
                     withAction[withAction.length - 1] = (
@@ -2843,12 +2843,12 @@ export default function IpdPage() {
             }
 
             if (section.id === "wallet-installment") {
-                const columns: TableListingSection["columns"] = section.columns.map((column, index) => {
+                const columns: TableListingSection["columns"] = (section.columns ?? []).map((column, index) => {
                     if (index === 0) return { ...column, position: "first" as const };
                     return { ...column, position: "middle" as const };
                 });
                 columns.push({ label: "Action", position: "last" as const });
-                const rows = section.rows.map((row, idx) => {
+                const rows = (section.rows ?? []).map((row, idx) => {
                     const rowKey = `wallet-installment-${idx}`;
                     return [
                         ...row,

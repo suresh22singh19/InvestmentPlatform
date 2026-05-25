@@ -12,7 +12,7 @@ type MessageDialogProps = {
   iconBgColor?: string; // Background color for icon circle
   /** When set, replaces the default circular image icon (e.g. custom illustration). */
   iconSlot?: ReactNode;
-  message: string;
+  message: ReactNode;
   onConfirm?: () => void;
   onCancel?: () => void;
   confirmText?: string;

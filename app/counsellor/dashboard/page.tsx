@@ -1,16 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
   TableSearchInput,
-  Pagination,
   Button,
   TableListingCard,
   type TableListingSection,
+  MessageDialog,
+  FormSelectField,
 } from "@/components/ui";
+import {
+  useGetCounsellorStatsQuery,
+  useGetReferredPatientsQuery,
+  useGetTodayAdmissionsQuery,
+  useGetTodayAvailableRoomsQuery,
+} from "@/store/api/counsellorApi";
+import { useDebounce } from "@/hooks/useDebounce";
 
 // ─── Stat card component ──────────────────────────────────────────────────────
 type DashboardStatCardProps = {
@@ -25,11 +33,10 @@ function DashboardStatCard({ label, value, iconSrc, isActive, onClick }: Dashboa
   return (
     <div
       onClick={onClick}
-      className={`rounded-[20px] p-5 flex justify-between items-center cursor-pointer transition-all duration-200 select-none ${
-        isActive
-          ? "bg-[#0B8C00] shadow-lg scale-[1.02]"
-          : "bg-white  hover:shadow-md"
-      }`}
+      className={`rounded-[20px] p-5 flex justify-between items-center cursor-pointer transition-all duration-200 select-none ${isActive
+        ? "bg-[#0B8C00] shadow-lg scale-[1.02]"
+        : "bg-white  hover:shadow-md"
+        }`}
     >
       <div>
         <p className={`text-sm font-medium mb-3 ${isActive ? "text-white" : "text-[#434956]"}`}>
@@ -52,76 +59,245 @@ function DashboardStatCard({ label, value, iconSrc, isActive, onClick }: Dashboa
   );
 }
 
+// ─── Room Card component ──────────────────────────────────────────────────────
+interface DashboardRoomCardProps {
+  room: {
+    id: number | string;
+    roomNumber: string;
+    roomType: string;
+    bedCapacity: number;
+    status: string;
+    branchName: string;
+    buildingName: string;
+    floorName: string;
+  };
+  index: number;
+}
+
+function DashboardRoomCard({ room, index }: DashboardRoomCardProps) {
+  const isVacant =
+    room.status?.toLowerCase() === "vacant" ||
+    room.status?.toLowerCase() === "available" ||
+    !room.status;
+
+  // Render overlapping D S R badges on index 1 matching the user's figma screenshot exactly
+  const showDSR = index === 1;
+
+  return (
+    <div className="rounded-[20px] border border-[#E3EEE1] bg-white flex flex-col select-none transition-all duration-200 hover:shadow-md hover:border-[#0B8C00]/30">
+      {/* 1. Header Row */}
+      <div className="p-5 flex justify-between items-center border-b border-[#F0F4EF] gap-2 h-[72px]">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#7E828A] border border-[#E9EBEA] flex items-center justify-center font-medium text-sm">
+            {index}
+          </span>
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-[#7E8B9A] uppercase tracking-wider">Room Number</span>
+            <span className="font-bold text-[#262D3B] text-base mt-0.5">{room.roomNumber || "N/A"}</span>
+          </div>
+        </div>
+
+        {/* Status Pill Badge */}
+        <span
+          className={`inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold border ${isVacant
+            ? "border-[#0B8C00]/20 bg-[#0B8C00]/5 text-[#0B8C00]"
+            : "border-[#F6776E]/20 bg-[#F6776E]/5 text-[#F6776E]"
+            }`}
+        >
+          {isVacant ? "Available" : room.status}
+        </span>
+      </div>
+
+      {/* 2. Body / Details Section (2-Column block) */}
+      <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[#7E8B9A] font-semibold text-[10px] uppercase tracking-wider">Floor</span>
+          <span className="font-semibold text-[#262D3B] text-sm mt-0.5">{room.floorName || "N/A"}</span>
+        </div>
+
+        <div className="flex flex-col gap-0.5 relative">
+          <span className="text-[#7E8B9A] font-semibold text-[10px] uppercase tracking-wider">Building</span>
+          <span
+            className="font-semibold text-[#262D3B] text-sm mt-0.5 truncate"
+            title={room.buildingName || "N/A"}
+          >
+            {room.buildingName || "N/A"}
+          </span>
+
+
+        </div>
+
+        <div className="flex flex-col gap-0.5 col-span-2">
+          <span className="text-[#7E8B9A] font-semibold text-[10px] uppercase tracking-wider">Room Type</span>
+          <span className="font-semibold text-[#262D3B] text-sm mt-0.5">{room.roomType || "N/A"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Stat cards config ────────────────────────────────────────────────────────
 const STAT_CARDS = [
-  { id: "referred",   label: "Referred Patients",    value: 20, iconSrc: "/icons/patientBed.svg" },
-  { id: "admissions", label: "Today's Admissions",   value: 24, iconSrc: "/icons/addPatient.svg" },
-  { id: "rooms",      label: "Available Rooms Today", value: 18, iconSrc: "/icons/bedDarkIcon.svg" },
+  { id: "referred", label: "Referred Patients", iconSrc: "/icons/patientBed.svg" },
+  { id: "admissions", label: "Today's Admissions", iconSrc: "/icons/addPatient.svg" },
+  { id: "rooms", label: "Available Rooms Today", iconSrc: "/icons/bedDarkIcon.svg" },
 ];
-
-// ─── Static patient data ──────────────────────────────────────────────────────
-const PATIENTS = [
-  { id: 1, name: "Ajay Kumar",   uhid: "JSKL41712025", contact: "9876543210", doctor: "Dr Shiv Ram Singh",          complaint: "Fever & Body Pain",  lastVisit: "18 May 2026" },
-  { id: 2, name: "Rohit Singh",  uhid: "JSKL41712025", contact: "9812345678", doctor: "Dr. Aakash Dave",            complaint: "Chest Pain",          lastVisit: "17 May 2026" },
-  { id: 3, name: "Ajeet Kumar",  uhid: "JSKL41712025", contact: "9898989898", doctor: "Dr Heera Singh",             complaint: "Migraine",            lastVisit: "16 May 2026" },
-  { id: 4, name: "Manish Soni",  uhid: "JSKL41712025", contact: "9765432109", doctor: "Dr Alok Ashok Tripathi",     complaint: "Stomach Infection",   lastVisit: "15 May 2026" },
-  { id: 5, name: "Pankaj Kumar", uhid: "JSKL41712025", contact: "9123456780", doctor: "Dr Aishwarya Subhash Thorat",complaint: "Back Pain",           lastVisit: "14 May 2026" },
-  { id: 6, name: "Aman Singh",   uhid: "JSKL41712025", contact: "9988776655", doctor: "Dr Kadambaree",              complaint: "High Blood Pressure", lastVisit: "13 May 2026" },
-];
-
-// ─── Table config per card ────────────────────────────────────────────────────
-const TABLE_CONFIG = {
-  referred: {
-    title: "Referred Patients",
-    colSpan: 7,
-  },
-  admissions: {
-    title: "Today's Admissions",
-    colSpan: 8,
-  },
-  rooms: {
-    title: "Available Rooms Today",
-    colSpan: 7,
-  },
-};
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CounsellorDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 500);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [activeCard, setActiveCard] = useState<string>("referred");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [selectedRoomType, setSelectedRoomType] = useState("");
+  const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("ASC");
+  const [sortBy, setSortBy] = useState<string>("patientName");
+
+  // Confirmation dialog and submitting states
+  const [pendingAction, setPendingAction] = useState<{ type: "refer"; item: any } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
+  const [apiErrorMessage, setApiErrorMessage] = useState("");
+
+  const handleReferToOPD = async (item: any) => {
+    setIsSubmitting(true);
+    // Simulate background processing API call delay
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    setIsSubmitting(false);
+    setSuccessMessage(`Patient ${item.patientName} referred to OPD successfully!`);
+    setShowSuccessDialog(true);
+  };
+
+  // Reset page when debounced search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
+  // API Queries
+  const { data: statsRes, isLoading: isStatsLoading } = useGetCounsellorStatsQuery();
+  const statsData = statsRes?.data;
+
+  // 1. Referred Patients Query
+  const referredParams = {
+    search: debouncedSearch.trim() || undefined,
+    sortBy: sortBy === "patientName" || sortBy === "doctorName" ? sortBy : "patientName",
+    order: sortOrder,
+    page: currentPage,
+    limit: itemsPerPage,
+  };
+  const { data: referredRes, isLoading: isReferredLoading } = useGetReferredPatientsQuery(
+    referredParams,
+    { skip: activeCard !== "referred" }
+  );
+
+  // 2. Today's Admissions Query
+  const admissionsParams = {
+    search: debouncedSearch.trim() || undefined,
+    sortBy: sortBy === "patientName" ? "patientName" : undefined,
+    order: sortOrder,
+    page: currentPage,
+    limit: itemsPerPage,
+  };
+  const { data: admissionsRes, isLoading: isAdmissionsLoading } = useGetTodayAdmissionsQuery(
+    admissionsParams,
+    { skip: activeCard !== "admissions" }
+  );
+
+  // 3. Available Rooms Query
+  const roomsParams = {
+    search: debouncedSearch.trim() || undefined,
+    sortBy: sortBy === "roomNumber" ? "roomNumber" : undefined,
+    order: sortOrder,
+    page: currentPage,
+    limit: itemsPerPage,
+  };
+  const { data: roomsRes, isLoading: isRoomsLoading } = useGetTodayAvailableRoomsQuery(
+    roomsParams,
+    { skip: activeCard !== "rooms" }
+  );
 
   const handleCardClick = (id: string) => {
     setActiveCard(id);
     setSearchTerm("");
+    setSelectedRoomType("");
     setCurrentPage(1);
-    setSortOrder("asc");
+    setSortOrder("ASC");
+    if (id === "rooms") {
+      setSortBy("roomNumber");
+      setItemsPerPage(8); // Display 8 room cards (4 columns x 2 rows)
+    } else {
+      setSortBy("patientName");
+      setItemsPerPage(10);
+    }
   };
 
-  const filtered = PATIENTS
-    .filter(
-      (p) =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.uhid.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.doctor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.complaint.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) =>
-      sortOrder === "asc"
-        ? a.name.localeCompare(b.name)
-        : b.name.localeCompare(a.name)
-    );
+  // Extract unique room types dynamically from roomsRes?.data
+  const uniqueRoomTypes = useMemo(() => {
+    if (!roomsRes?.data) return [];
+    const typesSet = new Set<string>();
+    roomsRes.data.forEach((room) => {
+      if (room.roomType) typesSet.add(room.roomType);
+    });
+    return Array.from(typesSet).sort();
+  }, [roomsRes?.data]);
 
-  const tableConfig = TABLE_CONFIG[activeCard as keyof typeof TABLE_CONFIG];
+  const roomTypeOptions = useMemo(() => {
+    return [
+      { label: "All Room Types", value: "" },
+      ...uniqueRoomTypes.map((type) => ({ label: type, value: type })),
+    ];
+  }, [uniqueRoomTypes]);
+
+  // Client-side filtered rooms list
+  const filteredRooms = useMemo(() => {
+    const rooms = roomsRes?.data || [];
+    if (!selectedRoomType) return rooms;
+    return rooms.filter((room) => room.roomType === selectedRoomType);
+  }, [roomsRes?.data, selectedRoomType]);
+
+  // Derive active lists and loading states
+  let currentList: any[] = [];
+  let totalItems = 0;
+  let isCurrentLoading = false;
+
+  if (activeCard === "referred") {
+    currentList = referredRes?.data || [];
+    totalItems = referredRes?.total || 0;
+    isCurrentLoading = isReferredLoading;
+  } else if (activeCard === "admissions") {
+    currentList = admissionsRes?.data || [];
+    totalItems = admissionsRes?.total || 0;
+    isCurrentLoading = isAdmissionsLoading;
+  } else if (activeCard === "rooms") {
+    currentList = roomsRes?.data || [];
+    totalItems = roomsRes?.total || 0;
+    isCurrentLoading = isRoomsLoading;
+  }
+
+  const tableTitle =
+    activeCard === "referred"
+      ? "Referred Patients"
+      : activeCard === "admissions"
+        ? "Today's Admissions"
+        : "Available Rooms Today";
+
+  const emptyMessage =
+    activeCard === "referred"
+      ? "No referred patients found"
+      : activeCard === "admissions"
+        ? "No admissions found today"
+        : "No available rooms found today";
 
   return (
     <AppShell>
       {/* Page Heading + Action Buttons */}
       <div className="flex items-center justify-between">
         <PageHeading title="Dashboard" />
-        <div className="flex items-center gap-3">
+        {/* <div className="flex items-center gap-3">
           <Button
             variant="primary"
             leftIcon={<Image src="/icons/bedLightIcon.svg" alt="" width={20} height={20} />}
@@ -135,115 +311,332 @@ export default function CounsellorDashboardPage() {
           >
             New Admission
           </Button>
-        </div>
+        </div> */}
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-4">
-        {STAT_CARDS.map((card) => (
-          <DashboardStatCard
-            key={card.id}
-            label={card.label}
-            value={card.value}
-            iconSrc={card.iconSrc}
-            isActive={activeCard === card.id}
-            onClick={() => handleCardClick(card.id)}
-          />
-        ))}
+        {STAT_CARDS.map((card) => {
+          let val: string | number | undefined = undefined;
+          if (card.id === "referred") val = statsData?.totalOPDPatient;
+          else if (card.id === "admissions") val = statsData?.todayAdmissions;
+          else if (card.id === "rooms") val = statsData?.availableRooms;
+
+          const displayValue = isStatsLoading
+            ? "..."
+            : (val !== undefined && val !== null ? val : "N/A");
+
+          return (
+            <DashboardStatCard
+              key={card.id}
+              label={card.label}
+              value={displayValue}
+              iconSrc={card.iconSrc}
+              isActive={activeCard === card.id}
+              onClick={() => handleCardClick(card.id)}
+            />
+          );
+        })}
       </div>
 
       {/* Dynamic Table */}
       {(() => {
-        const btnCls = "px-4 py-1.5 rounded-[32px] border border-[#0B8C00] text-[#0B8C00] text-xs font-medium hover:bg-[#F2F8F2] transition-colors whitespace-nowrap";
+        let columns: TableListingSection["columns"] = [];
 
-        const nameCol: TableListingSection["columns"][number] = {
-          label: "Patient Name",
-          sortable: true,
-          sortDirection: sortOrder,
-          onSort: () => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc")),
-        };
+        if (activeCard === "referred") {
+          columns = [
+            { label: "Sr no.", position: "first" },
+            {
+              label: "Patient Name",
+              sortable: true,
+              sortDirection: sortBy === "patientName" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
+              onSort: () => {
+                setSortBy("patientName");
+                setSortOrder((prev) => (prev === "ASC" ? "DESC" : "ASC"));
+                setCurrentPage(1);
+              },
+            },
+            { label: "Patient UHID" },
+            { label: "Contact Number" },
+            { label: "Diagnosis / Symptoms" },
+            {
+              label: "Referring Doctor",
+              sortable: true,
+              sortDirection: sortBy === "doctorName" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
+              onSort: () => {
+                setSortBy("doctorName");
+                setSortOrder((prev) => (prev === "ASC" ? "DESC" : "ASC"));
+                setCurrentPage(1);
+              },
+            },
+            { label: "Action", position: "last", className: "cursor-pointer" },
+          ];
+        } else if (activeCard === "admissions") {
+          columns = [
+            { label: "Sr no.", position: "first" },
+            {
+              label: "Patient Name",
+              sortable: true,
+              sortDirection: sortBy === "patientName" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
+              onSort: () => {
+                setSortBy("patientName");
+                setSortOrder((prev) => (prev === "ASC" ? "DESC" : "ASC"));
+                setCurrentPage(1);
+              },
+            },
+            { label: "Patient UHID" },
+            { label: "Contact Number" },
+            { label: "Diagnosis" },
+            { label: "Admission Type" },
+            { label: "Patient Type" },
+            { label: "Referring Doctor" },
+            { label: "Action", position: "last", className: "cursor-pointer" },
+          ];
+        } else {
+          // activeCard === "rooms"
+          columns = [
+            { label: "Sr no.", position: "first" },
+            {
+              label: "Room Number",
+              sortable: true,
+              sortDirection: sortBy === "roomNumber" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
+              onSort: () => {
+                setSortBy("roomNumber");
+                setSortOrder((prev) => (prev === "ASC" ? "DESC" : "ASC"));
+                setCurrentPage(1);
+              },
+            },
+            { label: "Room Type" },
+            { label: "Bed Capacity" },
+            { label: "Building Name" },
+            { label: "Floor Name" },
+            { label: "Branch Name" },
+            { label: "Status" },
+            { label: "Action", position: "last", className: "cursor-pointer" },
+          ];
+        }
 
-        const columns: TableListingSection["columns"] =
-          activeCard === "admissions"
-            ? [
-                { label: "Sr no.", position: "first" },
-                nameCol,
-                { label: "Patient UHID" },
-                { label: "Contact Number" },
-                { label: "Referring Doctor" },
-                { label: "Chief Complaint" },
-                { label: "Last Visit Date" },
-                { label: "Action", position: "last", className: "cursor-pointer" },
-              ]
-            : [
-                { label: "Sr no.", position: "first" },
-                nameCol,
-                { label: "Patient UHID" },
-                { label: activeCard === "rooms" ? "Patient Contact Number" : "Contact Number" },
-                { label: "Referring Doctor" },
-                { label: "Chief Complaint" },
-                { label: "Action", position: "last", className: "cursor-pointer" },
-              ];
-
-        const rows: TableListingSection["rows"] = filtered.map((patient, index) => {
+        const rows: TableListingSection["rows"] = currentList.map((item, index) => {
           const sr = (currentPage - 1) * itemsPerPage + index + 1;
-          const uhid = (
-            <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
-              {patient.uhid}
-            </span>
-          );
-          const actions =
-            activeCard === "referred" ? (
-              <button type="button" className={btnCls}>Start Counselling</button>
-            ) : activeCard === "admissions" ? (
+
+          if (activeCard === "referred") {
+            const uhid = (
+              <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
+                {item.patientUhid || "N/A"}
+              </span>
+            );
+            const actions = (
+              <Button
+                variant="primary"
+                size="xsmall"
+                className="whitespace-nowrap"
+              >
+                Start Counselling
+              </Button>
+            );
+            return [
+              sr,
+              item.patientName || "N/A",
+              uhid,
+              item.contactNumber || "N/A",
+              item.diagnosisSymptoms || "N/A",
+              item.doctorName || "N/A",
+              actions,
+            ];
+          } else if (activeCard === "admissions") {
+            const uhid = (
+              <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
+                {item.patientUhid || "N/A"}
+              </span>
+            );
+            const actions = (
               <div className="flex items-center gap-2">
-                <button type="button" className={btnCls}>Refer to OPD</button>
-                <button type="button" className={btnCls}>Start Admission</button>
+                <Button
+                  variant="outline"
+                  size="xsmall"
+                  className="whitespace-nowrap"
+                  onClick={() => setPendingAction({ type: "refer", item })}
+                >
+                  Refer to OPD
+                </Button>
+                <Button
+                  variant="primary"
+                  size="xsmall"
+                  className="whitespace-nowrap"
+                >
+                  Start Admission
+                </Button>
               </div>
-            ) : (
+            );
+            return [
+              sr,
+              item.patientName || "N/A",
+              uhid,
+              item.contactNumber || "N/A",
+              item.diagnosis || "N/A",
+              item.admissionType || "N/A",
+              item.patientType || "N/A",
+              item.doctorName || "N/A",
+              actions,
+            ];
+          } else {
+            // activeCard === "rooms"
+            const actions = (
               <div className="flex items-center gap-2">
-                <button type="button" className={btnCls}>View</button>
-                <button type="button" className={btnCls}>Start Admission</button>
+                <Button
+                  variant="outline"
+                  size="xsmall"
+                  className="whitespace-nowrap"
+                >
+                  View
+                </Button>
+                <Button
+                  variant="primary"
+                  size="xsmall"
+                  className="whitespace-nowrap"
+                >
+                  Start Admission
+                </Button>
               </div>
             );
 
-          const base = [sr, patient.name, uhid, patient.contact, patient.doctor, patient.complaint];
-          return activeCard === "admissions"
-            ? [...base, patient.lastVisit, actions]
-            : [...base, actions];
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${item.status?.toLowerCase() === "vacant"
+                ? "bg-green-100 text-green-800"
+                : "bg-red-100 text-red-800"
+                }`}>
+                {item.status || "N/A"}
+              </span>
+            );
+
+            return [
+              sr,
+              item.roomNumber || "N/A",
+              item.roomType || "N/A",
+              item.bedCapacity !== undefined && item.bedCapacity !== null ? String(item.bedCapacity) : "N/A",
+              item.buildingName || "N/A",
+              item.floorName || "N/A",
+              item.branchName || "N/A",
+              statusBadge,
+              actions,
+            ];
+          }
         });
 
         return (
-          <>
-            <TableListingCard
-              sections={[{
-                id: activeCard,
-                title: tableConfig.title,
-                titleRightContent: (
-                  <div style={{ width: "280px" }}>
+          <TableListingCard
+            sections={[{
+              id: activeCard,
+              title: tableTitle,
+              titleRightContent: (
+                <div className="flex items-center gap-3">
+                  {activeCard === "rooms" && (
+                    <div style={{ width: "300px" }}>
+                      <FormSelectField
+                        label="Room Type"
+                        hideLabel
+                        placeholder="Room Type"
+                        options={roomTypeOptions}
+                        value={selectedRoomType}
+                        onChange={(val) => {
+                          setSelectedRoomType(val as string);
+                          setCurrentPage(1);
+                        }}
+                        background="normal"
+                      />
+                    </div>
+                  )}
+                  <div style={{ width: "300px" }}>
                     <TableSearchInput
                       value={searchTerm}
-                      onChange={(value) => { setSearchTerm(value); setCurrentPage(1); }}
+                      onChange={setSearchTerm}
                       placeholder="Search Here..."
                     />
                   </div>
-                ),
-                columns,
-                rows,
-                emptyMessage: "No patients found",
-              }]}
-            />
-            <Pagination
-              currentPage={currentPage}
-              totalItems={10}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-              onItemsPerPageChange={(items) => { setItemsPerPage(items); setCurrentPage(1); }}
-              itemsPerPageOptions={[ 10, 20, 50,100]}
-            />
-          </>
+                </div>
+              ),
+              columns,
+              rows,
+              emptyMessage,
+              isLoading: isCurrentLoading,
+              customContent: activeCard === "rooms" ? (
+                filteredRooms.length === 0 ? (
+                  <div className="py-12 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
+                    {emptyMessage}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {filteredRooms.map((room, index) => (
+                      <DashboardRoomCard
+                        key={room.id}
+                        room={room}
+                        index={(currentPage - 1) * itemsPerPage + index + 1}
+                      />
+                    ))}
+                  </div>
+                )
+              ) : undefined,
+              pagination: {
+                currentPage,
+                totalItems: activeCard === "rooms" ? (selectedRoomType ? filteredRooms.length : (roomsRes?.total || 0)) : totalItems,
+                itemsPerPage,
+                onPageChange: setCurrentPage,
+                onItemsPerPageChange: (items: number) => { setItemsPerPage(items); setCurrentPage(1); },
+                itemsPerPageOptions: activeCard === "rooms" ? [6, 8, 12, 24, 48, 100] : [10, 20, 50, 100],
+              },
+            }]}
+          />
         );
       })()}
+
+      {/* Action Confirmation Dialog */}
+      <MessageDialog
+        open={!!pendingAction}
+        onClose={() => { if (!isSubmitting) setPendingAction(null); }}
+        icon="/icons/questionMark.svg"
+        iconBgColor="transparent"
+        message={
+          <div className="flex flex-col items-center">
+            <span className="text-lg font-bold text-[#1E293B] mb-1">Are you sure?</span>
+            <span className="text-sm text-[#475569]">You want to refer this patient to OPD?</span>
+          </div>
+        }
+        confirmText="Confirm"
+        cancelText="Cancel"
+        showCancel
+        isActionLoading={isSubmitting}
+        onConfirm={async () => {
+          if (!pendingAction || isSubmitting) return;
+          if (pendingAction.type === "refer") {
+            await handleReferToOPD(pendingAction.item);
+          }
+          setPendingAction(null);
+        }}
+        onCancel={() => { if (!isSubmitting) setPendingAction(null); }}
+      />
+
+      {/* Standard Feedback Dialogs */}
+      <MessageDialog
+        open={showSuccessDialog}
+        onClose={() => setShowSuccessDialog(false)}
+        icon="/icons/SuccessCheck.svg"
+        iconBgColor="#E8F5E9"
+        message={successMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => setShowSuccessDialog(false)}
+      />
+
+      <MessageDialog
+        open={showApiErrorDialog}
+        onClose={() => setShowApiErrorDialog(false)}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={apiErrorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => setShowApiErrorDialog(false)}
+      />
     </AppShell>
   );
 }

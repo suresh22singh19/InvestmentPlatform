@@ -320,7 +320,7 @@ export default function PanelTherapyPage() {
 
     try {
       let result;
-      
+
       if (dialogMode === "add") {
         const branchIds = (formValues.branchIds || [])
           .map((id) => parseInt(id, 10))
@@ -415,10 +415,10 @@ export default function PanelTherapyPage() {
       setFormErrors({});
     } catch (error: any) {
       console.error(`Failed to ${dialogMode === "add" ? "create" : "update"} therapy:`, error);
-      
+
       // Handle error - show error message
       let errorMsg = `Failed to ${dialogMode === "add" ? "create" : "update"} therapy. Please try again.`;
-      
+
       if (error?.data?.message) {
         errorMsg = error.data.message;
       } else if (error?.data?.error) {
@@ -428,7 +428,7 @@ export default function PanelTherapyPage() {
       } else if (error?.message) {
         errorMsg = error.message;
       }
-      
+
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
     }
@@ -481,24 +481,24 @@ export default function PanelTherapyPage() {
 
               <div className="flex items-center gap-3">
                 <div className="flex-shrink-0" style={{ width: "300px" }}>
-                <FormSelectField
-                  label=""
-                  value={selectedBranch}
-                  onChange={(value) => {
-                    const newValue = Array.isArray(value) ? value[0] : value || "";
-                    setSelectedBranch(newValue);
-                    setCurrentPage(1);
-                  }}
-                  options={hookBranchFilterOptions}
-                  placeholder={isLoadingBranchFilter ? "Loading..." : "Select Branch"}
-                  mode="single"
-                  background="normal"
-                  width={300}
-                  disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                />
+                  <FormSelectField
+                    label=""
+                    value={selectedBranch}
+                    onChange={(value) => {
+                      const newValue = Array.isArray(value) ? value[0] : value || "";
+                      setSelectedBranch(newValue);
+                      setCurrentPage(1);
+                    }}
+                    options={hookBranchFilterOptions}
+                    placeholder={isLoadingBranchFilter ? "Loading..." : "Select Branch"}
+                    mode="single"
+                    background="normal"
+                    width={300}
+                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                  />
                 </div>
                 <div className="flex-shrink-0" style={{ width: "300px" }}>
-                <TableSearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Search Here..." />
+                  <TableSearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Search Here..." />
                 </div>
                 {canAdd ? (
                   <button
@@ -518,143 +518,103 @@ export default function PanelTherapyPage() {
                 You don&apos;t have permission to view therapies.
               </div>
             ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {activeTab === "all" ? (
-                    <>
-                      <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
-                      <TableHead>Therapy</TableHead>
-                      <TableHead>Private Price</TableHead>
-                      <TableHead>Private Status</TableHead>
-                      <TableHead>Panel Price</TableHead>
-                      <TableHead>Panel Status</TableHead>
-                      <TableHead>TPA Price</TableHead>
-                      <TableHead>TPA Status</TableHead>
-                      <TableHead>Product Code</TableHead>
-                      <TableHead>HSN Code</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Created At</TableHead>
-                      {canView || canEdit ? <TableHead position="last">Action</TableHead> : null}
-                    </>
-                  ) : (
-                    <>
-                      <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
-                      <TableHead sortable sortDirection={getSortDirection("medicineName")} onSort={() => handleSort("medicineName")}>Therapy</TableHead>
-                      <TableHead sortable sortDirection={getSortDirection("price")} onSort={() => handleSort("price")}>Price</TableHead>
-                      <TableHead sortable sortDirection={getSortDirection("productCode")} onSort={() => handleSort("productCode")}>Product Code</TableHead>
-                      <TableHead className="whitespace-nowrap" sortable sortDirection={getSortDirection("hsnCode")} onSort={() => handleSort("hsnCode")}>HSN Code</TableHead>
-                      <TableHead sortable sortDirection={getSortDirection("category")} onSort={() => handleSort("category")}>Category</TableHead>
-                      <TableHead sortable sortDirection={getSortDirection("status")} onSort={() => handleSort("status")}>Status</TableHead>
-                      <TableHead sortable sortDirection={getSortDirection("createdAt")} onSort={() => handleSort("createdAt")}>Created At</TableHead>
-                      {canView || canEdit ? <TableHead position="last">Action</TableHead> : null}
-                    </>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoadingTherapies ? (
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableData colSpan={activeTab === "all" ? (canView || canEdit ? 13 : 12) : (canView || canEdit ? 9 : 8)} className="py-12 text-center text-sm text-[#9CA3AF]">
-                      Loading...
-                    </TableData>
+                    {activeTab === "all" ? (
+                      <>
+                        <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
+                        <TableHead>Therapy</TableHead>
+                        <TableHead>Private Price</TableHead>
+                        <TableHead>Private Status</TableHead>
+                        <TableHead>Panel Price</TableHead>
+                        <TableHead>Panel Status</TableHead>
+                        <TableHead>TPA Price</TableHead>
+                        <TableHead>TPA Status</TableHead>
+                        <TableHead>Product Code</TableHead>
+                        <TableHead>HSN Code</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Created At</TableHead>
+                        {canView || canEdit ? <TableHead position="last">Action</TableHead> : null}
+                      </>
+                    ) : (
+                      <>
+                        <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("medicineName")} onSort={() => handleSort("medicineName")}>Therapy</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("price")} onSort={() => handleSort("price")}>Price</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("productCode")} onSort={() => handleSort("productCode")}>Product Code</TableHead>
+                        <TableHead className="whitespace-nowrap" sortable sortDirection={getSortDirection("hsnCode")} onSort={() => handleSort("hsnCode")}>HSN Code</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("category")} onSort={() => handleSort("category")}>Category</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("status")} onSort={() => handleSort("status")}>Status</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("createdAt")} onSort={() => handleSort("createdAt")}>Created At</TableHead>
+                        {canView || canEdit ? <TableHead position="last">Action</TableHead> : null}
+                      </>
+                    )}
                   </TableRow>
-                ) : paginatedTherapies.length === 0 ? (
-                  <TableRow>
-                    <TableData colSpan={activeTab === "all" ? (canView || canEdit ? 13 : 12) : (canView || canEdit ? 9 : 8)} className="py-12 text-center text-sm text-[#9CA3AF]">
-                      No panel therapies found
-                    </TableData>
-                  </TableRow>
-                ) : activeTab === "all" ? (
-                  paginatedTherapies.map((therapy, index) => (
-                    <TableRow key={therapy.id}>
-                      <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                      <TableData>{therapy.therapyName}</TableData>
-                      <TableData className="whitespace-nowrap">{therapy.privatePrice ?? therapy.price}</TableData>
-                      <TableData>
-                        <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.privateStatus ?? therapy.status)}`}>
-                          {therapy.privateStatus ?? therapy.status}
-                        </span>
+                </TableHeader>
+                <TableBody>
+                  {isLoadingTherapies ? (
+                    <TableRow>
+                      <TableData colSpan={activeTab === "all" ? (canView || canEdit ? 13 : 12) : (canView || canEdit ? 9 : 8)} className="py-12 text-center text-sm text-[#9CA3AF]">
+                        Loading...
                       </TableData>
-                      <TableData className="whitespace-nowrap">{therapy.panelPrice ?? therapy.price}</TableData>
-                      <TableData>
-                        <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.panelStatus ?? therapy.status)}`}>
-                          {therapy.panelStatus ?? therapy.status}
-                        </span>
-                      </TableData>
-                      <TableData className="whitespace-nowrap">{therapy.tpaPrice ?? therapy.price}</TableData>
-                      <TableData>
-                        <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.tpaStatus ?? therapy.status)}`}>
-                          {therapy.tpaStatus ?? therapy.status}
-                        </span>
-                      </TableData>
-                      <TableData className="whitespace-nowrap">{therapy.productCode}</TableData>
-                      <TableData className="whitespace-nowrap">{therapy.hsnCode}</TableData>
-                      <TableData>{therapy.category}</TableData>
-                      <TableData className="whitespace-nowrap">{therapy.createdAt}</TableData>
-                      {canView || canEdit ? (
-                        <TableData position="last">
-                          <div className="flex items-center gap-3">
-                            {canView ? (
-                              <Tooltip content="View" position="top" delay={0}>
-                                <button
-                                  type="button"
-                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                  onClick={() => handleView(therapy)}
-                                  aria-label="View therapy"
-                                >
-                                  <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
-                                </button>
-                              </Tooltip>
-                            ) : null}
-                            {canEdit ? (
-                              <Tooltip content="Edit" position="top" delay={0}>
-                                <button
-                                  type="button"
-                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                  onClick={() => handleEdit(therapy)}
-                                  aria-label="Edit therapy"
-                                >
-                                  <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
-                                </button>
-                              </Tooltip>
-                            ) : null}
-                          </div>
-                        </TableData>
-                      ) : null}
                     </TableRow>
-                  ))
-                ) : (
-                  paginatedTherapies.map((therapy, index) => {
-                    const priceForTab = activeTab === "private" ? (therapy.privatePrice ?? therapy.price) : activeTab === "panel" ? (therapy.panelPrice ?? therapy.price) : (therapy.tpaPrice ?? therapy.price);
-                    const statusForTab = activeTab === "private" ? (therapy.privateStatus ?? therapy.status) : activeTab === "panel" ? (therapy.panelStatus ?? therapy.status) : (therapy.tpaStatus ?? therapy.status);
-                    return (
+                  ) : paginatedTherapies.length === 0 ? (
+                    <TableRow>
+                      <TableData colSpan={activeTab === "all" ? (canView || canEdit ? 13 : 12) : (canView || canEdit ? 9 : 8)} className="py-12 text-center text-sm text-[#9CA3AF]">
+                        No panel therapies found
+                      </TableData>
+                    </TableRow>
+                  ) : activeTab === "all" ? (
+                    paginatedTherapies.map((therapy, index) => (
                       <TableRow key={therapy.id}>
                         <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
                         <TableData>{therapy.therapyName}</TableData>
-                        <TableData className="whitespace-nowrap">{priceForTab}</TableData>
+                        <TableData className="whitespace-nowrap">{therapy.privatePrice ?? therapy.price}</TableData>
+                        <TableData>
+                          <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.privateStatus ?? therapy.status)}`}>
+                            {therapy.privateStatus ?? therapy.status}
+                          </span>
+                        </TableData>
+                        <TableData className="whitespace-nowrap">{therapy.panelPrice ?? therapy.price}</TableData>
+                        <TableData>
+                          <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.panelStatus ?? therapy.status)}`}>
+                            {therapy.panelStatus ?? therapy.status}
+                          </span>
+                        </TableData>
+                        <TableData className="whitespace-nowrap">{therapy.tpaPrice ?? therapy.price}</TableData>
+                        <TableData>
+                          <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.tpaStatus ?? therapy.status)}`}>
+                            {therapy.tpaStatus ?? therapy.status}
+                          </span>
+                        </TableData>
                         <TableData className="whitespace-nowrap">{therapy.productCode}</TableData>
                         <TableData className="whitespace-nowrap">{therapy.hsnCode}</TableData>
                         <TableData>{therapy.category}</TableData>
-                        <TableData>
-                          <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(statusForTab)}`}>
-                            {statusForTab}
-                          </span>
-                        </TableData>
                         <TableData className="whitespace-nowrap">{therapy.createdAt}</TableData>
                         {canView || canEdit ? (
                           <TableData position="last">
                             <div className="flex items-center gap-3">
                               {canView ? (
                                 <Tooltip content="View" position="top" delay={0}>
-                                  <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleView(therapy)} aria-label="View therapy">
+                                  <button
+                                    type="button"
+                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                    onClick={() => handleView(therapy)}
+                                    aria-label="View therapy"
+                                  >
                                     <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
                                   </button>
                                 </Tooltip>
                               ) : null}
                               {canEdit ? (
                                 <Tooltip content="Edit" position="top" delay={0}>
-                                  <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleEdit(therapy)} aria-label="Edit therapy">
+                                  <button
+                                    type="button"
+                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                    onClick={() => handleEdit(therapy)}
+                                    aria-label="Edit therapy"
+                                  >
                                     <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
                                   </button>
                                 </Tooltip>
@@ -663,11 +623,51 @@ export default function PanelTherapyPage() {
                           </TableData>
                         ) : null}
                       </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+                    ))
+                  ) : (
+                    paginatedTherapies.map((therapy, index) => {
+                      const priceForTab = activeTab === "private" ? (therapy.privatePrice ?? therapy.price) : activeTab === "panel" ? (therapy.panelPrice ?? therapy.price) : (therapy.tpaPrice ?? therapy.price);
+                      const statusForTab = activeTab === "private" ? (therapy.privateStatus ?? therapy.status) : activeTab === "panel" ? (therapy.panelStatus ?? therapy.status) : (therapy.tpaStatus ?? therapy.status);
+                      return (
+                        <TableRow key={therapy.id}>
+                          <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
+                          <TableData>{therapy.therapyName}</TableData>
+                          <TableData className="whitespace-nowrap">{priceForTab}</TableData>
+                          <TableData className="whitespace-nowrap">{therapy.productCode}</TableData>
+                          <TableData className="whitespace-nowrap">{therapy.hsnCode}</TableData>
+                          <TableData>{therapy.category}</TableData>
+                          <TableData>
+                            <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(statusForTab)}`}>
+                              {statusForTab}
+                            </span>
+                          </TableData>
+                          <TableData className="whitespace-nowrap">{therapy.createdAt}</TableData>
+                          {canView || canEdit ? (
+                            <TableData position="last">
+                              <div className="flex items-center gap-3">
+                                {canView ? (
+                                  <Tooltip content="View" position="top" delay={0}>
+                                    <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleView(therapy)} aria-label="View therapy">
+                                      <Image src="/icons/ViewEyeIcon.svg" alt="View" width={16} height={16} />
+                                    </button>
+                                  </Tooltip>
+                                ) : null}
+                                {canEdit ? (
+                                  <Tooltip content="Edit" position="top" delay={0}>
+                                    <button type="button" className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]" onClick={() => handleEdit(therapy)} aria-label="Edit therapy">
+                                      <Image src="/icons/EditIconBlack.svg" alt="Edit" width={16} height={16} />
+                                    </button>
+                                  </Tooltip>
+                                ) : null}
+                              </div>
+                            </TableData>
+                          ) : null}
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
             )}
 
             {canView && !isLoadingTherapies && totalItems > 0 && (
@@ -969,8 +969,8 @@ export default function PanelTherapyPage() {
             )}
 
             <div className="col-span-2 flex gap-3">
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 variant="primary"
                 isLoading={isCreating || isUpdating}
                 disabled={isCreating || isUpdating}

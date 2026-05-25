@@ -39,9 +39,9 @@ import {
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 const TAB_OPTIONS = [
-    { value: "all-offers",          label: "All Offers" },
-    { value: "bundled-stay",        label: "Bundled Stay" },
-    { value: "flat-discount",       label: "Flat Discount" },
+    { value: "all-offers", label: "All Offers" },
+    { value: "bundled-stay", label: "Bundled Stay" },
+    { value: "flat-discount", label: "Flat Discount" },
     { value: "conditional-billing", label: "Conditional Billing" },
 ];
 
@@ -232,40 +232,40 @@ const defaultConditionalBilling = (): ConditionalBillingForm => ({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function OfferMasterPage() {
     // ── Table state ──
-    const [activeTab, setActiveTab]           = useState("all-offers");
-    const [searchTerm, setSearchTerm]         = useState("");
-    const [currentPage, setCurrentPage]       = useState(1);
-    const [itemsPerPage, setItemsPerPage]     = useState(10);
-    const [sortOrder, setSortOrder]           = useState<"asc" | "desc">("asc");
-    const [offerStatuses, setOfferStatuses]   = useState<Record<number, boolean>>({});
+    const [activeTab, setActiveTab] = useState("all-offers");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+    const [offerStatuses, setOfferStatuses] = useState<Record<number, boolean>>({});
 
     // ── Dialog state ──
-    const [isDialogOpen, setIsDialogOpen]     = useState(false);
-    const [dialogMode, setDialogMode]         = useState<"add" | "edit">("add");
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
     const [editingOfferId, setEditingOfferId] = useState<number | null>(null);
-    const [bundledStayForm, setBundledStayForm]                     = useState<BundledStayForm>(defaultBundledStay());
-    const [flatDiscountForm, setFlatDiscountForm]                   = useState<FlatDiscountForm>(defaultFlatDiscount());
-    const [conditionalBillingForm, setConditionalBillingForm]       = useState<ConditionalBillingForm>(defaultConditionalBilling());
+    const [bundledStayForm, setBundledStayForm] = useState<BundledStayForm>(defaultBundledStay());
+    const [flatDiscountForm, setFlatDiscountForm] = useState<FlatDiscountForm>(defaultFlatDiscount());
+    const [conditionalBillingForm, setConditionalBillingForm] = useState<ConditionalBillingForm>(defaultConditionalBilling());
 
     // ── Validation errors ──
-    const [bundledStayErrors, setBundledStayErrors]             = useState<BundledStayErrors>({});
-    const [flatDiscountErrors, setFlatDiscountErrors]           = useState<FlatDiscountErrors>({});
+    const [bundledStayErrors, setBundledStayErrors] = useState<BundledStayErrors>({});
+    const [flatDiscountErrors, setFlatDiscountErrors] = useState<FlatDiscountErrors>({});
     const [conditionalBillingErrors, setConditionalBillingErrors] = useState<ConditionalBillingErrors>({});
 
     const isEditMode = dialogMode === "edit";
 
     // ── Toggle confirmation dialogs ──
-    const [pendingToggle, setPendingToggle]               = useState<{ offerId: number; newStatus: boolean } | null>(null);
+    const [pendingToggle, setPendingToggle] = useState<{ offerId: number; newStatus: boolean } | null>(null);
     const [showToggleSuccessDialog, setShowToggleSuccessDialog] = useState(false);
-    const [toggleSuccessMessage, setToggleSuccessMessage]   = useState("");
+    const [toggleSuccessMessage, setToggleSuccessMessage] = useState("");
     const [showToggleErrorDialog, setShowToggleErrorDialog] = useState(false);
-    const [toggleErrorMessage, setToggleErrorMessage]       = useState("");
+    const [toggleErrorMessage, setToggleErrorMessage] = useState("");
 
     // ── Submit result dialogs ──
     const [showSubmitSuccessDialog, setShowSubmitSuccessDialog] = useState(false);
-    const [submitSuccessMessage, setSubmitSuccessMessage]       = useState("");
-    const [showSubmitErrorDialog, setShowSubmitErrorDialog]     = useState(false);
-    const [submitErrorMessage, setSubmitErrorMessage]           = useState("");
+    const [submitSuccessMessage, setSubmitSuccessMessage] = useState("");
+    const [showSubmitErrorDialog, setShowSubmitErrorDialog] = useState(false);
+    const [submitErrorMessage, setSubmitErrorMessage] = useState("");
 
     // ── Branch data ──
     // For the dialog: all branches from API (single select, no "All Branches")
@@ -326,7 +326,7 @@ export default function OfferMasterPage() {
         } else if (activeTab === "conditional-billing") {
             autoAssign(conditionalBillingForm.patientType, (id) => setConditionalBillingForm((p) => ({ ...p, panelId: id })));
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [privateDefaultPanelId, tpaDefaultPanelId]);
 
     // For the table filter: respects superadmin vs regular user via useBranchFilter
@@ -342,8 +342,8 @@ export default function OfferMasterPage() {
     // ── Offer Master API ──
     const promotionTypeFilter: OfferPromotionType | "" =
         activeTab === "bundled-stay" ? "bundled_stay"
-        : activeTab === "flat-discount" ? "flat_discount"
-        : activeTab === "conditional-billing" ? "conditional_billing" : "";
+            : activeTab === "flat-discount" ? "flat_discount"
+                : activeTab === "conditional-billing" ? "conditional_billing" : "";
 
     const { data: offersRes, isLoading: isLoadingOffers } = useGetAllOfferMastersQuery({
         page: currentPage,
@@ -396,8 +396,8 @@ export default function OfferMasterPage() {
         const panelNameLower = (item.panelName ?? "").trim().toLowerCase();
         const editPatientType: PatientType =
             panelNameLower === "tpa" ? "tpa" :
-            panelNameLower === "normal" ? "private" :
-            editPanelId ? "panel" : "private";
+                panelNameLower === "normal" ? "private" :
+                    editPanelId ? "panel" : "private";
 
         if (item.promotion_type === "bundled_stay") {
             setBundledStayForm({
@@ -463,8 +463,8 @@ export default function OfferMasterPage() {
             if (activeTab === "bundled-stay") {
                 const bPanelIdStr =
                     bundledStayForm.patientType === "panel" ? bundledStayForm.panelId :
-                    bundledStayForm.patientType === "private" ? privateDefaultPanelId :
-                    bundledStayForm.patientType === "tpa" ? tpaDefaultPanelId : undefined;
+                        bundledStayForm.patientType === "private" ? privateDefaultPanelId :
+                            bundledStayForm.patientType === "tpa" ? tpaDefaultPanelId : undefined;
                 const bPanelId = bPanelIdStr ? parseInt(bPanelIdStr, 10) : undefined;
                 if (isEditMode && editingOfferId != null) {
                     await updateOfferMaster({
@@ -490,8 +490,8 @@ export default function OfferMasterPage() {
             } else if (activeTab === "flat-discount") {
                 const fPanelIdStr =
                     flatDiscountForm.patientType === "panel" ? flatDiscountForm.panelId :
-                    flatDiscountForm.patientType === "private" ? privateDefaultPanelId :
-                    flatDiscountForm.patientType === "tpa" ? tpaDefaultPanelId : undefined;
+                        flatDiscountForm.patientType === "private" ? privateDefaultPanelId :
+                            flatDiscountForm.patientType === "tpa" ? tpaDefaultPanelId : undefined;
                 const fPanelId = fPanelIdStr ? parseInt(fPanelIdStr, 10) : undefined;
                 if (isEditMode && editingOfferId != null) {
                     await updateOfferMaster({
@@ -515,8 +515,8 @@ export default function OfferMasterPage() {
             } else if (activeTab === "conditional-billing") {
                 const cPanelIdStr =
                     conditionalBillingForm.patientType === "panel" ? conditionalBillingForm.panelId :
-                    conditionalBillingForm.patientType === "private" ? privateDefaultPanelId :
-                    conditionalBillingForm.patientType === "tpa" ? tpaDefaultPanelId : undefined;
+                        conditionalBillingForm.patientType === "private" ? privateDefaultPanelId :
+                            conditionalBillingForm.patientType === "tpa" ? tpaDefaultPanelId : undefined;
                 const cPanelId = cPanelIdStr ? parseInt(cPanelIdStr, 10) : undefined;
                 if (isEditMode && editingOfferId != null) {
                     await updateOfferMaster({
@@ -645,82 +645,86 @@ export default function OfferMasterPage() {
 
     return (
         <AppShell>
-            <div className="space-y-6">
+            <div className="space-y-6 ">
                 {/* Heading */}
                 <div className="flex items-center justify-between">
                     <PageHeading title="Offer Master" />
                 </div>
 
                 {/* Tabs */}
-                <div style={{ width: "800px" }}>
-                    <Tabs
-                        options={TAB_OPTIONS}
-                        value={activeTab}
-                        onChange={(val) => {
-                            setActiveTab(val);
-                            setCurrentPage(1);
-                            setSearchTerm("");
-                        }}
+                <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
+                    <div style={{ width: "800px", marginBottom: "10px", marginTop: "10px" }}>
+                        <Tabs
+                            options={TAB_OPTIONS}
+                            value={activeTab}
+                            onChange={(val) => {
+                                setActiveTab(val);
+                                setCurrentPage(1);
+                                setSearchTerm("");
+                            }}
+                        />
+                    </div>
+
+                    {/* Table */}
+
+                    <TableListingCard
+                        sections={[
+                            {
+                                id: activeTab,
+                                title: activeTabLabel,
+                                titleRightContent: (
+                                    <div className="flex items-center gap-3">
+                                        <div style={{ width: "300px" }}>
+                                            <FormSelectField
+                                                label=""
+                                                hideLabel
+                                                value={selectedBranchFilter}
+                                                onChange={(val) => {
+                                                    setSelectedBranchFilter(Array.isArray(val) ? (val[0] ?? "") : (val ?? ""));
+                                                    setCurrentPage(1);
+                                                }}
+                                                options={branchFilterOptions}
+                                                placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                                mode="single"
+                                                background="normal"
+                                                disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                            />
+                                        </div>
+                                        <div style={{ width: "300px" }}>
+                                            <TableSearchInput
+                                                value={searchTerm}
+                                                onChange={(val) => { setSearchTerm(val); setCurrentPage(1); }}
+                                                placeholder="Search Here..."
+                                            />
+                                        </div>
+                                        {activeTab !== "all-offers" && (
+                                            <Button
+                                                variant="outline"
+                                                leftIcon={<Image src="/icons/AddIcon.svg" alt="" width={20} height={20} />}
+                                                onClick={openCreateDialog}
+                                            >
+                                                Create New Offer
+                                            </Button>
+                                        )}
+                                    </div>
+                                ),
+                                columns,
+                                rows,
+                                emptyMessage: "Data not available",
+                                isLoading: isLoadingOffers,
+                                pagination: {
+                                    currentPage,
+                                    totalItems,
+                                    itemsPerPage,
+                                    onPageChange: setCurrentPage,
+                                    onItemsPerPageChange: (items: number) => { setItemsPerPage(items); setCurrentPage(1); },
+                                    itemsPerPageOptions: [6, 10, 20, 50],
+                                },
+                            },
+                        ]}
                     />
                 </div>
 
-                {/* Table */}
-                <TableListingCard
-                    sections={[
-                        {
-                            id: activeTab,
-                            title: activeTabLabel,
-                            titleRightContent: (
-                                <div className="flex items-center gap-3">
-                                    <div style={{ width: "300px" }}>
-                                        <FormSelectField
-                                            label=""
-                                            hideLabel
-                                            value={selectedBranchFilter}
-                                            onChange={(val) => {
-                                                setSelectedBranchFilter(Array.isArray(val) ? (val[0] ?? "") : (val ?? ""));
-                                                setCurrentPage(1);
-                                            }}
-                                            options={branchFilterOptions}
-                                            placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
-                                            mode="single"
-                                            background="normal"
-                                            disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                                        />
-                                    </div>
-                                    <div style={{ width: "300px" }}>
-                                        <TableSearchInput
-                                            value={searchTerm}
-                                            onChange={(val) => { setSearchTerm(val); setCurrentPage(1); }}
-                                            placeholder="Search Here..."
-                                        />
-                                    </div>
-                                    {activeTab !== "all-offers" && (
-                                        <Button
-                                            variant="outline"
-                                            leftIcon={<Image src="/icons/AddIcon.svg" alt="" width={20} height={20} />}
-                                            onClick={openCreateDialog}
-                                        >
-                                            Create New Offer
-                                        </Button>
-                                    )}
-                                </div>
-                            ),
-                            columns,
-                            rows,
-                            emptyMessage: "Data not available",
-                            isLoading: isLoadingOffers,
-                            pagination: {
-                                currentPage,
-                                totalItems,
-                                itemsPerPage,
-                                onPageChange: setCurrentPage,
-                                onItemsPerPageChange: (items: number) => { setItemsPerPage(items); setCurrentPage(1); },
-                                itemsPerPageOptions: [6, 10, 20, 50],
-                            },
-                        },
-                    ]}
-                />
             </div>
 
             {/* ── Create / Edit Dialog ─────────────────────────────────────── */}
@@ -837,40 +841,42 @@ export default function OfferMasterPage() {
                                 error={bundledStayErrors.endDate}
                             />
                         </div>
-
-                        <div className="w-[50%]">
-                            <PatientTypeButtonGroup
-                                label="Applicable Patient Type"
-                                options={PATIENT_TYPE_OPTIONS}
-                                value={bundledStayForm.patientType}
-                                onChange={(val) => {
-                                    const t = val as PatientType;
-                                    const autoId = t === "private" ? (privateDefaultPanelId ?? "") : t === "tpa" ? (tpaDefaultPanelId ?? "") : "";
-                                    setBundledStayForm((p) => ({ ...p, patientType: t, panelId: autoId }));
-                                    if (bundledStayErrors.panelId) setBundledStayErrors((p) => ({ ...p, panelId: undefined }));
-                                }}
-                            />
-                        </div>
-
-                        {bundledStayForm.patientType === "panel" && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormSelectField
-                                    label="Panel *"
-                                    value={bundledStayForm.panelId || null}
+                        <div className="grid grid-cols-2 gap-4 ">
+                            <div className="">
+                                <PatientTypeButtonGroup
+                                    label="Applicable Patient Type"
+                                    options={PATIENT_TYPE_OPTIONS}
+                                    value={bundledStayForm.patientType}
                                     onChange={(val) => {
-                                        const v = Array.isArray(val) ? (val[0] ?? "") : (val ?? "");
-                                        setBundledStayForm((p) => ({ ...p, panelId: v }));
+                                        const t = val as PatientType;
+                                        const autoId = t === "private" ? (privateDefaultPanelId ?? "") : t === "tpa" ? (tpaDefaultPanelId ?? "") : "";
+                                        setBundledStayForm((p) => ({ ...p, patientType: t, panelId: autoId }));
                                         if (bundledStayErrors.panelId) setBundledStayErrors((p) => ({ ...p, panelId: undefined }));
                                     }}
-                                    options={panelOptions}
-                                    placeholder={isLoadingPanels ? "Loading panels..." : !bundledStayForm.branch ? "Select branch first" : "Select Panel"}
-                                    mode="single"
-                                    background="white"
-                                    disabled={!bundledStayForm.branch || isLoadingPanels}
-                                    error={bundledStayErrors.panelId}
                                 />
                             </div>
-                        )}
+
+                            {bundledStayForm.patientType === "panel" && (
+                                <div className="">
+                                    <FormSelectField
+                                        label="Panel *"
+                                        value={bundledStayForm.panelId || null}
+                                        onChange={(val) => {
+                                            const v = Array.isArray(val) ? (val[0] ?? "") : (val ?? "");
+                                            setBundledStayForm((p) => ({ ...p, panelId: v }));
+                                            if (bundledStayErrors.panelId) setBundledStayErrors((p) => ({ ...p, panelId: undefined }));
+                                        }}
+                                        options={panelOptions}
+                                        placeholder={isLoadingPanels ? "Loading panels..." : !bundledStayForm.branch ? "Select branch first" : "Select Panel"}
+                                        mode="single"
+                                        background="white"
+                                        disabled={!bundledStayForm.branch || isLoadingPanels}
+                                        error={bundledStayErrors.panelId}
+                                    />
+                                </div>
+                            )}
+                        </div>
+
 
                         <div className="flex items-center gap-3 pt-2">
                             <Button variant="primary" onClick={handleSubmit} isLoading={isSubmitting}>{submitLabel}</Button>
@@ -943,27 +949,28 @@ export default function OfferMasterPage() {
                             />
                         </div>
 
-                        {flatDiscountForm.patientType === "panel" && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormSelectField
-                                    label="Panel *"
-                                    value={flatDiscountForm.panelId || null}
-                                    onChange={(val) => {
-                                        const v = Array.isArray(val) ? (val[0] ?? "") : (val ?? "");
-                                        setFlatDiscountForm((p) => ({ ...p, panelId: v }));
-                                        if (flatDiscountErrors.panelId) setFlatDiscountErrors((p) => ({ ...p, panelId: undefined }));
-                                    }}
-                                    options={panelOptions}
-                                    placeholder={isLoadingPanels ? "Loading panels..." : !flatDiscountForm.branch ? "Select branch first" : "Select Panel"}
-                                    mode="single"
-                                    background="white"
-                                    disabled={!flatDiscountForm.branch || isLoadingPanels}
-                                    error={flatDiscountErrors.panelId}
-                                />
-                            </div>
-                        )}
 
-                        <div className="grid grid-cols-2 gap-4">
+
+                        <div className={`grid ${flatDiscountForm.patientType === "panel" ? "grid-cols-2 " : "grid-cols-2"}  gap-4`}>
+                            {flatDiscountForm.patientType === "panel" && (
+                                <div className="">
+                                    <FormSelectField
+                                        label="Panel *"
+                                        value={flatDiscountForm.panelId || null}
+                                        onChange={(val) => {
+                                            const v = Array.isArray(val) ? (val[0] ?? "") : (val ?? "");
+                                            setFlatDiscountForm((p) => ({ ...p, panelId: v }));
+                                            if (flatDiscountErrors.panelId) setFlatDiscountErrors((p) => ({ ...p, panelId: undefined }));
+                                        }}
+                                        options={panelOptions}
+                                        placeholder={isLoadingPanels ? "Loading panels..." : !flatDiscountForm.branch ? "Select branch first" : "Select Panel"}
+                                        mode="single"
+                                        background="white"
+                                        disabled={!flatDiscountForm.branch || isLoadingPanels}
+                                        error={flatDiscountErrors.panelId}
+                                    />
+                                </div>
+                            )}
                             <DatePicker
                                 label="Start Date"
                                 placeholder="DD/MM/YY"
@@ -994,6 +1001,8 @@ export default function OfferMasterPage() {
                                 error={flatDiscountErrors.endDate}
                             />
                         </div>
+
+
 
                         <div className="flex items-center gap-3 pt-2">
                             <Button variant="primary" onClick={handleSubmit} isLoading={isSubmitting}>{submitLabel}</Button>
@@ -1032,9 +1041,7 @@ export default function OfferMasterPage() {
                                 onBlur={() => setConditionalBillingForm((p) => ({ ...p, offerName: p.offerName.trim() }))}
                                 error={conditionalBillingErrors.offerName}
                             />
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-4">
                             <FormInputField
                                 label="Minimum Bill Amount *"
                                 placeholder="Min 1"
@@ -1063,10 +1070,8 @@ export default function OfferMasterPage() {
                                     if (conditionalBillingErrors.panelId) setConditionalBillingErrors((p) => ({ ...p, panelId: undefined }));
                                 }}
                             />
-                        </div>
 
-                        {conditionalBillingForm.patientType === "panel" && (
-                            <div className="grid grid-cols-2 gap-4">
+                            {conditionalBillingForm.patientType === "panel" && (
                                 <FormSelectField
                                     label="Panel *"
                                     value={conditionalBillingForm.panelId || null}
@@ -1082,10 +1087,8 @@ export default function OfferMasterPage() {
                                     disabled={!conditionalBillingForm.branch || isLoadingPanels}
                                     error={conditionalBillingErrors.panelId}
                                 />
-                            </div>
-                        )}
+                            )}
 
-                        <div className="grid grid-cols-2 gap-4">
                             <FormInputField
                                 label="Discount *"
                                 placeholder="1 – 100"
@@ -1121,9 +1124,7 @@ export default function OfferMasterPage() {
                                 suffix={<span className="text-sm text-[#7B8089]">₹</span>}
                                 error={conditionalBillingErrors.maxCap}
                             />
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-4">
                             <DatePicker
                                 label="Start Date"
                                 placeholder="DD/MM/YY"
@@ -1173,7 +1174,7 @@ export default function OfferMasterPage() {
             <MessageDialog
                 open={!!pendingToggle}
                 onClose={() => { if (!isTogglingStatus) setPendingToggle(null); }}
-                icon="/icons/opdConfirmIcon.svg"
+                icon="/icons/questionMark.svg"
                 iconBgColor="#FFF8E1"
                 message={
                     pendingToggle
