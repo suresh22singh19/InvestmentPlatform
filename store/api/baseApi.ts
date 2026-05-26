@@ -23,6 +23,7 @@ const PUBLIC_AUTH_PATH_SUFFIXES = [
   "/auth/forgot-password",
   "/auth/reset-password",
   "/auth/setUserPassword",
+  "/auth/checkSetPasswordStatus",
 ] as const;
 
 function normalizeRequestPathFromArgs(args: unknown): string {
