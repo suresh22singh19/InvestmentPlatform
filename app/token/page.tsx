@@ -317,11 +317,8 @@ export default function TokenDisplayConfigurationPage() {
   if (!canView) {
     return (
       <AppShell>
-        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4">
-          <p className="text-center text-[16px] font-medium text-[#262D3B]">Access restricted</p>
-          <p className="max-w-md text-center text-sm text-[#7B8089]">
-            You do not have permission to view Tokens display configuration.
-          </p>
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+          You don&apos;t have permission to view Tokens display configuration.
         </div>
       </AppShell>
     );

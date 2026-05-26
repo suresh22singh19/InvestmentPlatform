@@ -16,6 +16,7 @@ import { useAppSelector } from "@/store/hooks";
 import { selectUserBranchId } from "@/store/slices/authSlice";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { usePermission } from "@/hooks/usePermission";
 import {
     useLazyGenerateCsvForOldAndNewPatientQuery,
     useLazyGenerateCsvForHealthCardIssuesQuery,
@@ -61,6 +62,7 @@ function capitalizeFirst(str: string | null | undefined): string {
 }
 
 export default function ReportPage() {
+    const reportsPerm = usePermission("Reports", { subModule: "Report" });
     const authBranchId = useAppSelector(selectUserBranchId);
 
     const {
@@ -175,6 +177,7 @@ export default function ReportPage() {
 
     const handleDownload = async () => {
         if (isSubmitting || isGenerating) return;
+        if (!reportsPerm.canDownload) return;
         if (reportBranchId == null) return;
         const dates = getFromToDates();
         if (!dates) return;
@@ -222,7 +225,17 @@ export default function ReportPage() {
     };
 
     const datesReady = datePreset === "today" || datePreset === "yesterday" || (datePreset === "custom" && startDate && endDate);
-    const canDownload = reportBranchId != null && datesReady;
+    const canDownload = reportBranchId != null && datesReady && reportsPerm.canDownload;
+
+    if (!reportsPerm.canView) {
+        return (
+            <AppShell>
+                <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                    You don&apos;t have permission to view reports.
+                </div>
+            </AppShell>
+        );
+    }
 
     return (
         <AppShell>

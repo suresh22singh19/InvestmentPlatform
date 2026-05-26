@@ -38,9 +38,11 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     gate: ["/gate"],
     /** `slugify("Discharge Pending")` — branch pending discharge list */
     "discharge-pending": ["/discharge-pending"],
+    "nurse": ["/nurse"],
 };
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
+    nurse: ["/nurse"],
     /** Matches login `moduleName` / `subModule.moduleName` "Tokens" → slug `tokens` */
     tokens: ["/token"],
     dashboard: ["/dashboard"],
@@ -118,6 +120,7 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/infrastructure",
     "/hospital-infrastructure",
     "/discharge-pending",
+    "/nurse",
 ];
 
 /**

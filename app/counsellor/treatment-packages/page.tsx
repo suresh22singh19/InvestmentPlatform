@@ -12,76 +12,7 @@ import {
     MessageDialog,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
-
-// Static mock data representing treatment packages matching Figma mockup
-const STATIC_TREATMENT_PACKAGES = [
-    {
-        id: 1,
-        name: "Cardiac Platinum",
-        category: "Critical Care",
-        perDayCost: 18500,
-        progress: 75,
-        activePatients: 24,
-        totalAdmissions: 1240,
-        iconSrc: "/icons/cardiacPlatinumIcon.svg",
-        description: "Comprehensive critical care package for advanced cardiovascular treatment, including round-the-clock ICU support, high-dependency care, and expert cardiologist supervision.",
-    },
-    {
-        id: 2,
-        name: "Cardiac Gold",
-        category: "Surgical",
-        perDayCost: 12200,
-        progress: 50,
-        activePatients: 42,
-        totalAdmissions: 3110,
-        iconSrc: "/icons/cardiacGoldIcon.svg",
-        description: "Specialized surgical package for invasive coronary treatments, covering operation theater fees, post-operative ward care, and dedicated nurse fees.",
-    },
-    {
-        id: 3,
-        name: "Cardiac Silver",
-        category: "Standard",
-        perDayCost: 8500,
-        progress: 65,
-        activePatients: 18,
-        totalAdmissions: 5820,
-        iconSrc: "/icons/cardiacSilverIcon.svg",
-        description: "Standard ward cardiovascular recovery package designed for non-invasive treatments, routine heart checks, and basic therapeutic maintenance.",
-    },
-    {
-        id: 4,
-        name: "Neonatal Elite",
-        category: "Pediatric",
-        perDayCost: 15000,
-        progress: 80,
-        activePatients: 12,
-        totalAdmissions: 840,
-        iconSrc: "/icons/neonatalEliteIcon.svg",
-        description: "State-of-the-art neonatal care with advanced incubators, phototherapy units, specialized pediatric nursing, and dedicated pediatric consultants.",
-    },
-    {
-        id: 5,
-        name: "Neuro-Recovery",
-        category: "Rehabilitation",
-        perDayCost: 9800,
-        progress: 45,
-        activePatients: 24,
-        totalAdmissions: 1240,
-        iconSrc: "/icons/neuroRecoveryIcon.svg",
-        description: "Comprehensive neuro-rehabilitation services designed to restore motor skills, improve cognitive functions, and enhance quality of life post-stroke or surgery.",
-    },
-    {
-        id: 6,
-        name: "Oncology Daycare",
-        category: "Executive",
-        perDayCost: 6400,
-        progress: 30,
-        activePatients: 56,
-        totalAdmissions: 8900,
-        iconSrc: "/icons/oncologyDaycareIcon.svg",
-        description: "Outpatient oncology and chemotherapy daycare suite, offering executive lounge access, customized diet plans, and highly qualified nursing assistance.",
-    },
-];
+import { useGetTreatmentPackagesQuery } from "@/store/api/counsellorApi";
 
 // Helper component to render the package category icon
 interface PackageIconProps {
@@ -134,26 +65,40 @@ function TreatmentStatCard({ label, value, iconSrc }: StatCardProps) {
 
 // Package Card Grid Item component
 interface PackageCardProps {
-    item: typeof STATIC_TREATMENT_PACKAGES[0];
+    item: {
+        id: number;
+        packageName: string;
+        totalPerDayCost: string;
+        activePatients: number;
+        totalAdmissions: number;
+        category?: string;
+        progress?: number;
+        iconSrc?: string;
+        description?: string;
+    };
     onViewDetails: (item: any) => void;
 }
 
 function PackageCard({ item, onViewDetails }: PackageCardProps) {
+    const category = item.category || "Standard";
+    const progress = item.progress !== undefined ? item.progress : 50;
+    const iconSrc = item.iconSrc || "/icons/cardiacGoldIcon.svg";
+
     return (
         <div className="w-full flex flex-col rounded-[20px] border border-[#DFE0E2] bg-white shadow-sm hover:shadow-md hover:border-[#CBD5E1] transition-all duration-200 select-none">
             {/* Header section: Title, Icon and Category Badge */}
             <div className="p-5 flex justify-between items-center gap-3">
                 <div className="flex items-center gap-3 truncate">
-                    <PackageIcon src={item.iconSrc} alt={item.name} />
-                    <h4 className="font-bold text-base text-[#262D3B] truncate leading-[130%]" title={item.name}>
-                        {item.name}
+                    <PackageIcon src={iconSrc} alt={item.packageName} />
+                    <h4 className="font-bold text-base text-[#262D3B] truncate leading-[130%]" title={item.packageName}>
+                        {item.packageName || "N/A"}
                     </h4>
                 </div>
                 <Badge
                     variant="success"
                     className="bg-transparent border border-[#0B8C0033] text-[#0B8C00] px-3 py-1 font-normal rounded-full text-xs whitespace-nowrap"
                 >
-                    {item.category}
+                    {category}
                 </Badge>
             </div>
 
@@ -167,14 +112,14 @@ function PackageCard({ item, onViewDetails }: PackageCardProps) {
                     <div className="flex justify-between items-center text-sm font-semibold text-[#787E8C]">
                         <span>Total Per-Day Cost</span>
                         <span className="text-[#262D3B] font-extrabold text-base">
-                            ₹{item.perDayCost.toLocaleString()}
+                            {item.totalPerDayCost || "₹0"}
                         </span>
                     </div>
                     {/* Horizontal Progress Bar */}
                     <div className="h-1.5 w-full bg-[#F1F5F9] rounded-full overflow-hidden">
                         <div
                             className="h-full bg-[#0B8C00] rounded-full transition-all duration-500"
-                            style={{ width: `${item.progress}%` }}
+                            style={{ width: `${progress}%` }}
                         />
                     </div>
                 </div>
@@ -183,11 +128,16 @@ function PackageCard({ item, onViewDetails }: PackageCardProps) {
                 <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-0.5">
                         <span className="text-xs font-semibold text-[#787E8C]">Active Patients</span>
-                        <span className="text-lg font-bold text-[#262D3B]">{item.activePatients}</span>
+                        <span className="text-lg font-bold text-[#262D3B]">{item.activePatients ?? 0}</span>
                     </div>
                     <div className="flex flex-col gap-0.5">
                         <span className="text-xs font-semibold text-[#787E8C]">Total Admissions</span>
-                        <span className="text-lg font-bold text-[#262D3B]">{item.totalAdmissions.toLocaleString()}</span>
+                        <span className="text-lg font-bold text-[#262D3B]">
+                            {item.totalAdmissions !== undefined && item.totalAdmissions !== null
+                                ? item.totalAdmissions.toLocaleString()
+                                : "0"
+                            }
+                        </span>
                     </div>
                 </div>
             </div>
@@ -219,26 +169,31 @@ export default function TreatmentPackagesPage() {
     const [itemsPerPage, setItemsPerPage] = useState(8);
 
     // Selected package for detailing popup dialog
-    const [selectedPackage, setSelectedPackage] = useState<typeof STATIC_TREATMENT_PACKAGES[0] | null>(null);
+    const [selectedPackage, setSelectedPackage] = useState<any>(null);
 
-    // Client-side dynamic search filtering
-    const filteredList = useMemo(() => {
-        const query = debouncedSearch.trim().toLowerCase();
-        if (!query) return STATIC_TREATMENT_PACKAGES;
-        return STATIC_TREATMENT_PACKAGES.filter(
-            (item) =>
-                item.name.toLowerCase().includes(query) ||
-                item.category.toLowerCase().includes(query) ||
-                item.description.toLowerCase().includes(query)
-        );
-    }, [debouncedSearch]);
+    // API Query params
+    const queryParams = {
+        page: currentPage,
+        limit: itemsPerPage,
+        search: debouncedSearch.trim() || undefined,
+        sortBy: undefined,
+        order: "ASC" as const,
+        branchId: undefined, // Branch ID can be set if needed
+    };
 
-    const totalItems = filteredList.length;
+    // Query Hook call
+    const { data: apiResponse, isLoading: isPackagesLoading } = useGetTreatmentPackagesQuery(queryParams);
 
-    const paginatedList = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredList.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredList, currentPage, itemsPerPage]);
+    const metrics = apiResponse?.data?.metrics;
+    const listingData = apiResponse?.data?.listing?.data || [];
+    const listingTotal = apiResponse?.data?.listing?.total || 0;
+
+    const paginatedList = listingData;
+    const totalItems = listingTotal;
+
+    const handleViewDetails = (item: any) => {
+        setSelectedPackage(item);
+    };
 
     return (
         <AppShell>
@@ -251,12 +206,12 @@ export default function TreatmentPackagesPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <TreatmentStatCard
                     label="Total Service Portfolio"
-                    value="12 Packages"
+                    value={isPackagesLoading ? "..." : `${metrics?.totalPackages ?? 0} Packages`}
                     iconSrc="/icons/packages.svg"
                 />
                 <TreatmentStatCard
                     label="Active Enrollments"
-                    value="342 Patients"
+                    value={isPackagesLoading ? "..." : `${metrics?.activeEnrollments ?? 0} Patients`}
                     iconSrc="/icons/patients.svg"
                 />
             </div>
@@ -272,13 +227,16 @@ export default function TreatmentPackagesPage() {
                                 <div className="w-[300px]">
                                     <TableSearchInput
                                         value={searchTerm}
-                                        onChange={setSearchTerm}
+                                        onChange={(val) => {
+                                            setSearchTerm(val);
+                                            setCurrentPage(1);
+                                        }}
                                         placeholder="Search..."
                                     />
                                 </div>
                             ),
                             emptyMessage: "No treatment packages found",
-                            isLoading: false,
+                            isLoading: isPackagesLoading,
                             customContent: paginatedList.length === 0 ? (
                                 <div className="py-16 text-center text-sm font-normal text-[#9FA2AB]">
                                     No treatment packages found
@@ -289,7 +247,7 @@ export default function TreatmentPackagesPage() {
                                         <PackageCard
                                             key={pkg.id}
                                             item={pkg}
-                                            onViewDetails={setSelectedPackage}
+                                            onViewDetails={handleViewDetails}
                                         />
                                     ))}
                                 </div>
@@ -320,29 +278,34 @@ export default function TreatmentPackagesPage() {
                     selectedPackage && (
                         <div className="flex flex-col text-left gap-4">
                             <div className="flex justify-between items-center border-b border-[#DFE0E2] pb-3">
-                                <h3 className="font-extrabold text-lg text-[#262D3B]">{selectedPackage.name}</h3>
+                                <h3 className="font-extrabold text-lg text-[#262D3B]">{selectedPackage.packageName}</h3>
                                 <Badge variant="success" className="bg-transparent border border-[#0B8C0033] text-[#0B8C00] px-3 py-1 font-normal rounded-full text-xs">
-                                    {selectedPackage.category}
+                                    {selectedPackage.category || "Standard"}
                                 </Badge>
                             </div>
                             <div className="flex flex-col gap-2">
                                 <span className="text-xs font-semibold text-[#787E8C] uppercase tracking-wider">Description</span>
                                 <p className="text-sm font-medium text-[#4B5563] leading-relaxed">
-                                    {selectedPackage.description}
+                                    {selectedPackage.description || "Specialized therapeutic package designed for optimized inpatient or outpatient recovery, routine wellness check-ups, and holistic medical care."}
                                 </p>
                             </div>
                             <div className="grid grid-cols-3 gap-3 border-t border-[#DFE0E2] pt-4">
                                 <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
                                     <span className="text-[10px] font-bold text-[#6B7280] uppercase">Cost / Day</span>
-                                    <span className="text-sm font-extrabold text-[#0B8C00]">₹{selectedPackage.perDayCost.toLocaleString()}</span>
+                                    <span className="text-sm font-extrabold text-[#0B8C00]">{selectedPackage.totalPerDayCost || "₹0"}</span>
                                 </div>
                                 <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
                                     <span className="text-[10px] font-bold text-[#6B7280] uppercase">Active</span>
-                                    <span className="text-sm font-extrabold text-[#111827]">{selectedPackage.activePatients} Patients</span>
+                                    <span className="text-sm font-extrabold text-[#111827]">{selectedPackage.activePatients ?? 0} Patients</span>
                                 </div>
                                 <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
                                     <span className="text-[10px] font-bold text-[#6B7280] uppercase">Admissions</span>
-                                    <span className="text-sm font-extrabold text-[#111827]">{selectedPackage.totalAdmissions.toLocaleString()}</span>
+                                    <span className="text-sm font-extrabold text-[#111827]">
+                                        {selectedPackage.totalAdmissions !== undefined && selectedPackage.totalAdmissions !== null
+                                            ? selectedPackage.totalAdmissions.toLocaleString()
+                                            : "0"
+                                        }
+                                    </span>
                                 </div>
                             </div>
                         </div>

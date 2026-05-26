@@ -64,6 +64,7 @@ function rtkErrorMessage(e: unknown): string {
 export default function NurseListPage() {
     const router = useRouter();
     const nursePerm = usePermission("Nurse", { subModule: "Nurse" });
+    debugger;
     const selectedBranch = useAppSelector(selectSelectedBranch);
     const {
         selectedBranchFilter,
@@ -236,7 +237,7 @@ export default function NurseListPage() {
         return (
             <AppShell>
                 <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
-                    You don&apos;t have permission to view doctors.
+                    You don&apos;t have permission to view nurses.
                 </div>
             </AppShell>
         );
@@ -305,7 +306,7 @@ export default function NurseListPage() {
                                         isLoadingCSV={csvLoading}
                                     />
                                 )}
-                                <RefreshButton onClick={handleRefresh}  className="cursor-pointer"/>
+                                <RefreshButton onClick={handleRefresh} className="cursor-pointer" />
                             </div>
                         </div>
 
@@ -418,11 +419,10 @@ export default function NurseListPage() {
                                                 <TableData>{row.empId}</TableData>
                                                 <TableData className="text-start">
                                                     <span
-                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${
-                                                            nurseIsInactive(row)
+                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${nurseIsInactive(row)
                                                                 ? "border-[#F6776E] bg-white text-[#F6776E]"
                                                                 : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {nurseStatusDisplayLabel(row)}
                                                     </span>
@@ -453,7 +453,7 @@ export default function NurseListPage() {
                                                                     onClick={() => goEdit(row)}
                                                                     className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] cursor-pointer"
                                                                     aria-label="Edit"
-                                                                    
+
                                                                 >
                                                                     <Image
                                                                         src="/icons/EditIconBlack.svg"

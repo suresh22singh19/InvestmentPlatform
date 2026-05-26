@@ -1045,7 +1045,7 @@ export default function PackagePage() {
       attendantFeePrice: addPackageForm.attendantFeesEnabled ? parseNum(addPackageForm.attendantFeesPrice) : 0,
       therapyEnabled: addPackageForm.therapyEnabled,
       therapyLoad: 1,
-      therapySessionsPerDay: addPackageForm.therapyEnabled ? (parseIntSafe(addPackageForm.therapySessionsPerDay) || 1) : 0,
+      therapySessionsPerDay: addPackageForm.therapyEnabled ? parseIntSafe(addPackageForm.therapySessionsPerDay) : 0,
       therapyPrice: addPackageForm.therapyEnabled ? parseNum(addPackageForm.therapyPrice) : 0,
     };
     try {
@@ -1134,7 +1134,7 @@ export default function PackagePage() {
 
   return (
     <AppShell>
-    
+
 
 
       {/* Package Configuration */}
@@ -1149,132 +1149,132 @@ export default function PackagePage() {
               You don&apos;t have permission to view package.
             </div>
           ) : (
-          <>
-          <div className="mb-6 w-[450px]">
-            <Tabs options={tabOptions} value={activeTab} onChange={handleTabChange} />
-          </div>
-          <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-              <h4 className="font-semibold text-[18px] leading-[120%] text-[#434956]">
-                {activeTab === "existing-packages" ? "Existing Packages" : "Archived Packages"}{" "}
-                <span className="font-regular text-[15px] leading-[120%] text-[#525763]">
-                  ({String(totalFilteredPackages).padStart(2, "0")})
-                </span>
-              </h4>
-              <div className="flex flex-wrap items-center gap-3">
-                <FormSelectField
-                  label=""
-                  hideLabel
-                  options={hookBranchFilterOptions}
-                  value={selectedBranch}
-                  onChange={(value) => {
-                    setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
-                    setPackagesCurrentPage(1);
-                  }}
-                  placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
-                  mode="single"
-                  background="normal"
-                  width={260}
-                  disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                />
-                <FormSelectField
-                  label=""
-                  hideLabel
-                  options={[
-                    { value: "", label: "All Types" },
-                    { value: "ipd", label: "IPD" },
-                    { value: "daycare", label: "DayCare" },
-                  ]}
-                  value={selectedPackageTypeFilter}
-                  onChange={(value) => {
-                    setSelectedPackageTypeFilter(Array.isArray(value) ? value[0] : value || "");
-                    setPackagesCurrentPage(1);
-                  }}
-                  placeholder="Package Type"
-                  mode="single"
-                  background="normal"
-                  width={260}
-                />
-                <FormSelectField
-                  label=""
-                  hideLabel
-                  options={[
-                    { value: "", label: "All Types" },
-                    { value: "CKD", label: "CKD" },
-                    { value: "Other", label: "Other" },
-                  ]}
-                  value={selectedPackageType}
-                  onChange={(value) => {
-                    setSelectedPackageType(Array.isArray(value) ? value[0] : value || "");
-                    setPackagesCurrentPage(1);
-                  }}
-                  placeholder="Disease Category "
-                  mode="single"
-                  background="normal"
-                  width={260}
-                />
-                <TableSearchInput
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  placeholder="Search Here..."
-                  className="!w-[260px] min-w-[260px] max-w-[260px] shrink-0"
-                />
-                {activeTab === "existing-packages" && canAdd && (
-                  <button
-                    type="button"
-                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
-                    onClick={openAddPackageDialog}
-                  >
-                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    <span className="text-hide hide-text-overflow">Add New Package</span>
-                  </button>
+            <>
+              <div className="mb-6 w-[450px]">
+                <Tabs options={tabOptions} value={activeTab} onChange={handleTabChange} />
+              </div>
+              <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="font-semibold text-[18px] leading-[120%] text-[#434956]">
+                    {activeTab === "existing-packages" ? "Existing Packages" : "Archived Packages"}{" "}
+                    <span className="font-regular text-[15px] leading-[120%] text-[#525763]">
+                      ({String(totalFilteredPackages).padStart(2, "0")})
+                    </span>
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <FormSelectField
+                      label=""
+                      hideLabel
+                      options={hookBranchFilterOptions}
+                      value={selectedBranch}
+                      onChange={(value) => {
+                        setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                        setPackagesCurrentPage(1);
+                      }}
+                      placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                      mode="single"
+                      background="normal"
+                      width={260}
+                      disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                    />
+                    <FormSelectField
+                      label=""
+                      hideLabel
+                      options={[
+                        { value: "", label: "All Types" },
+                        { value: "ipd", label: "IPD" },
+                        { value: "daycare", label: "DayCare" },
+                      ]}
+                      value={selectedPackageTypeFilter}
+                      onChange={(value) => {
+                        setSelectedPackageTypeFilter(Array.isArray(value) ? value[0] : value || "");
+                        setPackagesCurrentPage(1);
+                      }}
+                      placeholder="Package Type"
+                      mode="single"
+                      background="normal"
+                      width={260}
+                    />
+                    <FormSelectField
+                      label=""
+                      hideLabel
+                      options={[
+                        { value: "", label: "All Types" },
+                        { value: "CKD", label: "CKD" },
+                        { value: "Other", label: "Other" },
+                      ]}
+                      value={selectedPackageType}
+                      onChange={(value) => {
+                        setSelectedPackageType(Array.isArray(value) ? value[0] : value || "");
+                        setPackagesCurrentPage(1);
+                      }}
+                      placeholder="Disease Category "
+                      mode="single"
+                      background="normal"
+                      width={260}
+                    />
+                    <TableSearchInput
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      placeholder="Search Here..."
+                      className="!w-[260px] min-w-[260px] max-w-[260px] shrink-0"
+                    />
+                    {activeTab === "existing-packages" && canAdd && (
+                      <button
+                        type="button"
+                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                        onClick={openAddPackageDialog}
+                      >
+                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                        <span className="text-hide hide-text-overflow">Add New Package</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-3 lg:grid-cols-4">
+                  {isLoadingPackages ? (
+                    <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+                  ) : totalFilteredPackages === 0 ? (
+                    <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">
+                      {activeTab === "archived-packages"
+                        ? "No archived packages"
+                        : debouncedSearch.trim()
+                          ? "No packages match your search"
+                          : "No existing packages"}
+                    </div>
+                  ) : (
+                    paginatedPackageCards.map((pkg, index) => {
+                      const rowNum = (packagesCurrentPage - 1) * packagesItemsPerPage + index + 1;
+                      return (
+                        <PackageListCard
+                          key={pkg.id}
+                          pkg={pkg}
+                          rowNum={rowNum}
+                          isExistingPackage={activeTab === "existing-packages"}
+                          showEdit={activeTab === "existing-packages" && canEdit}
+                          showArchive={activeTab === "existing-packages" && canDelete}
+                          onEdit={openEditPackageDialog}
+                          onArchive={setPackageArchiveConfirm}
+                          onView={openViewPackageDialog}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+
+                {totalFilteredPackages > 0 && (
+                  <Pagination
+                    currentPage={packagesCurrentPage}
+                    totalItems={totalFilteredPackages}
+                    itemsPerPage={packagesItemsPerPage}
+                    onPageChange={handlePackagePageChange}
+                    onItemsPerPageChange={handlePackageItemsPerPageChange}
+                    itemsPerPageOptions={[10, 20, 50, 100]}
+                  />
                 )}
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3 lg:grid-cols-4">
-              {isLoadingPackages ? (
-                <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
-              ) : totalFilteredPackages === 0 ? (
-                <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">
-                  {activeTab === "archived-packages"
-                    ? "No archived packages"
-                    : debouncedSearch.trim()
-                      ? "No packages match your search"
-                      : "No existing packages"}
-                </div>
-              ) : (
-                paginatedPackageCards.map((pkg, index) => {
-                  const rowNum = (packagesCurrentPage - 1) * packagesItemsPerPage + index + 1;
-                  return (
-                    <PackageListCard
-                      key={pkg.id}
-                      pkg={pkg}
-                      rowNum={rowNum}
-                      isExistingPackage={activeTab === "existing-packages"}
-                      showEdit={activeTab === "existing-packages" && canEdit}
-                      showArchive={activeTab === "existing-packages" && canDelete}
-                      onEdit={openEditPackageDialog}
-                      onArchive={setPackageArchiveConfirm}
-                      onView={openViewPackageDialog}
-                    />
-                  );
-                })
-              )}
-            </div>
-
-            {totalFilteredPackages > 0 && (
-              <Pagination
-                currentPage={packagesCurrentPage}
-                totalItems={totalFilteredPackages}
-                itemsPerPage={packagesItemsPerPage}
-                onPageChange={handlePackagePageChange}
-                onItemsPerPageChange={handlePackageItemsPerPageChange}
-                itemsPerPageOptions={[10, 20, 50, 100]}
-              />
-            )}
-          </div>
-          </>
+            </>
           )}
         </ListBorder>
       </div>
@@ -1373,7 +1373,7 @@ export default function PackagePage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div>
               <FormInputField
                 label="Package Name *"
                 value={addPackageForm.packageName}
@@ -1399,7 +1399,7 @@ export default function PackagePage() {
                 }
                 placeholder="Description"
                 // height={60}
-                   height={44}
+                height={44}
                 disabled={packageDialogMode === "view"}
               />
             </div>
@@ -1443,7 +1443,7 @@ export default function PackagePage() {
                 <div className="flex items-center justify-between pt-[7px]">
                   <Toggle
                     checked={true}
-                    onChange={() => {}}
+                    onChange={() => { }}
                     label="Room Rent"
                     className="!w-10 !h-6"
                     width="w-[16px]"
@@ -1458,7 +1458,7 @@ export default function PackagePage() {
                     <FormInputField
                       label={""}
                       value={roomRentPriceDisplay}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       placeholder="Price"
                       type="number"
                       height={37}
@@ -1688,35 +1688,10 @@ export default function PackagePage() {
                   disabled={isViewMode}
                 />
               </div>
-              {addPackageForm.therapyEnabled && (
-                <div className="flex flex-col gap-1">
-                  <div className="relative w-[216px]">
-                    <FormInputField
-                      label={""}
-                      value={addPackageForm.therapyPrice}
-                      onChange={(e) => {
-                        const val = sanitizePriceInput(e.target.value);
-                        setAddPackageForm((p) => ({ ...p, therapyPrice: val }));
-                        if (val.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
-                      }}
-                      placeholder="Price"
-                      type="text"
-                      inputMode="decimal"
-                      height={37}
-                      disabled={isViewMode}
-                    />
-                    <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '37px' }}>
-                      ₹
-                    </span>
-                  </div>
-                  {packageFormErrors.therapyPrice && <span className="text-xs text-[#F87171]">{packageFormErrors.therapyPrice}</span>}
-                </div>
-              )}
             </div>
 
           </div>
 
-          {/*
           {addPackageForm.therapyEnabled && (
             <div className="grid grid-cols-2 gap-6">
               <div className="relative">
@@ -1745,9 +1720,27 @@ export default function PackagePage() {
                 </span>
                 <p className="mt-1 text-[11px] leading-snug text-[#7B8089]">Maximum allowed: 5 sessions based on staff availability.</p>
               </div>
+              <div className="relative">
+                <FormInputField
+                  label={"Price"}
+                  value={addPackageForm.therapyPrice}
+                  onChange={(e) => {
+                    const val = sanitizePriceInput(e.target.value);
+                    setAddPackageForm((p) => ({ ...p, therapyPrice: val }));
+                    if (val.trim() && packageFormErrors.therapyPrice) setPackageFormErrors((err) => ({ ...err, therapyPrice: "" }));
+                  }}
+                  placeholder="Price"
+                  type="text"
+                  inputMode="decimal"
+                  disabled={isViewMode}
+                />
+                <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
+                  ₹
+                </span>
+                {packageFormErrors.therapyPrice && <span className="mt-1 text-xs text-[#F87171]">{packageFormErrors.therapyPrice}</span>}
+              </div>
             </div>
           )}
-          */}
 
           <div className="w-[300px] p-4 bg-[#0B8C00] shadow-[0px_6px_40px_rgba(0,0,0,0.02)] rounded-2xl">
             <div className="flex items-center gap-2 ">
@@ -1852,8 +1845,8 @@ export default function PackagePage() {
         onConfirm={() => setShowSavePackageErrorDialog(false)}
       />
 
-     
-     
+
+
     </AppShell>
   );
 }

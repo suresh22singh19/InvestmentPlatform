@@ -27,7 +27,7 @@ export function SegmentedToggle<T extends string>({
     const widthClass = isTailwindWidth ? width : "";
 
     return (
-        <div 
+        <div
             className={`flex p-1 rounded-full ${widthClass} border border-[#DFE0E2] select-none`}
             style={inlineStyle}
         >
@@ -38,11 +38,10 @@ export function SegmentedToggle<T extends string>({
                         key={option.value}
                         type="button"
                         onClick={() => onChange(option.value)}
-                        className={`flex-1 px-8 py-2 rounded-full text-xs font-extrabold transition-all duration-200 ${
-                            isActive
+                        className={`flex-1 px-6 py-2 rounded-full text-xs font-extrabold transition-all duration-200 ${isActive
                                 ? "bg-[#0B8C00] text-white shadow-sm"
                                 : "text-[#434956] hover:bg-gray-100"
-                        }`}
+                            }`}
                     >
                         {option.label}
                     </button>

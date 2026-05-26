@@ -36,13 +36,13 @@ const NAV_ICON_SRC: Record<string, string> = {
   "infrastructure-view": "/icons/BranchRoleMasterIcon.svg", // View option for infrastructure page
   // Use same icon as Registration for Pre Booking
   "pre-booking": "/icons/RegistrationDarkIcon.svg",
-  "lead-request":"/icons/RegistrationDarkIcon.svg",
+  "lead-request": "/icons/RegistrationDarkIcon.svg",
   token: "/icons/TokenNav.svg",
   "discharge-pending": "/icons/RegistrationDarkIcon.svg",
   doctors: "/icons/DoctorDarkIcon.svg",
   "roles-master": "/icons/RoleMasterDarkIcon.svg",
   "branch-role-master": "/icons/BranchRoleMasterIcon.svg",
-  nurses: "/icons/UsersDarkIcon.svg",
+  nurse: "/icons/UsersDarkIcon.svg",
 };
 
 type TopNavigationBarProps = {
@@ -570,10 +570,10 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
     viewportWidth <= 991
       ? "100%"
       : viewportWidth <= 1100
-      ? "800px"
-      : viewportWidth <= 1300
-      ? "fit-content"
-      : `${finalWidth}px`;
+        ? "800px"
+        : viewportWidth <= 1300
+          ? "fit-content"
+          : `${finalWidth}px`;
 
   // For dropdowns with few items (e.g. Patient: OPD, IPD, DayCare), use a minimum width so it looks like Settings
   const minWidth = totalItems <= 4 ? "380px" : undefined;
@@ -726,7 +726,7 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
   { key: "doctors", label: "Doctor", hasDropdown: true },
-  { key: "nurses", label: "Nurse", hasDropdown: true },
+  { key: "nurse", label: "Nurse", href: "/nurse" },
   { key: "reports", label: "Reports", href: "/reports" },
   { key: "infrastructure-view", label: "Infrastructure", href: "/infrastructure" },
   { key: "pre-booking", label: "Pre Booking", hasDropdown: true },
@@ -749,7 +749,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   token: ["token", "tokens"],
   "discharge-pending": ["discharge-pending"],
   doctors: ["doctor", "doctors"],
-  nurses: ["nurse", "nurses"],
+  nurse: ["nurse", "nurses"],
   registration: ["registration"],
 
 };
@@ -808,8 +808,6 @@ const DOCTOR_SUBMODULE_ALIASES: Record<string, string[]> = {
 
 const NURSE_SUBMODULE_ALIASES: Record<string, string[]> = {
   "nurse-main": ["nurse", "nurses"],
-  "nurse-camp": ["nurse", "nurses", "camp-nurse", "camp"],
-  "nurse-visit": ["nurse", "nurses", "nurse-visit", "visit"],
 };
 
 const normalizeName = (value: string) =>
@@ -852,11 +850,11 @@ const filterBySubModuleAccess = <T extends { key: string }>(
   });
 };
 // we will use that when required!!!!!!!!!!!!!!!
- // { key: "doctors", label: "Doctor", href: "/dashboard/doctors" },
-  // { key: "roles-master", label: "Roles Master", href: "/roles-master" },
-  // { key: "branch-role-master", label: "Branch Role Master", href: "/branch-role-master" },
-  // { key: "registration", label: "Registration", href: "/registration/hospital" },
-  // { key: "hospital-infrastructure", label: "Infrastructure 1", hasDropdown: true },
+// { key: "doctors", label: "Doctor", href: "/dashboard/doctors" },
+// { key: "roles-master", label: "Roles Master", href: "/roles-master" },
+// { key: "branch-role-master", label: "Branch Role Master", href: "/branch-role-master" },
+// { key: "registration", label: "Registration", href: "/registration/hospital" },
+// { key: "hospital-infrastructure", label: "Infrastructure 1", hasDropdown: true },
 export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) {
   const pathname = usePathname();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -887,8 +885,6 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     loginType?.toLowerCase() === "clinic user" ||
     loginType?.toLowerCase() === "hospital user";
 
-  // Check if login_type is "nurse" - show only Registration List link
-  const isNurse = loginType?.toLowerCase() === "nurse";
 
   // Get the registration href based on login_type (or email override)
   const getRegistrationHref = () => {
@@ -924,26 +920,26 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   // }, [permissionsMap]);
 
   const settingsItems = useMemo(() => {
-  const all = getAllSettingsItems();
+    const all = getAllSettingsItems();
 
-  const filtered = filterBySubModuleAccess(
-    all,
-    permissionsMap,
-    ["settings"],
-    SETTINGS_SUBMODULE_ALIASES
-  );
+    const filtered = filterBySubModuleAccess(
+      all,
+      permissionsMap,
+      ["settings"],
+      SETTINGS_SUBMODULE_ALIASES
+    );
 
-  // Force-include offer-master until its permission is implemented in the backend
-  const offerMaster = all.find((i) => i.key === "offer-master");
-  let result = filtered;
-  if (offerMaster && !filtered.some((i) => i.key === "offer-master")) {
-    const pkgIdx = filtered.findIndex((i) => i.key === "package");
-    const insertAt = pkgIdx >= 0 ? pkgIdx + 1 : filtered.length;
-    result = [...filtered.slice(0, insertAt), offerMaster, ...filtered.slice(insertAt)];
-  }
+    // Force-include offer-master until its permission is implemented in the backend
+    const offerMaster = all.find((i) => i.key === "offer-master");
+    let result = filtered;
+    if (offerMaster && !filtered.some((i) => i.key === "offer-master")) {
+      const pkgIdx = filtered.findIndex((i) => i.key === "package");
+      const insertAt = pkgIdx >= 0 ? pkgIdx + 1 : filtered.length;
+      result = [...filtered.slice(0, insertAt), offerMaster, ...filtered.slice(insertAt)];
+    }
 
-  return result;
-}, [permissionsMap]);
+    return result;
+  }, [permissionsMap]);
   const rolesPermissionItems = filterBySubModuleAccess(
     getRolesPermissionItems(),
     permissionsMap,
@@ -970,7 +966,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   const nurseItemsFiltered = filterBySubModuleAccess(
     getAllNurseItems(),
     permissionsMap,
-    ["nurse", "nurses"],
+    ["nurse"],
     NURSE_SUBMODULE_ALIASES
   );
   const nurseItems =
@@ -1091,22 +1087,19 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   };
 
   // Build navigation items array
-  // - nurse              → only Registration List
   // - clinic/hospital    → only Registration as direct link
   // - all other users    → keep full menu, Registration is direct link
-  const TOP_NAV_ITEMS = isNurse
-    ? [{ key: "registration-list", label: "Registration List", href: "/registration/registrationList" }]
-    : shouldShowRegistration
-      ? [{ key: "registration", label: "Registration", href: getRegistrationHref() }]
-      : [
-        ...BASE_TOP_NAV_ITEMS.slice(0, 2), // Dashboard + Voucher (direct links like Dashboard)
-        { key: "registration", label: "Registration", href: getRegistrationHref() },
-        ...BASE_TOP_NAV_ITEMS.slice(2), // Patient, Settings, Reports, …
-      ].filter((item) => {
-        const aliases = TOP_NAV_PERMISSION_ALIASES[item.key];
-        if (!aliases || aliases.length === 0) return true;
-        return hasAccessByAliases(permissionsMap, aliases);
-      });
+  const TOP_NAV_ITEMS = shouldShowRegistration
+    ? [{ key: "registration", label: "Registration", href: getRegistrationHref() }]
+    : [
+      ...BASE_TOP_NAV_ITEMS.slice(0, 2), // Dashboard + Voucher (direct links like Dashboard)
+      { key: "registration", label: "Registration", href: getRegistrationHref() },
+      ...BASE_TOP_NAV_ITEMS.slice(2), // Patient, Settings, Reports, …
+    ].filter((item) => {
+      const aliases = TOP_NAV_PERMISSION_ALIASES[item.key];
+      if (!aliases || aliases.length === 0) return true;
+      return hasAccessByAliases(permissionsMap, aliases);
+    });
 
   return (
     <nav className={classNames(
@@ -1119,176 +1112,172 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
           className="h-[74px] overflow-x-auto overflow-y-hidden"
         >
           <div className="flex items-center gap-2 h-[74px] w-max min-w-full flex-nowrap">
-          
-        {TOP_NAV_ITEMS.map((item) => {
-          const Icon = getIconForItem(item.key);
-          const sidebarItem = getNavItemFromSidebar(item.key);
-          // Check if item is active: use sidebar logic or check against registration/settings/hospital-infrastructure routes
-          let isActive = false;
-          if (item.key === "settings" && pathname) {
-            // Check if pathname matches any settings route (all settings pages)
-            isActive = pathname?.startsWith("/settings");
-          } else if (item.key === "patient" && pathname) {
-            // OPD lives under registration list; IPD/DayCare under /patient/* — keep Patient highlighted for all
-            isActive =
-              pathname === "/registration/registrationList" ||
-              pathname?.startsWith("/registration/registrationList/") ||
-              pathname === "/patient" ||
-              pathname?.startsWith("/patient/");
-          } else if (item.key === "registration" && pathname) {
-            // Registration is active on /registration and /registration/* except registrationList (that belongs to Patient)
-            isActive =
-              pathname === "/registration" ||
-              (pathname?.startsWith("/registration/") && !pathname?.startsWith("/registration/registrationList"));
-          } else if (item.key === "registration-list" && pathname) {
-            // Check if pathname matches registration list route or any of its sub-routes
-            // This includes: /registration/registrationList, /registration/registrationList/[patientId]/view, 
-            // /registration/registrationList/[patientId]/edit, /registration/registrationList/vitals-medical/[patientId]
-            isActive = pathname === "/registration/registrationList" || pathname?.startsWith("/registration/registrationList/");
-          } else if (item.key === "hospital-infrastructure" && pathname) {
-            // Check if pathname matches any hospital-infrastructure route (not /infrastructure - that has its own nav item)
-            isActive = pathname === "/hospital-infrastructure" || pathname?.startsWith("/hospital-infrastructure/");
-          } else if (item.key === "infrastructure-view" && pathname) {
-            isActive = pathname === "/infrastructure";
-          } else if (item.key === "pre-booking" && pathname) {
-            isActive = pathname === "/pre-booking" || pathname?.startsWith("/pre-booking/");
-          } else if (item.key === "token" && pathname) {
-            isActive = pathname === "/token" || pathname?.startsWith("/token/");
-          } else if (item.key === "discharge-pending" && pathname) {
-            isActive = pathname === "/discharge-pending" || pathname?.startsWith("/discharge-pending/");
-          } else if (item.key === "lead-request" && pathname) {
-            isActive = pathname === "/lead-request" || pathname?.startsWith("/lead-request/");
-          } else if (item.key === "roles-permission" && pathname) {
-            isActive =
-              pathname === "/roles&permission" ||
-              pathname?.startsWith("/roles&permission/");
-          } else if (item.key === "reports" && pathname) {
-            isActive = pathname === "/reports" || pathname?.startsWith("/reports/");
-          } else if (item.key === "voucher" && pathname) {
-            isActive = pathname === "/voucher" || pathname?.startsWith("/voucher/");
-          } else if (item.key === "doctors" && pathname) {
-            isActive = pathname === "/doctor" || pathname?.startsWith("/doctor/");
-          } else if (item.key === "nurses" && pathname) {
-            isActive = pathname === "/nurse" || pathname?.startsWith("/nurse/");
-          } else if (sidebarItem && pathname) {
-            isActive = shouldItemBeActive(pathname, sidebarItem);
-          }
-          const isExpanded = expandedKeys.has(item.key);
-          // Check if item has dropdown: either has sidebar children OR is settings/registration/hospital-infrastructure with dropdown items
-          // Registration should NOT have dropdown for clinic/hospital users - it's a direct link
-          const hasDropdown =
-            item.hasDropdown &&
-            (sidebarItem?.children ||
-              (item.key === "settings" && settingsItems.length > 0) ||
-              (item.key === "patient" && patientItems.length > 0) ||
-              (item.key === "doctors" && doctorItems.length > 0) ||
-              (item.key === "nurses" && nurseItems.length > 0) ||
-              (item.key === "pre-booking" && preBookingItems.length > 0) ||
-              (item.key === "lead-request" && leadRequestItems.length > 0) ||
-              item.key === "hospital-infrastructure" ||
-              (item.key === "roles-permission" && rolesPermissionItems.length > 0));
 
-          // For registration, if it should be shown, it's always active (green) and has no dropdown
-          const isRegistrationActive = item.key === "registration" && shouldShowRegistration;
+            {TOP_NAV_ITEMS.map((item) => {
+              const Icon = getIconForItem(item.key);
+              const sidebarItem = getNavItemFromSidebar(item.key);
+              // Check if item is active: use sidebar logic or check against registration/settings/hospital-infrastructure routes
+              let isActive = false;
+              if (item.key === "settings" && pathname) {
+                // Check if pathname matches any settings route (all settings pages)
+                isActive = pathname?.startsWith("/settings");
+              } else if (item.key === "patient" && pathname) {
+                // OPD lives under registration list; IPD/DayCare under /patient/* — keep Patient highlighted for all
+                isActive =
+                  pathname === "/registration/registrationList" ||
+                  pathname?.startsWith("/registration/registrationList/") ||
+                  pathname === "/patient" ||
+                  pathname?.startsWith("/patient/");
+              } else if (item.key === "registration" && pathname) {
+                // Registration is active on /registration and /registration/* except registrationList (that belongs to Patient)
+                isActive =
+                  pathname === "/registration" ||
+                  (pathname?.startsWith("/registration/") && !pathname?.startsWith("/registration/registrationList"));
+              } else if (item.key === "registration-list" && pathname) {
+                // Check if pathname matches registration list route or any of its sub-routes
+                // This includes: /registration/registrationList, /registration/registrationList/[patientId]/view, 
+                // /registration/registrationList/[patientId]/edit, /registration/registrationList/vitals-medical/[patientId]
+                isActive = pathname === "/registration/registrationList" || pathname?.startsWith("/registration/registrationList/");
+              } else if (item.key === "hospital-infrastructure" && pathname) {
+                // Check if pathname matches any hospital-infrastructure route (not /infrastructure - that has its own nav item)
+                isActive = pathname === "/hospital-infrastructure" || pathname?.startsWith("/hospital-infrastructure/");
+              } else if (item.key === "infrastructure-view" && pathname) {
+                isActive = pathname === "/infrastructure";
+              } else if (item.key === "pre-booking" && pathname) {
+                isActive = pathname === "/pre-booking" || pathname?.startsWith("/pre-booking/");
+              } else if (item.key === "token" && pathname) {
+                isActive = pathname === "/token" || pathname?.startsWith("/token/");
+              } else if (item.key === "discharge-pending" && pathname) {
+                isActive = pathname === "/discharge-pending" || pathname?.startsWith("/discharge-pending/");
+              } else if (item.key === "lead-request" && pathname) {
+                isActive = pathname === "/lead-request" || pathname?.startsWith("/lead-request/");
+              } else if (item.key === "roles-permission" && pathname) {
+                isActive =
+                  pathname === "/roles&permission" ||
+                  pathname?.startsWith("/roles&permission/");
+              } else if (item.key === "reports" && pathname) {
+                isActive = pathname === "/reports" || pathname?.startsWith("/reports/");
+              } else if (item.key === "voucher" && pathname) {
+                isActive = pathname === "/voucher" || pathname?.startsWith("/voucher/");
+              } else if (item.key === "doctors" && pathname) {
+                isActive = pathname === "/doctor" || pathname?.startsWith("/doctor/");
+              } else if (item.key === "nurse" && pathname) {
+                isActive = pathname === "/nurse" || pathname?.startsWith("/nurse/");
+              } else if (sidebarItem && pathname) {
+                isActive = shouldItemBeActive(pathname, sidebarItem);
+              }
+              const isExpanded = expandedKeys.has(item.key);
+              // Check if item has dropdown: either has sidebar children OR is settings/registration/hospital-infrastructure with dropdown items
+              // Registration should NOT have dropdown for clinic/hospital users - it's a direct link
+              const hasDropdown =
+                item.hasDropdown &&
+                (sidebarItem?.children ||
+                  (item.key === "settings" && settingsItems.length > 0) ||
+                  (item.key === "patient" && patientItems.length > 0) ||
+                  (item.key === "doctors" && doctorItems.length > 0) ||
+                  (item.key === "pre-booking" && preBookingItems.length > 0) ||
+                  (item.key === "lead-request" && leadRequestItems.length > 0) ||
+                  item.key === "hospital-infrastructure" ||
+                  (item.key === "roles-permission" && rolesPermissionItems.length > 0));
 
-          // For registration-list (nurse), it's always active (green) when on that page or any sub-route
-          const isRegistrationListActive = item.key === "registration-list" && isNurse && (pathname === "/registration/registrationList" || pathname?.startsWith("/registration/registrationList/"));
+              // For registration, if it should be shown, it's always active (green) and has no dropdown
+              const isRegistrationActive = item.key === "registration" && shouldShowRegistration;
 
-          const pillActive =
-            isActive || isRegistrationActive || isRegistrationListActive;
-          const isVoucherItem = item.key === "voucher";
-          const isRolesPermissionItem = item.key === "roles-permission";
+              const pillActive =
+                isActive || isRegistrationActive;
+              const isVoucherItem = item.key === "voucher";
+              const isRolesPermissionItem = item.key === "roles-permission";
 
-          return (
-            <div
-              key={item.key}
-              className="relative flex items-center cstm-width shrink-0 flex-nowrap"
-              ref={(el) => {
-                if (hasDropdown && el) {
-                  dropdownRefs.current.set(item.key, el);
-                } else {
-                  dropdownRefs.current.delete(item.key);
-                }
-              }}
-            >
-              {item.href ? (
-                <Link
-                  href={item.href}
-                  className={classNames(
-                    "flex items-center justify-between gap-2 h-[44px] px-6 py-3 rounded-[20px] text-[13px] lg:text-sm font-medium transition-all",
-                    (isActive || isRegistrationActive || isRegistrationListActive)
-                      ? "bg-[#0B8C00] text-white border border-[#0B8C00]"
-                      : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
-                  )}
-                  onClick={onNavigate}
+              return (
+                <div
+                  key={item.key}
+                  className="relative flex items-center cstm-width shrink-0 flex-nowrap"
+                  ref={(el) => {
+                    if (hasDropdown && el) {
+                      dropdownRefs.current.set(item.key, el);
+                    } else {
+                      dropdownRefs.current.delete(item.key);
+                    }
+                  }}
                 >
-                  <div className="flex gap-2 items-center">
-                    {Icon && (
-                      <Icon
-                        className={classNames(
-                          isVoucherItem ? "h-8 w-8 shrink-0" : "h-5 w-5 shrink-0",
-                          !isVoucherItem &&
-                            !isRolesPermissionItem &&
-                            pillActive
-                            ? "brightness-0 invert"
-                            : ""
-                        )}
-                        active={
-                          isVoucherItem || isRolesPermissionItem ? pillActive : undefined
-                        }
-                      />
-                    )}
-                    <span className="whitespace-nowrap">{item.label}</span>
-                  </div>
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => toggleDropdown(item.key)}
-                  className={classNames(
-                    "flex items-center justify-between gap-2 h-[44px] px-6 py-3 rounded-[20px] text-[13px] lg:text-sm font-medium transition-all",
-                    isActive
-                      ? "bg-[#0B8C00] text-white"
-                      : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
-                  )}
-                >
-                  <div className="flex gap-2 items-center">
-                    {Icon && (
-                      <Icon
-                        className={classNames(
-                          isVoucherItem ? "h-8 w-8 shrink-0" : "h-5 w-5 shrink-0",
-                          !isVoucherItem &&
-                            !isRolesPermissionItem &&
-                            isActive
-                            ? "brightness-0 invert"
-                            : ""
-                        )}
-                        active={
-                          isVoucherItem || isRolesPermissionItem ? isActive : undefined
-                        }
-                      />
-                    )}
-                    <span className="whitespace-nowrap">{item.label}</span>
-                  </div>
-                  {hasDropdown && (
-                    <Image
-                      src="/icons/ArrowDown.svg"
-                      alt="Expand"
-                      width={16}
-                      height={16}
+                  {item.href ? (
+                    <Link
+                      href={item.href}
                       className={classNames(
-                        "transition-transform ml-1",
-                        isExpanded ? "rotate-180" : "",
-                        isActive ? "brightness-0 invert" : ""
+                        "flex items-center justify-between gap-2 h-[44px] px-6 py-3 rounded-[20px] text-[13px] lg:text-sm font-medium transition-all",
+                        pillActive
+                          ? "bg-[#0B8C00] text-white border border-[#0B8C00]"
+                          : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
                       )}
-                    />
-                  )}
+                      onClick={onNavigate}
+                    >
+                      <div className="flex gap-2 items-center">
+                        {Icon && (
+                          <Icon
+                            className={classNames(
+                              isVoucherItem ? "h-8 w-8 shrink-0" : "h-5 w-5 shrink-0",
+                              !isVoucherItem &&
+                                !isRolesPermissionItem &&
+                                pillActive
+                                ? "brightness-0 invert"
+                                : ""
+                            )}
+                            active={
+                              isVoucherItem || isRolesPermissionItem ? pillActive : undefined
+                            }
+                          />
+                        )}
+                        <span className="whitespace-nowrap">{item.label}</span>
+                      </div>
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleDropdown(item.key)}
+                      className={classNames(
+                        "flex items-center justify-between gap-2 h-[44px] px-6 py-3 rounded-[20px] text-[13px] lg:text-sm font-medium transition-all",
+                        isActive
+                          ? "bg-[#0B8C00] text-white"
+                          : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
+                      )}
+                    >
+                      <div className="flex gap-2 items-center">
+                        {Icon && (
+                          <Icon
+                            className={classNames(
+                              isVoucherItem ? "h-8 w-8 shrink-0" : "h-5 w-5 shrink-0",
+                              !isVoucherItem &&
+                                !isRolesPermissionItem &&
+                                isActive
+                                ? "brightness-0 invert"
+                                : ""
+                            )}
+                            active={
+                              isVoucherItem || isRolesPermissionItem ? isActive : undefined
+                            }
+                          />
+                        )}
+                        <span className="whitespace-nowrap">{item.label}</span>
+                      </div>
+                      {hasDropdown && (
+                        <Image
+                          src="/icons/ArrowDown.svg"
+                          alt="Expand"
+                          width={16}
+                          height={16}
+                          className={classNames(
+                            "transition-transform ml-1",
+                            isExpanded ? "rotate-180" : "",
+                            isActive ? "brightness-0 invert" : ""
+                          )}
+                        />
+                      )}
 
-                </button>
-              )}
-            </div>
-          );
-        })}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </ScrollableContainer>
       </div>
@@ -1392,18 +1381,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                   title="Doctor"
                 />
               )}
-              {openDropdownKey === "nurses" && (
-                <DropdownGrid
-                  fixedPlacement={dropdownFixedPlacement}
-                  items={nurseItems}
-                  pathname={pathname}
-                  onNavigate={() => {
-                    setExpandedKeys(new Set());
-                    onNavigate?.();
-                  }}
-                  title="Nurse"
-                />
-              )}
+
             </div>
           </div>,
           document.body

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -16,85 +16,8 @@ import {
     Badge,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
-
-// Static mock data representing patient future admissions and bookings
-const STATIC_FUTURE_ADMISSIONS = [
-    {
-        id: 1,
-        patientName: "Ajay Kumar",
-        patientUhid: "JSKL41712025",
-        bookingStatus: "Confirmed",
-        packageName: "Cardiology Gold",
-        roomType: "Deluxe Private",
-        advance: "₹12,450",
-        admissionDate: "12-01-2026 04:30 PM",
-    },
-    {
-        id: 2,
-        patientName: "Rohit Singh",
-        patientUhid: "JSKL41712025",
-        bookingStatus: "Pending",
-        packageName: "Neurology Standard",
-        roomType: "Semi-Private",
-        advance: "Pending",
-        admissionDate: "12-01-2026 04:30 PM",
-    },
-    {
-        id: 3,
-        patientName: "Ajeet Kumar",
-        patientUhid: "JSKL41712025",
-        bookingStatus: "Confirmed",
-        packageName: "Executive Check-up",
-        roomType: "Executive Check-up",
-        advance: "₹12,450",
-        admissionDate: "12-01-2026 04:30 PM",
-    },
-    {
-        id: 4,
-        patientName: "Manish Soni",
-        patientUhid: "JSKL41712025",
-        bookingStatus: "Pending",
-        packageName: "Maternity Care",
-        roomType: "General",
-        advance: "Pending",
-        admissionDate: "12-01-2026 04:30 PM",
-    },
-    {
-        id: 5,
-        patientName: "Pankaj Kumar",
-        patientUhid: "JSKL41712025",
-        bookingStatus: "Confirmed",
-        packageName: "Orthopedics Deluxe",
-        roomType: "Deluxe Private",
-        advance: "₹12,450",
-        admissionDate: "13-01-2026 11:30 AM",
-    },
-    {
-        id: 6,
-        patientName: "Aman Singh",
-        patientUhid: "JSKL41712025",
-        bookingStatus: "Pending",
-        packageName: "Pediatric Gold",
-        roomType: "General",
-        advance: "Pending",
-        admissionDate: "14-01-2026 02:15 PM",
-    },
-];
-
-// Helper to filter items by a filter date in YYYY-MM-DD format
-const matchDate = (admissionDateStr: string, filterDateStr: string) => {
-    if (!filterDateStr) return true;
-    // Extract date part: admissionDateStr is like "12-01-2026 04:30 PM"
-    const parts = admissionDateStr.split(" ")[0].split("-");
-    if (parts.length === 3) {
-        const day = parts[0];
-        const month = parts[1];
-        const year = parts[2];
-        const admissionYmd = `${year}-${month}-${day}`;
-        return admissionYmd === filterDateStr;
-    }
-    return false;
-};
+import { useGetFutureAdmissionsQuery } from "@/store/api/counsellorApi";
+import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 
 // StatCard Component specifically designed for Future Admissions
 interface StatCardProps {
@@ -137,56 +60,54 @@ function FutureAdmissionsStatCard({ label, value, iconSrc, badgeText, badgeType 
     );
 }
 
-const STAT_CARDS_CONFIG = [
-    {
-        id: "total-bookings",
-        label: "Total Bookings (Next 7 Days)",
-        value: "42",
-        iconSrc: "/icons/calendarCheck.svg",
-        badgeText: "+12%",
-        badgeType: "success" as const,
-    },
-    {
-        id: "confirmed-admissions",
-        label: "Confirmed Admissions",
-        value: "28",
-        iconSrc: "/icons/confirmCheck.svg",
-        badgeText: "Fixed",
-        badgeType: "neutral" as const,
-    },
-    {
-        id: "tentative-bookings",
-        label: "Tentative Bookings",
-        value: "14",
-        iconSrc: "/icons/advanceCheck.svg",
-        badgeText: "Action Request",
-        badgeType: "warning" as const,
-    },
-    {
-        id: "advances-collected",
-        label: "Advances Collected",
-        value: "₹12,450",
-        iconSrc: "/icons/rupee.svg",
-        badgeText: undefined,
-        badgeType: undefined,
-    },
-];
+
 
 export default function FutureAdmissionsPage() {
     const router = useRouter();
-    const [admissionsList, setAdmissionsList] = useState(STATIC_FUTURE_ADMISSIONS);
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState("");
     const debouncedSearch = useDebounce(searchTerm, 500);
-    const [selectedDate, setSelectedDate] = useState("");
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState("");
+    const filterRef = useRef<HTMLDivElement>(null);
 
     // Table States
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(6);
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
     const [sortBy, setSortBy] = useState<"patientName" | "">("patientName");
+
+    // Close Date Filter Dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const handleFilterClick = () => setIsFilterOpen((prev) => !prev);
+
+    const handleFilter = (from: string, to: string) => {
+        setFromDate(from);
+        setToDate(to);
+        setIsFilterOpen(false);
+        setCurrentPage(1);
+    };
+
+    const handleClear = () => {
+        setFromDate("");
+        setToDate("");
+        setIsFilterOpen(false);
+        setCurrentPage(1);
+    };
 
     // Modal dialogs states
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -207,52 +128,62 @@ export default function FutureAdmissionsPage() {
         setShowSuccessDialog(true);
     };
 
-    // Dynamically filter & sort static admissions
-    const filteredAndSortedList = useMemo(() => {
-        let result = [...admissionsList];
+    // API Query params
+    const queryParams = {
+        sortBy: sortBy || undefined,
+        order: sortOrder.toUpperCase() as "ASC" | "DESC",
+        page: currentPage,
+        limit: itemsPerPage,
+        search: debouncedSearch.trim() || undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        branchId: undefined, // Branch ID can be set if needed
+    };
 
-        // 1. Search filter
-        const query = debouncedSearch.trim().toLowerCase();
-        if (query) {
-            result = result.filter(
-                (item) =>
-                    item.patientName.toLowerCase().includes(query) ||
-                    item.patientUhid.toLowerCase().includes(query) ||
-                    item.packageName.toLowerCase().includes(query) ||
-                    item.roomType.toLowerCase().includes(query) ||
-                    item.advance.toLowerCase().includes(query)
-            );
-        }
+    // Query Hook call
+    const { data: apiResponse, isLoading: isFutureLoading } = useGetFutureAdmissionsQuery(queryParams);
 
-        // 2. Status filter
+    const metrics = apiResponse?.data?.metrics;
+    const listingData = apiResponse?.data?.listing?.data || [];
+    const listingTotal = apiResponse?.data?.listing?.total || 0;
+
+    // Dynamically filter list client-side for Status and Date selectors
+    const filteredList = useMemo(() => {
+        let result = [...listingData];
+
+        // 1. Status filter
         if (selectedStatus) {
             result = result.filter((item) => item.bookingStatus === selectedStatus);
         }
 
-        // 3. Date range filter
-        if (selectedDate) {
-            result = result.filter((item) => matchDate(item.admissionDate, selectedDate));
-        }
-
-        // 4. Sort by Patient Name
-        if (sortBy === "patientName") {
-            result.sort((a, b) => {
-                const nameA = a.patientName.toLowerCase();
-                const nameB = b.patientName.toLowerCase();
-                if (nameA < nameB) return sortOrder === "asc" ? -1 : 1;
-                if (nameA > nameB) return sortOrder === "asc" ? 1 : -1;
-                return 0;
+        // 2. Date range filter
+        if (fromDate || toDate) {
+            result = result.filter((item) => {
+                if (!item.admissionDate) return false;
+                try {
+                    const d = new Date(item.admissionDate);
+                    if (isNaN(d.getTime())) return false;
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const year = d.getFullYear();
+                    const itemYmd = `${year}-${month}-${day}`;
+                    
+                    if (fromDate && itemYmd < fromDate) return false;
+                    if (toDate && itemYmd > toDate) return false;
+                    return true;
+                } catch (e) {
+                    return false;
+                }
             });
         }
 
         return result;
-    }, [admissionsList, debouncedSearch, selectedStatus, selectedDate, sortBy, sortOrder]);
+    }, [listingData, selectedStatus, fromDate, toDate]);
 
-    const totalItems = filteredAndSortedList.length;
-    const paginatedList = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredAndSortedList.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredAndSortedList, currentPage, itemsPerPage]);
+    const totalItems = (selectedStatus || fromDate || toDate) ? filteredList.length : listingTotal;
+
+    // Since the API returns paginated data, paginatedList is just filteredList!
+    const paginatedList = filteredList;
 
     // Handle Action Trigger: Proceed to Admission
     const handleProceedToAdmission = async (item: any) => {
@@ -261,19 +192,6 @@ export default function FutureAdmissionsPage() {
         // Simulate background processing API call delay
         await new Promise((resolve) => setTimeout(resolve, 800));
 
-        // Update list status to Confirmed (if not already) and set advance
-        const updated = admissionsList.map((admission) => {
-            if (admission.id === item.id) {
-                return {
-                    ...admission,
-                    bookingStatus: "Confirmed",
-                    advance: "₹12,450",
-                };
-            }
-            return admission;
-        });
-
-        setAdmissionsList(updated);
         setIsSubmitting(false);
         setSubmittingItemId(null);
         setSuccessMessage(`Proceeded to admission successfully for ${item.patientName}!`);
@@ -291,6 +209,27 @@ export default function FutureAdmissionsPage() {
         setSubmittingItemId(null);
         setSuccessMessage(`Admission reminder sent successfully to ${item.patientName}!`);
         setShowSuccessDialog(true);
+    };
+
+    // Date formatter helper
+    const formatAdmissionDate = (dateStr: string) => {
+        if (!dateStr) return "N/A";
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            let hours = d.getHours();
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            const formattedHours = String(hours).padStart(2, '0');
+            return `${day}-${month}-${year} ${formattedHours}:${minutes} ${ampm}`;
+        } catch (e) {
+            return dateStr;
+        }
     };
 
     // Headers & Columns definition
@@ -315,14 +254,14 @@ export default function FutureAdmissionsPage() {
         { label: "Action", position: "last" as const, className: "cursor-pointer" },
     ];
 
-    // Rows mapped from filtered mock data list
+    // Rows mapped from filtered list
     const rows = paginatedList.map((item, index) => {
         const sr = (currentPage - 1) * itemsPerPage + index + 1;
 
         // Interactive click styled green UHID link
         const uhid = (
             <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
-                {item.patientUhid}
+                {item.uhid || "N/A"}
             </span>
         );
 
@@ -330,11 +269,11 @@ export default function FutureAdmissionsPage() {
         const bookingStatusBadge = item.bookingStatus === "Confirmed" ? (
             <Badge variant="success">Confirmed</Badge>
         ) : (
-            <Badge variant="warning">Pending</Badge>
+            <Badge variant="warning">{item.bookingStatus || "Pending"}</Badge>
         );
 
         // Advance column (shows numeric value or pending orange badge)
-        const advanceCol = item.advance === "Pending" ? (
+        const advanceCol = item.advance === "Pending" || !item.advance ? (
             <Badge variant="warning">Pending</Badge>
         ) : (
             <span className="text-[#262D3B] font-medium text-sm">
@@ -369,16 +308,58 @@ export default function FutureAdmissionsPage() {
 
         return [
             sr,
-            item.patientName,
+            item.patientName || "N/A",
             uhid,
             bookingStatusBadge,
-            item.packageName,
-            item.roomType,
+            item.package || "N/A",
+            item.roomType || "N/A",
             advanceCol,
-            item.admissionDate,
+            formatAdmissionDate(item.admissionDate),
             actions,
         ];
     });
+
+    // Dynamic stat cards config matching current API metrics
+    const statCards = [
+        {
+            id: "total-bookings",
+            label: "Total Bookings (Next 7 Days)",
+            value: isFutureLoading ? "..." : (metrics?.totalBookingsNext7Days ?? 0),
+            iconSrc: "/icons/calendarCheck.svg",
+            badgeText: "+12%",
+            badgeType: "success" as const,
+        },
+        {
+            id: "confirmed-admissions",
+            label: "Confirmed Admissions",
+            value: isFutureLoading ? "..." : (metrics?.confirmedAdmissions ?? 0),
+            iconSrc: "/icons/confirmCheck.svg",
+            badgeText: "Fixed",
+            badgeType: "neutral" as const,
+        },
+        {
+            id: "tentative-bookings",
+            label: "Tentative Bookings",
+            value: isFutureLoading ? "..." : (metrics?.tentativeBookings ?? 0),
+            iconSrc: "/icons/advanceCheck.svg",
+            badgeText: "Action Request",
+            badgeType: "warning" as const,
+        },
+        {
+            id: "advances-collected",
+            label: "Advances Collected",
+            value: isFutureLoading
+                ? "..."
+                : (metrics?.advancesCollected !== undefined && metrics?.advancesCollected !== null
+                    ? (String(metrics.advancesCollected).startsWith("₹")
+                        ? String(metrics.advancesCollected)
+                        : `₹${Number(metrics.advancesCollected).toLocaleString("en-IN")}`)
+                    : "₹0"),
+            iconSrc: "/icons/rupee.svg",
+            badgeText: undefined,
+            badgeType: undefined,
+        },
+    ];
 
     return (
         <AppShell>
@@ -386,12 +367,12 @@ export default function FutureAdmissionsPage() {
                 {/* Page Heading & Export Button */}
                 <div className="flex items-center justify-between">
                     <PageHeading title="Future Admissions & Bookings Tracker" />
-                    <ExportButton onExportPDF={handleExportPDF} isLoadingPDF={isLoadingPDF} />
+                    <ExportButton onExportPDF={handleExportPDF} isLoadingPDF={isLoadingPDF} className="!bg-transparent" />
                 </div>
 
                 {/* Top Widgets Summary Section */}
                 <div className="grid grid-cols-4 gap-4">
-                    {STAT_CARDS_CONFIG.map((card) => (
+                    {statCards.map((card) => (
                         <FutureAdmissionsStatCard
                             key={card.id}
                             label={card.label}
@@ -410,15 +391,27 @@ export default function FutureAdmissionsPage() {
                             id: "future-admissions-list",
                             titleRightContent: (
                                 <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
-                                    {/* Date Range Picker Filter */}
-                                    <div className="w-[280px]">
-                                        <DatePicker
-                                            value={selectedDate}
-                                            onChange={setSelectedDate}
-                                            placeholder="Date Range"
-                                            background="normal"
-                                            width="100%"
-                                        />
+                                    {/* Date Range Picker Filter using DateFilterDropdown */}
+                                    <div className="relative" ref={filterRef}>
+                                        <button
+                                            onClick={handleFilterClick}
+                                            className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center w-[108px] h-10 rounded-[32px] border border-[#0B8C00] bg-white hover:bg-[#F7FAF7] relative z-10"
+                                        >
+                                            <div className="flex items-center justify-center gap-2">
+                                                <Image src="/icons/FilterIcon.svg" alt="filter" width={24} height={24} />
+                                                <span className="font-inter font-medium text-sm leading-[120%] text-[#0B8C00]">Filter</span>
+                                            </div>
+                                        </button>
+                                        {isFilterOpen && (
+                                            <div className="absolute right-0 top-full mt-2 z-50">
+                                                <DateFilterDropdown
+                                                    onFilter={handleFilter}
+                                                    onClear={handleClear}
+                                                    initialFromDate={fromDate}
+                                                    initialToDate={toDate}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Status FormSelectField Filter */}
@@ -426,7 +419,7 @@ export default function FutureAdmissionsPage() {
                                         label=""
                                         hideLabel
                                         options={[
-                                            { label: "Status", value: "" },
+                                            { label: "All", value: "" },
                                             { label: "Confirmed", value: "Confirmed" },
                                             { label: "Pending", value: "Pending" },
                                         ]}
@@ -457,6 +450,7 @@ export default function FutureAdmissionsPage() {
                             ),
                             columns,
                             rows,
+                            isLoading: isFutureLoading,
                             emptyMessage: "No future admissions or bookings found",
                             pagination: {
                                 currentPage,

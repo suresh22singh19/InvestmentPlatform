@@ -13,90 +13,10 @@ import {
     MessageDialog,
     FormSelectField,
     ExportButton,
+    Tabs,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
-
-// Mock data representing the inpatient registry matching mockup design
-const STATIC_INPATIENT_REGISTRY = [
-    {
-        id: 1,
-        patientName: "Ajay Kumar",
-        patientUhid: "JSKL41712025",
-        room: "Room 402",
-        floor: "Floor 4",
-        building: "West Wing",
-        diagnosis: "Chronic Hypertension",
-        attendingDoctor: "Dr Shiv Ram Singh",
-        admissionDate: "12-01-2026",
-        expDischarge: "12-01-2026",
-        status: "Admitted",
-    },
-    {
-        id: 2,
-        patientName: "Rohit Singh",
-        patientUhid: "JSKL41712025",
-        room: "Room 403",
-        floor: "Floor 4",
-        building: "West Wing",
-        diagnosis: "Post-Op Hip Replacement",
-        attendingDoctor: "Dr. Aakash Dave",
-        admissionDate: "12-01-2026",
-        expDischarge: "12-01-2026",
-        status: "Sch. Discharge",
-    },
-    {
-        id: 3,
-        patientName: "Ajeet Kumar",
-        patientUhid: "JSKL41712025",
-        room: "Room 404",
-        floor: "Floor 4",
-        building: "West Wing",
-        diagnosis: "Acute Myocarditis",
-        attendingDoctor: "Dr Heera Singh",
-        admissionDate: "12-01-2026",
-        expDischarge: "12-01-2026",
-        status: "Admitted",
-    },
-    {
-        id: 4,
-        patientName: "Manish Soni",
-        patientUhid: "JSKL41712025",
-        room: "Room 405",
-        floor: "Floor 4",
-        building: "West Wing",
-        diagnosis: "Post-Op Hip Replacement",
-        attendingDoctor: "Dr Alok Ashok Tripathi",
-        admissionDate: "12-01-2026",
-        expDischarge: "12-01-2026",
-        status: "Admitted",
-    },
-    {
-        id: 5,
-        patientName: "Pankaj Kumar",
-        patientUhid: "JSKL41712026",
-        room: "Room 406",
-        floor: "Floor 3",
-        building: "East Wing",
-        diagnosis: "Cardiac Arrhythmia",
-        attendingDoctor: "Dr Shiv Ram Singh",
-        admissionDate: "13-01-2026",
-        expDischarge: "15-01-2026",
-        status: "Admitted",
-    },
-    {
-        id: 6,
-        patientName: "Aman Singh",
-        patientUhid: "JSKL41712027",
-        room: "Room 407",
-        floor: "Floor 2",
-        building: "West Wing",
-        diagnosis: "Neonatal Jaundice",
-        attendingDoctor: "Dr. Aakash Dave",
-        admissionDate: "14-01-2026",
-        expDischarge: "18-01-2026",
-        status: "Sch. Discharge",
-    },
-];
+import { useGetPatientAdmissionsQuery, PatientAdmissionItem } from "@/store/api/counsellorApi";
 
 export default function CurrentInpatientRegistryPage() {
     // Search and dynamic filtering states
@@ -105,6 +25,7 @@ export default function CurrentInpatientRegistryPage() {
     const [selectedDoctor, setSelectedDoctor] = useState("");
     const [selectedFloor, setSelectedFloor] = useState("");
     const [selectedBuilding, setSelectedBuilding] = useState("");
+    const [type, setType] = useState<"ipd" | "day_care">("ipd");
 
     // Pagination & Sorting states
     const [currentPage, setCurrentPage] = useState(1);
@@ -113,7 +34,7 @@ export default function CurrentInpatientRegistryPage() {
     const [sortBy, setSortBy] = useState<"patientName" | "">("patientName");
 
     // Interactive overlays states
-    const [selectedPatient, setSelectedPatient] = useState<typeof STATIC_INPATIENT_REGISTRY[0] | null>(null);
+    const [selectedPatient, setSelectedPatient] = useState<PatientAdmissionItem | null>(null);
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -140,53 +61,113 @@ export default function CurrentInpatientRegistryPage() {
         setShowSuccessDialog(true);
     };
 
-    // Client-side filtering & sorting logic
-    const filteredAndSortedList = useMemo(() => {
-        let result = [...STATIC_INPATIENT_REGISTRY];
+    // Date formatter helper
+    const formatAdmissionDate = (dateStr: string) => {
+        if (!dateStr) return "N/A";
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}-${month}-${year}`;
+        } catch (e) {
+            return dateStr;
+        }
+    };
 
-        // Search text matching
-        const query = debouncedSearch.trim().toLowerCase();
-        if (query) {
-            result = result.filter(
-                (item) =>
-                    item.patientName.toLowerCase().includes(query) ||
-                    item.patientUhid.toLowerCase().includes(query) ||
-                    item.room.toLowerCase().includes(query) ||
-                    item.diagnosis.toLowerCase().includes(query)
-            );
+    // Room parser helper to extract Floor and Wing dynamically
+    const getFloorAndBuilding = (roomNumber: string) => {
+        if (!roomNumber) return { floor: "N/A", building: "Main Wing" };
+        const lower = roomNumber.toLowerCase();
+        let floor = "Floor 1";
+        let building = "Main Wing";
+
+        if (lower.startsWith("g")) {
+            floor = "Ground Floor";
+        } else if (lower.startsWith("f") || lower.startsWith("1")) {
+            floor = "Floor 1";
+        } else if (lower.startsWith("s") || lower.startsWith("2")) {
+            floor = "Floor 2";
+        } else if (lower.startsWith("t") || lower.startsWith("3")) {
+            floor = "Floor 3";
+        } else if (lower.startsWith("4")) {
+            floor = "Floor 4";
         }
 
-        // Dropdown selection filters
+        if (lower.includes("w") || lower.includes("west")) {
+            building = "West Wing";
+        } else if (lower.includes("e") || lower.includes("east")) {
+            building = "East Wing";
+        } else {
+            building = "Main Wing";
+        }
+
+        return { floor, building };
+    };
+
+    // API Query params
+    const queryParams = {
+        sortBy: sortBy || undefined,
+        order: sortOrder.toUpperCase() as "ASC" | "DESC",
+        page: currentPage,
+        limit: itemsPerPage,
+        search: debouncedSearch.trim() || undefined,
+        type: type,
+        branchId: undefined, // Branch ID can be set if needed
+    };
+
+    // Query Hook call
+    const { data: apiResponse, isLoading: isAdmissionsLoading } = useGetPatientAdmissionsQuery(queryParams);
+
+    const listingData = apiResponse?.data || [];
+    const listingTotal = apiResponse?.total || 0;
+
+    // Compile dynamic doctor filter options based on fetched data
+    const doctorOptions = useMemo(() => {
+        const doctors = new Set<string>();
+        listingData.forEach((item) => {
+            if (item.doctorName) {
+                doctors.add(item.doctorName);
+            }
+        });
+        const opts = [{ label: "Attending Doctor", value: "" }];
+        Array.from(doctors).sort().forEach((doc) => {
+            opts.push({ label: doc, value: doc });
+        });
+        return opts;
+    }, [listingData]);
+
+    // Client-side filtering logic on fetched data
+    const filteredList = useMemo(() => {
+        let result = [...listingData];
+
+        // 1. Dropdown selection filter for Attending Doctor
         if (selectedDoctor) {
-            result = result.filter((item) => item.attendingDoctor === selectedDoctor);
-        }
-        if (selectedFloor) {
-            result = result.filter((item) => item.floor === selectedFloor);
-        }
-        if (selectedBuilding) {
-            result = result.filter((item) => item.building === selectedBuilding);
+            result = result.filter((item) => item.doctorName === selectedDoctor);
         }
 
-        // Sorting
-        if (sortBy === "patientName") {
-            result.sort((a, b) => {
-                const nameA = a.patientName.toLowerCase();
-                const nameB = b.patientName.toLowerCase();
-                if (nameA < nameB) return sortOrder === "asc" ? -1 : 1;
-                if (nameA > nameB) return sortOrder === "asc" ? 1 : -1;
-                return 0;
+        // 2. Dropdown selection filter for Floor
+        if (selectedFloor) {
+            result = result.filter((item) => {
+                const { floor } = getFloorAndBuilding(item.roomNumber);
+                return floor === selectedFloor;
+            });
+        }
+
+        // 3. Dropdown selection filter for Building
+        if (selectedBuilding) {
+            result = result.filter((item) => {
+                const { building } = getFloorAndBuilding(item.roomNumber);
+                return building === selectedBuilding;
             });
         }
 
         return result;
-    }, [debouncedSearch, selectedDoctor, selectedFloor, selectedBuilding, sortBy, sortOrder]);
+    }, [listingData, selectedDoctor, selectedFloor, selectedBuilding]);
 
-    const totalItems = filteredAndSortedList.length;
-
-    const paginatedList = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredAndSortedList.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredAndSortedList, currentPage, itemsPerPage]);
+    const totalItems = (selectedDoctor || selectedFloor || selectedBuilding) ? filteredList.length : listingTotal;
+    const paginatedList = filteredList;
 
     // Table Headers configuration
     const columns = [
@@ -202,6 +183,7 @@ export default function CurrentInpatientRegistryPage() {
             },
         },
         { label: "Patient UHID" },
+        { label: "Type" },
         { label: "Room & Floor" },
         { label: "Diagnosis" },
         { label: "Attending Doctor" },
@@ -220,26 +202,38 @@ export default function CurrentInpatientRegistryPage() {
                 onClick={() => setSelectedPatient(item)}
                 className="text-[#0B8C00] font-medium cursor-pointer hover:underline"
             >
-                {item.patientUhid}
+                {item.uhid}
             </span>
         );
 
+        const typeBadge = (
+            <Badge
+                variant={item.type === "ipd" ? "success" : "neutral"}
+                className={`bg-transparent font-normal uppercase ${item.type === "ipd" ? "border-[#0B8C0033]" : ""}`}
+            >
+                {item.type === "ipd" ? "IPD" : "Day Care"}
+            </Badge>
+        );
+
+        const { floor, building } = getFloorAndBuilding(item.roomNumber);
         const roomAndFloorCol = (
             <div className="flex flex-col gap-0.5">
-                <span className="font-bold text-[#262D3B] text-sm">{item.room}</span>
+                <span className="font-bold text-[#262D3B] text-sm">
+                    {item.roomNumber ? `Room ${item.roomNumber}` : "N/A"} {item.bedNumber ? ` (Bed ${item.bedNumber})` : ""}
+                </span>
                 <span className="text-[#787E8C] text-xs">
-                    {item.floor} - {item.building}
+                    {floor} - {building}
                 </span>
             </div>
         );
 
+        const displayStatus = item.status === "active" ? "Admitted" : item.status;
         const statusBadge = (
             <Badge
-                variant={item.status === "Admitted" ? "success" : "neutral"}
-                className={`bg-transparent font-normal ${item.status === "Admitted" ? "border-[#0B8C0033]" : ""
-                    }`}
+                variant={displayStatus === "Admitted" ? "success" : "neutral"}
+                className={`bg-transparent font-normal ${displayStatus === "Admitted" ? "border-[#0B8C0033]" : ""}`}
             >
-                {item.status}
+                {displayStatus}
             </Badge>
         );
 
@@ -257,13 +251,14 @@ export default function CurrentInpatientRegistryPage() {
 
         return [
             sr,
-            item.patientName,
+            item.patientName || "N/A",
             patientUhidLink,
+            typeBadge,
             roomAndFloorCol,
-            item.diagnosis,
-            item.attendingDoctor,
-            item.admissionDate,
-            item.expDischarge,
+            item.diagnosis || "N/A",
+            item.doctorName || "N/A",
+            formatAdmissionDate(item.admissionDate),
+            "N/A",
             statusBadge,
             viewActionBtn,
         ];
@@ -271,12 +266,28 @@ export default function CurrentInpatientRegistryPage() {
 
     return (
         <AppShell>
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col">
                 {/* Page Header and Action Buttons */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-6">
                     <PageHeading title="Current Inpatient Registry" />
+                </div>
+
+                <div className="flex justify-between mb-3">
+                    <div className="w-[280px]">
+                        <Tabs
+                            options={[
+                                { label: "IPD", value: "ipd" },
+                                { label: "Day Care", value: "day_care" },
+                            ]}
+                            value={type}
+                            onChange={(val) => {
+                                setType(val as "ipd" | "day_care");
+                                setCurrentPage(1);
+                            }}
+                        />
+                    </div>
                     <div className="flex items-center gap-3">
-                        <ExportButton onExportPDF={handleExportList} isLoadingPDF={isLoading} />
+                        <ExportButton onExportPDF={handleExportList} isLoadingPDF={isLoading} className="!bg-transparent" />
                         <Button
                             variant="primary"
                             size="medium"
@@ -303,19 +314,28 @@ export default function CurrentInpatientRegistryPage() {
                         sections={[
                             {
                                 id: "inpatient-registry-table",
+                                // leftSideContent: (
+                                //     <div className="w-[280px]">
+                                //         <Tabs
+                                //             options={[
+                                //                 { label: "IPD", value: "ipd" },
+                                //                 { label: "Day Care", value: "day_care" },
+                                //             ]}
+                                //             value={type}
+                                //             onChange={(val) => {
+                                //                 setType(val as "ipd" | "day_care");
+                                //                 setCurrentPage(1);
+                                //             }}
+                                //         />
+                                //     </div>
+                                // ),
                                 titleRightContent: (
                                     <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
                                         {/* Attending Doctor dropdown selector */}
                                         <FormSelectField
                                             label=""
                                             hideLabel
-                                            options={[
-                                                { label: "Attending Doctor", value: "" },
-                                                { label: "Dr Shiv Ram Singh", value: "Dr Shiv Ram Singh" },
-                                                { label: "Dr. Aakash Dave", value: "Dr. Aakash Dave" },
-                                                { label: "Dr Heera Singh", value: "Dr Heera Singh" },
-                                                { label: "Dr Alok Ashok Tripathi", value: "Dr Alok Ashok Tripathi" },
-                                            ]}
+                                            options={doctorOptions}
                                             placeholder="Attending Doctor"
                                             mode="single"
                                             background="normal"
@@ -334,9 +354,11 @@ export default function CurrentInpatientRegistryPage() {
                                             hideLabel
                                             options={[
                                                 { label: "Floor", value: "" },
-                                                { label: "Floor 4", value: "Floor 4" },
-                                                { label: "Floor 3", value: "Floor 3" },
+                                                { label: "Ground Floor", value: "Ground Floor" },
+                                                { label: "Floor 1", value: "Floor 1" },
                                                 { label: "Floor 2", value: "Floor 2" },
+                                                { label: "Floor 3", value: "Floor 3" },
+                                                { label: "Floor 4", value: "Floor 4" },
                                             ]}
                                             placeholder="Floor"
                                             mode="single"
@@ -356,6 +378,7 @@ export default function CurrentInpatientRegistryPage() {
                                             hideLabel
                                             options={[
                                                 { label: "Building", value: "" },
+                                                { label: "Main Wing", value: "Main Wing" },
                                                 { label: "West Wing", value: "West Wing" },
                                                 { label: "East Wing", value: "East Wing" },
                                             ]}
@@ -386,6 +409,7 @@ export default function CurrentInpatientRegistryPage() {
                                 ),
                                 columns,
                                 rows,
+                                isLoading: isAdmissionsLoading,
                                 emptyMessage: "No inpatients match your search criteria",
                                 pagination: {
                                     currentPage,
@@ -495,59 +519,7 @@ export default function CurrentInpatientRegistryPage() {
                         </div>
                     </div>
 
-                    {/* Card 3: Critical Care */}
-                    <div className="rounded-[20px] p-5 bg-white border border-[#E3EEE1] flex flex-col justify-between transition-all duration-200 hover:shadow-md select-none h-full relative">
-                        <div className="absolute top-5 right-5">
-                            <Badge
-                                variant="danger"
-                                className="bg-transparent border border-[#EF444433] text-[#DC2626] font-normal px-2.5 py-0.5 rounded-full text-[10px]"
-                            >
-                                Alert
-                            </Badge>
-                        </div>
 
-                        {/* Icon & Title */}
-                        <div className="flex flex-col gap-4">
-                            <div className="w-12 h-12 rounded-full bg-[#0B8C000D] border border-[#0B8C0026] flex items-center justify-center shrink-0">
-                                <Image
-                                    src="/icons/asteriskIcon.svg"
-                                    alt="Asterisk icon"
-                                    width={24}
-                                    height={24}
-                                    className="object-contain"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                                <h4 className="font-extrabold text-2xl leading-[120%] text-[#262D3B]">
-                                    Critical Care
-                                </h4>
-                                <p className="text-xs font-medium text-[#787E8C]">
-                                    3 admitted patients currently in critical care units.
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* View ER Status Button */}
-                        <div className="mt-6">
-                            <Button
-                                variant="primary"
-                                size="medium"
-                                fullWidth
-                                leftIcon={
-                                    <Image
-                                        src="/icons/Eye.svg"
-                                        className="brightness-0 invert"
-                                        alt=""
-                                        width={16}
-                                        height={16}
-                                    />
-                                }
-                                onClick={handleViewERStatus}
-                            >
-                                View ER Status
-                            </Button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -566,11 +538,11 @@ export default function CurrentInpatientRegistryPage() {
                                 {selectedPatient.patientName}
                             </h3>
                             <Badge
-                                variant={selectedPatient.status === "Admitted" ? "success" : "neutral"}
-                                className={`bg-transparent font-normal ${selectedPatient.status === "Admitted" ? "border-[#0B8C0033]" : ""
+                                variant={selectedPatient.status === "active" ? "success" : "neutral"}
+                                className={`bg-transparent font-normal ${selectedPatient.status === "active" ? "border-[#0B8C0033]" : ""
                                     }`}
                             >
-                                {selectedPatient.status}
+                                {selectedPatient.status === "active" ? "Admitted" : selectedPatient.status}
                             </Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -579,7 +551,7 @@ export default function CurrentInpatientRegistryPage() {
                                     Patient UHID
                                 </span>
                                 <span className="text-sm font-medium text-[#262D3B]">
-                                    {selectedPatient.patientUhid}
+                                    {selectedPatient.uhid}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-0.5">
@@ -587,7 +559,7 @@ export default function CurrentInpatientRegistryPage() {
                                     Attending Doctor
                                 </span>
                                 <span className="text-sm font-medium text-[#262D3B]">
-                                    {selectedPatient.attendingDoctor}
+                                    {selectedPatient.doctorName || "N/A"}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-0.5">
@@ -595,7 +567,9 @@ export default function CurrentInpatientRegistryPage() {
                                     Room Allocation
                                 </span>
                                 <span className="text-sm font-medium text-[#262D3B]">
-                                    {selectedPatient.room} ({selectedPatient.floor} - {selectedPatient.building})
+                                    {selectedPatient.roomNumber ? `Room ${selectedPatient.roomNumber}` : "N/A"}
+                                    {selectedPatient.bedNumber ? ` (Bed ${selectedPatient.bedNumber})` : ""}
+                                    {` (${getFloorAndBuilding(selectedPatient.roomNumber).floor} - ${getFloorAndBuilding(selectedPatient.roomNumber).building})`}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-0.5">
@@ -603,7 +577,7 @@ export default function CurrentInpatientRegistryPage() {
                                     Diagnosis
                                 </span>
                                 <span className="text-sm font-medium text-[#262D3B]">
-                                    {selectedPatient.diagnosis}
+                                    {selectedPatient.diagnosis || "N/A"}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-0.5">
@@ -611,7 +585,7 @@ export default function CurrentInpatientRegistryPage() {
                                     Admission Date
                                 </span>
                                 <span className="text-sm font-medium text-[#262D3B]">
-                                    {selectedPatient.admissionDate}
+                                    {formatAdmissionDate(selectedPatient.admissionDate)}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-0.5">
@@ -619,19 +593,10 @@ export default function CurrentInpatientRegistryPage() {
                                     Exp. Discharge
                                 </span>
                                 <span className="text-sm font-medium text-[#262D3B]">
-                                    {selectedPatient.expDischarge}
+                                    N/A
                                 </span>
                             </div>
                         </div>
-                        {/* <div className="flex justify-end mt-4 border-t border-[#DFE0E2] pt-4">
-                            <Button
-                                variant="primary"
-                                onClick={() => setSelectedPatient(null)}
-                                className="min-w-[100px]"
-                            >
-                                Done
-                            </Button>
-                        </div> */}
                     </div>
                 )}
             </Dialog>
@@ -647,6 +612,6 @@ export default function CurrentInpatientRegistryPage() {
                 showCancel={false}
                 onConfirm={() => setShowSuccessDialog(false)}
             />
-        </AppShell>
+        </AppShell >
     );
 }

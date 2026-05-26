@@ -189,8 +189,168 @@ export const counsellorApi = baseApi.injectEndpoints({
         params,
       }),
     }),
+
+    /**
+     * Get future admissions & bookings tracker list
+     */
+    getFutureAdmissions: builder.query<FutureAdmissionResponse, FutureAdmissionParams>({
+      query: (params) => ({
+        url: "/counsellor/future-admission-list",
+        method: "GET",
+        params,
+      }),
+    }),
+
+    /**
+     * Get treatment packages list
+     */
+    getTreatmentPackages: builder.query<TreatmentPackageResponse, TreatmentPackageParams>({
+      query: (params) => ({
+        url: "/counsellor/treatment-package-list",
+        method: "GET",
+        params,
+      }),
+    }),
+
+    /**
+     * Get patient admission listing
+     */
+    getPatientAdmissions: builder.query<PatientAdmissionListingResponse, PatientAdmissionListingParams>({
+      query: (params) => ({
+        url: "/counsellor/patient-admission-listing",
+        method: "GET",
+        params,
+      }),
+    }),
   }),
 });
+
+export interface TreatmentPackageParams {
+  sortBy?: string;
+  order?: "ASC" | "DESC" | "asc" | "desc";
+  page?: number;
+  limit?: number;
+  search?: string;
+  branchId?: string | number;
+}
+
+export interface TreatmentPackageItem {
+  id: number;
+  packageName: string;
+  totalPerDayCost: string;
+  activePatients: number;
+  totalAdmissions: number;
+}
+
+export interface TreatmentPackageResponse {
+  success: boolean;
+  data: {
+    metrics: {
+      totalPackages: number;
+      activeEnrollments: number;
+    };
+    listing: {
+      data: TreatmentPackageItem[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    };
+  };
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface FutureAdmissionParams {
+  sortBy?: string;
+  order?: "ASC" | "DESC" | "asc" | "desc";
+  page?: number;
+  limit?: number;
+  search?: string;
+  branchId?: string | number;
+}
+
+export interface FutureAdmissionItem {
+  id: number;
+  patientName: string;
+  admissionType: string;
+  uhid: string;
+  bookingStatus: string;
+  package: string;
+  patientPackageId: number;
+  roomType: string;
+  advance: string;
+  admissionDate: string;
+  doctorName: string;
+}
+
+export interface FutureAdmissionMetrics {
+  totalBookingsNext7Days: number;
+  confirmedAdmissions: number;
+  tentativeBookings: number;
+  advancesCollected: string | number;
+}
+
+export interface FutureAdmissionData {
+  metrics: FutureAdmissionMetrics;
+  listing: {
+    data: FutureAdmissionItem[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export interface FutureAdmissionResponse {
+  success: boolean;
+  data: FutureAdmissionData;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface PatientAdmissionListingParams {
+  sortBy?: string;
+  order?: "ASC" | "DESC" | "asc" | "desc";
+  page?: number;
+  limit?: number;
+  search?: string;
+  branchId?: string | number;
+  type?: "ipd" | "day_care";
+}
+
+export interface PatientAdmissionItem {
+  id: number;
+  patientId: number;
+  patientName: string;
+  uhid: string;
+  contactNumber: string;
+  diagnosis: string | null;
+  admissionType: string;
+  type: string;
+  patientAdmitted: string;
+  admissionDate: string;
+  createdAt: string;
+  doctorName: string;
+  status: string;
+  bedNumber: string;
+  roomNumber: string;
+  roomType: string;
+}
+
+export interface PatientAdmissionListingResponse {
+  success: boolean;
+  data: PatientAdmissionItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
 
 export const {
   useGetCounsellorStatsQuery,
@@ -199,5 +359,8 @@ export const {
   useGetTodayAvailableRoomsQuery,
   useGetCounsellorAllPackagesQuery,
   useGetTentativeOrArchivedListQuery,
+  useGetFutureAdmissionsQuery,
+  useGetTreatmentPackagesQuery,
+  useGetPatientAdmissionsQuery,
 } = counsellorApi;
 

@@ -116,16 +116,16 @@ export default function AddMemberPage() {
 
     // Refetch data when component mounts or when pathname changes (page visit/revisit)
     useEffect(() => {
-        if (pathname?.includes("/settings/duplicate-number-exceptions")) {
+        if (canView && pathname?.includes("/settings/duplicate-number-exceptions")) {
             // Always refetch when visiting the page to get fresh data
             refetchExceptions();
         }
-    }, [pathname, refetchExceptions]);
+    }, [pathname, canView, refetchExceptions]);
 
     // Listen for duplicate-number-request socket events
     useEffect(() => {
-        // Only listen if we're on the duplicate-number-exceptions page
-        if (!pathname?.includes("/settings/duplicate-number-exceptions")) {
+        // Only listen if we're on the duplicate-number-exceptions page and have view permission
+        if (!canView || !pathname?.includes("/settings/duplicate-number-exceptions")) {
             return;
         }
 
@@ -153,7 +153,7 @@ export default function AddMemberPage() {
         return () => {
             unsubscribe();
         };
-    }, [pathname, activeTab, onDuplicateNumberRequest, refetchExceptions]);
+    }, [pathname, activeTab, canView, onDuplicateNumberRequest, refetchExceptions]);
 
     // Convert branches data to select options (using ID as value)
     const branchOptions: SelectOption[] = useMemo(() => {

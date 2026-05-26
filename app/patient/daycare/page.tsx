@@ -23,6 +23,7 @@ import {
 import { ListBorder } from "@/components/ui/ListBorder";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { usePermission } from "@/hooks/usePermission";
 import { useGetLegacyDoctorsByBranchQuery, useGetLegacyBranchListQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import PatientDaycareForm, {
@@ -85,6 +86,11 @@ const maskPhoneNumber = (phoneNumber: string | null | undefined): string => {
 };
 
 export default function DayCarePage() {
+  const patientPermission = usePermission("Patient");
+  const daycarePermission = usePermission("Patient", { subModule: "DayCare" });
+  const canView = patientPermission.canView || daycarePermission.canView;
+  const canDownload = patientPermission.canDownload || daycarePermission.canDownload;
+
   const {
     selectedBranchFilter,
     setSelectedBranchFilter,
@@ -287,6 +293,13 @@ export default function DayCarePage() {
     const controller = new AbortController();
 
     const loadRows = async () => {
+      if (!canView) {
+        setRows([]);
+        setTotalRecords(0);
+        setLoadError(null);
+        setIsLoadingRows(false);
+        return;
+      }
       setIsLoadingRows(true);
       setLoadError(null);
       try {
@@ -354,7 +367,7 @@ export default function DayCarePage() {
 
     loadRows();
     return () => controller.abort();
-  }, [currentPage, debouncedSearch, effectiveBranchId, fromDate, itemsPerPage, selectedDoctor, toDate, searchType]);
+  }, [currentPage, debouncedSearch, effectiveBranchId, fromDate, itemsPerPage, selectedDoctor, toDate, searchType, canView]);
 
   useEffect(() => {
     setSelectedDoctor("all");
@@ -373,6 +386,16 @@ export default function DayCarePage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  if (!canView) {
+    return (
+      <AppShell>
+        <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+          You don&apos;t have permission to view daycare patients.
+        </div>
+      </AppShell>
+    );
+  }
 
   const COLUMN_COUNT = 13;
 
@@ -511,7 +534,7 @@ export default function DayCarePage() {
                   rows.map((row, index) => (
                     <TableRow key={row.id} className="bg-white transition-colors hover:bg-[#F7FAF7]">
                       <TableData variant="primary">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                      <TableData onClick={() => handleViewPatient(row)}>
+                      <TableData onClick={canView ? () => handleViewPatient(row) : undefined}>
                         <span className="font-medium text-[#0B8C00]">{row.uhid}</span>
                       </TableData>
                       <TableData>{row.regId}</TableData>
@@ -542,21 +565,23 @@ export default function DayCarePage() {
                               <Image src="/icons/ViewEyeIcon.svg" alt="View" width={18} height={18} />
                             </button>
                           </Tooltip>
-                          <Tooltip content="Patient Form" position="top" delay={0}>
-                            <button
-                              type="button"
-                              className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
-                              aria-label="Download"
-                              onClick={() => handleDownloadPatientForm(row)}
-                              disabled={downloadingRowId !== null}
-                            >
-                              {downloadingRowId === row.id ? (
-                                <SpinnerLoader className="h-[18px] w-[18px]" />
-                              ) : (
-                                <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
-                              )}
-                            </button>
-                          </Tooltip>
+                          {canDownload && (
+                            <Tooltip content="Patient Form" position="top" delay={0}>
+                              <button
+                                type="button"
+                                className="rounded p-1 transition-colors hover:bg-[#F2F7F1] cursor-pointer"
+                                aria-label="Download"
+                                onClick={() => handleDownloadPatientForm(row)}
+                                disabled={downloadingRowId !== null}
+                              >
+                                {downloadingRowId === row.id ? (
+                                  <SpinnerLoader className="h-[18px] w-[18px]" />
+                                ) : (
+                                  <Image src="/icons/Download.svg" alt="Download" width={18} height={18} />
+                                )}
+                              </button>
+                            </Tooltip>
+                          )}
                         </div>
                       </TableData>
                     </TableRow>
