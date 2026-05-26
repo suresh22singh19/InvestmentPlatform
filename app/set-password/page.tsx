@@ -28,6 +28,7 @@ export default function SetPasswordPage() {
 
   const isNurse = payload?.loginUserType?.toLowerCase() === "nurse";
   const isDoctor = payload?.loginUserType?.toLowerCase() === "doctor";
+  const isUser = payload?.loginUserType?.toLowerCase() === "user";
 
   // Call checkSetPasswordStatus only for nurse/doctor users with a valid token
   const {
@@ -35,15 +36,15 @@ export default function SetPasswordPage() {
     isLoading: isStatusLoading,
     isError: isStatusError,
   } = useCheckSetPasswordStatusQuery(token as string, {
-    skip: !token || (!isNurse && !isDoctor),
+    skip: !token || (!isNurse && !isUser && !isDoctor),
   });
 
   // Redirect nurse/doctor if password is already set
   useEffect(() => {
-    if ((isNurse || isDoctor) && statusData?.data?.isUserSetPassword === "yes") {
+    if ((isNurse || isDoctor || isUser) && statusData?.data?.isUserSetPassword === "yes") {
       router.replace("/");
     }
-  }, [isNurse, isDoctor, statusData, router]);
+  }, [isNurse, isDoctor, isUser, statusData, router]);
 
   const email = payload?.email;
   const loginType = payload?.login_type;
@@ -64,7 +65,7 @@ export default function SetPasswordPage() {
   };
 
   // Show loader while checking password status for nurse/doctor users
-  if ((isNurse || isDoctor) && isStatusLoading) {
+  if ((isNurse || isDoctor || isUser) && isStatusLoading) {
     return (
       <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
         <p className="text-sm text-[#434956]">Loading…</p>
@@ -73,7 +74,7 @@ export default function SetPasswordPage() {
   }
 
 // Show error if the status check failed for nurse/doctor users
-if ((isNurse || isDoctor) && isStatusError) {
+if ((isNurse || isDoctor || isUser) && isStatusError) {
   return (
     <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md p-6 rounded-lg bg-red-50 border border-red-200 shadow-sm">
@@ -96,7 +97,7 @@ if ((isNurse || isDoctor) && isStatusError) {
 
 // Prevent flash of the form while the redirect is pending
 // (useEffect fires after the first render, so we guard here too)
-if ((isNurse || isDoctor) && statusData?.data?.isUserSetPassword === "yes") {
+if ((isNurse || isDoctor || isUser) && statusData?.data?.isUserSetPassword === "yes") {
   return (
     <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
       <p className="text-sm text-[#434956]">Redirecting…</p>
