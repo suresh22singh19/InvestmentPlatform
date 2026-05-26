@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Formik, Form } from "formik";
 import { Logo } from "@/components/ui/Logo";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { MessageDialog } from "@/components/ui/MessageDialog";
-import { useSetUserPasswordMutation } from "@/store/api/authApi";
+import {
+  useSetUserPasswordMutation,
+  useCheckSetPasswordStatusQuery,
+} from "@/store/api/authApi";
 import { resetPasswordSchema } from "@/lib/validation/schemas";
 import {
   decodeJwtPayload,
@@ -22,6 +25,26 @@ export default function SetPasswordPage() {
     () => (token ? decodeJwtPayload<PasswordFlowTokenPayload>(token) : null),
     [token]
   );
+
+  const isNurse = payload?.loginUserType?.toLowerCase() === "nurse";
+  const isDoctor = payload?.loginUserType?.toLowerCase() === "doctor";
+
+  // Call checkSetPasswordStatus only for nurse/doctor users with a valid token
+  const {
+    data: statusData,
+    isLoading: isStatusLoading,
+    isError: isStatusError,
+  } = useCheckSetPasswordStatusQuery(token as string, {
+    skip: !token || (!isNurse && !isDoctor),
+  });
+
+  // Redirect nurse/doctor if password is already set
+  useEffect(() => {
+    if ((isNurse || isDoctor) && statusData?.data?.isUserSetPassword === "yes") {
+      router.replace("/");
+    }
+  }, [isNurse, isDoctor, statusData, router]);
+
   const email = payload?.email;
   const loginType = payload?.login_type;
   const [setUserPassword, { isLoading }] = useSetUserPasswordMutation();
@@ -39,6 +62,47 @@ export default function SetPasswordPage() {
       router.push("/");
     }
   };
+
+  // Show loader while checking password status for nurse/doctor users
+  if ((isNurse || isDoctor) && isStatusLoading) {
+    return (
+      <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
+        <p className="text-sm text-[#434956]">Loading…</p>
+      </div>
+    );
+  }
+
+// Show error if the status check failed for nurse/doctor users
+if ((isNurse || isDoctor) && isStatusError) {
+  return (
+    <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md p-6 rounded-lg bg-red-50 border border-red-200 shadow-sm">
+        <p className="text-sm text-red-600 mb-4 text-center">
+          Unable to verify your set-password link. Please request a new link.
+        </p>
+
+        <Button
+          variant="primary"
+          size="large"
+          fullWidth
+          onClick={navigateToLogin}
+        >
+          Back to Login
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Prevent flash of the form while the redirect is pending
+// (useEffect fires after the first render, so we guard here too)
+if ((isNurse || isDoctor) && statusData?.data?.isUserSetPassword === "yes") {
+  return (
+    <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
+      <p className="text-sm text-[#434956]">Redirecting…</p>
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">

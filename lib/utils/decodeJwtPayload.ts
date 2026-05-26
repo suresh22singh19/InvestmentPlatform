@@ -8,6 +8,7 @@ export type PasswordFlowTokenPayload = {
   login_type?: string;
   iat?: number;
   exp?: number;
+  loginUserType?:string
 };
 
 export function decodeJwtPayload<T extends Record<string, unknown> = PasswordFlowTokenPayload>(

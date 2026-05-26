@@ -178,6 +178,19 @@ interface SetUserPasswordResponse {
   data?: unknown;
 }
 
+/** Response for `GET /auth/checkSetPasswordStatus?token=<token>` */
+export interface CheckSetPasswordStatusResponse {
+  message: string;
+  statusCode: number;
+  timestamp: string;
+  data: {
+    /** "yes" if the user has already set their password, "no" otherwise */
+    isUserSetPassword: "yes" | "no";
+    /** Any additional status info returned by the API */
+    [key: string]: unknown;
+  };
+}
+
 export interface RefreshPermissionsResponse {
   message: string;
   statusCode: number;
@@ -241,6 +254,13 @@ export const authApi = baseApi.injectEndpoints({
         body: payload,
       }),
     }),
+    /** `GET /auth/checkSetPasswordStatus?token=<token>` — checks if the nurse/user has already set their password. */
+    checkSetPasswordStatus: builder.query<CheckSetPasswordStatusResponse, string>({
+      query: (token) => ({
+        url: `/auth/checkSetPasswordStatus?token=${token}`,
+        method: "GET",
+      }),
+    }),
     logout: builder.mutation<{ message: string; statusCode: number }, void>({
       query: () => ({
         url: "/auth/logout",
@@ -261,6 +281,8 @@ export const {
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useSetUserPasswordMutation,
+  useCheckSetPasswordStatusQuery,
+  useLazyCheckSetPasswordStatusQuery,
   useLogoutMutation,
   useRefreshPermissionsQuery,
   useLazyRefreshPermissionsQuery,
