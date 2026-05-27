@@ -14,7 +14,7 @@ import {
     useGetTentativeOrArchivedListQuery,
     useRevertToOpdMutation,
     useLazyCheckFirstDayPaymentQuery,
-} from "@/store/api/counsellorApi";
+} from "@/store/api/counsellorApi"; // just 
 import { useDebounce } from "@/hooks/useDebounce";
 
 export default function CounsellorTentativeAdmissionsPage() {
