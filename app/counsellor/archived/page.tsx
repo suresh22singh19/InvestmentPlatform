@@ -1,22 +1,47 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
     TableSearchInput,
     TableListingCard,
+    Button,
+    MessageDialog,
 } from "@/components/ui";
-import { useGetTentativeOrArchivedListQuery } from "@/store/api/counsellorApi";
+import {
+    useGetTentativeOrArchivedListQuery,
+    useRevertToOpdMutation,
+    useLazyCheckFirstDayPaymentQuery,
+} from "@/store/api/counsellorApi";
 import { useDebounce } from "@/hooks/useDebounce";
 
 export default function CounsellorArchivedPage() {
+    const router = useRouter();
     const [searchTerm, setSearchTerm] = useState("");
     const debouncedSearch = useDebounce(searchTerm, 500);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10); // Displays 10 items as in reference image
     const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("ASC");
     const [sortBy, setSortBy] = useState<string>("patientName");
+
+    // Confirmation dialog and submitting states
+    const [pendingAction, setPendingAction] = useState<{ type: "refer" | "startAdmission"; item: any } | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [successDialogConfig, setSuccessDialogConfig] = useState<{
+        message: React.ReactNode;
+        confirmText?: string;
+        cancelText?: string;
+        showCancel?: boolean;
+        onConfirm?: () => void;
+        onCancel?: () => void;
+    } | null>(null);
+    const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
+    const [apiErrorMessage, setApiErrorMessage] = useState("");
+
+    const [revertToOpd] = useRevertToOpdMutation();
+    const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
 
     // Reset page on search changes
     useEffect(() => {
@@ -27,7 +52,8 @@ export default function CounsellorArchivedPage() {
     const {
         data: listRes,
         isLoading,
-        isError
+        isError,
+        refetch
     } = useGetTentativeOrArchivedListQuery({
         page: currentPage,
         limit: itemsPerPage,
@@ -39,6 +65,89 @@ export default function CounsellorArchivedPage() {
 
     const currentList = listRes?.data || [];
     const totalItems = listRes?.total || 0;
+
+    const handleReferToOPD = async (item: any) => {
+        setIsSubmitting(true);
+        try {
+            const res = await revertToOpd(item.id).unwrap();
+            if (res.success) {
+                setSuccessDialogConfig({
+                    message: res.message || `Patient ${item.patientName} referred to OPD successfully!`,
+                    confirmText: "OK",
+                    showCancel: false,
+                });
+                try {
+                    refetch();
+                } catch (e) {
+                    console.warn("Failed to refetch archived list:", e);
+                }
+            } else {
+                setApiErrorMessage(res.message || "Failed to revert patient to OPD.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: any) {
+            console.error("Error reverting patient to OPD:", err);
+            setApiErrorMessage(err?.data?.message || err?.message || "An error occurred while reverting patient to OPD.");
+            setShowApiErrorDialog(true);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleStartAdmission = async (item: any) => {
+        setIsSubmitting(true);
+        try {
+            const res = await checkFirstDayPayment(item.id).unwrap();
+            if (res.success) {
+                const remaining = parseFloat(res.data.remainingForFirstDay || "0");
+                const complete = res.data.firstDayPaymentComplete;
+
+                if (remaining > 0 || !complete) {
+                    // Case A: Payment not completed
+                    setSuccessDialogConfig({
+                        message: (
+                            <div className="flex flex-col items-center text-center">
+                                <span className="text-sm text-[#475569]">
+                                    First day payment is not completed. Please complete the remaining amount{" "}
+                                    <strong className="text-[#F6776E]">{res.data.remainingForFirstDay || "1500.00"}</strong> first, then proceed with room allocation.
+                                </span>
+                            </div>
+                        ),
+                        confirmText: "OK",
+                        showCancel: false,
+                    });
+                } else {
+                    // Case B: Payment completed
+                    setSuccessDialogConfig({
+                        message: (
+                            <div className="flex flex-col items-center text-center">
+                                <span className="text-sm text-[#475569]">
+                                    Admission started for{" "}
+                                    <strong className="text-[#0B8C00]">{item.patientName || "patient"}</strong>{" "}
+                                    successfully! You can now proceed with room allocation.
+                                </span>
+                            </div>
+                        ),
+                        confirmText: "Assign Room & Bed",
+                        cancelText: "Close",
+                        showCancel: true,
+                        onConfirm: () => {
+                            router.push("/counsellor/manage-room");
+                        },
+                    });
+                }
+            } else {
+                setApiErrorMessage(res.message || "Failed to check payment status.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: any) {
+            console.error("Error checking first day payment:", err);
+            setApiErrorMessage(err?.data?.message || err?.message || "An error occurred while starting admission.");
+            setShowApiErrorDialog(true);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     // Action button style class
     const btnCls = "px-4 py-1.5 rounded-[32px] border border-[#0B8C00] text-[#0B8C00] text-xs font-medium hover:bg-[#F2F8F2] transition-colors whitespace-nowrap";
@@ -74,11 +183,32 @@ export default function CounsellorArchivedPage() {
             </span>
         );
 
-        // Action Outlined green buttons
+        // Action buttons
         const actions = (
             <div className="flex items-center gap-2">
-                <button type="button" className={btnCls}>View</button>
-                <button type="button" className={btnCls}>Start Admission</button>
+                <Button
+                    variant="outline"
+                    size="xsmall"
+                    className="whitespace-nowrap"
+                    onClick={() => setPendingAction({ type: "refer", item })}
+                >
+                    Refer to OPD
+                </Button>
+                <Button
+                    variant="outline"
+                    size="xsmall"
+                    className="whitespace-nowrap"
+                >
+                    View
+                </Button>
+                <Button
+                    variant="primary"
+                    size="xsmall"
+                    className="whitespace-nowrap"
+                    onClick={() => setPendingAction({ type: "startAdmission", item })}
+                >
+                    Start Admission
+                </Button>
             </div>
         );
 
@@ -140,6 +270,90 @@ export default function CounsellorArchivedPage() {
 
                 </div>
             </div>
+
+            {/* Action Confirmation Dialog */}
+            <MessageDialog
+                open={!!pendingAction}
+                onClose={() => { if (!isSubmitting) setPendingAction(null); }}
+                icon="/icons/questionMark.svg"
+                iconBgColor="transparent"
+                message={
+                    pendingAction ? (
+                        pendingAction.type === "refer" ? (
+                            <div className="flex flex-col items-center text-center">
+                                <span className="text-lg font-bold text-[#1E293B] mb-1">Refer to OPD</span>
+                                <span className="text-sm text-[#475569] max-w-[290px]">
+                                    Are you sure you want to refer{" "}
+                                    <strong className="text-[#0B8C00]">
+                                        {pendingAction.item.patientName || "this patient"}
+                                    </strong>{" "}
+                                    back to OPD?
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center text-center">
+                                <span className="text-lg font-bold text-[#1E293B] mb-1">Confirm Admission</span>
+                                <span className="text-sm text-[#475569] max-w-[290px]">
+                                    Are you sure you want to proceed with the admission process for{" "}
+                                    <strong className="text-[#0B8C00]">
+                                        {pendingAction.item.patientName || "this patient"}
+                                    </strong>
+                                    ?
+                                </span>
+                            </div>
+                        )
+                    ) : null
+                }
+                confirmText="Confirm"
+                cancelText="Cancel"
+                showCancel
+                isActionLoading={isSubmitting}
+                onConfirm={async () => {
+                    if (!pendingAction || isSubmitting) return;
+                    if (pendingAction.type === "refer") {
+                        await handleReferToOPD(pendingAction.item);
+                    } else if (pendingAction.type === "startAdmission") {
+                        await handleStartAdmission(pendingAction.item);
+                    }
+                    setPendingAction(null);
+                }}
+                onCancel={() => { if (!isSubmitting) setPendingAction(null); }}
+            />
+
+            {/* Standard Feedback Dialogs */}
+            <MessageDialog
+                open={!!successDialogConfig}
+                onClose={() => setSuccessDialogConfig(null)}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message={successDialogConfig?.message || ""}
+                confirmText={successDialogConfig?.confirmText || "OK"}
+                cancelText={successDialogConfig?.cancelText || "Close"}
+                showCancel={successDialogConfig?.showCancel ?? false}
+                onConfirm={() => {
+                    if (successDialogConfig?.onConfirm) {
+                        successDialogConfig.onConfirm();
+                    }
+                    setSuccessDialogConfig(null);
+                }}
+                onCancel={() => {
+                    if (successDialogConfig?.onCancel) {
+                        successDialogConfig.onCancel();
+                    }
+                    setSuccessDialogConfig(null);
+                }}
+            />
+
+            <MessageDialog
+                open={showApiErrorDialog}
+                onClose={() => setShowApiErrorDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={apiErrorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowApiErrorDialog(false)}
+            />
         </AppShell>
     );
 }

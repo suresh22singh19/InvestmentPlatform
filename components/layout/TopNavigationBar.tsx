@@ -14,6 +14,7 @@ import {
   selectRoleCategoryType,
   selectSelectedBranch,
   selectUserEmail,
+  selectIsAuthenticated,
 } from "@/store/slices/authSlice";
 import { registrationListPathFromBranchType } from "@/lib/utils/registrationBranchRoutes";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
@@ -869,6 +870,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   const selectedBranch = useAppSelector(selectSelectedBranch);
   const userEmail = useAppSelector(selectUserEmail);
   const roleCategoryType = useAppSelector(selectRoleCategoryType);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const isSuperAdminForRegistrationNav = roleCategoryType?.toLowerCase() === "superadmin";
   const { data: superAdminBranchesNav } = useGetBranchesQuery(undefined, {
     skip: !isSuperAdminForRegistrationNav,
@@ -1086,20 +1088,24 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     return sidebarItem?.icon;
   };
 
+  const hasNoPermissions = isAuthenticated && Object.keys(permissionsMap).length === 0;
+
   // Build navigation items array
   // - clinic/hospital    → only Registration as direct link
   // - all other users    → keep full menu, Registration is direct link
-  const TOP_NAV_ITEMS = shouldShowRegistration
-    ? [{ key: "registration", label: "Registration", href: getRegistrationHref() }]
-    : [
-      ...BASE_TOP_NAV_ITEMS.slice(0, 2), // Dashboard + Voucher (direct links like Dashboard)
-      { key: "registration", label: "Registration", href: getRegistrationHref() },
-      ...BASE_TOP_NAV_ITEMS.slice(2), // Patient, Settings, Reports, …
-    ].filter((item) => {
-      const aliases = TOP_NAV_PERMISSION_ALIASES[item.key];
-      if (!aliases || aliases.length === 0) return true;
-      return hasAccessByAliases(permissionsMap, aliases);
-    });
+  const TOP_NAV_ITEMS = hasNoPermissions
+    ? []
+    : shouldShowRegistration
+      ? [{ key: "registration", label: "Registration", href: getRegistrationHref() }]
+      : [
+        ...BASE_TOP_NAV_ITEMS.slice(0, 2), // Dashboard + Voucher (direct links like Dashboard)
+        { key: "registration", label: "Registration", href: getRegistrationHref() },
+        ...BASE_TOP_NAV_ITEMS.slice(2), // Patient, Settings, Reports, …
+      ].filter((item) => {
+        const aliases = TOP_NAV_PERMISSION_ALIASES[item.key];
+        if (!aliases || aliases.length === 0) return true;
+        return hasAccessByAliases(permissionsMap, aliases);
+      });
 
   return (
     <nav className={classNames(

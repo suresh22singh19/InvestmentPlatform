@@ -122,6 +122,35 @@ export interface CounsellorAvailableRoomResponse {
   statusCode: number;
 }
 
+export interface RevertToOpdResponse {
+  success: boolean;
+  data: {
+    patientId: number;
+    previousType: string;
+    roomFreed: string | null;
+    packagesInactivated: number;
+    paymentsDischarged: number;
+    dueRecordsCompleted: number;
+  };
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface CheckFirstDayPaymentResponse {
+  success: boolean;
+  data: {
+    patientPackageId: number;
+    perDayCost: string;
+    totalReceived: number;
+    firstDayPaymentComplete: boolean;
+    remainingForFirstDay: string;
+  };
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 export const counsellorApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -220,6 +249,26 @@ export const counsellorApi = baseApi.injectEndpoints({
         url: "/counsellor/patient-admission-listing",
         method: "GET",
         params,
+      }),
+    }),
+
+    /**
+     * Revert patient to OPD
+     */
+    revertToOpd: builder.mutation<RevertToOpdResponse, number | string>({
+      query: (patientId) => ({
+        url: `/counsellor/revert-to-opd/${patientId}`,
+        method: "PUT",
+      }),
+    }),
+
+    /**
+     * Check first day payment status
+     */
+    checkFirstDayPayment: builder.query<CheckFirstDayPaymentResponse, number | string>({
+      query: (id) => ({
+        url: `/counsellor/check-first-day-payment/${id}`,
+        method: "GET",
       }),
     }),
   }),
@@ -362,5 +411,7 @@ export const {
   useGetFutureAdmissionsQuery,
   useGetTreatmentPackagesQuery,
   useGetPatientAdmissionsQuery,
+  useRevertToOpdMutation,
+  useLazyCheckFirstDayPaymentQuery,
 } = counsellorApi;
 

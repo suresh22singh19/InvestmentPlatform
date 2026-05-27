@@ -361,6 +361,15 @@ export const useRouteProtection = () => {
 
         const hasPermissionData =
             userPermissionsMap && Object.keys(userPermissionsMap).length > 0;
+
+        // If logged in but has no permissions, restrict them to /profile only
+        if (!hasPermissionData) {
+            const isProfileRoute = pathname === "/profile" || pathname?.startsWith("/profile/");
+            if (!isProfileRoute) {
+                router.push("/profile");
+            }
+            return;
+        }
         const isRestrictedPath = RESTRICTED_ROOT_PREFIXES.some((prefix) =>
             pathMatchesPrefix(pathname, prefix)
         );

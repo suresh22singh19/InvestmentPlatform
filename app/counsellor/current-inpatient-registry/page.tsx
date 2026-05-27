@@ -17,6 +17,13 @@ import {
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useGetPatientAdmissionsQuery, PatientAdmissionItem } from "@/store/api/counsellorApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserBranchId } from "@/store/slices/authSlice";
+import {
+    useGetBuildingDropdownQuery,
+    useGetFloorDropdownQuery,
+    useGetDoctorDropdownQuery,
+} from "@/store/api/commonApi";
 
 export default function CurrentInpatientRegistryPage() {
     // Search and dynamic filtering states
@@ -26,6 +33,13 @@ export default function CurrentInpatientRegistryPage() {
     const [selectedFloor, setSelectedFloor] = useState("");
     const [selectedBuilding, setSelectedBuilding] = useState("");
     const [type, setType] = useState<"ipd" | "day_care">("ipd");
+
+    const userBranchId = useAppSelector(selectUserBranchId);
+
+    // Fetch building, floor, doctor dropdown options from common api
+    const { data: buildingData } = useGetBuildingDropdownQuery({ branchId: userBranchId });
+    const { data: floorData } = useGetFloorDropdownQuery({ branchId: userBranchId });
+    const { data: doctorData } = useGetDoctorDropdownQuery({ branchId: userBranchId });
 
     // Pagination & Sorting states
     const [currentPage, setCurrentPage] = useState(1);
@@ -123,20 +137,45 @@ export default function CurrentInpatientRegistryPage() {
     const listingData = apiResponse?.data || [];
     const listingTotal = apiResponse?.total || 0;
 
-    // Compile dynamic doctor filter options based on fetched data
+    // Compile dynamic doctor filter options from common API
     const doctorOptions = useMemo(() => {
-        const doctors = new Set<string>();
-        listingData.forEach((item) => {
-            if (item.doctorName) {
-                doctors.add(item.doctorName);
-            }
-        });
         const opts = [{ label: "Attending Doctor", value: "" }];
-        Array.from(doctors).sort().forEach((doc) => {
-            opts.push({ label: doc, value: doc });
+        const list = doctorData?.data || [];
+        list.forEach((doc) => {
+            opts.push({ label: doc.name, value: doc.name });
         });
         return opts;
-    }, [listingData]);
+    }, [doctorData]);
+
+    const normalizeFloorName = (name: string) => {
+        const lower = name.toLowerCase();
+        if (lower.includes("ground")) return "Ground Floor";
+        if (lower.includes("first") || lower.includes("1")) return "Floor 1";
+        if (lower.includes("second") || lower.includes("2")) return "Floor 2";
+        if (lower.includes("third") || lower.includes("3")) return "Floor 3";
+        if (lower.includes("fourth") || lower.includes("4")) return "Floor 4";
+        return name;
+    };
+
+    const floorOptions = useMemo(() => {
+        const opts = [{ label: "Floor", value: "" }];
+        const list = floorData?.data || [];
+        list.forEach((f) => {
+            const capitalized = f.name ? f.name.charAt(0).toUpperCase() + f.name.slice(1) : "";
+            const normalized = normalizeFloorName(f.name);
+            opts.push({ label: capitalized, value: normalized });
+        });
+        return opts;
+    }, [floorData]);
+
+    const buildingOptions = useMemo(() => {
+        const opts = [{ label: "Building", value: "" }];
+        const list = buildingData?.data || [];
+        list.forEach((b) => {
+            opts.push({ label: b.name, value: b.name });
+        });
+        return opts;
+    }, [buildingData]);
 
     // Client-side filtering logic on fetched data
     const filteredList = useMemo(() => {
@@ -144,7 +183,7 @@ export default function CurrentInpatientRegistryPage() {
 
         // 1. Dropdown selection filter for Attending Doctor
         if (selectedDoctor) {
-            result = result.filter((item) => item.doctorName === selectedDoctor);
+            result = result.filter((item) => (item.doctorName || "").toLowerCase() === selectedDoctor.toLowerCase());
         }
 
         // 2. Dropdown selection filter for Floor
@@ -158,8 +197,15 @@ export default function CurrentInpatientRegistryPage() {
         // 3. Dropdown selection filter for Building
         if (selectedBuilding) {
             result = result.filter((item) => {
+                const roomLower = (item.roomNumber || "").toLowerCase();
+                const selectedLower = selectedBuilding.toLowerCase();
+                const match = selectedLower.match(/building-(\d+)/) || selectedLower.match(/building\s*(\d+)/) || selectedLower.match(/(\d+)/);
+                if (match && match[1]) {
+                    const num = match[1];
+                    return roomLower.startsWith(num + "-") || roomLower.includes("-" + num + "-") || roomLower.includes("building-" + num);
+                }
                 const { building } = getFloorAndBuilding(item.roomNumber);
-                return building === selectedBuilding;
+                return building.toLowerCase() === selectedLower || roomLower.includes(selectedLower);
             });
         }
 
@@ -352,14 +398,7 @@ export default function CurrentInpatientRegistryPage() {
                                         <FormSelectField
                                             label=""
                                             hideLabel
-                                            options={[
-                                                { label: "Floor", value: "" },
-                                                { label: "Ground Floor", value: "Ground Floor" },
-                                                { label: "Floor 1", value: "Floor 1" },
-                                                { label: "Floor 2", value: "Floor 2" },
-                                                { label: "Floor 3", value: "Floor 3" },
-                                                { label: "Floor 4", value: "Floor 4" },
-                                            ]}
+                                            options={floorOptions}
                                             placeholder="Floor"
                                             mode="single"
                                             background="normal"
@@ -376,12 +415,7 @@ export default function CurrentInpatientRegistryPage() {
                                         <FormSelectField
                                             label=""
                                             hideLabel
-                                            options={[
-                                                { label: "Building", value: "" },
-                                                { label: "Main Wing", value: "Main Wing" },
-                                                { label: "West Wing", value: "West Wing" },
-                                                { label: "East Wing", value: "East Wing" },
-                                            ]}
+                                            options={buildingOptions}
                                             placeholder="Building"
                                             mode="single"
                                             background="normal"

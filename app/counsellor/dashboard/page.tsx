@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -17,6 +18,8 @@ import {
   useGetReferredPatientsQuery,
   useGetTodayAdmissionsQuery,
   useGetTodayAvailableRoomsQuery,
+  useRevertToOpdMutation,
+  useLazyCheckFirstDayPaymentQuery,
 } from "@/store/api/counsellorApi";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -145,6 +148,7 @@ const STAT_CARDS = [
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CounsellorDashboardPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 500);
   const [currentPage, setCurrentPage] = useState(1);
@@ -155,21 +159,123 @@ export default function CounsellorDashboardPage() {
   const [sortBy, setSortBy] = useState<string>("patientName");
 
   // Confirmation dialog and submitting states
-  const [pendingAction, setPendingAction] = useState<{ type: "refer"; item: any } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: "refer" | "startAdmission"; item: any } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [successDialogConfig, setSuccessDialogConfig] = useState<{
+    message: React.ReactNode;
+    confirmText?: string;
+    cancelText?: string;
+    showCancel?: boolean;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  } | null>(null);
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
 
+  const [revertToOpd] = useRevertToOpdMutation();
+  const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
+
   const handleReferToOPD = async (item: any) => {
     setIsSubmitting(true);
-    // Simulate background processing API call delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      const res = await revertToOpd(item.id).unwrap();
+      if (res.success) {
+        setSuccessDialogConfig({
+          message: res.message || `Patient ${item.patientName} referred to OPD successfully!`,
+          confirmText: "OK",
+          showCancel: false,
+        });
+        
+        // Safely refetch stats
+        try {
+          refetchStats();
+        } catch (e) {
+          console.warn("Failed to refetch stats:", e);
+        }
 
-    setIsSubmitting(false);
-    setSuccessMessage(`Patient ${item.patientName} referred to OPD successfully!`);
-    setShowSuccessDialog(true);
+        // Safely refetch admissions
+        if (!isAdmissionsUninitialized) {
+          try {
+            refetchAdmissions();
+          } catch (e) {
+            console.warn("Failed to refetch admissions:", e);
+          }
+        }
+
+        // Safely refetch referred list
+        if (!isReferredUninitialized) {
+          try {
+            refetchReferred();
+          } catch (e) {
+            console.warn("Failed to refetch referred:", e);
+          }
+        }
+      } else {
+        setApiErrorMessage(res.message || "Failed to revert patient to OPD.");
+        setShowApiErrorDialog(true);
+      }
+    } catch (err: any) {
+      console.error("Error reverting patient to OPD:", err);
+      setApiErrorMessage(err?.data?.message || err?.message || "An error occurred while reverting patient to OPD.");
+      setShowApiErrorDialog(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStartAdmission = async (item: any) => {
+    setIsSubmitting(true);
+    try {
+      const res = await checkFirstDayPayment(item.id).unwrap();
+      if (res.success) {
+        const remaining = parseFloat(res.data.remainingForFirstDay || "0");
+        const complete = res.data.firstDayPaymentComplete;
+
+        if (remaining > 0 || !complete) {
+          // Case A: Payment not completed
+          setSuccessDialogConfig({
+            message: (
+              <div className="flex flex-col items-center text-center">
+                <span className="text-sm text-[#475569]">
+                  First day payment is not completed. Please complete the remaining amount{" "}
+                  <strong className="text-[#F6776E]">{res.data.remainingForFirstDay || "1500.00"}</strong> first, then proceed with room allocation.
+                </span>
+              </div>
+            ),
+            confirmText: "OK",
+            showCancel: false,
+          });
+        } else {
+          // Case B: Payment completed
+          setSuccessDialogConfig({
+            message: (
+              <div className="flex flex-col items-center text-center">
+                <span className="text-sm text-[#475569]">
+                  Admission started for{" "}
+                  <strong className="text-[#0B8C00]">{item.patientName || "patient"}</strong>{" "}
+                  successfully! You can now proceed with room allocation.
+                </span>
+              </div>
+            ),
+            confirmText: "Assign Room & Bed",
+            cancelText: "Close",
+            showCancel: true,
+            onConfirm: () => {
+              router.push("/counsellor/manage-room");
+            },
+          });
+        }
+      } else {
+        setApiErrorMessage(res.message || "Failed to check payment status.");
+        setShowApiErrorDialog(true);
+      }
+    } catch (err: any) {
+      console.error("Error checking first day payment:", err);
+      setApiErrorMessage(err?.data?.message || err?.message || "An error occurred while starting admission.");
+      setShowApiErrorDialog(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Reset page when debounced search term changes
@@ -178,7 +284,7 @@ export default function CounsellorDashboardPage() {
   }, [debouncedSearch]);
 
   // API Queries
-  const { data: statsRes, isLoading: isStatsLoading } = useGetCounsellorStatsQuery();
+  const { data: statsRes, isLoading: isStatsLoading, refetch: refetchStats } = useGetCounsellorStatsQuery();
   const statsData = statsRes?.data;
 
   // 1. Referred Patients Query
@@ -189,10 +295,12 @@ export default function CounsellorDashboardPage() {
     page: currentPage,
     limit: itemsPerPage,
   };
-  const { data: referredRes, isLoading: isReferredLoading } = useGetReferredPatientsQuery(
-    referredParams,
-    { skip: activeCard !== "referred" }
-  );
+  const {
+    data: referredRes,
+    isLoading: isReferredLoading,
+    refetch: refetchReferred,
+    isUninitialized: isReferredUninitialized,
+  } = useGetReferredPatientsQuery(referredParams, { skip: activeCard !== "referred" });
 
   // 2. Today's Admissions Query
   const admissionsParams = {
@@ -202,10 +310,12 @@ export default function CounsellorDashboardPage() {
     page: currentPage,
     limit: itemsPerPage,
   };
-  const { data: admissionsRes, isLoading: isAdmissionsLoading } = useGetTodayAdmissionsQuery(
-    admissionsParams,
-    { skip: activeCard !== "admissions" }
-  );
+  const {
+    data: admissionsRes,
+    isLoading: isAdmissionsLoading,
+    refetch: refetchAdmissions,
+    isUninitialized: isAdmissionsUninitialized,
+  } = useGetTodayAdmissionsQuery(admissionsParams, { skip: activeCard !== "admissions" });
 
   // 3. Available Rooms Query
   const roomsParams = {
@@ -463,6 +573,7 @@ export default function CounsellorDashboardPage() {
                   variant="primary"
                   size="xsmall"
                   className="whitespace-nowrap"
+                  onClick={() => setPendingAction({ type: "startAdmission", item })}
                 >
                   Start Admission
                 </Button>
@@ -494,6 +605,7 @@ export default function CounsellorDashboardPage() {
                   variant="primary"
                   size="xsmall"
                   className="whitespace-nowrap"
+                  onClick={() => setPendingAction({ type: "startAdmission", item })}
                 >
                   Start Admission
                 </Button>
@@ -596,10 +708,31 @@ export default function CounsellorDashboardPage() {
         icon="/icons/questionMark.svg"
         iconBgColor="transparent"
         message={
-          <div className="flex flex-col items-center">
-            <span className="text-lg font-bold text-[#1E293B] mb-1">Are you sure?</span>
-            <span className="text-sm text-[#475569]">You want to refer this patient to OPD?</span>
-          </div>
+          pendingAction ? (
+            pendingAction.type === "refer" ? (
+              <div className="flex flex-col items-center text-center">
+                <span className="text-lg font-bold text-[#1E293B] mb-1">Refer to OPD</span>
+                <span className="text-sm text-[#475569] max-w-[290px]">
+                  Are you sure you want to refer{" "}
+                  <strong className="text-[#0B8C00]">
+                    {pendingAction.item.patientName || "this patient"}
+                  </strong>{" "}
+                  back to OPD?
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center text-center">
+                <span className="text-lg font-bold text-[#1E293B] mb-1">Confirm Admission</span>
+                <span className="text-sm text-[#475569] max-w-[290px]">
+                  Are you sure you want to proceed with the admission process for{" "}
+                  <strong className="text-[#0B8C00]">
+                    {pendingAction.item.patientName || `Room ${pendingAction.item.roomNumber}`}
+                  </strong>
+                  ?
+                </span>
+              </div>
+            )
+          ) : null
         }
         confirmText="Confirm"
         cancelText="Cancel"
@@ -609,6 +742,8 @@ export default function CounsellorDashboardPage() {
           if (!pendingAction || isSubmitting) return;
           if (pendingAction.type === "refer") {
             await handleReferToOPD(pendingAction.item);
+          } else if (pendingAction.type === "startAdmission") {
+            await handleStartAdmission(pendingAction.item);
           }
           setPendingAction(null);
         }}
@@ -617,14 +752,26 @@ export default function CounsellorDashboardPage() {
 
       {/* Standard Feedback Dialogs */}
       <MessageDialog
-        open={showSuccessDialog}
-        onClose={() => setShowSuccessDialog(false)}
+        open={!!successDialogConfig}
+        onClose={() => setSuccessDialogConfig(null)}
         icon="/icons/SuccessCheck.svg"
         iconBgColor="#E8F5E9"
-        message={successMessage}
-        confirmText="OK"
-        showCancel={false}
-        onConfirm={() => setShowSuccessDialog(false)}
+        message={successDialogConfig?.message || ""}
+        confirmText={successDialogConfig?.confirmText || "OK"}
+        cancelText={successDialogConfig?.cancelText || "Close"}
+        showCancel={successDialogConfig?.showCancel ?? false}
+        onConfirm={() => {
+          if (successDialogConfig?.onConfirm) {
+            successDialogConfig.onConfirm();
+          }
+          setSuccessDialogConfig(null);
+        }}
+        onCancel={() => {
+          if (successDialogConfig?.onCancel) {
+            successDialogConfig.onCancel();
+          }
+          setSuccessDialogConfig(null);
+        }}
       />
 
       <MessageDialog
