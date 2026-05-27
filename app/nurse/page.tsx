@@ -64,7 +64,7 @@ function rtkErrorMessage(e: unknown): string {
 export default function NurseListPage() {
     const router = useRouter();
     const nursePerm = usePermission("Nurse", { subModule: "Nurse" });
-    debugger;
+    // debugger;
     const selectedBranch = useAppSelector(selectSelectedBranch);
     const {
         selectedBranchFilter,
@@ -166,6 +166,8 @@ export default function NurseListPage() {
             const res = await triggerPdf({
                 branchId: filterBranchId,
                 search: debouncedSearchTerm.trim(),
+                page: filters.currentPage,
+                limit: filters.itemsPerPage,
             }).unwrap();
             if (res?.data?.url) {
                 window.open(res.data.url, "_blank", "noopener,noreferrer");
@@ -186,6 +188,8 @@ export default function NurseListPage() {
             const res = await triggerCsv({
                 branchId: filterBranchId,
                 search: debouncedSearchTerm.trim(),
+                page: filters.currentPage,
+                limit: filters.itemsPerPage,
             }).unwrap();
             if (res?.data?.url) {
                 window.open(res.data.url, "_blank", "noopener,noreferrer");

@@ -726,7 +726,7 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "settings", label: "Settings", hasDropdown: true },
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
-  { key: "doctors", label: "Doctor", hasDropdown: true },
+  { key: "doctors", label: "Doctor", href: "/doctor" },
   { key: "nurse", label: "Nurse", href: "/nurse" },
   { key: "reports", label: "Reports", href: "/reports" },
   { key: "infrastructure-view", label: "Infrastructure", href: "/infrastructure" },

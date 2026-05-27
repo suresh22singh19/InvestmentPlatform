@@ -156,10 +156,10 @@ export const nurseApi = baseApi.injectEndpoints({
             }),
         }),
 
-        generateNursesPdf: builder.query<ExportNurseFileResponse, { branchId?: string | number; search?: string }>(
+        generateNursesPdf: builder.query<ExportNurseFileResponse, { branchId?: string | number; search?: string; page?: number; limit?: number }>(
             {
-                query: ({ branchId, search }) => {
-                    const qs = toQueryString({ branchId, search });
+                query: ({ branchId, search, page, limit }) => {
+                    const qs = toQueryString({ branchId, search, page, limit });
                     return {
                         url: `/admin/nurse/generateNursesPdf${qs}`,
                         method: "GET",
@@ -168,10 +168,10 @@ export const nurseApi = baseApi.injectEndpoints({
             }
         ),
 
-        generateNursesCsv: builder.query<ExportNurseFileResponse, { branchId?: string | number; search?: string }>(
+        generateNursesCsv: builder.query<ExportNurseFileResponse, { branchId?: string | number; search?: string; page?: number; limit?: number }>(
             {
-                query: ({ branchId, search }) => {
-                    const qs = toQueryString({ branchId, search });
+                query: ({ branchId, search, page, limit }) => {
+                    const qs = toQueryString({ branchId, search, page, limit });
                     return {
                         url: `/admin/nurse/generateNursesCsv${qs}`,
                         method: "GET",
