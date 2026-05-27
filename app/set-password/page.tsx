@@ -58,9 +58,11 @@ export default function SetPasswordPage() {
 
   const navigateToLogin = () => {
     if (loginType) {
-      router.push(`/`);
+      // router.push(`/`);
+         router.replace(`/`);
     } else {
-      router.push("/");
+      // router.push("/");
+         router.replace("/");
     }
   };
 
