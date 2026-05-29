@@ -58,6 +58,8 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "refund-approval": ["/settings/refund-approval"],
     users: ["/settings/users"],
     panel: ["/settings/panel"],
+    document: ["/settings/document"],
+    "document-master": ["/settings/document"],
     therapy: ["/settings/therapy"],
     "lab-tests": ["/settings/lab-tests"],
     "lab-test": ["/settings/lab-tests"],

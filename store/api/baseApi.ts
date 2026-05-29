@@ -213,6 +213,7 @@ export const baseApi = createApi({
     "PatientTokenDisplay",
     "Doctors",
     "Nurses",
+    "Document",
   ],
   endpoints: () => ({}),
 });

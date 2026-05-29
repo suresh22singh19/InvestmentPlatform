@@ -31,7 +31,7 @@ import type { ApiDoctorListItem } from "@/lib/doctor/mapDoctorApi";
 import { departmentLabelFromApiId } from "@/lib/doctor/mapDoctorApi";
 import { DoctorAvatarImage } from "@/components/doctor/DoctorAvatarImage";
 import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch } from "@/store/slices/authSlice";
+import { selectLoginType, selectSelectedBranch } from "@/store/slices/authSlice";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import {
     useGetAllDoctorsDetailsQuery,
@@ -129,6 +129,8 @@ export default function DoctorListPage() {
 
     const [exportError, setExportError] = useState("");
     const [showExportErrorDialog, setShowExportErrorDialog] = useState(false);
+    const loginType = useAppSelector(selectLoginType);
+    const checkLoginType = loginType?.toLowerCase() === "doctor" ? true : false;
 
     const { data, isLoading, isFetching, refetch } = useGetAllDoctorsDetailsQuery(
         {
@@ -452,7 +454,8 @@ export default function DoctorListPage() {
                                                                 </button>
                                                             </Tooltip>
                                                         )}
-                                                        {doctorPerm.canEdit && (
+                                                        {/* {doctorPerm.canEdit && ( */}
+                                                              { !checkLoginType &&
                                                             <Tooltip content="Credentials" position="top" delay={0}>
                                                                 <button
                                                                     type="button"
@@ -468,7 +471,9 @@ export default function DoctorListPage() {
                                                                     />
                                                                 </button>
                                                             </Tooltip>
-                                                        )}
+                                                          }
+
+                                                        {/* )} */}
                                                     </div>
                                                 </TableData>
                                             </TableRow>

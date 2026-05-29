@@ -47,7 +47,7 @@ export type ApiMessageResponse = {
 };
 
 export type UpdateNursePasswordRequest = {
-    oldPassword: string;
+    oldPassword?: string;
     newPassword: string;
     confirmPassword: string;
 };

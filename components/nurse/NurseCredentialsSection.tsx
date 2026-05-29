@@ -10,6 +10,8 @@ import { BackToPreviousPageButton } from "@/components/ui/Buttons";
 import { FormInputField } from "@/components/ui/FormInputField";
 import { Checkbox, MessageDialog } from "@/components/ui";
 import { useUpdateNursePasswordMutation } from "@/store/api/nurseApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectRoleCategoryType } from "@/store/slices/authSlice";
 
 function rtkErrorMessage(e: unknown): string {
     const x = e as { data?: { message?: string }; message?: string };
@@ -27,10 +29,13 @@ type NurseCredentialsSectionProps = {
 export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCredentialsSectionProps) {
     const router = useRouter();
     const [oldPasswordAutofillBlocked, setOldPasswordAutofillBlocked] = useState(true);
+    const roleCategoryType = useAppSelector(selectRoleCategoryType);
+    const showOldPasswordField = (roleCategoryType ?? "").toLowerCase().trim() !== "superadmin";
+
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
-    const [showOldPassword, setShowOldPassword] = useState(false);
+    const [showOldPasswordText, setShowOldPasswordText] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [passwordSubmitAttempted, setPasswordSubmitAttempted] = useState(false);
@@ -42,6 +47,15 @@ export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCrede
     useEffect(() => {
         setOldPasswordAutofillBlocked(true);
     }, [nurseId]);
+
+    useEffect(() => {
+        if (!showOldPasswordField) {
+            // When hidden (non doctor/nurse login), clear old-password state and derived errors.
+            setOldPasswordAutofillBlocked(true);
+            setOldPassword("");
+            setShowOldPasswordText(false);
+        }
+    }, [showOldPasswordField]);
 
     const passwordChecks = useMemo(
         () => ({
@@ -60,9 +74,10 @@ export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCrede
         passwordChecks.hasNumber;
 
     const oldPasswordFieldError = useMemo(() => {
+        if (!showOldPasswordField) return "";
         if (!passwordSubmitAttempted || oldPassword.trim()) return "";
         return "Please enter your current password.";
-    }, [passwordSubmitAttempted, oldPassword]);
+    }, [showOldPasswordField, passwordSubmitAttempted, oldPassword]);
 
     const newPasswordFieldError = useMemo(() => {
         if (passwordSubmitAttempted && !newPassword.trim()) return "Please enter a new password.";
@@ -71,7 +86,7 @@ export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCrede
     }, [passwordSubmitAttempted, newPassword, newPasswordMeetsRules]);
 
     const confirmPasswordFieldError = useMemo(() => {
-        if (confirmPassword && newPassword !== confirmPassword) return "Passwords do not match";
+        if (showOldPasswordField && confirmPassword && newPassword !== confirmPassword) return "Passwords do not match";
         if (
             passwordSubmitAttempted &&
             newPassword.trim() &&
@@ -81,22 +96,29 @@ export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCrede
             return "Please confirm your new password.";
         }
         return "";
-    }, [confirmPassword, newPassword, newPasswordMeetsRules, passwordSubmitAttempted]);
+    }, [showOldPasswordField, confirmPassword, newPassword, newPasswordMeetsRules, passwordSubmitAttempted]);
 
     const handlePasswordSave = async () => {
         setPasswordSubmitAttempted(true);
-        if (!oldPassword.trim()) return;
+        if (showOldPasswordField && !oldPassword.trim()) return;
         if (!newPassword.trim()) return;
         if (!newPasswordMeetsRules) return;
-        if (newPassword !== confirmPassword) return;
+        if (!confirmPassword.trim()) return;
+        if (showOldPasswordField && newPassword !== confirmPassword) return;
         try {
+            const body = showOldPasswordField
+                ? {
+                      oldPassword: oldPassword.trim(),
+                      newPassword: newPassword.trim(),
+                      confirmPassword: confirmPassword.trim(),
+                  }
+                : {
+                      newPassword: newPassword.trim(),
+                      confirmPassword: confirmPassword.trim(),
+                  };
             const res = await updatePassword({
                 id: nurseId,
-                body: {
-                    oldPassword: oldPassword.trim(),
-                    newPassword: newPassword.trim(),
-                    confirmPassword: confirmPassword.trim(),
-                },
+                body,
             }).unwrap();
             setPasswordSubmitAttempted(false);
             setDialogSuccess(true);
@@ -126,35 +148,41 @@ export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCrede
                     </p>
                     <div className="grid grid-cols-12 gap-4">
                         <div className="col-span-12 space-y-4 lg:col-span-9">
-                            <FormInputField
-                                label="Old Password *"
-                                type={showOldPassword ? "text" : "password"}
-                                name={`nurse-existing-password-${nurseId}`}
-                                autoComplete="off"
-                                onFocus={() => setOldPasswordAutofillBlocked(false)}
-                                value={oldPassword}
-                                onChange={(e) => setOldPassword(e.target.value)}
-                                height={44}
-                                placeholder="Current password"
-                                error={oldPasswordFieldError}
-                                disabled={isPasswordSaving}
-                                suffix={
-                                    <button
-                                        type="button"
-                                        tabIndex={-1}
-                                        className="text-[#7B8089] transition-colors hover:text-[#434956]"
-                                        onClick={() => setShowOldPassword((p) => !p)}
-                                        aria-label={showOldPassword ? "Hide password" : "Show password"}
-                                    >
-                                        <Image
-                                            src={showOldPassword ? "/icons/openEye.svg" : "/icons/closeEye.svg"}
-                                            alt={showOldPassword ? "Hide" : "Show"}
-                                            width={20}
-                                            height={20}
-                                        />
-                                    </button>
-                                }
-                            />
+                            {showOldPasswordField && (
+                                <FormInputField
+                                    label="Old Password *"
+                                    type={showOldPasswordText ? "text" : "password"}
+                                    name={`nurse-existing-password-${nurseId}`}
+                                    autoComplete="off"
+                                    onFocus={() => setOldPasswordAutofillBlocked(false)}
+                                    value={oldPassword}
+                                    onChange={(e) => setOldPassword(e.target.value)}
+                                    height={44}
+                                    placeholder="Current password"
+                                    error={oldPasswordFieldError}
+                                    disabled={isPasswordSaving}
+                                    suffix={
+                                        <button
+                                            type="button"
+                                            tabIndex={-1}
+                                            className="text-[#7B8089] transition-colors hover:text-[#434956]"
+                                            onClick={() => setShowOldPasswordText((p) => !p)}
+                                            aria-label={showOldPasswordText ? "Hide password" : "Show password"}
+                                        >
+                                            <Image
+                                                src={
+                                                    showOldPasswordText
+                                                        ? "/icons/openEye.svg"
+                                                        : "/icons/closeEye.svg"
+                                                }
+                                                alt={showOldPasswordText ? "Hide" : "Show"}
+                                                width={20}
+                                                height={20}
+                                            />
+                                        </button>
+                                    }
+                                />
+                            )}
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                 <FormInputField
                                     label="New Password *"
@@ -301,7 +329,7 @@ export function NurseCredentialsSection({ nurseId, branchId, email }: NurseCrede
                     onConfirm={() => {
                         setDialogOpen(false);
                         if (dialogSuccess) {
-                            router.push(`/nurse/${nurseId}?branchId=${branchId}`);
+                            router.push("/nurse");
                         }
                     }}
                 />

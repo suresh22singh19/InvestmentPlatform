@@ -1151,6 +1151,67 @@ interface DeletePanelResponse {
   statusCode?: number;
 }
 
+interface DocumentItem {
+  id: number;
+  documentName: string;
+  description?: string;
+  documentType?: string;
+  isMandatory?: boolean;
+  isActive: "active" | "inactive" | "Active" | "Inactive";
+}
+
+interface GetAllDocumentsParams {
+  page?: number;
+  limit?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  search?: string;
+  branchId?: number;
+}
+
+interface GetAllDocumentsResponse {
+  success: boolean;
+  data: DocumentItem[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+}
+
+interface AddDocumentRequest {
+  documentName: string;
+  description: string;
+  documentType: string;
+  isMandatory: boolean;
+  isActive: boolean;
+}
+
+interface AddDocumentResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+interface UpdateDocumentRequest {
+  id: number;
+  documentName: string;
+  description: string;
+  documentType: string;
+  isMandatory: boolean;
+  isActive: boolean;
+}
+
+interface UpdateDocumentResponse {
+  success: boolean;
+  data?: DocumentItem;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 export type HardwareFacilitiesType = "hardware" | "facility";
 
 interface HardwareFacilitiesItem {
@@ -2575,6 +2636,45 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Settings"],
     }),
+    getAllDocuments: builder.query<GetAllDocumentsResponse, GetAllDocumentsParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append("page", params.page.toString());
+        if (params?.limit) queryParams.append("limit", params.limit.toString());
+        if (params?.sort) queryParams.append("sort", params.sort);
+        if (params?.order) queryParams.append("order", params.order);
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", String(params.branchId));
+        }
+
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/getAllDocuments${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Document"],
+    }),
+    addDocument: builder.mutation<AddDocumentResponse, AddDocumentRequest>({
+      query: (payload) => ({
+        url: "/admin/settings/addDocument",
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["Document"],
+    }),
+    updateDocument: builder.mutation<UpdateDocumentResponse, UpdateDocumentRequest>({
+      query: (payload) => {
+        const { id, ...body } = payload;
+        return {
+          url: `/admin/settings/updateDocument/${id}`,
+          method: "PATCH",
+          body,
+        };
+      },
+      invalidatesTags: ["Document"],
+    }),
     getHardwareOrFacilities: builder.query<
       HardwareOrFacilitiesListResponse,
       GetHardwareOrFacilitiesParams
@@ -3355,6 +3455,10 @@ export const {
   useCreatePanelMutation,
   useUpdatePanelMutation,
   useDeletePanelMutation,
+  useGetAllDocumentsQuery,
+  useLazyGetAllDocumentsQuery,
+  useAddDocumentMutation,
+  useUpdateDocumentMutation,
   useGetHardwareOrFacilitiesQuery,
   useLazyGetHardwareOrFacilitiesQuery,
   useGetHardwareOrFacilitiesByIdQuery,

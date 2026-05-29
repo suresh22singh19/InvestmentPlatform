@@ -31,7 +31,7 @@ import {
 } from "@/lib/nurse/mapNurseApi";
 import { NurseAvatarImage } from "@/components/nurse/NurseAvatarImage";
 import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch } from "@/store/slices/authSlice";
+import { selectLoginType, selectSelectedBranch } from "@/store/slices/authSlice";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import {
     useGetNursesQuery,
@@ -66,6 +66,9 @@ export default function NurseListPage() {
     const nursePerm = usePermission("Nurse", { subModule: "Nurse" });
     // debugger;
     const selectedBranch = useAppSelector(selectSelectedBranch);
+    const loginType = useAppSelector(selectLoginType);
+    const checkLoginType = loginType?.toLowerCase() === "nurse" ? true : false;
+      
     const {
         selectedBranchFilter,
         setSelectedBranchFilter,
@@ -468,7 +471,8 @@ export default function NurseListPage() {
                                                                 </button>
                                                             </Tooltip>
                                                         )}
-                                                        {nursePerm.canEdit && (
+                                                        {/* {nursePerm.canEdit && ( */}
+                                                           { !checkLoginType &&
                                                             <Tooltip content="Credentials" position="top" delay={0}>
                                                                 <button
                                                                     type="button"
@@ -484,7 +488,8 @@ export default function NurseListPage() {
                                                                     />
                                                                 </button>
                                                             </Tooltip>
-                                                        )}
+                                                            }
+                                                        {/* )} */}
                                                     </div>
                                                 </TableData>
                                             </TableRow>
