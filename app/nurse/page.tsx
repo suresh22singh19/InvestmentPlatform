@@ -31,7 +31,7 @@ import {
 } from "@/lib/nurse/mapNurseApi";
 import { NurseAvatarImage } from "@/components/nurse/NurseAvatarImage";
 import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch } from "@/store/slices/authSlice";
+import { selectLoginType, selectSelectedBranch } from "@/store/slices/authSlice";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import {
     useGetNursesQuery,
@@ -64,8 +64,11 @@ function rtkErrorMessage(e: unknown): string {
 export default function NurseListPage() {
     const router = useRouter();
     const nursePerm = usePermission("Nurse", { subModule: "Nurse" });
-    debugger;
+    // debugger;
     const selectedBranch = useAppSelector(selectSelectedBranch);
+    const loginType = useAppSelector(selectLoginType);
+    const checkLoginType = loginType?.toLowerCase() === "nurse" ? true : false;
+      
     const {
         selectedBranchFilter,
         setSelectedBranchFilter,
@@ -166,6 +169,8 @@ export default function NurseListPage() {
             const res = await triggerPdf({
                 branchId: filterBranchId,
                 search: debouncedSearchTerm.trim(),
+                page: filters.currentPage,
+                limit: filters.itemsPerPage,
             }).unwrap();
             if (res?.data?.url) {
                 window.open(res.data.url, "_blank", "noopener,noreferrer");
@@ -186,6 +191,8 @@ export default function NurseListPage() {
             const res = await triggerCsv({
                 branchId: filterBranchId,
                 search: debouncedSearchTerm.trim(),
+                page: filters.currentPage,
+                limit: filters.itemsPerPage,
             }).unwrap();
             if (res?.data?.url) {
                 window.open(res.data.url, "_blank", "noopener,noreferrer");
@@ -464,7 +471,8 @@ export default function NurseListPage() {
                                                                 </button>
                                                             </Tooltip>
                                                         )}
-                                                        {nursePerm.canEdit && (
+                                                        {/* {nursePerm.canEdit && ( */}
+                                                           { !checkLoginType &&
                                                             <Tooltip content="Credentials" position="top" delay={0}>
                                                                 <button
                                                                     type="button"
@@ -480,7 +488,8 @@ export default function NurseListPage() {
                                                                     />
                                                                 </button>
                                                             </Tooltip>
-                                                        )}
+                                                            }
+                                                        {/* )} */}
                                                     </div>
                                                 </TableData>
                                             </TableRow>

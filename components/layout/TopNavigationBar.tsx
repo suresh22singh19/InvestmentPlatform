@@ -198,6 +198,12 @@ const getAllSettingsItems = (): SettingsItem[] => [
     href: "/settings/panel",
     iconSrc: "/icons/PannelDarkIcon.svg",
   },
+  {
+    key: "document",
+    label: "Document Master",
+    href: "/settings/document",
+    iconSrc: "/icons/PannelDarkIcon.svg",
+  },
   // {
   //   key: "stock",
   //   label: "Stock/Product",
@@ -726,7 +732,7 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "settings", label: "Settings", hasDropdown: true },
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
-  { key: "doctors", label: "Doctor", hasDropdown: true },
+  { key: "doctors", label: "Doctor", href: "/doctor" },
   { key: "nurse", label: "Nurse", href: "/nurse" },
   { key: "reports", label: "Reports", href: "/reports" },
   { key: "infrastructure-view", label: "Infrastructure", href: "/infrastructure" },
@@ -764,6 +770,7 @@ const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
   refund: ["refund-approval", "refund"],
   users: ["users", "user"],
   panel: ["panel"],
+  document: ["document", "document-master"],
   therapy: ["therapy"],
   "lab-tests": ["lab-tests", "lab-test"],
   package: ["package", "packages", "package-master", "package-settings", "package-management"],
@@ -931,7 +938,6 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
       SETTINGS_SUBMODULE_ALIASES
     );
 
-    // Force-include offer-master until its permission is implemented in the backend
     const offerMaster = all.find((i) => i.key === "offer-master");
     let result = filtered;
     if (offerMaster && !filtered.some((i) => i.key === "offer-master")) {

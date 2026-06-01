@@ -22,6 +22,8 @@ import {
 } from "@/lib/doctor/mapDoctorApi";
 import { DoctorAvatarImage } from "@/components/doctor/DoctorAvatarImage";
 import { useGetAllDoctorsDetailsQuery, useUpdateDoctorPasswordMutation } from "@/store/api/doctorApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectRoleCategoryType } from "@/store/slices/authSlice";
 
 function rtkErrorMessage(e: unknown): string {
     const x = e as { data?: { message?: string }; message?: string };
@@ -126,12 +128,14 @@ export default function DoctorViewPage() {
     }, [doctor?.attachment, id]);
 
     const isCredentialsSection = searchParams?.get("section") === "credentials";
+    const roleCategoryType = useAppSelector(selectRoleCategoryType);
+    const showOldPasswordField = (roleCategoryType ?? "").toLowerCase().trim() !== "superadmin";
     /** Blocks password-manager autofill of the signed-in user's password into the doctor's "current password" field. */
     const [oldPasswordAutofillBlocked, setOldPasswordAutofillBlocked] = useState(true);
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
-    const [showOldPassword, setShowOldPassword] = useState(false);
+    const [showOldPasswordText, setShowOldPasswordText] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [passwordSubmitAttempted, setPasswordSubmitAttempted] = useState(false);
@@ -145,6 +149,14 @@ export default function DoctorViewPage() {
             setOldPasswordAutofillBlocked(true);
         }
     }, [isCredentialsSection, id]);
+
+    useEffect(() => {
+        if (isCredentialsSection && !showOldPasswordField) {
+            setOldPasswordAutofillBlocked(true);
+            setOldPassword("");
+            setShowOldPasswordText(false);
+        }
+    }, [isCredentialsSection, showOldPasswordField, id]);
 
     const passwordChecks = useMemo(
         () => ({
@@ -163,9 +175,10 @@ export default function DoctorViewPage() {
         passwordChecks.hasNumber;
 
     const oldPasswordFieldError = useMemo(() => {
+        if (!showOldPasswordField) return "";
         if (!passwordSubmitAttempted || oldPassword.trim()) return "";
         return "Please enter your current password.";
-    }, [passwordSubmitAttempted, oldPassword]);
+    }, [showOldPasswordField, passwordSubmitAttempted, oldPassword]);
 
     const newPasswordFieldError = useMemo(() => {
         if (passwordSubmitAttempted && !newPassword.trim()) return "Please enter a new password.";
@@ -174,7 +187,7 @@ export default function DoctorViewPage() {
     }, [passwordSubmitAttempted, newPassword, newPasswordMeetsRules]);
 
     const confirmPasswordFieldError = useMemo(() => {
-        if (confirmPassword && newPassword !== confirmPassword) return "Passwords do not match";
+        if (showOldPasswordField && confirmPassword && newPassword !== confirmPassword) return "Passwords do not match";
         if (
             passwordSubmitAttempted &&
             newPassword.trim() &&
@@ -184,7 +197,7 @@ export default function DoctorViewPage() {
             return "Please confirm your new password.";
         }
         return "";
-    }, [confirmPassword, newPassword, newPasswordMeetsRules, passwordSubmitAttempted]);
+    }, [showOldPasswordField, confirmPassword, newPassword, newPasswordMeetsRules, passwordSubmitAttempted]);
 
     if (!Number.isFinite(id) || id <= 0) {
         notFound();
@@ -236,18 +249,25 @@ export default function DoctorViewPage() {
 
     const handlePasswordSave = async () => {
         setPasswordSubmitAttempted(true);
-        if (!oldPassword.trim()) return;
+        if (showOldPasswordField && !oldPassword.trim()) return;
         if (!newPassword.trim()) return;
         if (!newPasswordMeetsRules) return;
-        if (newPassword !== confirmPassword) return;
+        if (!confirmPassword.trim()) return;
+        if (showOldPasswordField && newPassword !== confirmPassword) return;
         try {
+            const body = showOldPasswordField
+                ? {
+                      oldPassword: oldPassword.trim(),
+                      newPassword: newPassword.trim(),
+                      confirmPassword: confirmPassword.trim(),
+                  }
+                : {
+                      newPassword: newPassword.trim(),
+                      confirmPassword: confirmPassword.trim(),
+                  };
             const res = await updatePassword({
                 id,
-                body: {
-                    oldPassword: oldPassword.trim(),
-                    newPassword: newPassword.trim(),
-                    confirmPassword: confirmPassword.trim(),
-                },
+                body,
             }).unwrap();
             setPasswordSubmitAttempted(false);
             setDialogSuccess(true);
@@ -278,36 +298,44 @@ export default function DoctorViewPage() {
                         </p>
                         <div className="grid grid-cols-12 gap-4">
                             <div className="col-span-12 space-y-4 lg:col-span-9">
-                                <FormInputField
-                                    label="Old Password *"
-                                    type={showOldPassword ? "text" : "password"}
-                                    name={`doctor-existing-password-${id}`}
-                                    autoComplete="off"
-                                    // readOnly={oldPasswordAutofillBlocked}
-                                    onFocus={() => setOldPasswordAutofillBlocked(false)}
-                                    value={oldPassword}
-                                    onChange={(e) => setOldPassword(e.target.value)}
-                                    height={44}
-                                    placeholder="Current password"
-                                    error={oldPasswordFieldError}
-                                    disabled={isPasswordSaving}
-                                    suffix={
-                                        <button
-                                            type="button"
-                                            tabIndex={-1}
-                                            className="text-[#7B8089] transition-colors hover:text-[#434956]"
-                                            onClick={() => setShowOldPassword((p) => !p)}
-                                            aria-label={showOldPassword ? "Hide password" : "Show password"}
-                                        >
-                                            <Image
-                                                src={showOldPassword ? "/icons/openEye.svg" : "/icons/closeEye.svg"}
-                                                alt={showOldPassword ? "Hide" : "Show"}
-                                                width={20}
-                                                height={20}
-                                            />
-                                        </button>
-                                    }
-                                />
+                                {showOldPasswordField && (
+                                    <FormInputField
+                                        label="Old Password *"
+                                        type={showOldPasswordText ? "text" : "password"}
+                                        name={`doctor-existing-password-${id}`}
+                                        autoComplete="off"
+                                        // readOnly={oldPasswordAutofillBlocked}
+                                        onFocus={() => setOldPasswordAutofillBlocked(false)}
+                                        value={oldPassword}
+                                        onChange={(e) => setOldPassword(e.target.value)}
+                                        height={44}
+                                        placeholder="Current password"
+                                        error={oldPasswordFieldError}
+                                        disabled={isPasswordSaving}
+                                        suffix={
+                                            <button
+                                                type="button"
+                                                tabIndex={-1}
+                                                className="text-[#7B8089] transition-colors hover:text-[#434956]"
+                                                onClick={() => setShowOldPasswordText((p) => !p)}
+                                                aria-label={
+                                                    showOldPasswordText ? "Hide password" : "Show password"
+                                                }
+                                            >
+                                                <Image
+                                                    src={
+                                                        showOldPasswordText
+                                                            ? "/icons/openEye.svg"
+                                                            : "/icons/closeEye.svg"
+                                                    }
+                                                    alt={showOldPasswordText ? "Hide" : "Show"}
+                                                    width={20}
+                                                    height={20}
+                                                />
+                                            </button>
+                                        }
+                                    />
+                                )}
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <FormInputField
                                         label="New Password *"
@@ -457,7 +485,7 @@ export default function DoctorViewPage() {
                         onConfirm={() => {
                             setDialogOpen(false);
                             if (dialogSuccess) {
-                                router.push(`/doctor/${id}?branchId=${branchId}`);
+                                router.push(`/doctor`);
                             }
                         }}
                     />

@@ -39,7 +39,7 @@ export type ExportDoctorFileResponse = {
 };
 
 export type UpdateDoctorPasswordRequest = {
-    oldPassword: string;
+    oldPassword?: string;
     newPassword: string;
     confirmPassword: string;
 };
