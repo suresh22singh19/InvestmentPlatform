@@ -16,6 +16,7 @@ import {
     useLazyCheckFirstDayPaymentQuery,
 } from "@/store/api/counsellorApi"; // just 
 import { useDebounce } from "@/hooks/useDebounce";
+import RoomAllocation from "../start-counselling/roomAllowcation";
 
 export default function CounsellorTentativeAdmissionsPage() {
     const router = useRouter();
@@ -25,6 +26,7 @@ export default function CounsellorTentativeAdmissionsPage() {
     const [itemsPerPage, setItemsPerPage] = useState(10); // 6 items shown as in reference image
     const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("ASC");
     const [sortBy, setSortBy] = useState<string>("patientName");
+    const [activeAllocationPatient, setActiveAllocationPatient] = useState<{ patient: any; payment: any } | null>(null);
 
     // Confirmation dialog and submitting states
     const [pendingAction, setPendingAction] = useState<{ type: "refer" | "startAdmission"; item: any } | null>(null);
@@ -132,7 +134,10 @@ export default function CounsellorTentativeAdmissionsPage() {
                         cancelText: "Close",
                         showCancel: true,
                         onConfirm: () => {
-                            router.push("/counsellor/manage-room");
+                            setActiveAllocationPatient({
+                                patient: item,
+                                payment: res.data
+                            });
                         },
                     });
                 }
@@ -225,50 +230,92 @@ export default function CounsellorTentativeAdmissionsPage() {
 
     return (
         <AppShell>
-            <div className="flex flex-col gap-6 ">
-                {/* Page Heading */}
-                <div className="flex items-start justify-between">
-                    <PageHeading title="Tentative Admissions" />
-                </div>
+            {activeAllocationPatient ? (
+                <div className="flex flex-col gap-6">
+                    <div className="flex items-start justify-between">
+                        <PageHeading title={`Room Allocation - ${activeAllocationPatient.patient.patientName || "Patient"}`} />
+                        <Button
+                            variant="outline"
+                            onClick={() => setActiveAllocationPatient(null)}
+                        >
+                            ← Back to Tentative Admissions
+                        </Button>
+                    </div>
 
-                {/* Table Listing Card */}
-                <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
-                    <TableListingCard
-                        sections={[
-                            {
-                                id: "tentative-admissions-list",
-                                title: "Tentative Admissions",
-                                titleRightContent: (
-                                    <div style={{ width: "300px" }}>
-                                        <TableSearchInput
-                                            value={searchTerm}
-                                            onChange={setSearchTerm}
-                                            placeholder="Search Here..."
-                                        />
-                                    </div>
-                                ),
-                                columns,
-                                rows,
-                                isLoading,
-                                isError,
-                                errorMessage: "Facing server API error",
-                                emptyMessage: "No tentative admissions found",
-                                pagination: {
-                                    currentPage,
-                                    totalItems,
-                                    itemsPerPage,
-                                    onPageChange: setCurrentPage,
-                                    onItemsPerPageChange: (items: number) => {
-                                        setItemsPerPage(items);
-                                        setCurrentPage(1);
-                                    },
-                                    itemsPerPageOptions: [10, 20, 50, 100],
-                                },
-                            },
-                        ]}
+                    <RoomAllocation
+                        activePackage={{
+                            id: activeAllocationPatient.payment?.patientPackageId?.toString(),
+                            packageName: activeAllocationPatient.patient?.packageName || "Selected Package",
+                            branchRoomType: {
+                                roomRentPrice: parseFloat(activeAllocationPatient.payment?.perDayCost || "1500")
+                            }
+                        }}
+                        patientId={activeAllocationPatient.patient?.patientId || activeAllocationPatient.patient?.id}
+                        patientPackageId={activeAllocationPatient.payment?.patientPackageId}
+                        patientDetails={{
+                            patientName: activeAllocationPatient.patient?.patientName,
+                            patientUhid: activeAllocationPatient.patient?.patientUhid,
+                            contactNumber: activeAllocationPatient.patient?.contactNumber,
+                            diagnosis: activeAllocationPatient.patient?.diagnosis,
+                            doctorName: activeAllocationPatient.patient?.doctorName,
+                        }}
+                        onSuccess={() => {
+                            setActiveAllocationPatient(null);
+                            try {
+                                refetch();
+                            } catch (e) {
+                                console.warn("Failed to refetch:", e);
+                            }
+                        }}
+                        onCancel={() => setActiveAllocationPatient(null)}
                     />
                 </div>
-            </div>
+            ) : (
+                <div className="flex flex-col gap-6 ">
+                    {/* Page Heading */}
+                    <div className="flex items-start justify-between">
+                        <PageHeading title="Tentative Admissions" />
+                    </div>
+
+                    {/* Table Listing Card */}
+                    <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
+                        <TableListingCard
+                            sections={[
+                                {
+                                    id: "tentative-admissions-list",
+                                    title: "Tentative Admissions",
+                                    titleRightContent: (
+                                        <div style={{ width: "300px" }}>
+                                            <TableSearchInput
+                                                value={searchTerm}
+                                                onChange={setSearchTerm}
+                                                placeholder="Search Here..."
+                                            />
+                                        </div>
+                                    ),
+                                    columns,
+                                    rows,
+                                    isLoading,
+                                    isError,
+                                    errorMessage: "Facing server API error",
+                                    emptyMessage: "No tentative admissions found",
+                                    pagination: {
+                                        currentPage,
+                                        totalItems,
+                                        itemsPerPage,
+                                        onPageChange: setCurrentPage,
+                                        onItemsPerPageChange: (items: number) => {
+                                            setItemsPerPage(items);
+                                            setCurrentPage(1);
+                                        },
+                                        itemsPerPageOptions: [10, 20, 50, 100],
+                                    },
+                                },
+                            ]}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* Action Confirmation Dialog */}
             <MessageDialog

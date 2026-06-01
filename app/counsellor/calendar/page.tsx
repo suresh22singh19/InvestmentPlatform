@@ -15,7 +15,11 @@ import {
 import { Calendar, momentLocalizer } from "react-big-calendar";
 import moment from "moment";
 import "react-big-calendar/lib/css/react-big-calendar.css";
-import { FaChevronLeft, FaChevronRight, FaPhone } from "react-icons/fa6";
+import { FaChevronLeft, FaChevronRight } from "react-icons/fa6";
+import { useAppSelector } from "@/store/hooks";
+import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
+import { useGetSchedulePatientQuery, useUpdateSchedulePatientMutation } from "@/store/api/counsellorApi";
+import { useDebounce } from "@/hooks/useDebounce";
 
 // Initialize localizer for react-big-calendar
 const localizer = momentLocalizer(moment);
@@ -111,31 +115,63 @@ const MOCK_EVENTS = [
 ];
 
 export default function CounselorCalendarPage() {
+    const selectedBranch = useAppSelector(selectSelectedBranch);
+    const userBranchId = useAppSelector(selectUserBranchId);
+    const branchId = selectedBranch?.id || userBranchId || null;
+
     // Current date set to today's date dynamically
     const [currentDate, setCurrentDate] = useState(() => new Date());
     const [searchQuery, setSearchQuery] = useState("");
+    const debouncedSearch = useDebounce(searchQuery, 500);
 
     // Active state elements for interactive modals
     const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
     const [noteValue, setNoteValue] = useState("");
 
+    // Reschedule dialog states
+    const [showRescheduleDialog, setShowRescheduleDialog] = useState(false);
+    const [newScheduleDate, setNewScheduleDate] = useState("");
+
     // Success feedback Dialog elements
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
 
-    // Handle calendar event filter via TableSearchInput
-    const filteredEvents = useMemo(() => {
-        if (!searchQuery) return MOCK_EVENTS;
-        const q = searchQuery.toLowerCase();
-        return MOCK_EVENTS.filter(
-            (ev) =>
-                ev.patientName.toLowerCase().includes(q) ||
-                ev.reason.toLowerCase().includes(q) ||
-                ev.department.toLowerCase().includes(q) ||
-                ev.type.toLowerCase().includes(q)
-        );
-    }, [searchQuery]);
+    // Calculate first and last date of current currentDate month
+    const fromDate = useMemo(() => {
+        return moment(currentDate).startOf("month").format("YYYY-MM-DD");
+    }, [currentDate]);
+
+    const toDate = useMemo(() => {
+        return moment(currentDate).endOf("month").format("YYYY-MM-DD");
+    }, [currentDate]);
+
+    // Dynamic schedule patients query from API
+    const { data: scheduleRes, isLoading, refetch } = useGetSchedulePatientQuery({
+        fromDate,
+        toDate,
+        branchId: branchId || undefined,
+        search: debouncedSearch.trim() || undefined,
+    });
+
+    // Update appointment mutation
+    const [updateSchedulePatient, { isLoading: isUpdating }] = useUpdateSchedulePatientMutation();
+
+    // Map API appointments to React Big Calendar events
+    const calendarEvents = useMemo(() => {
+        const appts = scheduleRes?.data?.appointments || [];
+        return appts.map((appt) => {
+            const apptDate = moment(appt.date).toDate();
+            return {
+                ...appt,
+                title: appt.patientName,
+                start: apptDate,
+                end: apptDate,
+                allDay: true,
+                color: appt.status === "done" ? "green" : appt.status === "pending" ? "blue" : "red",
+            };
+        });
+    }, [scheduleRes]);
 
     // Custom toolbar rendering matching mockup navigation chevrons and title
     const CustomToolbar = ({ label, onNavigate }: { label: string; onNavigate: (action: any) => void }) => {
@@ -172,20 +208,20 @@ export default function CounselorCalendarPage() {
         );
     };
 
-    // Custom Calendar Event Pill showing custom colored dots and text matching standard mockup color palettes
+    // Custom Calendar Event Pill showing custom colored dots and text matching standard mockup status colors
     const CustomEventComponent = ({ event }: { event: any }) => {
         let bgColor = "#E6F4E6";
         let dotColor = "#0B8C00";
         let textColor = "#0B8C00";
 
-        if (event.color === "orange") {
-            bgColor = "#FFF5EE"; // Very light peach background matching mockup
-            dotColor = "#ED6C2B"; // Solid orange dot
-            textColor = "#C2410C"; // Burnt orange text matching mockup
-        } else if (event.color === "blue") {
+        if (event.status === "pending") {
             bgColor = "#EFF6FF"; // Very light blue background matching mockup
             dotColor = "#2563EB"; // Solid blue dot
             textColor = "#1D4ED8"; // Deep blue text matching mockup
+        } else if (event.status === "cancel") {
+            bgColor = "#FEF2F2"; // Very light red background
+            dotColor = "#EF4444"; // Solid red dot
+            textColor = "#991B1B"; // Deep red text
         }
 
         return (
@@ -216,7 +252,7 @@ export default function CounselorCalendarPage() {
 
     const dayPropGetter = (date: Date) => {
         const isToday = moment(date).isSame(moment(), "day");
-        const hasEvents = filteredEvents.some((event) => moment(event.start).isSame(date, "day"));
+        const hasEvents = calendarEvents.some((event) => moment(event.start).isSame(date, "day"));
 
         // Highlight Today's actual date ONLY in solid green
         if (isToday) {
@@ -256,21 +292,64 @@ export default function CounselorCalendarPage() {
     );
 
     // Event Actions
-    const handleMarkAsComplete = () => {
+    const handleMarkAsComplete = async () => {
         if (!selectedEvent) return;
-        setSuccessMessage(`Appointment for ${selectedEvent.patientName} has been successfully completed!`);
-        setSelectedEvent(null);
-        setShowSuccessDialog(true);
+        try {
+            const res = await updateSchedulePatient({
+                patientScheduleId: selectedEvent.id,
+                status: "done",
+            }).unwrap();
+            if (res.success) {
+                setSuccessMessage(`Appointment for ${selectedEvent.patientName} has been successfully completed!`);
+                setSelectedEvent(null);
+                setShowSuccessDialog(true);
+                refetch();
+            }
+        } catch (e: any) {
+            alert(e?.data?.message || e?.message || "Failed to complete appointment.");
+        }
     };
 
-    const handleNoteSubmit = (e: React.FormEvent) => {
+    const handleRescheduleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!noteValue.trim()) return;
-        setSuccessMessage(`Clinical note added successfully for ${selectedEvent?.patientName || "patient"}!`);
-        setNoteValue("");
-        setShowNoteDialog(false);
-        setSelectedEvent(null);
-        setShowSuccessDialog(true);
+        if (!selectedEvent || !newScheduleDate) return;
+        try {
+            const res = await updateSchedulePatient({
+                patientScheduleId: selectedEvent.id,
+                scheduleDate: newScheduleDate,
+            }).unwrap();
+            if (res.success) {
+                setSuccessMessage(`Appointment rescheduled successfully to ${newScheduleDate}!`);
+                setShowRescheduleDialog(false);
+                setNewScheduleDate("");
+                setSelectedEvent(null);
+                setShowSuccessDialog(true);
+                refetch();
+            }
+        } catch (e: any) {
+            alert(e?.data?.message || e?.message || "Failed to reschedule appointment.");
+        }
+    };
+
+    const handleNoteSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedEvent || !noteValue.trim()) return;
+        try {
+            const res = await updateSchedulePatient({
+                patientScheduleId: selectedEvent.id,
+                notes: noteValue.trim(),
+            }).unwrap();
+            if (res.success) {
+                setSuccessMessage(`Clinical note added successfully for ${selectedEvent.patientName}!`);
+                setShowNoteDialog(false);
+                setNoteValue("");
+                setSelectedEvent(null);
+                setShowSuccessDialog(true);
+                refetch();
+            }
+        } catch (e: any) {
+            alert(e?.data?.message || e?.message || "Failed to update appointment notes.");
+        }
     };
 
     return (
@@ -373,7 +452,7 @@ export default function CounselorCalendarPage() {
                     <div className="h-[760px]">
                         <Calendar
                             localizer={localizer}
-                            events={filteredEvents}
+                            events={calendarEvents}
                             startAccessor="start"
                             endAccessor="end"
                             date={currentDate}
@@ -463,24 +542,43 @@ export default function CounselorCalendarPage() {
 
                         {/* Actions Row */}
                         <div className="flex flex-col sm:flex-row justify-between gap-3 mt-4 border-t border-[#E2E8F0] pt-4">
-                            <Button
-                                variant="primary"
-                                onClick={handleMarkAsComplete}
-                                className="bg-[#0B8C00] hover:bg-[#097300] text-white rounded-full text-xs !font-semibold py-2 px-6 flex-1 shadow-sm"
-                            >
-                                Mark As Complete
-                            </Button>
+                            {selectedEvent.status === "done" ? (
+                                <Button
+                                    variant="primary"
+                                    disabled
+                                    className="bg-[#E2E8F0] text-[#94A3B8] rounded-full text-xs !font-semibold py-2 px-6 flex-1 cursor-not-allowed border-none"
+                                >
+                                    Complete
+                                </Button>
+                            ) : (
+                                <Button
+                                    variant="primary"
+                                    onClick={handleMarkAsComplete}
+                                    disabled={selectedEvent.status === "cancel" || isUpdating}
+                                    className="bg-[#0B8C00] hover:bg-[#097300] text-white rounded-full text-xs !font-semibold py-2 px-6 flex-1 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Mark As Complete
+                                </Button>
+                            )}
                             <Button
                                 variant="outline"
-                                onClick={() => alert("Rescheduler tool is open.")}
-                                className="border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C0008] rounded-full text-xs !font-semibold py-2 px-6 flex-1"
+                                onClick={() => {
+                                    setNewScheduleDate(selectedEvent.date || moment().format("YYYY-MM-DD"));
+                                    setShowRescheduleDialog(true);
+                                }}
+                                disabled={selectedEvent.status === "cancel" || selectedEvent.status === "done" || isUpdating}
+                                className="border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C0008] rounded-full text-xs !font-semibold py-2 px-6 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Reschedule
                             </Button>
                             <Button
                                 variant="outline"
-                                onClick={() => setShowNoteDialog(true)}
-                                className="border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C0008] rounded-full text-xs !font-semibold py-2 px-6 flex-1"
+                                onClick={() => {
+                                    setNoteValue(selectedEvent.notes || "");
+                                    setShowNoteDialog(true);
+                                }}
+                                disabled={selectedEvent.status === "cancel" || isUpdating}
+                                className="border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C0008] rounded-full text-xs !font-semibold py-2 px-6 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Add Notes
                             </Button>
@@ -546,6 +644,53 @@ export default function CounselorCalendarPage() {
                 showCancel={false}
                 onConfirm={() => setShowSuccessDialog(false)}
             />
+
+            {/* ── Dialog D: Reschedule Modal ───────────────────────────────── */}
+            <Dialog
+                open={showRescheduleDialog}
+                onClose={() => setShowRescheduleDialog(false)}
+                title="Reschedule Appointment"
+                width={600}
+                contentPadding="px-6 pb-6 pt-4"
+            >
+                {selectedEvent && (
+                    <form onSubmit={handleRescheduleSubmit} className="flex flex-col text-left gap-6 select-none">
+                        <div className="mt-2">
+                            <FormInputField
+                                label="New Date"
+                                type="date"
+                                value={newScheduleDate}
+                                onChange={(e) => setNewScheduleDate(e.target.value)}
+                                required
+                                height={44}
+                            />
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex justify-start gap-3 ">
+                            <Button
+                                variant="primary"
+                                type="submit"
+                                className="bg-[#0B8C00] hover:bg-[#097300] text-white rounded-full text-xs !font-semibold py-2 px-6"
+                                disabled={isUpdating}
+                            >
+                                {isUpdating ? "Saving..." : "Submit"}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                type="button"
+                                onClick={() => {
+                                    setShowRescheduleDialog(false);
+                                    setNewScheduleDate("");
+                                }}
+                                className="border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C0008] rounded-full text-xs !font-semibold py-2 px-6"
+                            >
+                                Cancel
+                            </Button>
+                        </div>
+                    </form>
+                )}
+            </Dialog>
         </AppShell>
     );
 }
