@@ -214,6 +214,7 @@ export const baseApi = createApi({
     "Doctors",
     "Nurses",
     "Document",
+    "IpdReception",
   ],
   endpoints: () => ({}),
 });

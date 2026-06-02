@@ -440,7 +440,7 @@ export interface AddUserResponse {
   statusCode: number;
 }
 
-/** PUT /admin/settings/users/:id */
+/** PUT /admin/settings/users/:id and PUT /admin/settings/updateUser/:id */
 export interface UpdateUserResponse {
   success: boolean;
   message: string;
@@ -2247,6 +2247,14 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Settings"],
     }),
+    updateSettingsUser: builder.mutation<UpdateUserResponse, { id: number; body: UpdateUserBody }>({
+      query: ({ id, body }) => ({
+        url: `/admin/settings/updateUser/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
     generateUsersPdf: builder.query<GenerateUsersPdfResponse, { branchId?: number } | void>({
       query: (params) => {
         const queryParams = new URLSearchParams();
@@ -3427,6 +3435,7 @@ export const {
   useGetUsersQuery,
   useAddUserMutation,
   useUpdateUserMutation,
+  useUpdateSettingsUserMutation,
   useLazyGenerateUsersPdfQuery,
   useGetLabTestsQuery,
   useGetLabTestsByBranchQuery,

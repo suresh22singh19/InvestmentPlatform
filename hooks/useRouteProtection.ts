@@ -23,8 +23,18 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     dashboard: ["/dashboard"],
     settings: ["/settings"],
     registration: ["/registration"],
-    patient: ["/registration/registrationList", "/patient", "/patient/details"],
-    patients: ["/registration/registrationList", "/patient", "/patient/details"],
+    patient: [
+        "/registration/registrationList",
+        "/patient",
+        "/patient/details",
+        "/ipd-reception",
+    ],
+    patients: [
+        "/registration/registrationList",
+        "/patient",
+        "/patient/details",
+        "/ipd-reception",
+    ],
     reports: ["/reports"],
     token: ["/token"],
     tokens: ["/token"],
@@ -39,6 +49,9 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     /** `slugify("Discharge Pending")` — branch pending discharge list */
     "discharge-pending": ["/discharge-pending"],
     "nurse": ["/nurse"],
+    reception: ["/ipd-reception"],
+    /** `slugify("IPD Reception")` */
+    "ipd-reception": ["/ipd-reception"],
 };
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
@@ -97,6 +110,22 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     ],
     /** Patient submodule "Discharge" (`slugify("Discharge")`) */
     discharge: ["/patient/discharge"],
+    /** Reception / IPD sub-modules */
+    "admitted-patients": [
+        "/ipd-reception/admitted-patients",
+        "/ipd-reception/admitted-patients/pending-discharges",
+        "/ipd-reception/patient",
+    ],
+    "admitted-patients-registry": [
+        "/ipd-reception/admitted-patients",
+        "/ipd-reception/admitted-patients/pending-discharges",
+        "/ipd-reception/patient",
+    ],
+    "daily-operations": ["/ipd-reception/daily-operations"],
+    "historical-patients": ["/ipd-reception/historical-patients", "/ipd-reception/patient"],
+    "historical-patient-registry": ["/ipd-reception/historical-patients", "/ipd-reception/patient"],
+    /** IPD Reception dashboard (`/ipd-reception/dashboard`, not main `/dashboard`) */
+    "ipd-reception-dashboard": ["/ipd-reception/dashboard", "/ipd-reception"],
     "new-patient": ["/gate/new-patient"],
     "revisit-patient": ["/gate/revisit-patient"],
     "opd-visitor": ["/gate/patient-visitor"],
@@ -123,6 +152,7 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/hospital-infrastructure",
     "/discharge-pending",
     "/nurse",
+    "/ipd-reception",
 ];
 
 /**
@@ -138,6 +168,15 @@ const SETTINGS_URL_SEGMENT_SUBMODULE_SLUGS: Record<string, string[]> = {
         "package-management",
     ],
     "lab-tests": ["lab-tests", "lab-test"],
+};
+
+const IPD_RECEPTION_MODULE_KEYS = new Set(["reception", "ipd-reception"]);
+
+const getSubModuleRoutePrefixes = (moduleKey: string, subModuleKey: string): string[] => {
+    if (IPD_RECEPTION_MODULE_KEYS.has(moduleKey) && subModuleKey === "dashboard") {
+        return ["/ipd-reception/dashboard", "/ipd-reception"];
+    }
+    return SUB_MODULE_ROUTE_PREFIXES[subModuleKey] ?? [];
 };
 
 const canAccessSettingsUrlBySegment = (
@@ -184,8 +223,8 @@ const getAllowedRoutePrefixesFromPermissions = (
 
         Object.values(modulePermission.subModules ?? {}).forEach((subModulePermission) => {
             if (!subModulePermission?.isActive || !subModulePermission.canView) return;
-            (SUB_MODULE_ROUTE_PREFIXES[subModulePermission.key] ?? []).forEach((prefix) =>
-                prefixes.add(prefix)
+            getSubModuleRoutePrefixes(modulePermission.key, subModulePermission.key).forEach(
+                (prefix) => prefixes.add(prefix)
             );
         });
     });
@@ -226,7 +265,10 @@ const getFirstAccessibleRouteFromPermissions = (
         for (const subModulePermission of orderedSubModules) {
             if (!subModulePermission?.isActive || !subModulePermission.canView) continue;
 
-            const subModulePrefixes = SUB_MODULE_ROUTE_PREFIXES[subModulePermission.key] ?? [];
+            const subModulePrefixes = getSubModuleRoutePrefixes(
+                modulePermission.key,
+                subModulePermission.key
+            );
             const filteredSubModulePrefixes = subModulePrefixes.filter((prefix) => {
                 if (selectedBranchType === "clinic" && prefix === "/registration/hospital") {
                     return false;
@@ -298,7 +340,7 @@ export const useRouteProtection = () => {
 
         if (typeof window !== "undefined") {
             if (!userLoginType) {
-                userLoginType = localStorage.getItem("loginType") || null;
+                userLoginType = localStorage.getItem("loginType");
             }
             if (!userPermissionsMap || Object.keys(userPermissionsMap).length === 0) {
                 try {

@@ -9,7 +9,12 @@ import { FaInfoCircle, FaUserAlt, FaUsers } from "react-icons/fa";
 import { FaUserDoctor } from "react-icons/fa6";
 import { PiStethoscopeBold } from "react-icons/pi";
 import { useAppSelector } from "@/store/hooks";
-import { selectPermissionsMap, selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
+import {
+  selectLoginType,
+  selectPermissionsMap,
+  selectSelectedBranch,
+  selectUserBranchId,
+} from "@/store/slices/authSlice";
 import { hasOnlyGateModuleViewAccess } from "@/utils/permission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
@@ -50,6 +55,10 @@ function capitalizeFirst(str: string | null | undefined): string {
 }
 
 export default function DashboardPage() {
+  return <StandardDashboardPage />;
+}
+
+function StandardDashboardPage() {
   const router = useRouter();
   const permissionsMap = useAppSelector(selectPermissionsMap);
   const dashboardPermission = usePermission("Dashboard");
@@ -187,6 +196,7 @@ export default function DashboardPage() {
     if (!Array.isArray(list)) return [];
     return [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) as DashboardSupportCategory[];
   }, [supportContactsResponse?.data]);
+
   if (!canView) {
     return (
       <AppShell>

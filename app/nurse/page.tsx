@@ -37,6 +37,7 @@ import {
     useGetNursesQuery,
     useLazyGenerateNursesCsvQuery,
     useLazyGenerateNursesPdfQuery,
+    useUpdateNurseMutation,
 } from "@/store/api/nurseApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -140,6 +141,14 @@ export default function NurseListPage() {
 
     const [exportError, setExportError] = useState("");
     const [showExportErrorDialog, setShowExportErrorDialog] = useState(false);
+    const [pendingStatusToggle, setPendingStatusToggle] = useState<ApiNurseListItem | null>(null);
+    const [messageDialog, setMessageDialog] = useState<{
+        open: boolean;
+        variant: "success" | "error";
+        message: string;
+    }>({ open: false, variant: "success", message: "" });
+
+    const [updateNurse, { isLoading: isUpdatingNurse }] = useUpdateNurseMutation();
 
     const { data, isLoading, isFetching, refetch } = useGetNursesQuery(
         {
@@ -229,6 +238,38 @@ export default function NurseListPage() {
 
     const handleRefresh = () => {
         void refetch();
+    };
+
+    const dismissMessageDialog = () => {
+        setMessageDialog((m) => ({ ...m, open: false }));
+    };
+
+    const handleConfirmStatusToggle = async () => {
+        if (!pendingStatusToggle || isUpdatingNurse) return;
+
+        const nextIsActive = nurseIsInactive(pendingStatusToggle);
+
+        try {
+            await updateNurse({
+                id: pendingStatusToggle.id,
+                body: { isActive: nextIsActive },
+            }).unwrap();
+            setPendingStatusToggle(null);
+            setMessageDialog({
+                open: true,
+                variant: "success",
+                message: nextIsActive
+                    ? "Nurse has been activated successfully."
+                    : "Nurse has been inactivated successfully.",
+            });
+        } catch (e) {
+            setPendingStatusToggle(null);
+            setMessageDialog({
+                open: true,
+                variant: "error",
+                message: rtkErrorMessage(e),
+            });
+        }
     };
 
     const goView = (row: ApiNurseListItem) =>
@@ -425,14 +466,28 @@ export default function NurseListPage() {
                                                 <TableData>{row.phone}</TableData>
                                                 <TableData>{row.empId}</TableData>
                                                 <TableData className="text-start">
-                                                    <span
-                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${nurseIsInactive(row)
-                                                                ? "border-[#F6776E] bg-white text-[#F6776E]"
-                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                                                            }`}
-                                                    >
-                                                        {nurseStatusDisplayLabel(row)}
-                                                    </span>
+                                                    {nursePerm.canEdit ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPendingStatusToggle(row)}
+                                                            className={`inline-flex h-[30px] min-w-[76px] cursor-pointer items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors duration-150 ${nurseIsInactive(row)
+                                                                    ? "border-[#F6776E] bg-white text-[#F6776E] hover:border-[#F6776E] hover:bg-[#FFEBEE] hover:shadow-sm"
+                                                                    : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:border-[#0B8C00]/50 hover:bg-[#E8F5E9] hover:shadow-sm"
+                                                                }`}
+                                                            aria-label={`Change status from ${nurseStatusDisplayLabel(row)}`}
+                                                        >
+                                                            {nurseStatusDisplayLabel(row)}
+                                                        </button>
+                                                    ) : (
+                                                        <span
+                                                            className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${nurseIsInactive(row)
+                                                                    ? "border-[#F6776E] bg-white text-[#F6776E]"
+                                                                    : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
+                                                                }`}
+                                                        >
+                                                            {nurseStatusDisplayLabel(row)}
+                                                        </span>
+                                                    )}
                                                 </TableData>
                                                 <TableData className="text-start">
                                                     <div className="flex items-center justify-start gap-2">
@@ -511,6 +566,45 @@ export default function NurseListPage() {
                     </div>
                 </ListBorder>
             </div>
+
+            <MessageDialog
+                open={!!pendingStatusToggle}
+                onClose={() => {
+                    if (!isUpdatingNurse) setPendingStatusToggle(null);
+                }}
+                icon="/icons/questionMark.svg"
+                iconBgColor="#FFF8E1"
+                message={
+                    pendingStatusToggle
+                        ? nurseIsInactive(pendingStatusToggle)
+                            ? "Are you sure you want to Active this Nurse"
+                            : "Are you sure you want to Inactive this Nurse"
+                        : ""
+                }
+                confirmText="Confirm"
+                cancelText="Cancel"
+                showCancel
+                isActionLoading={isUpdatingNurse}
+                onConfirm={handleConfirmStatusToggle}
+                onCancel={() => {
+                    if (!isUpdatingNurse) setPendingStatusToggle(null);
+                }}
+            />
+
+            <MessageDialog
+                open={messageDialog.open}
+                onClose={dismissMessageDialog}
+                message={messageDialog.message}
+                icon={
+                    messageDialog.variant === "success"
+                        ? "/icons/SuccessCheck.svg"
+                        : "/icons/ErrorIcon.svg"
+                }
+                iconBgColor={messageDialog.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={dismissMessageDialog}
+            />
 
             <MessageDialog
                 open={showExportErrorDialog}

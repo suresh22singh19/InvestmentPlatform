@@ -60,6 +60,7 @@ export function Tooltip({
   const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const coordsRef = useRef({ top: 0, left: 0 });
+  const arrowLeftRef = useRef<number | null>(null);
   const actualPosRef = useRef<TooltipPosition>(position);
   const [, forceRender] = useState(0);
 
@@ -128,17 +129,24 @@ export function Tooltip({
         break;
     }
 
-    left = Math.max(
+    const clampedLeft = Math.max(
       window.scrollX + VIEWPORT_PADDING,
       Math.min(left, window.scrollX + window.innerWidth - ttRect.width - VIEWPORT_PADDING),
     );
-    top = Math.max(
+    const clampedTop = Math.max(
       window.scrollY + VIEWPORT_PADDING,
       Math.min(top, window.scrollY + window.innerHeight - ttRect.height - VIEWPORT_PADDING),
     );
 
+    const triggerCenterX = tRect.left + tRect.width / 2 + window.scrollX;
+    const arrowInset = ARROW_SIZE + 10;
+    arrowLeftRef.current = Math.max(
+      arrowInset,
+      Math.min(triggerCenterX - clampedLeft, ttRect.width - arrowInset),
+    );
+
     actualPosRef.current = resolved;
-    coordsRef.current = { top, left };
+    coordsRef.current = { top: clampedTop, left: clampedLeft };
   }, [position, offset, arrow]);
 
   // Position + reveal: runs after the hidden tooltip has been painted so we can read its size
@@ -212,11 +220,21 @@ export function Tooltip({
     const base: CSSProperties = { position: "absolute", width: 0, height: 0 };
     const b = `${ARROW_SIZE}px solid transparent`;
     const fill = `${ARROW_SIZE}px solid #F5F5F5`;
+    const arrowLeft = arrowLeftRef.current;
+    const horizontalArrow =
+      arrowLeft != null
+        ? { left: arrowLeft, transform: "translateX(-50%)" as const }
+        : { left: "50%", transform: "translateX(-50%)" as const };
+
     switch (actualPosRef.current) {
-      case "top":    return { ...base, bottom: -ARROW_SIZE, left: "50%", transform: "translateX(-50%)", borderLeft: b, borderRight: b, borderTop: fill };
-      case "bottom": return { ...base, top: -ARROW_SIZE, left: "50%", transform: "translateX(-50%)", borderLeft: b, borderRight: b, borderBottom: fill };
-      case "left":   return { ...base, right: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderLeft: fill };
-      case "right":  return { ...base, left: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderRight: fill };
+      case "top":
+        return { ...base, bottom: -ARROW_SIZE, ...horizontalArrow, borderLeft: b, borderRight: b, borderTop: fill };
+      case "bottom":
+        return { ...base, top: -ARROW_SIZE, ...horizontalArrow, borderLeft: b, borderRight: b, borderBottom: fill };
+      case "left":
+        return { ...base, right: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderLeft: fill };
+      case "right":
+        return { ...base, left: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderRight: fill };
     }
   };
 

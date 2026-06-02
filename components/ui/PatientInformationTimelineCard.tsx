@@ -3,13 +3,24 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 
+export interface PatientInformationTimelineMedicine {
+    id: string;
+    name: string;
+    dosage: string;
+    frequency: string;
+    timing: string;
+    duration: string;
+}
+
 export interface PatientInformationTimelineDetail {
     primaryComplaintTitle: string;
     primaryComplaintText: string;
     detailsTitle: string;
     detailsItems: string[];
-    actionsTitle: string;
-    actionItems: string[];
+    actionsTitle?: string;
+    actionItems?: string[];
+    medicinesTitle?: string;
+    medicines?: PatientInformationTimelineMedicine[];
 }
 
 export interface PatientInformationTimelineItem {
@@ -100,12 +111,60 @@ export function PatientInformationTimelineCard({
                                     ))}
                                 </ul>
 
-                                <p className="text-sm font-medium text-[#262D3B] mb-1">{item.detail.actionsTitle}</p>
-                                <ul className="text-sm text-[#434956] list-disc pl-5 space-y-1">
-                                    {item.detail.actionItems.map((actionItem) => (
+                                {item.detail.actionsTitle && item.detail.actionItems ? (
+                                  <>
+                                    <p className="text-sm font-medium text-[#262D3B] mb-1">
+                                      {item.detail.actionsTitle}
+                                    </p>
+                                    <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-[#434956]">
+                                      {item.detail.actionItems.map((actionItem) => (
                                         <li key={actionItem}>{actionItem}</li>
-                                    ))}
-                                </ul>
+                                      ))}
+                                    </ul>
+                                  </>
+                                ) : null}
+
+                                {item.detail.medicines && item.detail.medicines.length > 0 ? (
+                                  <>
+                                    <p className="mb-2 text-sm font-medium text-[#262D3B]">
+                                      {item.detail.medicinesTitle ?? "Medicines Prescribed"}
+                                    </p>
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                      {item.detail.medicines.map((medicine) => (
+                                        <div
+                                          key={medicine.id}
+                                          className="rounded-xl border border-[#EBECED] bg-white p-3"
+                                        >
+                                          <div className="mb-2 flex items-start gap-2">
+                                            <Image
+                                              src="/icons/medicons.svg"
+                                              alt=""
+                                              width={18}
+                                              height={18}
+                                            />
+                                            <p className="text-sm font-semibold text-[#262D3B]">
+                                              {medicine.name}
+                                            </p>
+                                          </div>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            <span className="rounded-full border border-[#E3EEE1] bg-[#FAFBFA] px-2.5 py-0.5 text-xs font-medium text-[#434956]">
+                                              {medicine.duration}
+                                            </span>
+                                            <span className="rounded-full border border-[#E3EEE1] bg-[#FAFBFA] px-2.5 py-0.5 text-xs font-medium text-[#434956]">
+                                              {medicine.dosage}
+                                            </span>
+                                            <span className="rounded-full border border-[#E3EEE1] bg-[#FAFBFA] px-2.5 py-0.5 text-xs font-medium text-[#434956]">
+                                              {medicine.frequency}
+                                            </span>
+                                            <span className="rounded-full border border-[#E3EEE1] bg-[#FAFBFA] px-2.5 py-0.5 text-xs font-medium text-[#434956]">
+                                              {medicine.timing}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                ) : null}
                             </div>
                         ) : null}
                     </div>

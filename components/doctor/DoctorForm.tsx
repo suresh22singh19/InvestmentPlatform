@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { FormInputField } from "@/components/ui/FormInputField";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { FormSelectField } from "@/components/ui/FormSelectField";
+import { LoginTypeInfoIcon } from "@/components/ui/LoginTypeInfoIcon";
 import { FileUploadField } from "@/components/ui/FileUploadField";
 import { BackToPreviousPageButton } from "@/components/ui/Buttons";
 import type { DoctorPayload } from "@/lib/doctor/doctorStatic";
@@ -831,6 +832,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                     /> */}
                     <FormSelectField
                         label="Login Type"
+                        labelSuffix={<LoginTypeInfoIcon entity="doctor" size={14} />}
                         value={values.loginType}
                         onChange={(v) => {
                             const raw = pickSingle(v) || "no-auth";

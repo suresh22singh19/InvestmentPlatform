@@ -19,6 +19,7 @@ import {
 import { registrationListPathFromBranchType } from "@/lib/utils/registrationBranchRoutes";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { hasModuleViewAccess, type NormalizedPermissionsMap } from "@/utils/permission";
+import { RECEPTION_TOP_NAV_TABS } from "@/lib/ipd-reception/constants";
 
 // Email → registration route mapping for users who must see only one registration page.
 const EMAIL_REGISTRATION_ROUTE: Record<string, string> = {
@@ -44,6 +45,11 @@ const NAV_ICON_SRC: Record<string, string> = {
   "roles-master": "/icons/RoleMasterDarkIcon.svg",
   "branch-role-master": "/icons/BranchRoleMasterIcon.svg",
   nurse: "/icons/UsersDarkIcon.svg",
+  ipdreception: "/icons/patientBed.svg",
+  "ipdreception-dashboard": "/icons/DashboardDarkIcon.svg",
+  "ipdreception-admitted-patients": "/icons/patients.svg",
+  "ipdreception-daily-operations": "/icons/calendarCheck.svg",
+  "ipdreception-historical-patients": "/icons/patient_history.svg",
 };
 
 type TopNavigationBarProps = {
@@ -392,7 +398,6 @@ const getAllHospitalInfrastructureItems = (): HospitalInfrastructureItem[] => [
   },
 ];
 
-// Patient sub-options (OPD, Old OPD, IPD, DayCare)
 type PatientItem = {
   key: string;
   label: string;
@@ -402,12 +407,38 @@ type PatientItem = {
   disabled?: boolean;
 };
 
+// Patient sub-options (OPD, Old OPD, IPD, DayCare, Discharge)
 const getPatientItems = (): PatientItem[] => [
-  { key: "patient-opd", label: "OPD", href: "/registration/registrationList", iconSrc: "/icons/RegistrationDarkIcon.svg" },
-  { key: "patient-old-opd", label: "Old OPD", href: "/patient/opd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
-  { key: "patient-ipd", label: "IPD", href: "/patient/ipd", iconSrc: "/icons/RegistrationDarkIcon.svg" },
-  { key: "patient-daycare", label: "DayCare", href: "/patient/daycare", iconSrc: "/icons/RegistrationDarkIcon.svg" },
-  { key: "patient-discharge", label: "Discharge", href: "/patient/discharge", iconSrc: "/icons/RegistrationDarkIcon.svg" },
+  {
+    key: "patient-opd",
+    label: "OPD",
+    href: "/registration/registrationList",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-old-opd",
+    label: "Old OPD",
+    href: "/patient/opd",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-ipd",
+    label: "IPD",
+    href: "/patient/ipd",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-daycare",
+    label: "DayCare",
+    href: "/patient/daycare",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-discharge",
+    label: "Discharge",
+    href: "/patient/discharge",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
 ];
 
 const getAllDoctorItems = (): SettingsItem[] => [
@@ -439,6 +470,14 @@ const getAllNurseItems = (): SettingsItem[] => [
     iconSrc: "/icons/UsersDarkIcon.svg",
   },
 ];
+
+const getAllReceptionItems = (): SettingsItem[] =>
+  RECEPTION_TOP_NAV_TABS.map((tab) => ({
+    key: `ipdreception-${tab.value}`,
+    label: tab.label,
+    href: tab.href,
+    iconSrc: tab.iconSrc,
+  }));
 
 const getPreBookingItems = (): SettingsItem[] => [
   {
@@ -732,6 +771,7 @@ const BASE_TOP_NAV_ITEMS = [
   { key: "settings", label: "Settings", hasDropdown: true },
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
+  { key: "ipdreception", label: "IPD Reception", hasDropdown: true },
   { key: "doctors", label: "Doctor", href: "/doctor" },
   { key: "nurse", label: "Nurse", href: "/nurse" },
   { key: "reports", label: "Reports", href: "/reports" },
@@ -757,6 +797,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   "discharge-pending": ["discharge-pending"],
   doctors: ["doctor", "doctors"],
   nurse: ["nurse", "nurses"],
+  ipdreception: ["reception", "ipd-reception", "ipdreception", "dashboard"],
   registration: ["registration"],
 
 };
@@ -816,6 +857,28 @@ const DOCTOR_SUBMODULE_ALIASES: Record<string, string[]> = {
 
 const NURSE_SUBMODULE_ALIASES: Record<string, string[]> = {
   "nurse-main": ["nurse", "nurses"],
+};
+
+const IPD_RECEPTION_SUBMODULE_ALIASES: Record<string, string[]> = {
+  "ipdreception-dashboard": ["reception", "ipd-reception", "ipdreception", "dashboard", "ipd-reception-dashboard"],
+  "ipdreception-admitted-patients": [
+    "reception",
+    "ipd-reception",
+    "ipdreception",
+    "admitted-patients",
+    "admitted-patients-registry",
+    "pending-discharges",
+    "discharge",
+    "care-record",
+  ],
+  "ipdreception-daily-operations": ["reception", "ipd-reception", "ipdreception", "daily-operations"],
+  "ipdreception-historical-patients": [
+    "reception",
+    "ipd-reception",
+    "ipdreception",
+    "historical-patients",
+    "historical-patient-registry",
+  ],
 };
 
 const normalizeName = (value: string) =>
@@ -893,7 +956,6 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   const shouldShowRegistration =
     loginType?.toLowerCase() === "clinic user" ||
     loginType?.toLowerCase() === "hospital user";
-
 
   // Get the registration href based on login_type (or email override)
   const getRegistrationHref = () => {
@@ -977,8 +1039,19 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     ["nurse"],
     NURSE_SUBMODULE_ALIASES
   );
-  const nurseItems =
-    nurseItemsFiltered.length > 0 ? nurseItemsFiltered : getAllNurseItems();
+
+  const receptionItems = useMemo(() => {
+    const all = getAllReceptionItems();
+    const filtered = filterBySubModuleAccess(
+      all,
+      permissionsMap,
+      ["reception", "ipd-reception", "ipdreception"],
+      IPD_RECEPTION_SUBMODULE_ALIASES
+    );
+    // Same pattern as Doctor: show full menu when no reception sub-modules match permissions
+    return filtered.length > 0 ? filtered : all;
+  }, [permissionsMap]);
+      
   const preBookingItems = useMemo(() => getPreBookingItems(), []);
   const leadRequestItems = useMemo(() => getLeadRequestItems(), []);
   useEffect(() => {
@@ -1110,6 +1183,12 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
       ].filter((item) => {
         const aliases = TOP_NAV_PERMISSION_ALIASES[item.key];
         if (!aliases || aliases.length === 0) return true;
+        if (item.key === "ipdreception") {
+          return (
+            hasAccessByAliases(permissionsMap, aliases) ||
+            hasAccessByAliases(permissionsMap, TOP_NAV_PERMISSION_ALIASES.patient)
+          );
+        }
         return hasAccessByAliases(permissionsMap, aliases);
       });
 
@@ -1175,6 +1254,13 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                 isActive = pathname === "/doctor" || pathname?.startsWith("/doctor/");
               } else if (item.key === "nurse" && pathname) {
                 isActive = pathname === "/nurse" || pathname?.startsWith("/nurse/");
+              } else if (item.key === "ipdreception" && pathname) {
+                isActive =
+                  pathname === "/ipd-reception/dashboard" ||
+                  pathname?.startsWith("/ipd-reception/");
+              } else if (item.key.startsWith("ipdreception-") && item.href && pathname) {
+                isActive =
+                  pathname === item.href || pathname?.startsWith(`${item.href}/`);
               } else if (sidebarItem && pathname) {
                 isActive = shouldItemBeActive(pathname, sidebarItem);
               }
@@ -1182,11 +1268,13 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               // Check if item has dropdown: either has sidebar children OR is settings/registration/hospital-infrastructure with dropdown items
               // Registration should NOT have dropdown for clinic/hospital users - it's a direct link
               const hasDropdown =
+                "hasDropdown" in item &&
                 item.hasDropdown &&
                 (sidebarItem?.children ||
                   (item.key === "settings" && settingsItems.length > 0) ||
                   (item.key === "patient" && patientItems.length > 0) ||
                   (item.key === "doctors" && doctorItems.length > 0) ||
+                  (item.key === "ipdreception" && receptionItems.length > 0) ||
                   (item.key === "pre-booking" && preBookingItems.length > 0) ||
                   (item.key === "lead-request" && leadRequestItems.length > 0) ||
                   item.key === "hospital-infrastructure" ||
@@ -1391,6 +1479,18 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                     onNavigate?.();
                   }}
                   title="Doctor"
+                />
+              )}
+              {openDropdownKey === "ipdreception" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={receptionItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="IPD Reception"
                 />
               )}
 
