@@ -110,9 +110,6 @@ export function Step2IpdAdmission({
                         <span className="text-sm font-medium leading-snug text-[#262D3B]">
                           {doc.documentName}
                         </span>
-                        {doc.isSubmitted ? (
-                          <span className="text-xs font-medium text-[#0B8C00]">Submitted</span>
-                        ) : null}
                       </span>
                     </div>
                   );

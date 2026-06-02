@@ -81,8 +81,6 @@ export function Step1PatientFileVerification({
     });
   };
 
-  console.log("Rendering Step 1 with form state:", patient);
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[35%_65%]">
@@ -131,9 +129,8 @@ export function Step1PatientFileVerification({
                   <p className="text-xs font-medium text-[#525763]">Admission Number</p>
                   <p className="mt-2 text-xl font-bold text-[#262D3B]">{admissionNumber}</p>
                 </div>
-                <p className="text-center text-xs italic leading-relaxed text-[#434956]">
-                  Admission Number Generated Successfully! Please proceed with the admission
-                  process.
+                <p className="whitespace-nowrap text-center text-xs italic leading-relaxed text-[#434956]">
+                  Admission Number Generated Successfully! Please proceed with the admission process.
                 </p>
               </div>
             )}

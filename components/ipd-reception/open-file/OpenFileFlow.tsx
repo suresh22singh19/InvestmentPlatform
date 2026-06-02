@@ -41,6 +41,17 @@ const LISTING_QUERY_OPTIONS = {
   refetchOnMountOrArgChange: true as const,
 };
 
+function createUniqueAdmissionNumber(): string {
+  const now = new Date();
+  const yearPart = String(now.getFullYear()).slice(-2);
+  const monthPart = String(now.getMonth() + 1).padStart(2, "0");
+  const dayPart = String(now.getDate()).padStart(2, "0");
+  const datePart = `${yearPart}${monthPart}${dayPart}`;
+  const flowPart = String(Math.floor(1000 + Math.random() * 9000));
+
+  return `IPD-${datePart}-${flowPart}`;
+}
+
 type OpenFileFlowProps = {
   patientId: string;
 };
@@ -89,6 +100,7 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
 
   const [currentStep, setCurrentStep] = useState<OpenFileStep>(1);
   const [admissionNumberGenerated, setAdmissionNumberGenerated] = useState(false);
+  const [generatedAdmissionNumber, setGeneratedAdmissionNumber] = useState("");
   const [step1Form, setStep1Form] = useState<OpenFileStep1Form>(INITIAL_STEP1_FORM);
   const [selectedDocuments, setSelectedDocuments] = useState<Record<string, boolean>>({});
   const [confirmConsentsReceived, setConfirmConsentsReceived] = useState(false);
@@ -110,16 +122,17 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
       vitals: { ...INITIAL_STEP1_FORM.vitals },
       dietary: {
         dietPlanRequest: "",
-        clinicalNote: patientDetails?.clinicalNoteForFood ?? "",
+        clinicalNote: "",
       },
     });
     setAdmissionNumberGenerated(false);
+    setGeneratedAdmissionNumber("");
     setCurrentStep(1);
     setConfirmConsentsReceived(false);
     setConfirmIdTag(false);
     setFinalizeDialog({ open: false, variant: "success", message: "" });
     setDocumentsValidationError(null);
-  }, [listingPatient?.patientId, patientDetails?.clinicalNoteForFood]);
+  }, [listingPatient?.patientId]);
 
   useEffect(() => {
     setSelectedDocuments(buildSelectedDocumentsMap(requiredDocuments));
@@ -154,11 +167,10 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
     [requiredDocuments, selectedDocuments]
   );
 
-  const canFinalize =
-    confirmConsentsReceived && confirmIdTag && hasSelectedRequiredDocument;
+  const canFinalize = confirmConsentsReceived && hasSelectedRequiredDocument;
 
   const handleFinalize = async () => {
-    if (!confirmConsentsReceived || !confirmIdTag || !patientDetails || !listingPatient) return;
+    if (!confirmConsentsReceived || !patientDetails || !listingPatient) return;
 
     if (!hasSelectedRequiredDocument) {
       setDocumentsValidationError("Please select at least one document.");
@@ -233,8 +245,6 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
     );
   }
 
-  const generatedAdmissionNumber = `IPD-${patientId.padStart(6, "0")}`;
-console.log("fsfsd",patientDetails)
   return (
     <AppShell>
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -249,7 +259,10 @@ console.log("fsfsd",patientDetails)
           admissionNumberGenerated={admissionNumberGenerated}
           form={step1Form}
           onFormChange={setStep1Form}
-          onGenerateAdmissionNumber={() => setAdmissionNumberGenerated(true)}
+          onGenerateAdmissionNumber={() => {
+            setGeneratedAdmissionNumber(createUniqueAdmissionNumber());
+            setAdmissionNumberGenerated(true);
+          }}
           onBack={() => router.back()}
           onSaveDraft={() => undefined}
           onSaveAndNext={() => setCurrentStep(2)}
