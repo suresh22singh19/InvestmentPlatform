@@ -40,6 +40,7 @@ const NAV_ICON_SRC: Record<string, string> = {
   "lead-request": "/icons/RegistrationDarkIcon.svg",
   token: "/icons/TokenNav.svg",
   "discharge-pending": "/icons/RegistrationDarkIcon.svg",
+  "today-appointment": "/icons/RegistrationDarkIcon.svg",
   doctors: "/icons/DoctorDarkIcon.svg",
   "roles-master": "/icons/RoleMasterDarkIcon.svg",
   "branch-role-master": "/icons/BranchRoleMasterIcon.svg",
@@ -730,6 +731,7 @@ const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => 
 const BASE_TOP_NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
   { key: "settings", label: "Settings", hasDropdown: true },
+  { key: "today-appointment", label: "Today Appointment", href: "/today-appointment" },
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
   { key: "doctors", label: "Doctor", href: "/doctor" },
@@ -755,6 +757,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   voucher: ["vouchers", "voucher"],
   token: ["token", "tokens"],
   "discharge-pending": ["discharge-pending"],
+  "today-appointment": ["today-appointment"],
   doctors: ["doctor", "doctors"],
   nurse: ["nurse", "nurses"],
   registration: ["registration"],
@@ -1133,6 +1136,8 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               if (item.key === "settings" && pathname) {
                 // Check if pathname matches any settings route (all settings pages)
                 isActive = pathname?.startsWith("/settings");
+              } else if (item.key === "today-appointment" && pathname) {
+                isActive = pathname === "/today-appointment" || pathname?.startsWith("/today-appointment/");
               } else if (item.key === "patient" && pathname) {
                 // OPD lives under registration list; IPD/DayCare under /patient/* — keep Patient highlighted for all
                 isActive =

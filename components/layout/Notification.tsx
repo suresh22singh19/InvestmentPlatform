@@ -12,8 +12,8 @@ import {
 } from "@/store/api/notificationApi";
 import { useSocket } from "@/hooks/useSocket";
 
-/** Toggle when POST …/markNotificationAsRead is ready */
-const ENABLE_BELL_MARK_READ_API = false;
+/** Toggle when PATCH …/markNotificationsAsRead is ready */
+const ENABLE_BELL_MARK_READ_API = true;
 
 type Notification = {
   notification_id: number;
@@ -709,13 +709,9 @@ export function NotificationDropdown({
       socketMarkAsRead(notification_id);
 
       try {
-        const uid = userData?.user_id;
-        if (uid) {
-          await markBellNotificationAsReadMutation({
-            userId: uid,
-            notificationId: notification_id,
-          }).unwrap();
-        }
+        await markBellNotificationAsReadMutation({
+          notificationId: notification_id,
+        }).unwrap();
       } catch (error) {
         console.error("Error marking notification as read:", error);
       }
@@ -801,17 +797,13 @@ export function NotificationDropdown({
       });
 
       try {
-        const uid = userData?.user_id;
-        if (uid) {
-          await Promise.all(
-            unreadNotifications.map((item) =>
-              markBellNotificationAsReadMutation({
-                userId: uid,
-                notificationId: item.notification_id,
-              }).unwrap()
-            )
-          );
-        }
+        await Promise.all(
+          unreadNotifications.map((item) =>
+            markBellNotificationAsReadMutation({
+              notificationId: item.notification_id,
+            }).unwrap()
+          )
+        );
       } catch (error) {
         console.error("Error marking all notifications as read:", error);
       }

@@ -25,6 +25,7 @@ import {
 } from "@/store/api/dashboardApi";
 import type { DashboardSupportCategory, DashboardSupportContact } from "@/store/api/dashboardApi";
 import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
+import { useGetNursesQuery } from "@/store/api/nurseApi";
 import { usePermission } from "@/hooks/usePermission";
 
 const DASHBOARD_ESCALATION_CARD_TITLE =
@@ -177,6 +178,12 @@ export default function DashboardPage() {
     { skip: skipBranch, refetchOnMountOrArgChange: true }
   );
   const totalDoctorCount = doctorsData?.total ?? null;
+
+  const { data: nursesData, isLoading: isNursesLoading } = useGetNursesQuery(
+    { branchId, page: 1, limit: 100 },
+    { skip: skipBranch, refetchOnMountOrArgChange: true }
+  );
+  const totalNurseCount = nursesData?.total ?? null;
   const {
     data: supportContactsResponse,
     isLoading: isSupportContactsLoading,
@@ -470,7 +477,9 @@ export default function DashboardPage() {
           <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
             <div>
               <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Nurse</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
+              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
+                {isNursesLoading ? "—" : totalNurseCount !== null ? totalNurseCount : "—"}
+              </h4>
             </div>
             <div>
               <FaUserDoctor fontSize={45} color="#0B8C00" />

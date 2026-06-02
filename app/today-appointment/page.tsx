@@ -197,16 +197,6 @@ export default function DoctorListingPage() {
         ];
     });
 
-    if (!canView) {
-        return (
-            <AppShell>
-                <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
-                    You don&apos;t have permission to view today appointments.
-                </div>
-            </AppShell>
-        );
-    }
-
     return (
         <AppShell>
             <div className="flex flex-col gap-6">
@@ -215,46 +205,52 @@ export default function DoctorListingPage() {
                     <PageHeading title="Today Appointment" />
                 </div>
 
-                {/* Table Listing Card */}
-                <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
-                    <TableListingCard
-                        sections={[
-                            {
-                                id: "doctor-patients-list",
-                                title: "",
-                                titleRightContent: (
-                                    <div className="flex items-center gap-3">
-                                        <div style={{ width: "300px" }}>
-                                            <TableSearchInput
-                                                value={searchTerm}
-                                                onChange={setSearchTerm}
-                                                placeholder="Search Here..."
-                                            />
+                {!canView ? (
+                    <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                        You don&apos;t have permission to view today appointments.
+                    </div>
+                ) : (
+                    /* Table Listing Card */
+                    <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
+                        <TableListingCard
+                            sections={[
+                                {
+                                    id: "doctor-patients-list",
+                                    title: "",
+                                    titleRightContent: (
+                                        <div className="flex items-center gap-3">
+                                            <div style={{ width: "300px" }}>
+                                                <TableSearchInput
+                                                    value={searchTerm}
+                                                    onChange={setSearchTerm}
+                                                    placeholder="Search Here..."
+                                                />
+                                            </div>
+                                            <RefreshButton onClick={() => console.log("Refreshed listing data!")} />
                                         </div>
-                                        <RefreshButton onClick={() => alert("Refreshed listing data!")} />
-                                    </div>
-                                ),
-                                columns,
-                                rows,
-                                isLoading: false,
-                                isError: false,
-                                errorMessage: "Facing server API error",
-                                emptyMessage: "No appointments found",
-                                pagination: {
-                                    currentPage,
-                                    totalItems: 1000,
-                                    itemsPerPage,
-                                    onPageChange: setCurrentPage,
-                                    onItemsPerPageChange: (items: number) => {
-                                        setItemsPerPage(items);
-                                        setCurrentPage(1);
+                                    ),
+                                    columns,
+                                    rows,
+                                    isLoading: false,
+                                    isError: false,
+                                    errorMessage: "Facing server API error",
+                                    emptyMessage: "No appointments found",
+                                    pagination: {
+                                        currentPage,
+                                        totalItems: 1000,
+                                        itemsPerPage,
+                                        onPageChange: setCurrentPage,
+                                        onItemsPerPageChange: (items: number) => {
+                                            setItemsPerPage(items);
+                                            setCurrentPage(1);
+                                        },
+                                        itemsPerPageOptions: [10, 20, 50, 100],
                                     },
-                                    itemsPerPageOptions: [10, 20, 50, 100],
                                 },
-                            },
-                        ]}
-                    />
-                </div>
+                            ]}
+                        />
+                    </div>
+                )}
             </div>
         </AppShell>
     );

@@ -206,7 +206,6 @@ function TodayAppointmentContent() {
             }
             setStep(3);
         } else {
-            alert("Consultation and Physical Examination saved successfully!");
             router.push("/today-appointment");
         }
     };

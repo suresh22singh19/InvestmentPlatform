@@ -10,6 +10,7 @@ import { Button } from "./Button";
 import { DatePicker } from "./DatePicker";
 import { Slider } from "./Slider";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { MessageDialog } from "./MessageDialog";
 
 export interface ClinicalAssessmentRecordProps {
     className?: string;
@@ -94,6 +95,21 @@ const DURATION_OPTIONS = [
 ];
 
 export function ClinicalAssessmentRecord({ className = "", onComplete, initialGender, initialVisitCount }: ClinicalAssessmentRecordProps) {
+    // Dialog & Submission States
+    const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [showErrorDialog, setShowErrorDialog] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleConfirmSubmit = () => {
+        setIsSubmitting(true);
+        setTimeout(() => {
+            setIsSubmitting(false);
+            setIsConfirmDialogOpen(false);
+            setShowSuccessDialog(true);
+        }, 800);
+    };
+
     // ------------------ 1. Patient Presentation State ------------------
     const [chiefComplaint, setChiefComplaint] = useState("");
     const [symptoms, setSymptoms] = useState("");
@@ -541,7 +557,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
             return;
         }
 
-        onComplete?.();
+        setIsConfirmDialogOpen(true);
     };
 
     // Handle multiselect buttons toggling
@@ -2024,9 +2040,57 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                     className="bg-[#0B8C00] hover:bg-[#0A7F00] h-11 px-8 rounded-full font-semibold"
                     onClick={handleSaveAndContinue}
                 >
-                    Save & Continue
+                    Submit
                 </Button>
             </div>
+
+            {/* Confirmation Dialog */}
+            <MessageDialog
+                open={isConfirmDialogOpen}
+                onClose={() => !isSubmitting && setIsConfirmDialogOpen(false)}
+                iconSlot={
+                    <div className="flex h-[74px] w-[74px] items-center justify-center rounded-full bg-[#0B8C00]">
+                        <span className="text-[48px] font-bold text-white leading-none font-inter select-none">?</span>
+                    </div>
+                }
+                message="Are you sure that the data you have filled in is accurate and correct?"
+                confirmText="Yes"
+                cancelText="No"
+                showCancel={true}
+                onConfirm={handleConfirmSubmit}
+                onCancel={() => setIsConfirmDialogOpen(false)}
+                isActionLoading={isSubmitting}
+            />
+
+            {/* Success Dialog */}
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => {
+                    setShowSuccessDialog(false);
+                    onComplete?.();
+                }}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message="Consultation and Physical Examination saved successfully!"
+                confirmText="Success"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowSuccessDialog(false);
+                    onComplete?.();
+                }}
+            />
+
+            {/* Error Dialog */}
+            <MessageDialog
+                open={showErrorDialog}
+                onClose={() => setShowErrorDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message="Something went wrong while saving the consultation data. Please try again."
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowErrorDialog(false)}
+            />
 
         </div>
     );

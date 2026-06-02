@@ -1408,6 +1408,20 @@ interface CreateMasterServiceResponse {
   statusCode?: number;
 }
 
+export interface UpdateMasterServiceRequest {
+  id: number;
+  price: number;
+  status: boolean;
+}
+
+export interface UpdateMasterServiceResponse {
+  success: boolean;
+  data?: MasterServiceItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
 interface DiagnosisCategory {
   id: number;
   name: string;
@@ -2805,6 +2819,14 @@ export const settingsApi = baseApi.injectEndpoints({
         body: payload,
       }),
     }),
+    updateMasterService: builder.mutation<UpdateMasterServiceResponse, UpdateMasterServiceRequest>({
+      query: ({ id, ...payload }) => ({
+        url: `/admin/settings/master-service/updateMasterService/${id}`,
+        method: "PATCH",
+        body: payload,
+      }),
+      invalidatesTags: ["MasterServices"],
+    }),
     getDiagnosisCategoriesOnly: builder.query<DiagnosisCategoriesOnlyResponse, GetDiagnosisCategoriesOnlyParams | void>({
       query: (params) => {
         const queryParams = new URLSearchParams();
@@ -3471,6 +3493,7 @@ export const {
   useDeleteRoomTypeMutation,
   useGetAllMasterServicesQuery,
   useCreateMasterServiceMutation,
+  useUpdateMasterServiceMutation,
   useGetDiagnosisCategoriesOnlyQuery,
   useGetDiagnosisCategoriesQuery,
   useCreateDiagnosisCategoryMutation,

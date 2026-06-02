@@ -39,6 +39,7 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     /** `slugify("Discharge Pending")` — branch pending discharge list */
     "discharge-pending": ["/discharge-pending"],
     "nurse": ["/nurse"],
+    "today-appointment": ["/today-appointment"],
 };
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
@@ -106,6 +107,7 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "view-daily-reports": ["/gate/reports"],
     /** Submodule key matches parent name "Discharge Pending" */
     "discharge-pending": ["/discharge-pending"],
+    "today-appointment": ["/today-appointment"],
 };
 
 const RESTRICTED_ROOT_PREFIXES = [
@@ -123,6 +125,7 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/hospital-infrastructure",
     "/discharge-pending",
     "/nurse",
+    "/today-appointment",
 ];
 
 /**

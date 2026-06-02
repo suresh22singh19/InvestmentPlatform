@@ -198,6 +198,19 @@ export interface UpdateRoleParams {
     body: UpdateRoleRequest;
 }
 
+export interface UpdateRoleStatusRequest {
+    roleId: number;
+    isActive: boolean;
+}
+
+export interface UpdateRoleStatusResponse {
+    success: boolean;
+    message: string;
+    timestamp?: string;
+    statusCode?: number;
+    data?: unknown;
+}
+
 /* ---------- Modules catalog (Settings, User Management, …) ---------- */
 
 /** Child row under a parent module (e.g. GET getListOfmodules?branchId= nested `data[]`). */
@@ -894,6 +907,15 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
             invalidatesTags: (result, _err, { roleId }) => [ROLE_TAGS.list, ROLE_TAGS.role(roleId)],
         }),
 
+        updateRoleStatus: builder.mutation<UpdateRoleStatusResponse, UpdateRoleStatusRequest>({
+            query: ({ roleId, isActive }) => ({
+                url: `/admin/role-and-permissions/updateRoleStatus/${roleId}`,
+                method: "PATCH",
+                body: { isActive },
+            }),
+            invalidatesTags: (result, _err, { roleId }) => [ROLE_TAGS.list, ROLE_TAGS.role(roleId)],
+        }),
+
         /**
          * GET /admin/role-and-permissions/getListOfmodules
          * Parent modules (Settings, User Management, …) and rows for permission matrix.
@@ -1203,6 +1225,7 @@ export const {
     useGetRoleByIdQuery,
     useLazyGetRoleByIdQuery,
     useUpdateRoleMutation,
+    useUpdateRoleStatusMutation,
     useGetListOfModulesQuery,
     useLazyGetListOfModulesQuery,
     useGetStatesByZoneQuery,

@@ -114,13 +114,12 @@ export const notificationApi = baseApi.injectEndpoints({
       providesTags: ["AppBellNotifications"],
     }),
     markBellNotificationAsRead: builder.mutation<
-      { success: boolean; message?: string; statusCode?: number },
-      { userId: number; notificationId: number }
+      { success: boolean; message?: string; statusCode?: number; data: null; timestamp?: string },
+      { notificationId: number }
     >({
-      query: (body) => ({
-        url: "/dashboard/markNotificationAsRead",
-        method: "POST",
-        body,
+      query: ({ notificationId }) => ({
+        url: `/dashboard/markNotificationsAsRead?notificationId=${notificationId}`,
+        method: "PATCH",
       }),
       invalidatesTags: ["AppBellNotifications"],
     }),
