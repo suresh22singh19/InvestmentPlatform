@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { MessageDialog, SpinnerLoader } from "@/components/ui";
@@ -11,6 +11,7 @@ import { Step2IpdAdmission } from "@/components/ipd-reception/open-file/Step2Ipd
 import {
   useCreateIpdAdmissionMutation,
   useGetIpdAwaitingPatientsQuery,
+  useSubmitPendingDocumentsMutation,
 } from "@/store/api/ipdReceptionApi";
 import { buildCreateIpdAdmissionPayload } from "@/lib/ipd-reception/buildCreateIpdAdmissionPayload";
 import { mapAwaitingPatientToOpenFile } from "@/lib/ipd-reception/mapAwaitingPatientToOpenFile";
@@ -58,10 +59,12 @@ type OpenFileFlowProps = {
 
 export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const selectedBranch = useAppSelector(selectSelectedBranch);
   const userBranchId = useAppSelector(selectUserBranchId);
   const numericPatientId = Number(patientId);
   const isValidPatientId = Number.isFinite(numericPatientId) && numericPatientId > 0;
+  const nonCompliantMode = searchParams.get("mode") === "non-compliant";
 
   const {
     data: awaitingListingResponse,
@@ -98,7 +101,7 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
     [patientDetails?.branchId, listingPatient?.branchId, selectedBranch?.id, userBranchId]
   );
 
-  const [currentStep, setCurrentStep] = useState<OpenFileStep>(1);
+  const [currentStep, setCurrentStep] = useState<OpenFileStep>(nonCompliantMode ? 2 : 1);
   const [admissionNumberGenerated, setAdmissionNumberGenerated] = useState(false);
   const [generatedAdmissionNumber, setGeneratedAdmissionNumber] = useState("");
   const [step1Form, setStep1Form] = useState<OpenFileStep1Form>(INITIAL_STEP1_FORM);
@@ -115,6 +118,9 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
   const [createIpdAdmission, { isLoading: isCreatingAdmission }] =
     useCreateIpdAdmissionMutation();
 
+  const [submitPendingDocuments, { isLoading: isSubmittingDocuments }] =
+    useSubmitPendingDocumentsMutation();
+
   useEffect(() => {
     if (!listingPatient) return;
 
@@ -127,12 +133,12 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
     });
     setAdmissionNumberGenerated(false);
     setGeneratedAdmissionNumber("");
-    setCurrentStep(1);
+    setCurrentStep(nonCompliantMode ? 2 : 1);
     setConfirmConsentsReceived(false);
     setConfirmIdTag(false);
     setFinalizeDialog({ open: false, variant: "success", message: "" });
     setDocumentsValidationError(null);
-  }, [listingPatient?.patientId]);
+  }, [listingPatient?.patientId, nonCompliantMode]);
 
   useEffect(() => {
     setSelectedDocuments(buildSelectedDocumentsMap(requiredDocuments));
@@ -147,8 +153,11 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
   }, [requiredDocuments, selectedDocuments]);
 
   const pageTitle = useMemo(
-    () => (currentStep === 1 ? "Patient File & Verification" : "IPD Admission"),
-    [currentStep]
+    () => {
+      if (nonCompliantMode) return "Documents";
+      return currentStep === 1 ? "Patient File & Verification" : "IPD Admission";
+    },
+    [currentStep, nonCompliantMode]
   );
 
   const handleToggleDocument = (documentMasterId: number) => {
@@ -187,26 +196,44 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
     }
 
     try {
-      const payload = buildCreateIpdAdmissionPayload({
-        patientId: numericPatientId,
-        branchId,
-        patientName: patientDetails.patientName,
-        step1Form,
-        requiredDocuments,
-        selectedDocuments,
-      });
-
-      await createIpdAdmission(payload).unwrap();
-      setFinalizeDialog({
-        open: true,
-        variant: "success",
-        message: "Admission finalized successfully.",
-      });
+      if (nonCompliantMode) {
+        const documents = requiredDocuments.map((doc) => ({
+          documentMasterId: doc.documentMasterId,
+          isSubmitted: Boolean(selectedDocuments[String(doc.documentMasterId)]),
+        }));
+        await submitPendingDocuments({
+          patientId: numericPatientId,
+          documents,
+        }).unwrap();
+        setFinalizeDialog({
+          open: true,
+          variant: "success",
+          message: "Documents updated successfully.",
+        });
+      } else {
+        const payload = buildCreateIpdAdmissionPayload({
+          patientId: numericPatientId,
+          branchId,
+          patientName: patientDetails.patientName,
+          step1Form,
+          requiredDocuments,
+          selectedDocuments,
+        });
+        await createIpdAdmission(payload).unwrap();
+        setFinalizeDialog({
+          open: true,
+          variant: "success",
+          message: "Admission finalized successfully.",
+        });
+      }
     } catch (err) {
       setFinalizeDialog({
         open: true,
         variant: "error",
-        message: getRtkErrorMessage(err, "Failed to finalize IPD admission."),
+        message: getRtkErrorMessage(
+          err,
+          nonCompliantMode ? "Failed to update documents." : "Failed to finalize IPD admission."
+        ),
       });
     }
   };
@@ -249,7 +276,7 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
     <AppShell>
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <PageHeading title={pageTitle} />
-        <ReceptionAdmissionStepper currentStep={currentStep} />
+        {!nonCompliantMode ? <ReceptionAdmissionStepper currentStep={currentStep} /> : null}
       </div>
 
       {currentStep === 1 ? (
@@ -281,8 +308,9 @@ export function OpenFileFlow({ patientId }: OpenFileFlowProps) {
           onBack={() => setCurrentStep(1)}
           onFinalize={() => void handleFinalize()}
           canFinalize={canFinalize}
-          isFinalizing={isCreatingAdmission}
+          isFinalizing={nonCompliantMode ? isSubmittingDocuments : isCreatingAdmission}
           documentsValidationError={documentsValidationError}
+          nonCompliantMode={nonCompliantMode}
         />
       )}
 

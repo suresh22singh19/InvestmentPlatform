@@ -15,6 +15,8 @@ import type {
   IpdPatientOverviewResponse,
   IpdWardCapacityOverviewParams,
   IpdWardCapacityOverviewResponse,
+  SubmitPendingDocumentsPayload,
+  SubmitPendingDocumentsResponse,
 } from "@/lib/ipd-reception/types";
 
 function toQueryString(params: Record<string, string | number | undefined>) {
@@ -121,6 +123,19 @@ export const ipdReceptionApi = baseApi.injectEndpoints({
         { type: "IpdReception", id: "STATS" },
       ],
     }),
+
+    /** POST /patient-admissions/submitPendingDocuments */
+    submitPendingDocuments: builder.mutation<
+      SubmitPendingDocumentsResponse,
+      SubmitPendingDocumentsPayload
+    >({
+      query: (body) => ({
+        url: "/patient-admissions/submitPendingDocuments",
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: [{ type: "IpdReception", id: "AWAITING_LIST" }],
+    }),
   }),
 });
 
@@ -131,4 +146,5 @@ export const {
   useGetIpdPatientOverviewQuery,
   useGetIpdAwaitingPatientsQuery,
   useCreateIpdAdmissionMutation,
+  useSubmitPendingDocumentsMutation,
 } = ipdReceptionApi;

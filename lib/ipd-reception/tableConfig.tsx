@@ -19,6 +19,7 @@ function getAdmissionTypeVariant(
 
 function renderPatientActions(patient: IpdAwaitingPatientTableRow) {
   const patientHref = `/ipd-reception/patient/${patient.patientId}`;
+  const nonCompliantHref = `${patientHref}/file?mode=non-compliant`;
 
   if (isPatientCompliant(patient.patientComplianceStatus)) {
     return (
@@ -28,13 +29,15 @@ function renderPatientActions(patient: IpdAwaitingPatientTableRow) {
             View Patient
           </Button>
         </Link>
-        <Button
-          variant="outline"
-          size="xsmall"
-          className="!min-w-0 whitespace-nowrap !border-[#EF4444] !text-[#DC2626] hover:!bg-[#FEF2F2]"
-        >
-          Non Compliant
-        </Button>
+        <Link href={nonCompliantHref}>
+          <Button
+            variant="outline"
+            size="xsmall"
+            className="!min-w-0 whitespace-nowrap !border-[#EF4444] !text-[#DC2626] hover:!bg-[#FEF2F2]"
+          >
+            Non Compliant
+          </Button>
+        </Link>
       </div>
     );
   }

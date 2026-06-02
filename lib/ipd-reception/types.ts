@@ -416,3 +416,20 @@ export interface CreateIpdAdmissionResponse {
   timestamp?: string;
   statusCode?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Submit pending documents API (non-compliant mode)
+// ---------------------------------------------------------------------------
+
+export interface SubmitPendingDocumentsPayload {
+  patientId: number;
+  documents: CreateIpdAdmissionDocumentPayload[];
+}
+
+export interface SubmitPendingDocumentsResponse {
+  success: boolean;
+  message: string;
+  data?: unknown;
+  timestamp?: string;
+  statusCode?: number;
+}
