@@ -2,18 +2,18 @@ import type {
   AwaitingPatient,
   AwaitingPatientApiRow,
   IpdAwaitingPatientTableRow,
-} from "@/lib/ipd-reception/ipdAwaitingPatientsTypes";
+} from "./types";
 
 /** Normalizes listing API rows (`branchid` → `branchId`). */
-export function normalizeAwaitingPatient(patient: AwaitingPatientApiRow): AwaitingPatient {
-  const rawBranch = patient.branchId ?? patient.branchid;
+export function normalizeAwaitingPatient(row: AwaitingPatientApiRow): AwaitingPatient {
+  const rawBranch = row.branchId ?? row.branchid;
   const branchId =
     rawBranch != null && Number.isFinite(Number(rawBranch)) ? Number(rawBranch) : undefined;
 
   return {
-    ...patient,
+    ...row,
     branchId,
-  };
+  } as AwaitingPatient;
 }
 
 export function isPatientCompliant(complianceStatus: string | null | undefined): boolean {

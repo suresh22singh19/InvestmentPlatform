@@ -19,7 +19,7 @@ import {
 import { registrationListPathFromBranchType } from "@/lib/utils/registrationBranchRoutes";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { hasModuleViewAccess, type NormalizedPermissionsMap } from "@/utils/permission";
-import { RECEPTION_TOP_NAV_TABS } from "@/lib/ipd-reception/constants";
+import { RECEPTION_NAV_MENU_ITEMS } from "@/lib/ipd-reception/constants";
 
 // Email → registration route mapping for users who must see only one registration page.
 const EMAIL_REGISTRATION_ROUTE: Record<string, string> = {
@@ -47,9 +47,6 @@ const NAV_ICON_SRC: Record<string, string> = {
   nurse: "/icons/UsersDarkIcon.svg",
   ipdreception: "/icons/patientBed.svg",
   "ipdreception-dashboard": "/icons/DashboardDarkIcon.svg",
-  "ipdreception-admitted-patients": "/icons/patients.svg",
-  "ipdreception-daily-operations": "/icons/calendarCheck.svg",
-  "ipdreception-historical-patients": "/icons/patient_history.svg",
 };
 
 type TopNavigationBarProps = {
@@ -472,11 +469,11 @@ const getAllNurseItems = (): SettingsItem[] => [
 ];
 
 const getAllReceptionItems = (): SettingsItem[] =>
-  RECEPTION_TOP_NAV_TABS.map((tab) => ({
-    key: `ipdreception-${tab.value}`,
-    label: tab.label,
-    href: tab.href,
-    iconSrc: tab.iconSrc,
+  RECEPTION_NAV_MENU_ITEMS.map((item) => ({
+    key: item.key,
+    label: item.label,
+    href: item.href,
+    iconSrc: item.iconSrc,
   }));
 
 const getPreBookingItems = (): SettingsItem[] => [
@@ -861,24 +858,6 @@ const NURSE_SUBMODULE_ALIASES: Record<string, string[]> = {
 
 const IPD_RECEPTION_SUBMODULE_ALIASES: Record<string, string[]> = {
   "ipdreception-dashboard": ["reception", "ipd-reception", "ipdreception", "dashboard", "ipd-reception-dashboard"],
-  "ipdreception-admitted-patients": [
-    "reception",
-    "ipd-reception",
-    "ipdreception",
-    "admitted-patients",
-    "admitted-patients-registry",
-    "pending-discharges",
-    "discharge",
-    "care-record",
-  ],
-  "ipdreception-daily-operations": ["reception", "ipd-reception", "ipdreception", "daily-operations"],
-  "ipdreception-historical-patients": [
-    "reception",
-    "ipd-reception",
-    "ipdreception",
-    "historical-patients",
-    "historical-patient-registry",
-  ],
 };
 
 const normalizeName = (value: string) =>

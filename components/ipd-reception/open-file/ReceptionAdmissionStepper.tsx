@@ -1,7 +1,7 @@
 "use client";
 
 import { OPEN_FILE_STEP_LABELS } from "@/lib/ipd-reception/openFileMock";
-import type { OpenFileStep } from "@/lib/ipd-reception/openFileTypes";
+import type { OpenFileStep } from "@/lib/ipd-reception/types";
 
 type ReceptionAdmissionStepperProps = {
   currentStep: OpenFileStep;

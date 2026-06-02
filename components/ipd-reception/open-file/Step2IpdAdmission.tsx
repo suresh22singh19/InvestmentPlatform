@@ -3,8 +3,7 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
 import { Button, Checkbox, SpinnerLoader } from "@/components/ui";
-import type { RequiredDocumentItem } from "@/lib/ipd-reception/ipdAwaitingPatientsTypes";
-import type { OpenFileAdmissionSummary } from "@/lib/ipd-reception/openFileTypes";
+import type { OpenFileAdmissionSummary, RequiredDocumentItem } from "@/lib/ipd-reception/types";
 
 const FINALIZE_DISCLAIMER =
   "By clicking Finalize, you confirm that all physical documents have been collected.";

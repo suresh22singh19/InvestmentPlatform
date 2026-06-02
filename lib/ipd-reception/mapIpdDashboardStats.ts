@@ -1,8 +1,16 @@
 import type { ReceptionDashboardStats } from "@/lib/ipd-reception/types";
-import type { IpdDashboardStatsData } from "@/lib/ipd-reception/ipdDashboardStatsTypes";
+
+type IpdDashboardStatsBreakdown = Array<{ wardType: string; freeCount?: number }>;
+
+type IpdDashboardStatsData = {
+  totalAwaiting?: { count?: number; lastHourCount?: number };
+  admittedToday?: { count?: number; lastHourCount?: number };
+  availableBeds?: { count?: number; breakdown?: IpdDashboardStatsBreakdown };
+  dischargePending?: { count?: number };
+};
 
 function findGeneralWardFreeCount(
-  breakdown: IpdDashboardStatsData["availableBeds"]["breakdown"]
+  breakdown: IpdDashboardStatsBreakdown
 ): number {
   const general = breakdown.find(
     (item) =>

@@ -1,61 +1,26 @@
 import type {
-  ReceptionDashboardTab,
   ReceptionStatSubtextIcon,
   WardCapacityStatusColor,
 } from "./types";
 
 export const RECEPTION_LOGIN_TYPE = "reception";
 
-export const RECEPTION_DASHBOARD_TABS: {
-  value: ReceptionDashboardTab;
-  label: string;
-  iconSrc: string;
-  href: string;
-}[] = [
+export const RECEPTION_DASHBOARD_TAB = {
+  value: "dashboard" as const,
+  label: "Dashboard",
+  iconSrc: "/icons/DashboardDarkIcon.svg",
+  href: "/ipd-reception/dashboard",
+};
+
+/** IPD Reception top-nav dropdown — Dashboard only. */
+export const RECEPTION_NAV_MENU_ITEMS = [
   {
-    value: "dashboard",
-    label: "Dashboard",
-    iconSrc: "/icons/DashboardDarkIcon.svg",
-    href: "/ipd-reception/dashboard",
-  },
-  {
-    value: "admitted-patients",
-    label: "Admitted Patients Registry",
-    iconSrc: "/icons/patients.svg",
-    href: "/ipd-reception/admitted-patients",
-  },
-  {
-    value: "daily-operations",
-    label: "Daily Operations",
-    iconSrc: "/icons/calendarCheck.svg",
-    href: "/ipd-reception/daily-operations",
-  },
-  {
-    value: "historical-patients",
-    label: "Historical Patient Registry",
-    iconSrc: "/icons/patient_history.svg",
-    href: "/ipd-reception/historical-patients",
+    key: "ipdreception-dashboard",
+    label: RECEPTION_DASHBOARD_TAB.label,
+    href: RECEPTION_DASHBOARD_TAB.href,
+    iconSrc: RECEPTION_DASHBOARD_TAB.iconSrc,
   },
 ];
-
-/**
- * Reception top-nav dropdown — only Dashboard is shown for now.
- * Other items remain in RECEPTION_DASHBOARD_TABS (routes and pages are not removed).
- */
-export const RECEPTION_TOP_NAV_TABS = RECEPTION_DASHBOARD_TABS.filter(
-  (tab) => tab.value === "dashboard"
-);
-
-/** Shared top-nav dropdown items for Reception menu. */
-export const RECEPTION_NAV_MENU_ITEMS = RECEPTION_TOP_NAV_TABS.map((tab) => ({
-
-// ALL TOPBAR NAV ITEMS ARE COMMENTED OUT EXCEPT DASHBOARD FOR NOW, AS PER PRODUCT DECISION.
-// export const RECEPTION_NAV_MENU_ITEMS = RECEPTION_DASHBOARD_TABS.map((tab) => ({
-  key: `ipdreception-${tab.value}`,
-  label: tab.label,
-  href: tab.href,
-  iconSrc: tab.iconSrc,
-}));
 
 export const RECEPTION_STAT_CARDS = [
   {

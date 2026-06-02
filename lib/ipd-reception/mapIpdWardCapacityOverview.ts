@@ -1,11 +1,46 @@
-import type {
-  IpdWardCapacityOverviewApiItem,
-  IpdWardCapacityOverviewData,
-  IpdWardCapacityOverviewResponse,
-  IpdWardCapacityOverviewView,
-} from "./ipdWardCapacityOverviewTypes";
 import type { WardCapacityItem, WardCapacityStatusColor } from "./types";
 import { buildWardCapacityItem, calculateOccupancyPercentage } from "./utils";
+
+type IpdWardCapacityOverviewResponse = {
+  data?: IpdWardCapacityOverviewData | IpdWardCapacityOverviewApiItem[];
+  categories?: IpdWardCapacityOverviewApiItem[];
+};
+
+type IpdWardCapacityOverviewData = {
+  categories?: IpdWardCapacityOverviewApiItem[];
+  roomTypes?: IpdWardCapacityOverviewApiItem[];
+  wardCapacity?: IpdWardCapacityOverviewApiItem[];
+  wardCapacityOverview?: IpdWardCapacityOverviewApiItem[];
+  wards?: IpdWardCapacityOverviewApiItem[];
+};
+
+export type IpdWardCapacityOverviewView = {
+  wardCapacity: WardCapacityItem[];
+  roomTypes: WardCapacityItem[];
+};
+
+type IpdWardCapacityOverviewApiItem = {
+  id?: string | number | null;
+  roomCategory?: string | null;
+  wardCategory?: string | null;
+  roomType?: string | null;
+  roomTyp?: string | null;
+  wardType?: string | null;
+  name?: string | null;
+  label?: string | null;
+  totalCapacity?: number | null;
+  totalBeds?: number | null;
+  total?: number | null;
+  bedCount?: number | null;
+  occupiedBeds?: number | null;
+  occupied?: number | null;
+  freeBeds?: number | null;
+  free?: number | null;
+  availableBeds?: number | null;
+  statusColor?: string | null;
+  color?: string | null;
+  status?: string | null;
+};
 
 function slugifyId(value: string): string {
   return value

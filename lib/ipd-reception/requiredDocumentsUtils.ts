@@ -1,4 +1,4 @@
-import type { AwaitingPatient, RequiredDocumentItem } from "./ipdAwaitingPatientsTypes";
+import type { AwaitingPatient, RequiredDocumentItem } from "./types";
 
 export function sortRequiredDocuments(
   documents: RequiredDocumentItem[] | undefined
@@ -37,5 +37,8 @@ export function hasAtLeastOneSelectedDocument(
   selectedDocuments: Record<string, boolean>
 ): boolean {
   if (requiredDocuments.length === 0) return true;
-  return requiredDocuments.some((doc) => Boolean(selectedDocuments[String(doc.documentMasterId)]));
+  return requiredDocuments.some((doc) =>
+    Boolean(selectedDocuments[String(doc.documentMasterId)])
+  );
 }
+

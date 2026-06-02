@@ -1,5 +1,28 @@
-import type { IpdPatientOverviewAssignedRoom, IpdPatientOverviewData } from "./ipdPatientOverviewTypes";
-import type { OpenFilePatientDetails, OpenFilePatientVitalsSnapshot } from "./openFileTypes";
+// Define required vitals snapshot type locally because ./types does not export it
+type OpenFilePatientVitalsSnapshot = {
+  bloodPressure: string;
+  sugarLevel: string;
+  temperature: string;
+  pulseRate: string;
+  spo2: string;
+};
+
+type OpenFilePatientDetails = {
+  patientName: string;
+  uhid: string;
+  admissionType: string;
+  wardCategory: string;
+  vitalsSnapshot: OpenFilePatientVitalsSnapshot;
+  admissionSummary: {
+    wardAssigned: string;
+    billingType: string;
+    consultant: string;
+  };
+  clinicalNoteForFood: string;
+};
+
+type IpdPatientOverviewData = Record<string, any>;
+type IpdPatientOverviewAssignedRoom = Record<string, any>;
 
 function displayValue(value: unknown, fallback = "—"): string {
   if (value == null || value === "") return fallback;

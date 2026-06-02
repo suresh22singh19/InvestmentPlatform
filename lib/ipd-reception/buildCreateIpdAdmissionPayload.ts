@@ -1,6 +1,19 @@
-import type { RequiredDocumentItem } from "./ipdAwaitingPatientsTypes";
-import type { CreateIpdAdmissionPayload } from "./createIpdAdmissionTypes";
-import type { OpenFileStep1Form } from "./openFileTypes";
+type RequiredDocumentItem = {
+  documentMasterId: number;
+};
+
+type OpenFileStep1Form = {
+  vitals: {
+    bloodPressure: string;
+    sugarLevel: string;
+    temperature: string;
+    pulseRate: string;
+    spo2: string;
+  };
+  dietary: {
+    clinicalNote: string;
+  };
+};
 
 type BuildCreateIpdAdmissionPayloadArgs = {
   patientId: number;
@@ -9,6 +22,25 @@ type BuildCreateIpdAdmissionPayloadArgs = {
   step1Form: OpenFileStep1Form;
   requiredDocuments: RequiredDocumentItem[];
   selectedDocuments: Record<string, boolean>;
+};
+
+type CreateIpdAdmissionPayload = {
+  patientId: number;
+  branchId: number;
+  patientName: string;
+  documents: {
+    documentMasterId: number;
+    isSubmitted: boolean;
+  }[];
+  vitals: {
+    bloodPressure: string;
+    sugarLevel: string;
+    temperature: string;
+    pulse: string;
+    spo2: string;
+    vitalsNote: string;
+    source: string;
+  };
 };
 
 export function buildCreateIpdAdmissionPayload({

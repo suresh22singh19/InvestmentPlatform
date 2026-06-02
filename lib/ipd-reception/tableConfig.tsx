@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Badge, Button } from "@/components/ui";
 import type { TableListingSection } from "@/components/ui";
-import type { IpdAwaitingPatientTableRow } from "@/lib/ipd-reception/ipdAwaitingPatientsTypes";
+import type { IpdAwaitingPatientTableRow } from "@/lib/ipd-reception/types";
 import { ITEMS_PER_PAGE_OPTIONS } from "@/lib/ipd-reception/constants";
 import { isPatientCompliant } from "@/lib/ipd-reception/mapIpdAwaitingPatients";
 
@@ -95,9 +95,7 @@ export function buildAwaitingAdmissionTableSection({
   const rows: TableListingSection["rows"] = patients.map((patient, index) => {
     const srNo = String((currentPage - 1) * itemsPerPage + index + 1).padStart(2, "0");
 
-    const uhid = (
-      <span className="font-medium text-[#262D3B]">{patient.patientUhid}</span>
-    );
+    const uhid = <span className="font-medium text-[#262D3B]">{patient.patientUhid}</span>;
 
     const admissionTypeBadge = (
       <Badge variant={getAdmissionTypeVariant(patient.admissionType)} className="font-medium">
@@ -136,3 +134,4 @@ export function buildAwaitingAdmissionTableSection({
     },
   };
 }
+

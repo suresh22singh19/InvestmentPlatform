@@ -24,7 +24,7 @@ import {
 } from "@/lib/ipd-reception/requiredDocumentsUtils";
 import { useAppSelector } from "@/store/hooks";
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
-import type { OpenFileStep, OpenFileStep1Form } from "@/lib/ipd-reception/openFileTypes";
+import type { OpenFileStep, OpenFileStep1Form } from "@/lib/ipd-reception/types";
 
 const INITIAL_STEP1_FORM: OpenFileStep1Form = {
   vitals: {

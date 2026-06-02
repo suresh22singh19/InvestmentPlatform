@@ -6,7 +6,83 @@ import type { PatientDetailsBadge, PatientDetailsInfoItem } from "@/components/u
 import type { PatientInformationTimelineItem } from "@/components/ui/PatientInformationTimelineCard";
 import type { ReferralPatientInfoItem } from "@/components/ui/referralPatientInfo";
 import type { VitalItem } from "@/components/ui/VitalsCard";
-import type { IpdPatientOverviewData } from "./ipdPatientOverviewTypes";
+
+type IpdPatientOverviewData = {
+  registration?: {
+    patient_title?: string | null;
+    patient_name?: string | null;
+    contact_number?: string | null;
+    whatsapp_no?: string | null;
+    age?: number | string | null;
+    gender?: string | null;
+    blood_group?: string | null;
+    patient_type?: string | null;
+    guardian_title?: string | null;
+    guardian_name?: string | null;
+    marital_status?: string | null;
+    email_address?: string | null;
+    aadhar_card_no?: string | null;
+    height?: string | number | null;
+    weight?: string | number | null;
+    diet_type?: string | null;
+    occupation?: string | null;
+    religion?: string | null;
+    patient_sub_type?: string | null;
+    benificiary_id?: string | null;
+    insurance_company?: string | null;
+    ayush_covered?: string | null;
+    js_health_card_no?: string | null;
+    allergies?: string | null;
+    surgeries?: string | null;
+  } | null;
+  appointment?: {
+    appointment_date?: string | null;
+    time_slot?: string | null;
+    token?: string | null;
+    doctor_fee?: string | null;
+    diagnosis_symptoms?: string | null;
+    created_at?: string | null;
+    allergies?: string | null;
+    surgeries?: string | null;
+  } | null;
+  vitals?: {
+    blood_group?: string | null;
+    blood_pressure?: string | null;
+    sugar_level?: string | null;
+    temperature?: string | null;
+    pulse?: string | null;
+    spo2?: string | null;
+    height?: string | number | null;
+    weight?: string | number | null;
+    diet_type?: string | null;
+    notes?: string | null;
+    allergies?: string | null;
+    surgeries?: string | null;
+  } | null;
+  roomType?: {
+    roomNumber?: string | number | null;
+    roomType?: string | null;
+    bedNumber?: string | number | null;
+    attendantBedNumber?: string | number | null;
+    remark?: string | null;
+  } | null;
+  patientRefferal?: {
+    source?: string | null;
+    sub_source?: string | null;
+    referral_doctor?: string | null;
+    referral_name?: string | null;
+    mobile?: string | null;
+  } | null;
+  uhid?: string | null;
+  patientId?: number | null;
+  admissionType?: string | null;
+  admissionScheduleType?: string | null;
+  admissionLabel?: string | null;
+  counsellorName?: string | null;
+  doctorName?: string | null;
+  patientAdmitted?: string | boolean | null;
+  admissionDate?: string | null;
+};
 
 function na(value: unknown): string {
   if (value == null || value === "") return "N/A";
@@ -45,6 +121,27 @@ function formatDateTime(value: string | null | undefined): string {
   });
 }
 
+function formatBloodGroup(value: string | null | undefined): string {
+  if (!value) return "N/A";
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return "N/A";
+
+  const match = normalized.match(/^(a|b|ab|o)[\s-_]*(positive|negative|\+|-)$/i);
+  if (match) {
+    const group = match[1].toUpperCase();
+    const sign = match[2] === "negative" || match[2] === "-" ? "-" : "+";
+    return `${group}${sign}`;
+  }
+
+  const compact = normalized.replace(/\s+/g, "");
+  if (/^(a|b|ab|o)[+-]$/i.test(compact)) {
+    return compact.toUpperCase();
+  }
+
+  return value;
+}
+
 const BLOOD_GROUP_BADGE_CLASS =
   "inline-flex h-[30px] min-w-[86px] me-2 items-center justify-center rounded-[30px] border px-5 text-xs font-medium border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]";
 
@@ -76,7 +173,7 @@ export function mapIpdPatientOverviewToView(
   const reg = data.registration;
   const appt = data.appointment;
   const vitals = data.vitals;
-  const room = data.assignedRoom;
+  const room = data.roomType;
   const referral = data.patientRefferal;
 
   const patientName = [reg?.patient_title, reg?.patient_name].filter(Boolean).join(" ").trim() || "N/A";
@@ -84,11 +181,11 @@ export function mapIpdPatientOverviewToView(
   const age = reg?.age != null ? `${reg.age} Years` : "N/A";
   const gender = reg?.gender ? capitalizeWords(reg.gender) : "N/A";
 
-  const bloodGroup = vitals?.blood_group ?? reg?.blood_group;
+  const bloodGroup = formatBloodGroup(vitals?.blood_group ?? reg?.blood_group);
   const patientType = reg?.patient_type;
 
   const badges: PatientDetailsBadge[] = [];
-  if (bloodGroup) {
+  if (bloodGroup !== "N/A") {
     badges.push({ label: bloodGroup, className: BLOOD_GROUP_BADGE_CLASS });
   }
   if (patientType) {
@@ -203,7 +300,7 @@ export function mapIpdPatientOverviewToView(
   return {
     name: patientName,
     subtitle: `Contact Number: ${na(contact)} • Age : ${age} • Gender : ${gender}`,
-    uhid: data.uhid,
+    uhid: na(data.uhid),
     healthCardNumber: na(reg?.js_health_card_no),
     badges,
     infoItems,

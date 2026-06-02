@@ -1,17 +1,8 @@
 export { ReceptionDashboard } from "./ReceptionDashboard";
 export { DashboardHeader } from "./DashboardHeader";
-export { ReceptionNavTabs } from "./ReceptionNavTabs";
 export { ReceptionStatCard, ReceptionStatsGrid } from "./ReceptionStatCard";
 export { WardProgress } from "./WardProgress";
 export { WardCapacityOverview } from "./WardCapacityOverview";
 export { AwaitingAdmissionTable } from "./AwaitingAdmissionTable";
 export { ViewPatientContent } from "./ViewPatientContent";
-export { PrescribedMedicinesSection } from "./PrescribedMedicinesSection";
 export { OpenFileFlow } from "./open-file/OpenFileFlow";
-export { AdmittedPatientsRegistry } from "./admitted-patients/AdmittedPatientsRegistry";
-export { PendingDischargesContent } from "./admitted-patients/PendingDischargesContent";
-export { DischargeFlow } from "./discharge/DischargeFlow";
-export { SelectDischargeTypeDialog } from "./admitted-patients/SelectDischargeTypeDialog";
-export { PatientCareRecordContent } from "./patient-care-record/PatientCareRecordContent";
-export { DailyOperationsSummary } from "./daily-operations/DailyOperationsSummary";
-export { HistoricalPatientRegistry } from "./historical-patients/HistoricalPatientRegistry";

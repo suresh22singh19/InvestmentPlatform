@@ -24,11 +24,6 @@ import { resolveReceptionBranchId } from "@/lib/ipd-reception/resolveReceptionBr
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
 import { getRtkErrorMessage } from "@/lib/ipd-reception/mapIpdAwaitingPatients";
 import { mapIpdPatientOverviewToView } from "@/lib/ipd-reception/mapIpdPatientOverview";
-import {
-  RECEPTION_VIEW_PATIENT_DEFAULT,
-  RECEPTION_VIEW_PATIENT_FILES,
-  RECEPTION_VIEW_PATIENT_WALLET_DETAILS,
-} from "@/lib/ipd-reception/viewPatientMock";
 
 type ViewPatientContentProps = {
   patientId: string;
@@ -102,8 +97,8 @@ export function ViewPatientContent({ patientId }: ViewPatientContentProps) {
         <div className="xl:col-span-1">
           <AppointmentDetailCard items={patientView.appointmentItems} />
           <PatientWalletInformationCard
-            remainingAmount={RECEPTION_VIEW_PATIENT_DEFAULT.walletRemaining}
-            details={RECEPTION_VIEW_PATIENT_WALLET_DETAILS}
+            remainingAmount="N/A"
+            details={[]}
           />
           <ReferralPatientInfoCard items={patientView.referralItems} />
         </div>
@@ -136,7 +131,7 @@ export function ViewPatientContent({ patientId }: ViewPatientContentProps) {
         <div className="xl:col-span-1">
           <HealthCardPreview cardNumber={patientView.healthCardNumber} />
           <MedicalInformationCard items={patientView.medicalItems} />
-          <PatientFilesCard items={RECEPTION_VIEW_PATIENT_FILES} />
+          <PatientFilesCard items={[]} />
           <OtherInformationCard items={patientView.otherItems} />
         </div>
       </div>

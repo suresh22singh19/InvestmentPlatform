@@ -2,14 +2,13 @@
 
 import type { ReactNode } from "react";
 import Image from "next/image";
-import { Button, FormSelectField, FormTextareaField } from "@/components/ui";
+import { Button, FormInputField, FormSelectField, FormTextareaField } from "@/components/ui";
 import {
   OPEN_FILE_CLINICAL_NOTE_PLACEHOLDER,
   OPEN_FILE_DIET_OPTIONS,
   OPEN_FILE_VITAL_REFERENCES,
 } from "@/lib/ipd-reception/openFileMock";
-import type { OpenFilePatientDetails, OpenFileStep1Form } from "@/lib/ipd-reception/openFileTypes";
-import { VitalInputWithRef } from "./VitalInputWithRef";
+import type { OpenFilePatientDetails, OpenFileStep1Form } from "@/lib/ipd-reception/types";
 
 type Step1PatientFileVerificationProps = {
   patient: OpenFilePatientDetails;
@@ -140,42 +139,137 @@ export function Step1PatientFileVerification({
         <div className="space-y-4">
           <SectionCard title="Vitals Capture">
             <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2 lg:grid-cols-3">
-              <VitalInputWithRef
-                label="Blood Pressure"
-                unit="mmHg"
-                value={form.vitals.bloodPressure}
-                onChange={(v) => updateVital("bloodPressure", v)}
-                refRange={OPEN_FILE_VITAL_REFERENCES.bloodPressure}
-              />
-              <VitalInputWithRef
-                label="Sugar Level"
-                unit="mg/dl"
-                value={form.vitals.sugarLevel}
-                onChange={(v) => updateVital("sugarLevel", v)}
-                refRange={OPEN_FILE_VITAL_REFERENCES.sugarLevel}
-              />
-              <VitalInputWithRef
-                label="Temperature"
-                unit="°F"
-                value={form.vitals.temperature}
-                onChange={(v) => updateVital("temperature", v)}
-                refRange={OPEN_FILE_VITAL_REFERENCES.temperature}
-                numericMode="decimal"
-              />
-              <VitalInputWithRef
-                label="Pulse Rate"
-                unit="bpm"
-                value={form.vitals.pulseRate}
-                onChange={(v) => updateVital("pulseRate", v)}
-                refRange={OPEN_FILE_VITAL_REFERENCES.pulseRate}
-              />
-              <VitalInputWithRef
-                label="SpO2"
-                unit="%"
-                value={form.vitals.spo2}
-                onChange={(v) => updateVital("spo2", v)}
-                refRange={OPEN_FILE_VITAL_REFERENCES.spo2}
-              />
+              {/* Blood Pressure */}
+              <div>
+                <div className="relative w-full">
+                  <FormInputField
+                    label="Blood Pressure"
+                    value={form.vitals.bloodPressure}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value.replace(/\D/g, "");
+                      const limitedDigits = digitsOnly.slice(0, 6);
+                      let formattedValue = "";
+                      if (limitedDigits.length <= 3) {
+                        formattedValue = limitedDigits;
+                      } else {
+                        formattedValue = `${limitedDigits.slice(0, 3)}/${limitedDigits.slice(3)}`;
+                      }
+                      updateVital("bloodPressure", formattedValue);
+                    }}
+                    placeholder="Systolic/Diastolic(mmHg/mmHg)"
+                    type="text"
+                    className="pr-16"
+                    maxLength={7}
+                  />
+                  <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: "44px" }}>
+                    mmHg
+                  </span>
+                </div>
+                <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.bloodPressure}</p>
+              </div>
+
+              {/* Sugar Level */}
+              <div>
+                <div className="relative w-full">
+                  <FormInputField
+                    label="Sugar Level"
+                    value={form.vitals.sugarLevel}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      updateVital("sugarLevel", value);
+                    }}
+                    placeholder="Sugar Level"
+                    type="tel"
+                    className="pr-16"
+                    maxLength={3}
+                  />
+                  <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: "44px" }}>
+                    mg/dL
+                  </span>
+                </div>
+                <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.sugarLevel}</p>
+              </div>
+
+              {/* Temperature */}
+              <div>
+                <div className="relative w-full">
+                  <FormInputField
+                    label="Temperature"
+                    value={form.vitals.temperature}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      let value = digitsOnly;
+                      if (digitsOnly) {
+                        const numValue = parseInt(digitsOnly, 10);
+                        if (numValue > 110) value = "110";
+                      }
+                      updateVital("temperature", value);
+                    }}
+                    placeholder="Temperature (°F)"
+                    type="tel"
+                    className="pr-10"
+                    maxLength={3}
+                  />
+                  <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: "44px" }}>
+                    °F
+                  </span>
+                </div>
+                <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.temperature}</p>
+              </div>
+
+              {/* Pulse */}
+              <div>
+                <div className="relative w-full">
+                  <FormInputField
+                    label="Pulse"
+                    value={form.vitals.pulseRate}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      let value = digitsOnly;
+                      if (digitsOnly) {
+                        const numValue = parseInt(digitsOnly, 10);
+                        if (numValue > 200) value = "200";
+                      }
+                      updateVital("pulseRate", value);
+                    }}
+                    placeholder="Pulse"
+                    type="tel"
+                    className="pr-10"
+                    maxLength={3}
+                  />
+                  <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: "44px" }}>
+                    bpm
+                  </span>
+                </div>
+                <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.pulseRate}</p>
+              </div>
+
+              {/* SpO2 */}
+              <div>
+                <div className="relative w-full">
+                  <FormInputField
+                    label="SPO2"
+                    value={form.vitals.spo2}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      let value = digitsOnly;
+                      if (digitsOnly) {
+                        const numValue = parseInt(digitsOnly, 10);
+                        if (numValue > 100) value = "100";
+                      }
+                      updateVital("spo2", value);
+                    }}
+                    placeholder="SPO2"
+                    type="tel"
+                    className="pr-10"
+                    maxLength={3}
+                  />
+                  <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: "44px" }}>
+                    %
+                  </span>
+                </div>
+                <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.spo2}</p>
+              </div>
             </div>
           </SectionCard>
 

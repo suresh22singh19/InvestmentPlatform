@@ -12,7 +12,7 @@ export function DashboardHeader({ onNewAdmission }: DashboardHeaderProps) {
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <PageHeading title="IPD Reception Dashboard" />
-      <Button
+      {/* <Button
         variant="outline"
         size="medium"
         className="!min-w-0 shrink-0 whitespace-nowrap"
@@ -20,7 +20,7 @@ export function DashboardHeader({ onNewAdmission }: DashboardHeaderProps) {
         onClick={onNewAdmission}
       >
         New Admission
-      </Button>
+      </Button> */}
     </div>
   );
 }

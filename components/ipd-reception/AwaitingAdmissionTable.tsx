@@ -2,7 +2,7 @@
 
 import { TableListingCard, TableSearchInput } from "@/components/ui";
 import { buildAwaitingAdmissionTableSection } from "@/lib/ipd-reception/tableConfig";
-import type { IpdAwaitingPatientTableRow } from "@/lib/ipd-reception/ipdAwaitingPatientsTypes";
+import type { IpdAwaitingPatientTableRow } from "@/lib/ipd-reception/types";
 
 type AwaitingAdmissionTableProps = {
   patients: IpdAwaitingPatientTableRow[];

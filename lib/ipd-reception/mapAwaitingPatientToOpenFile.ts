@@ -1,5 +1,4 @@
-import type { AwaitingPatient } from "./ipdAwaitingPatientsTypes";
-import type { OpenFilePatientDetails } from "./openFileTypes";
+import type { AwaitingPatient, OpenFilePatientDetails } from "./types";
 
 function displayValue(value: unknown, fallback = "—"): string {
   if (value == null || value === "") return fallback;

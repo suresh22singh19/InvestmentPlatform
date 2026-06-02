@@ -5,26 +5,17 @@
 import { baseApi } from "./baseApi";
 import { normalizeAwaitingPatient } from "@/lib/ipd-reception/mapIpdAwaitingPatients";
 import type {
-  AwaitingPatientApiRow,
   AwaitingPatientsParams,
   AwaitingPatientsResponse,
-} from "@/lib/ipd-reception/ipdAwaitingPatientsTypes";
-import type {
-  IpdDashboardStatsParams,
-  IpdDashboardStatsResponse,
-} from "@/lib/ipd-reception/ipdDashboardStatsTypes";
-import type {
-  IpdPatientOverviewParams,
-  IpdPatientOverviewResponse,
-} from "@/lib/ipd-reception/ipdPatientOverviewTypes";
-import type {
   CreateIpdAdmissionPayload,
   CreateIpdAdmissionResponse,
-} from "@/lib/ipd-reception/createIpdAdmissionTypes";
-import type {
+  IpdDashboardStatsParams,
+  IpdDashboardStatsResponse,
+  IpdPatientOverviewParams,
+  IpdPatientOverviewResponse,
   IpdWardCapacityOverviewParams,
   IpdWardCapacityOverviewResponse,
-} from "@/lib/ipd-reception/ipdWardCapacityOverviewTypes";
+} from "@/lib/ipd-reception/types";
 
 function toQueryString(params: Record<string, string | number | undefined>) {
   const sp = new URLSearchParams();
@@ -110,9 +101,9 @@ export const ipdReceptionApi = baseApi.injectEndpoints({
         })}`,
         method: "GET",
       }),
-      transformResponse: (response: AwaitingPatientsResponse) => ({
+      transformResponse: (response: AwaitingPatientsResponse): AwaitingPatientsResponse => ({
         ...response,
-        data: (response.data ?? []).map((row) => normalizeAwaitingPatient(row as AwaitingPatientApiRow)),
+        data: (response.data ?? []).map((row) => normalizeAwaitingPatient(row)),
       }),
       keepUnusedDataFor: 0,
       providesTags: [{ type: "IpdReception", id: "AWAITING_LIST" }],

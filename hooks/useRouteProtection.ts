@@ -110,22 +110,8 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     ],
     /** Patient submodule "Discharge" (`slugify("Discharge")`) */
     discharge: ["/patient/discharge"],
-    /** Reception / IPD sub-modules */
-    "admitted-patients": [
-        "/ipd-reception/admitted-patients",
-        "/ipd-reception/admitted-patients/pending-discharges",
-        "/ipd-reception/patient",
-    ],
-    "admitted-patients-registry": [
-        "/ipd-reception/admitted-patients",
-        "/ipd-reception/admitted-patients/pending-discharges",
-        "/ipd-reception/patient",
-    ],
-    "daily-operations": ["/ipd-reception/daily-operations"],
-    "historical-patients": ["/ipd-reception/historical-patients", "/ipd-reception/patient"],
-    "historical-patient-registry": ["/ipd-reception/historical-patients", "/ipd-reception/patient"],
-    /** IPD Reception dashboard (`/ipd-reception/dashboard`, not main `/dashboard`) */
-    "ipd-reception-dashboard": ["/ipd-reception/dashboard", "/ipd-reception"],
+    /** IPD Reception dashboard + patient view / open file */
+    "ipd-reception-dashboard": ["/ipd-reception/dashboard", "/ipd-reception/patient"],
     "new-patient": ["/gate/new-patient"],
     "revisit-patient": ["/gate/revisit-patient"],
     "opd-visitor": ["/gate/patient-visitor"],
@@ -174,7 +160,7 @@ const IPD_RECEPTION_MODULE_KEYS = new Set(["reception", "ipd-reception"]);
 
 const getSubModuleRoutePrefixes = (moduleKey: string, subModuleKey: string): string[] => {
     if (IPD_RECEPTION_MODULE_KEYS.has(moduleKey) && subModuleKey === "dashboard") {
-        return ["/ipd-reception/dashboard", "/ipd-reception"];
+        return ["/ipd-reception/dashboard", "/ipd-reception/patient"];
     }
     return SUB_MODULE_ROUTE_PREFIXES[subModuleKey] ?? [];
 };
