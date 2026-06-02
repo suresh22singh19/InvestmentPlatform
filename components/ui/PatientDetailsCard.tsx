@@ -62,7 +62,7 @@ export function PatientDetailsCard({
                 <div className="grid grid-cols-2 gap-3 mt-5">
                     {infoItems.map((item) => (
                         <div key={item.label} className="flex gap-3 items-center ">
-                            <div className="flex items-center justify-center w-[40px] h-[40px] bg-[rgba(11,140,0,0.05)] border border-[#EBECED] rounded-full">
+                            <div className="flex items-center justify-center w-[40px] h-[40px] bg-[rgba(11,140,0,0.05)] border border-[#EBECED] rounded-full shrink-0">
                                 <Image src={item.iconSrc} alt={item.iconAlt} width={20} height={20} />
                             </div>
                             <div>

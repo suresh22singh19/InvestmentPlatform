@@ -92,4 +92,17 @@ export type { PatientReportListingItem } from "./PatientReportListingCard";
 export { Badge } from "./Badge";
 export type { BadgeProps, BadgeVariant } from "./Badge";
 export { SegmentedToggle } from "./SegmentedToggle";
+export { VoiceDoctorNotesCard } from "./VoiceDoctorNotesCard";
+export type { VoiceDoctorNotesCardProps } from "./VoiceDoctorNotesCard";
+export { FollowUpCard } from "./FollowUpCard";
+export type { FollowUpCardProps } from "./FollowUpCard";
+export { TherapiesCard } from "./TherapiesCard";
+export type { TherapiesCardProps } from "./TherapiesCard";
+export { DoctorConsultationFormCard } from "./DoctorConsultationFormCard";
+export type { DoctorConsultationFormCardProps } from "./DoctorConsultationFormCard";
+export { PatientTypeButtonGroup } from "./PatientTypeButtonGroup";
+export { SpecializedPhysicalExamCard } from "./SpecializedPhysicalExamCard";
+export type { SpecializedPhysicalExamCardProps } from "./SpecializedPhysicalExamCard";
+export { ClinicalAssessmentRecord } from "./ClinicalAssessmentRecord";
+export type { ClinicalAssessmentRecordProps } from "./ClinicalAssessmentRecord";
 
