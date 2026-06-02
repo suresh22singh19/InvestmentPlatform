@@ -181,8 +181,17 @@ export function PatientTypeButtonGroup({
         >
             {label && (
                 <span className={`block text-xs font-medium text-[#7B8089] mb-[2px] ${disabled ? "hover:opacity-50 hover:cursor-not-allowed transition-opacity" : ""}`}>
-                    {label}
-                    {required && <span className="text-[#F6776E]"> *</span>}
+                    {label.includes("*") ? (
+                        <>
+                            {label.replace("*", "").trim()}
+                            <span className="text-[#F6776E]"> *</span>
+                        </>
+                    ) : (
+                        <>
+                            {label}
+                            {required && <span className="text-[#F6776E]"> *</span>}
+                        </>
+                    )}
                 </span>
             )}
 

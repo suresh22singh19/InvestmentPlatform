@@ -10,6 +10,7 @@ import { Button } from "./Button";
 
 export interface SpecializedPhysicalExamCardProps {
     className?: string;
+    initialGender?: string;
 }
 
 interface BodyMarker {
@@ -34,7 +35,15 @@ const SLEEP_OPTIONS = [
     { label: "Insomnia", value: "Insomnia" },
 ];
 
-export function SpecializedPhysicalExamCard({ className = "" }: SpecializedPhysicalExamCardProps) {
+export function SpecializedPhysicalExamCard({ className = "", initialGender }: SpecializedPhysicalExamCardProps) {
+    const [gender, setGender] = useState(initialGender || "");
+
+    useEffect(() => {
+        if (initialGender) {
+            setGender(initialGender);
+        }
+    }, [initialGender]);
+
     // Mental Health State
     const [anxiety, setAnxiety] = useState("");
     const [depression, setDepression] = useState("");
@@ -529,8 +538,8 @@ export function SpecializedPhysicalExamCard({ className = "" }: SpecializedPhysi
                                         className="relative w-[110px] h-[240px] border border-dashed border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center cursor-crosshair overflow-hidden"
                                     >
                                         <Image
-                                            src="/icons/maleBodyFrontView.svg"
-                                            alt="Male Body Front View"
+                                            src={gender?.toLowerCase() === "female" ? "/icons/femaleBodyFrontView.svg" : "/icons/maleBodyFrontView.svg"}
+                                            alt={gender?.toLowerCase() === "female" ? "Female Body Front View" : "Male Body Front View"}
                                             fill
                                             className="object-contain p-2 opacity-85"
                                         />
@@ -565,8 +574,8 @@ export function SpecializedPhysicalExamCard({ className = "" }: SpecializedPhysi
                                         className="relative w-[110px] h-[240px] border border-dashed border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center cursor-crosshair overflow-hidden"
                                     >
                                         <Image
-                                            src="/icons/maleBodyBackView.svg"
-                                            alt="Male Body Back View"
+                                            src={gender?.toLowerCase() === "female" ? "/icons/femaleBodyBackView.svg" : "/icons/maleBodyBackView.svg"}
+                                            alt={gender?.toLowerCase() === "female" ? "Female Body Back View" : "Male Body Back View"}
                                             fill
                                             className="object-contain p-2 opacity-85"
                                         />

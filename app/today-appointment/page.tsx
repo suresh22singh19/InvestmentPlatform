@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePermission } from "@/hooks/usePermission";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -112,6 +113,11 @@ const MOCK_LISTING_DATA = [
 
 export default function DoctorListingPage() {
     const router = useRouter();
+    const todayAppointmentPermission = usePermission("Today Appointment");
+    const todayAppointmentSubPermission = usePermission("Today Appointment", { subModule: "Today Appointment" });
+    const canView = todayAppointmentPermission.canView || todayAppointmentSubPermission.canView;
+    const canAdd = todayAppointmentPermission.canAdd || todayAppointmentSubPermission.canAdd;
+
     const [searchTerm, setSearchTerm] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(6);
@@ -137,12 +143,16 @@ export default function DoctorListingPage() {
         { label: "City" },
         { label: "State" },
         { label: "Created At" },
-        { label: "Action", position: "last" as const }
+        ...(canAdd ? [{ label: "Action", position: "last" as const }] : [])
     ];
 
     const rows = filteredData.map((item) => {
         const uhid = (
-            <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline" onClick={() => router.push("/today-appointment/new")}>
+            <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline" onClick={() => {
+                if (canAdd) {
+                    router.push(`/today-appointment/new?name=${encodeURIComponent(item.patient)}&gender=${encodeURIComponent(item.gender)}&age=${item.age}&contact=${encodeURIComponent(item.contact)}`);
+                }
+            }}>
                 {item.uhid}
             </span>
         );
@@ -153,7 +163,7 @@ export default function DoctorListingPage() {
                     variant="primary"
                     size="xsmall"
                     className="whitespace-nowrap"
-                    onClick={() => router.push("/today-appointment/new")}
+                    onClick={() => router.push(`/today-appointment/new?name=${encodeURIComponent(item.patient)}&gender=${encodeURIComponent(item.gender)}&age=${item.age}&contact=${encodeURIComponent(item.contact)}`)}
                 >
                     View Patient
                 </Button>
@@ -183,9 +193,19 @@ export default function DoctorListingPage() {
             item.city,
             item.state,
             item.createdAt,
-            actions
+            ...(canAdd ? [actions] : [])
         ];
     });
+
+    if (!canView) {
+        return (
+            <AppShell>
+                <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
+                    You don&apos;t have permission to view today appointments.
+                </div>
+            </AppShell>
+        );
+    }
 
     return (
         <AppShell>
