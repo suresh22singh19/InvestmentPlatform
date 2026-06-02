@@ -9,7 +9,7 @@ import {
     TableListingCard,
     Button,
     Badge,
-    MessageDialog,
+    Dialog,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useGetTreatmentPackagesQuery } from "@/store/api/counsellorApi";
@@ -269,52 +269,57 @@ export default function TreatmentPackagesPage() {
             </div>
 
             {/* Interactive Premium Details Dialog */}
-            <MessageDialog
+            <Dialog
                 open={!!selectedPackage}
                 onClose={() => setSelectedPackage(null)}
-                icon="/icons/SuccessCheck.svg"
-                iconBgColor="#E8F5E9"
-                message={
-                    selectedPackage && (
-                        <div className="flex flex-col text-left gap-4">
-                            <div className="flex justify-between items-center border-b border-[#DFE0E2] pb-3">
-                                <h3 className="font-extrabold text-lg text-[#262D3B]">{selectedPackage.packageName}</h3>
-                                <Badge variant="success" className="bg-transparent border border-[#0B8C0033] text-[#0B8C00] px-3 py-1 font-normal rounded-full text-xs">
-                                    {selectedPackage.category || "Standard"}
-                                </Badge>
+                title="Package Details"
+                width={600}
+            >
+                {selectedPackage && (
+                    <div className="flex flex-col text-left gap-5">
+                        <div className="flex justify-between items-center border-b border-[#DFE0E2] pb-3">
+                            <h3 className="font-extrabold text-lg text-[#262D3B]">{selectedPackage.packageName}</h3>
+                            <Badge variant="success" className="bg-transparent border border-[#0B8C0033] text-[#0B8C00] px-3 py-1 font-normal rounded-full text-xs">
+                                {selectedPackage.category || "Standard"}
+                            </Badge>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <span className="text-xs font-semibold text-[#787E8C] uppercase tracking-wider">Description</span>
+                            <p className="text-sm font-medium text-[#4B5563] leading-relaxed">
+                                {selectedPackage.description || "Specialized therapeutic package designed for optimized inpatient or outpatient recovery, routine wellness check-ups, and holistic medical care."}
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 border-t border-[#DFE0E2] pt-4">
+                            <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
+                                <span className="text-[10px] font-bold text-[#6B7280] uppercase">Cost / Day</span>
+                                <span className="text-sm font-extrabold text-[#0B8C00]">{selectedPackage.totalPerDayCost || "₹0"}</span>
                             </div>
-                            <div className="flex flex-col gap-2">
-                                <span className="text-xs font-semibold text-[#787E8C] uppercase tracking-wider">Description</span>
-                                <p className="text-sm font-medium text-[#4B5563] leading-relaxed">
-                                    {selectedPackage.description || "Specialized therapeutic package designed for optimized inpatient or outpatient recovery, routine wellness check-ups, and holistic medical care."}
-                                </p>
+                            <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
+                                <span className="text-[10px] font-bold text-[#6B7280] uppercase">Active</span>
+                                <span className="text-sm font-extrabold text-[#111827]">{selectedPackage.activePatients ?? 0} Patients</span>
                             </div>
-                            <div className="grid grid-cols-3 gap-3 border-t border-[#DFE0E2] pt-4">
-                                <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
-                                    <span className="text-[10px] font-bold text-[#6B7280] uppercase">Cost / Day</span>
-                                    <span className="text-sm font-extrabold text-[#0B8C00]">{selectedPackage.totalPerDayCost || "₹0"}</span>
-                                </div>
-                                <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
-                                    <span className="text-[10px] font-bold text-[#6B7280] uppercase">Active</span>
-                                    <span className="text-sm font-extrabold text-[#111827]">{selectedPackage.activePatients ?? 0} Patients</span>
-                                </div>
-                                <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
-                                    <span className="text-[10px] font-bold text-[#6B7280] uppercase">Admissions</span>
-                                    <span className="text-sm font-extrabold text-[#111827]">
-                                        {selectedPackage.totalAdmissions !== undefined && selectedPackage.totalAdmissions !== null
-                                            ? selectedPackage.totalAdmissions.toLocaleString()
-                                            : "0"
-                                        }
-                                    </span>
-                                </div>
+                            <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
+                                <span className="text-[10px] font-bold text-[#6B7280] uppercase">Admissions</span>
+                                <span className="text-sm font-extrabold text-[#111827]">
+                                    {selectedPackage.totalAdmissions !== undefined && selectedPackage.totalAdmissions !== null
+                                        ? selectedPackage.totalAdmissions.toLocaleString()
+                                        : "0"
+                                    }
+                                </span>
                             </div>
                         </div>
-                    )
-                }
-                confirmText="Done"
-                showCancel={false}
-                onConfirm={() => setSelectedPackage(null)}
-            />
+                        <div className="flex justify-end gap-3 mt-4">
+                            <Button
+                                variant="primary"
+                                onClick={() => setSelectedPackage(null)}
+                                className="px-6"
+                            >
+                                Done
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </Dialog>
         </AppShell>
     );
 }

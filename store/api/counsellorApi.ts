@@ -151,6 +151,137 @@ export interface CheckFirstDayPaymentResponse {
   statusCode: number;
 }
 
+export interface RoomListParams {
+  sortBy?: string;
+  order?: "ASC" | "DESC" | "asc" | "desc";
+  page?: number;
+  limit?: number | string;
+  search?: string;
+  branchId?: number | string;
+  buildingId?: number | string;
+  roomStatus?: string;
+  floorId?: number | string;
+  roomType?: string;
+}
+
+export interface RoomListItem {
+  id: number;
+  roomNumber: string;
+  roomType: string;
+  building: string | null;
+  floor: string | null;
+  branch: string;
+  status: string;
+  totalBeds: number;
+  availableBeds: number;
+  occupiedBeds: number;
+  reservedBeds: number;
+}
+
+export interface RoomListResponse {
+  message: string;
+  statusCode: number;
+  timestamp: string;
+  data: {
+    stats: {
+      totalCapacity: number;
+      totalAvailable: number;
+      totalOccupied: number;
+      totalReserved: number;
+    };
+    data: RoomListItem[];
+    total: number;
+    skip: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export interface BedLayoutItem {
+  bedId: number;
+  bedNumber: string;
+  status: string;
+  reserved: boolean;
+  available: string;
+  note: string | null;
+  patientName: string | null;
+  patientUhid: string | null;
+}
+
+export interface RoomBedDetailResponse {
+  message: string;
+  statusCode: number;
+  timestamp: string;
+  data: {
+    room: {
+      id: number;
+      roomNumber: string;
+      roomType: string;
+      floor: string | null;
+      building: string | null;
+      totalBeds: number;
+    };
+    stats: {
+      totalBeds: number;
+      available: number;
+      occupied: number;
+      reserved: number;
+    };
+    bedLayout: BedLayoutItem[];
+  };
+}
+
+export interface GetSchedulePatientParams {
+  fromDate: string;
+  toDate: string;
+  branchId?: number | string | null;
+  search?: string;
+}
+
+export interface AppointmentItem {
+  id: number;
+  date: string;
+  patientName: string;
+  branchName: string;
+  age: string;
+  contactNumber: string;
+  email: string;
+  patientUhid: string;
+  type: string;
+  status: "pending" | "done" | "cancel";
+  notes?: string | null;
+  diagnosisSymptoms?: string | null;
+}
+
+export interface GetSchedulePatientResponse {
+  success: boolean;
+  data: {
+    fromDate: string;
+    toDate: string;
+    branchId: number | string | null;
+    search: string;
+    appointments: AppointmentItem[];
+  };
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface UpdateSchedulePatientParams {
+  patientScheduleId: number | string;
+  scheduleDate?: string;
+  status?: "pending" | "done" | "cancel";
+  notes?: string;
+}
+
+export interface UpdateSchedulePatientResponse {
+  success: boolean;
+  data: string;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 export const counsellorApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -269,6 +400,68 @@ export const counsellorApi = baseApi.injectEndpoints({
       query: (id) => ({
         url: `/counsellor/check-first-day-payment/${id}`,
         method: "GET",
+      }),
+    }),
+
+    /**
+     * Get rooms list
+     */
+    getRoomList: builder.query<RoomListResponse, RoomListParams>({
+      query: (params) => ({
+        url: "/counsellor/get-room-list",
+        method: "GET",
+        params,
+      }),
+    }),
+
+    /**
+     * Get room bed details
+     */
+    getRoomBedDetail: builder.query<RoomBedDetailResponse, number | string>({
+      query: (roomId) => ({
+        url: `/counsellor/get-room-bed-detail/${roomId}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
+     * Allocate room and bed to a patient
+     */
+    allocateRoom: builder.mutation<any, {
+      patientId: number | string;
+      id: number | string; // patientPackageId
+      buildingId: number | string;
+      floorId: number | string;
+      roomId: number | string;
+      bedId: number | string;
+      remark?: string;
+    }>({
+      query: (body) => ({
+        url: "/counsellor/allocate-room",
+        method: "PATCH",
+        body,
+      }),
+    }),
+
+    /**
+     * Get patient schedule appointments for calendar
+     */
+    getSchedulePatient: builder.query<GetSchedulePatientResponse, GetSchedulePatientParams>({
+      query: (params) => ({
+        url: "/counsellor/get-schedule-patient",
+        method: "GET",
+        params,
+      }),
+    }),
+
+    /**
+     * Update schedule appointment (Mark as complete, Reschedule, Add notes)
+     */
+    updateSchedulePatient: builder.mutation<UpdateSchedulePatientResponse, UpdateSchedulePatientParams>({
+      query: ({ patientScheduleId, ...body }) => ({
+        url: `/counsellor/update-schedule-patient/${patientScheduleId}`,
+        method: "PUT",
+        body,
       }),
     }),
   }),
@@ -413,5 +606,11 @@ export const {
   useGetPatientAdmissionsQuery,
   useRevertToOpdMutation,
   useLazyCheckFirstDayPaymentQuery,
+  useGetRoomListQuery,
+  useGetRoomBedDetailQuery,
+  useAllocateRoomMutation,
+  useGetSchedulePatientQuery,
+  useLazyGetSchedulePatientQuery,
+  useUpdateSchedulePatientMutation,
 } = counsellorApi;
 

@@ -22,6 +22,7 @@ import {
   useLazyCheckFirstDayPaymentQuery,
 } from "@/store/api/counsellorApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import RoomAllocation from "../start-counselling/roomAllowcation";
 
 // ─── Stat card component ──────────────────────────────────────────────────────
 type DashboardStatCardProps = {
@@ -157,6 +158,7 @@ export default function CounsellorDashboardPage() {
   const [selectedRoomType, setSelectedRoomType] = useState("");
   const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("ASC");
   const [sortBy, setSortBy] = useState<string>("patientName");
+  const [activeAllocationPatient, setActiveAllocationPatient] = useState<{ patient: any; payment: any } | null>(null);
 
   // Confirmation dialog and submitting states
   const [pendingAction, setPendingAction] = useState<{ type: "refer" | "startAdmission"; item: any } | null>(null);
@@ -261,7 +263,10 @@ export default function CounsellorDashboardPage() {
             cancelText: "Close",
             showCancel: true,
             onConfirm: () => {
-              router.push("/counsellor/manage-room");
+              setActiveAllocationPatient({
+                patient: item,
+                payment: res.data
+              });
             },
           });
         }
@@ -404,25 +409,72 @@ export default function CounsellorDashboardPage() {
 
   return (
     <AppShell>
-      {/* Page Heading + Action Buttons */}
-      <div className="flex items-center justify-between">
-        <PageHeading title="Dashboard" />
-        {/* <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            leftIcon={<Image src="/icons/bedLightIcon.svg" alt="" width={20} height={20} />}
-          >
-            Manage Rooms
-          </Button>
-          <Button
-            variant="outline"
-            className="!bg-transparent"
-            leftIcon={<Image src="/icons/AddIcon.svg" alt="" width={20} height={20} />}
-          >
-            New Admission
-          </Button>
-        </div> */}
-      </div>
+      {activeAllocationPatient ? (
+        <div className="flex flex-col gap-6">
+          <div className="flex items-start justify-between">
+            <PageHeading title={`Room Allocation - ${activeAllocationPatient.patient.patientName || "Patient"}`} />
+            <Button
+              variant="outline"
+              onClick={() => setActiveAllocationPatient(null)}
+            >
+              ← Back to Dashboard
+            </Button>
+          </div>
+
+          <RoomAllocation
+            activePackage={{
+              id: activeAllocationPatient.payment?.patientPackageId?.toString(),
+              packageName: activeAllocationPatient.patient?.packageName || "Selected Package",
+              branchRoomType: {
+                roomRentPrice: parseFloat(activeAllocationPatient.payment?.perDayCost || "1500")
+              }
+            }}
+            patientId={activeAllocationPatient.patient?.patientId || activeAllocationPatient.patient?.id}
+            patientPackageId={activeAllocationPatient.payment?.patientPackageId}
+            patientDetails={{
+              patientName: activeAllocationPatient.patient?.patientName,
+              patientUhid: activeAllocationPatient.patient?.patientUhid,
+              contactNumber: activeAllocationPatient.patient?.contactNumber,
+              diagnosis: activeAllocationPatient.patient?.diagnosis,
+              doctorName: activeAllocationPatient.patient?.doctorName,
+            }}
+            onSuccess={() => {
+              setActiveAllocationPatient(null);
+              try {
+                refetchAdmissions();
+              } catch (e) {
+                console.warn("Failed to refetch admissions:", e);
+              }
+              try {
+                refetchStats();
+              } catch (e) {
+                console.warn("Failed to refetch stats:", e);
+              }
+            }}
+            onCancel={() => setActiveAllocationPatient(null)}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Page Heading + Action Buttons */}
+          <div className="flex items-center justify-between">
+            <PageHeading title="Dashboard" />
+            {/* <div className="flex items-center gap-3">
+              <Button
+                variant="primary"
+                leftIcon={<Image src="/icons/bedLightIcon.svg" alt="" width={20} height={20} />}
+              >
+                Manage Rooms
+              </Button>
+              <Button
+                variant="outline"
+                className="!bg-transparent"
+                leftIcon={<Image src="/icons/AddIcon.svg" alt="" width={20} height={20} />}
+              >
+                New Admission
+              </Button>
+            </div> */}
+          </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-4">
@@ -700,6 +752,8 @@ export default function CounsellorDashboardPage() {
           />
         );
       })()}
+        </>
+      )}
 
       {/* Action Confirmation Dialog */}
       <MessageDialog

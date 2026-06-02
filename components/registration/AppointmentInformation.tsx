@@ -65,15 +65,15 @@ const parseTimeSlot = (value: string): { start: number; end: number } | null => 
 const isTimeSlotPassed = (timeSlotValue: string): boolean => {
     const parsed = parseTimeSlot(timeSlotValue);
     if (!parsed) return false;
-    
+
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     const currentTimeInMinutes = currentHour * 60 + currentMinute;
-    
+
     // Convert slot end time to minutes (assuming 24-hour format)
     const slotEndInMinutes = parsed.end * 60;
-    
+
     // If current time is past the slot end time, the slot has passed
     return currentTimeInMinutes >= slotEndInMinutes;
 };
@@ -108,25 +108,25 @@ export default function AppointmentInformation({
             // If no date selected, show all slots
             return ALL_TIME_SLOTS;
         }
-        
+
         const appointmentDate = new Date(formData.appointmentDate);
         const today = new Date();
-        
+
         // Reset time to compare dates only
         const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
         const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        
+
         // If appointment date is in the future, show all slots
         if (appointmentDateOnly > todayOnly) {
             return ALL_TIME_SLOTS;
         }
-        
+
         // If appointment date is today, filter out past time slots and show all available slots from current time to end
         if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
             // Show all time slots that haven't ended yet
             return ALL_TIME_SLOTS.filter(slot => !isTimeSlotPassed(slot.value));
         }
-        
+
         // If appointment date is in the past, show all slots (though this shouldn't happen due to disablePastDates)
         return ALL_TIME_SLOTS;
     }, [formData.appointmentDate]);
@@ -192,7 +192,7 @@ export default function AppointmentInformation({
                         required
                         width="100%"
                         minDate={getTodayDate()}
-                        maxDate={getTodayDate()}    
+                        maxDate={getTodayDate()}
                     />
                     {errors?.appointmentDate && (
                         <p className="mt-1 text-xs text-[#F6776E]">{errors.appointmentDate}</p>

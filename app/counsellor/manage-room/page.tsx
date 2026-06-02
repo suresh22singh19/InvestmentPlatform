@@ -10,90 +10,10 @@ import {
     FormSelectField,
     TableListingCard,
 } from "@/components/ui";
-
-
-// Static mock data representing rooms matching Figma mockups
-const MOCK_ROOMS = [
-    {
-        id: 1,
-        roomNumber: "R-210",
-        status: "Under Cleaning" as const,
-        floor: "Floor 2",
-        cleaningStatus: "In Progress",
-        readyIn: "20m",
-    },
-    {
-        id: 2,
-        roomNumber: "R-208",
-        status: "Not Available" as const,
-        floor: "Floor 2",
-        cleaningStatus: "Maintenance",
-    },
-    {
-        id: 3,
-        roomNumber: "R-206",
-        status: "Occupied" as const,
-        floor: "Floor 2",
-        patientName: "Ajay Kumar",
-        estCheckout: "Tomorrow",
-    },
-    {
-        id: 4,
-        roomNumber: "R-204",
-        status: "Available" as const,
-        floor: "Floor 2",
-        building: "East Wing (Cardiac Care)",
-    },
-    {
-        id: 5,
-        roomNumber: "R-212",
-        status: "Checkout" as const,
-        floor: "Floor 2",
-        checkInTime: "04:00 PM",
-    },
-    {
-        id: 6,
-        roomNumber: "R-209",
-        status: "Available" as const,
-        floor: "Floor 2",
-        building: "East Wing (Cardiac Care)",
-    },
-    {
-        id: 7,
-        roomNumber: "R-210",
-        status: "Under Cleaning" as const,
-        floor: "Floor 2",
-        cleaningStatus: "In Progress",
-        readyIn: "20m",
-    },
-    {
-        id: 8,
-        roomNumber: "R-211",
-        status: "Occupied" as const,
-        floor: "Floor 2",
-        patientName: "Ajay Kumar",
-        estCheckout: "Tomorrow",
-    },
-];
-
-// Static mock data for Bed Allocation layout
-const MOCK_BEDS = [
-    // Row A
-    { id: "A1", label: "A1", status: "Available" as const, row: "Row A" },
-    { id: "A2", label: "A2", status: "Occupied" as const, patientName: "Rahul Sharma", row: "Row A" },
-    { id: "A3", label: "A3", status: "Available" as const, row: "Row A" },
-    { id: "A4", label: "A4", status: "Reserved" as const, patientName: "Reserved on Hold", row: "Row A" },
-    // Row B
-    { id: "B1", label: "B1", status: "Available" as const, row: "Row B" },
-    { id: "B2", label: "B2", status: "Occupied" as const, patientName: "Amit Kumar", row: "Row B" },
-    { id: "B3", label: "B3", status: "Available" as const, row: "Row B" },
-    { id: "B4", label: "B4", status: "Available" as const, row: "Row B" },
-    // Row C
-    { id: "C1", label: "C1", status: "Occupied" as const, patientName: "Vikram Singh", row: "Row C" },
-    { id: "C2", label: "C2", status: "Occupied" as const, patientName: "Neeraj Pandey", row: "Row C" },
-    { id: "C3", label: "C3", status: "Available" as const, row: "Row C" },
-    { id: "C4", label: "C4", status: "Available" as const, row: "Row C" },
-];
+import { useAppSelector } from "@/store/hooks";
+import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
+import { useGetRoomListQuery, useGetRoomBedDetailQuery } from "@/store/api/counsellorApi";
+import { useGetBuildingDropdownQuery, useGetFloorDropdownQuery, useGetRoomTypeDropdownQuery } from "@/store/api/commonApi";
 
 interface StatCardProps {
     label: string;
@@ -126,14 +46,15 @@ function ManageRoomStatCard({ label, value, iconSrc }: StatCardProps) {
 interface RoomItem {
     id: number;
     roomNumber: string;
-    status: "Available" | "Occupied" | "Under Cleaning" | "Not Available" | "Checkout";
-    floor: string;
-    building?: string;
-    patientName?: string;
-    estCheckout?: string;
-    cleaningStatus?: string;
-    readyIn?: string;
-    checkInTime?: string;
+    status: string;
+    floor: string | null;
+    building?: string | null;
+    branch?: string;
+    roomType: string;
+    totalBeds: number;
+    availableBeds: number;
+    occupiedBeds: number;
+    reservedBeds: number;
 }
 
 interface RoomCardProps {
@@ -146,6 +67,14 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
     const borderClass = isSelected
         ? "border-[#0B8C00] ring-2 ring-[#0B8C00]/10"
         : "border-[#DFE0E2] hover:border-[#CBD5E1]";
+
+    const statusLower = room.status?.toLowerCase() || "";
+    const isAvailable = statusLower === "available" || statusLower === "vacant";
+    const isOccupied = statusLower === "occupied" || statusLower === "fully occupied";
+    const isPartiallyOccupied = statusLower === "partially occupied";
+    const isReserved = statusLower === "reserved";
+    const isUnderCleaning = statusLower === "under cleaning" || statusLower === "under maintenance" || statusLower === "not available";
+    const isCheckout = statusLower === "checkout";
 
     return (
         <div
@@ -165,110 +94,77 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
                 </div>
 
                 {/* Status Badges */}
-                {room.status === "Available" && (
-                    <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent">Available</Badge>
+                {isAvailable && (
+                    <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#0B8C00]">Available</Badge>
                 )}
-                {room.status === "Occupied" && (
-                    <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1">Occupied</Badge>
+                {isOccupied && (
+                    <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#EF444433] text-[#EF4444]">Fully Occupied</Badge>
                 )}
-                {room.status === "Under Cleaning" && (
-                    <Badge variant="cleaning" className="text-[10px] font-normal px-3 py-1">Under Cleaning</Badge>
+                {isPartiallyOccupied && (
+                    <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#F59E0B33] text-[#F59E0B]">Partially Occupied</Badge>
                 )}
-                {room.status === "Not Available" && (
-                    <Badge variant="not_available" className="text-[10px] font-normal px-3 py-1">Not Available</Badge>
+                {isReserved && (
+                    <Badge variant="checkout" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#6B728033] text-[#6B7280]">Reserved</Badge>
                 )}
-                {room.status === "Checkout" && (
-                    <Badge variant="checkout" className="text-[10px] font-normal px-3 py-1">Checkout</Badge>
+                {isUnderCleaning && (
+                    <Badge variant="cleaning" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#3B82F633] text-[#3B82F6]">Maintenance</Badge>
+                )}
+                {isCheckout && (
+                    <Badge variant="checkout" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#8B5CF633] text-[#8B5CF6]">Checkout</Badge>
                 )}
             </div>
 
             {/* 2. Middle Row (Body info) */}
             <div className="p-5 border-b border-[#DFE0E2] text-xs leading-normal flex flex-col justify-center h-[90px]">
-                {room.status === "Available" && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Floor</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.floor}</span>
-                        </div>
-                        {room.building && (
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-[#787E8C] font-semibold text-[10px]">Building</span>
-                                <span className="font-semibold text-[#262D3B] text-sm truncate" title={room.building}>{room.building}</span>
-                            </div>
-                        )}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Branch</span>
+                        <span className="font-semibold text-[#262D3B] text-xs truncate" title={room.branch || "N/A"}>
+                            {room.branch || "N/A"}
+                        </span>
                     </div>
-                )}
-
-                {room.status === "Occupied" && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Floor</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.floor}</span>
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Patient</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.patientName}</span>
-                        </div>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Room Type</span>
+                        <span className="font-semibold text-[#262D3B] text-xs truncate">
+                            {room.roomType || "N/A"}
+                        </span>
                     </div>
-                )}
-
-                {room.status === "Under Cleaning" && (
-                    <div className="grid grid-cols-1 gap-4">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Cleaning</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.cleaningStatus}</span>
-                        </div>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Building</span>
+                        <span className="font-semibold text-[#262D3B] text-xs truncate" title={room.building || "N/A"}>
+                            {room.building || "N/A"}
+                        </span>
                     </div>
-                )}
-
-                {room.status === "Not Available" && (
-                    <div className="grid grid-cols-1 gap-4">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Status</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.cleaningStatus || "Maintenance"}</span>
-                        </div>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Floor</span>
+                        <span className="font-semibold text-[#262D3B] text-xs truncate">
+                            {room.floor || "N/A"}
+                        </span>
                     </div>
-                )}
-
-                {room.status === "Checkout" && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Floor</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.floor}</span>
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[#787E8C] font-semibold text-[10px]">Check In</span>
-                            <span className="font-semibold text-[#262D3B] text-sm">{room.checkInTime}</span>
-                        </div>
-                    </div>
-                )}
+                </div>
             </div>
 
             {/* 3. Bottom Row (Footer / Action) */}
-            <div className="p-5 flex items-center justify-between text-xs h-[76px]">
+            <div className="p-5 flex items-center justify-between text-xs h-[76px] bg-[#FAFBFD] rounded-b-[20px]">
+                <div className="flex flex-col gap-0.5">
+                    <span className="text-[#787E8C] font-semibold text-[9px] uppercase tracking-wider">Available Beds</span>
+                    <span className="font-bold text-[#0B8C00] text-xs">
+                        {room.availableBeds} / {room.totalBeds} Beds
+                    </span>
+                </div>
 
-                {room.status === "Under Cleaning" && room.id === 7 ? (
-                    <div className="w-full flex items-center justify-between">
-                        <span className="text-[#787E8C] font-semibold text-[10px]">Ready in {room.readyIn}</span>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#787E8C]">
-                            <circle cx="12" cy="12" r="10" />
-                            <polyline points="12 6 12 12 16 14" />
-                        </svg>
-                    </div>
-                ) : (
-                    <div className="w-full flex items-center justify-between">
-                        <span className={`font-semibold text-sm ${isSelected ? "text-[#0B8C00]" : "text-[#262D3B]"}`}>
-                            {isSelected ? "Selected" : "Select"}
+                <div className="flex items-center gap-1.5">
+                    <span className={`font-semibold text-xs ${isSelected ? "text-[#0B8C00]" : "text-[#787E8C]"}`}>
+                        {isSelected ? "Selected" : "Select"}
+                    </span>
+                    {isSelected ? (
+                        <span className="w-5 h-5 rounded-full border border-[#0B8C00] text-[#0B8C00] font-semibold text-[10px] flex items-center justify-center bg-[#E3EEE1]">
+                            ✓
                         </span>
-                        {isSelected ? (
-                            <span className="w-5 h-5 rounded-full border border-[#0B8C00] text-[#0B8C00] font-semibold text-[10px] flex items-center justify-center bg-[#E3EEE1]">
-                                ✓
-                            </span>
-                        ) : (
-                            <span className="w-5 h-5 rounded-full border border-[#DFE0E2] bg-white flex items-center justify-center" />
-                        )}
-                    </div>
-                )}
+                    ) : (
+                        <span className="w-5 h-5 rounded-full border border-[#DFE0E2] bg-white flex items-center justify-center" />
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -277,9 +173,9 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
 interface BedItem {
     id: string;
     label: string;
-    status: "Available" | "Occupied" | "Reserved";
-    patientName?: string;
-    row: string;
+    status: string;
+    patientName?: string | null;
+    patientUhid?: string | null;
 }
 
 interface BedCardProps {
@@ -289,16 +185,23 @@ interface BedCardProps {
 }
 
 function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
+    const statusLower = bed.status?.toLowerCase() || "";
+    const isAvailable = statusLower === "available" || statusLower === "free";
+    const isOccupied = statusLower === "occupied" || statusLower === "fully occupied";
+    const isReserved = statusLower === "reserved";
+
     // Determine styling classes matching the mockup image precisely
     let styleClass = "";
-    if (bed.status === "Available") {
+    if (isAvailable) {
         styleClass = isBedSelected
             ? "border-[#0B8C00] bg-[#E3EEE1]/40 ring-2 ring-[#0B8C00]/10"
             : "border-[#0B8C00] bg-[#F7FAF7] hover:bg-[#F2FAF2]";
-    } else if (bed.status === "Occupied") {
+    } else if (isOccupied) {
         styleClass = "border-[#FCA5A5] bg-[#FEF2F2]";
-    } else if (bed.status === "Reserved") {
+    } else if (isReserved) {
         styleClass = "border-[#E8D7CA] bg-[#FFFBEB]";
+    } else {
+        styleClass = "border-[#DFE0E2] bg-gray-50";
     }
 
     return (
@@ -315,32 +218,41 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
                     height={16}
                     className="shrink-0"
                     style={{
-                        filter: bed.status === "Occupied"
+                        filter: isOccupied
                             ? "invert(31%) sepia(94%) saturate(4633%) hue-rotate(349deg) brightness(97%) contrast(93%)"
-                            : "invert(36%) sepia(90%) saturate(1814%) hue-rotate(86deg) brightness(95%) contrast(101%)"
+                            : isReserved
+                                ? "invert(53%) sepia(87%) saturate(583%) hue-rotate(5deg) brightness(94%) contrast(95%)"
+                                : "invert(36%) sepia(90%) saturate(1814%) hue-rotate(86deg) brightness(95%) contrast(101%)"
                     }}
                 />
             </div>
 
             {/* Bed ID */}
-            <span className={`font-semibold text-xs ${bed.status === "Occupied" ? "text-[#EF4444]" : "text-[#262D3B]"}`}>
-                {bed.id}
+            <span className={`font-semibold text-xs ${isOccupied ? "text-[#EF4444]" : "text-[#262D3B]"}`}>
+                {bed.label}
             </span>
 
             {/* Bed Status (Normal casing, not uppercase) */}
-            <span className={`text-[10px] font-medium leading-tight ${bed.status === "Occupied"
+            <span className={`text-[10px] font-medium leading-tight ${isOccupied
                 ? "text-[#EF4444]"
-                : bed.status === "Reserved"
+                : isReserved
                     ? "text-[#D97706]"
                     : "text-[#434956]"
                 }`}>
-                {bed.status === "Reserved" ? "Reserved on Hold" : bed.status}
+                {isReserved ? "Reserved" : isOccupied ? "Occupied" : "Available"}
             </span>
 
-            {/* Patient Name for Occupied beds */}
-            {bed.status === "Occupied" && bed.patientName && (
-                <span className="text-[9px] font-normal text-[#787E8C] truncate max-w-full leading-tight">
+            {/* Patient Name for Occupied/Reserved beds */}
+            {bed.patientName && (
+                <span className="text-[9px] font-normal text-[#434956] truncate max-w-full leading-tight">
                     {bed.patientName}
+                </span>
+            )}
+
+            {/* Patient UHID for Occupied/Reserved beds */}
+            {bed.patientUhid && (
+                <span className="text-[9px] font-normal text-[#787E8C] truncate max-w-full leading-tight mt-0.5">
+                    {bed.patientUhid}
                 </span>
             )}
         </div>
@@ -348,48 +260,112 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
 }
 
 export default function ManageRoomPage() {
-    const [selectedRoomId, setSelectedRoomId] = useState<number | null>(); // Default select Room 4 to show side panel allocation as requested
-    const [selectedBed, setSelectedBed] = useState<string | null>("A1");
+    const selectedBranch = useAppSelector(selectSelectedBranch);
+    const userBranchId = useAppSelector(selectUserBranchId);
+    const branchId = selectedBranch?.id || userBranchId || 1;
+
+    const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
+    const [selectedBed, setSelectedBed] = useState<string | null>(null);
+
+    // Dynamic dropdown hooks from common API
+    const { data: buildingData } = useGetBuildingDropdownQuery({ branchId });
+    const { data: floorData } = useGetFloorDropdownQuery({ branchId });
+    const { data: roomTypeData } = useGetRoomTypeDropdownQuery();
 
     // Filter states
-    const [selectedWing, setSelectedWing] = useState("");
+    const [selectedBuilding, setSelectedBuilding] = useState("");
     const [selectedFloor, setSelectedFloor] = useState("");
+    const [selectedRoomType, setSelectedRoomType] = useState("");
     const [selectedStatus, setSelectedStatus] = useState("");
 
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(6);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
 
-    // Find the currently selected room
-    const selectedRoom = useMemo(() => {
-        return MOCK_ROOMS.find(r => r.id === selectedRoomId);
-    }, [selectedRoomId]);
+    const getMappedRoomStatus = (status: string) => {
+        if (!status) return undefined;
+        return status;
+    };
 
-    // Group beds for current room
-    const bedsByRow = useMemo(() => {
-        const rows = ["Row A", "Row B", "Row C"];
-        return rows.map(r => ({
-            rowName: r,
-            beds: MOCK_BEDS.filter(b => b.row === r),
-        }));
-    }, []);
-
-    // Filter rooms dynamically
-    const filteredRooms = useMemo(() => {
-        return MOCK_ROOMS.filter(room => {
-            if (selectedFloor && room.floor !== selectedFloor) return false;
-            if (selectedStatus && room.status !== selectedStatus) return false;
-            return true;
+    // Compile building and floor dynamic options using API data
+    const floorOptions = useMemo(() => {
+        const opts = [{ label: "All", value: "" }];
+        const list = floorData?.data || [];
+        list.forEach((f) => {
+            const rawName = (f as any).floor || f.name || "";
+            const capitalized = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : "";
+            opts.push({ label: capitalized, value: f.id.toString() });
         });
-    }, [selectedFloor, selectedStatus]);
+        return opts;
+    }, [floorData]);
 
-    // Paginate filtered rooms dynamically
-    const paginatedRooms = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        if (startIndex >= filteredRooms.length && filteredRooms.length > 0) {
-            return filteredRooms.slice(0, itemsPerPage);
+    const buildingOptions = useMemo(() => {
+        const opts = [{ label: "All", value: "" }];
+        const list = buildingData?.data || [];
+        list.forEach((b) => {
+            opts.push({ label: b.name, value: b.id.toString() });
+        });
+        return opts;
+    }, [buildingData]);
+
+    const roomTypeOptions = useMemo(() => {
+        const opts = [{ label: "All", value: "" }];
+        const list = roomTypeData?.data || [];
+        list.forEach((rt) => {
+            opts.push({ label: rt.name, value: rt.name });
+        });
+        return opts;
+    }, [roomTypeData]);
+
+    // Rooms list query
+    const roomParams = {
+        branchId,
+        buildingId: selectedBuilding || undefined,
+        floorId: selectedFloor || undefined,
+        roomType: selectedRoomType || undefined,
+        roomStatus: getMappedRoomStatus(selectedStatus),
+        page: currentPage,
+        limit: itemsPerPage,
+    };
+
+    const { data: roomListRes, isLoading: isRoomsLoading } = useGetRoomListQuery(roomParams);
+
+    const stats = roomListRes?.data?.stats || {
+        totalCapacity: 0,
+        totalAvailable: 0,
+        totalOccupied: 0,
+        totalReserved: 0,
+    };
+
+    const roomsData = roomListRes?.data?.data || [];
+    const totalRooms = roomListRes?.data?.total || 0;
+
+    // Bed layout query for selected room
+    const { data: bedDetailRes, isLoading: isBedsLoading } = useGetRoomBedDetailQuery(selectedRoomId || "", {
+        skip: !selectedRoomId,
+    });
+
+    // Find current room
+    const selectedRoom = useMemo(() => {
+        if (!selectedRoomId) return null;
+        const found = roomsData.find(r => r.id === selectedRoomId);
+        if (found) return found;
+        if (bedDetailRes?.data?.room) {
+            const r = bedDetailRes.data.room;
+            return {
+                id: r.id,
+                roomNumber: r.roomNumber,
+                roomType: r.roomType,
+                floor: r.floor,
+                building: r.building,
+                status: "",
+                totalBeds: r.totalBeds,
+                availableBeds: bedDetailRes.data.stats.available,
+                occupiedBeds: bedDetailRes.data.stats.occupied,
+                reservedBeds: bedDetailRes.data.stats.reserved,
+            };
         }
-        return filteredRooms.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredRooms, currentPage, itemsPerPage]);
+        return null;
+    }, [selectedRoomId, roomsData, bedDetailRes]);
 
     return (
         <AppShell>
@@ -400,10 +376,10 @@ export default function ManageRoomPage() {
                 {/* 4 Top Stat Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     {[
-                        { label: "Total Capacity", value: "150", iconSrc: "/icons/addPatient.svg" },
-                        { label: "Total Available", value: "45", iconSrc: "/icons/bedDarkIcon.svg" },
-                        { label: "Total Occupied", value: "88", iconSrc: "/icons/bedDarkIcon.svg" },
-                        { label: "Total Reserved", value: "17", iconSrc: "/icons/bedDarkIcon.svg" },
+                        { label: "Total Capacity", value: stats.totalCapacity, iconSrc: "/icons/addPatient.svg" },
+                        { label: "Total Available", value: stats.totalAvailable, iconSrc: "/icons/bedDarkIcon.svg" },
+                        { label: "Total Occupied", value: stats.totalOccupied, iconSrc: "/icons/bedDarkIcon.svg" },
+                        { label: "Total Reserved", value: stats.totalReserved, iconSrc: "/icons/bedDarkIcon.svg" },
                     ].map((card) => (
                         <ManageRoomStatCard
                             key={card.label}
@@ -425,57 +401,69 @@ export default function ManageRoomPage() {
                                 title: "Rooms",
                                 titleRightContent: (
                                     <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
-                                        <div className="w-[250px] shrink-0">
+                                        {/* Dynamic Building Selector */}
+                                        <div className="w-[240px] shrink-0">
                                             <FormSelectField
-                                                label="Wing / Department"
+                                                label="Building"
                                                 hideLabel
-                                                options={[
-                                                    { label: "Wing / Department", value: "" },
-                                                    { label: "General Ward", value: "general" },
-                                                    { label: "Cardiology", value: "cardiology" },
-                                                    { label: "ICU", value: "icu" }
-                                                ]}
-                                                placeholder="Wing / Department"
+                                                options={buildingOptions}
+                                                placeholder="Building"
                                                 mode="single"
                                                 background="normal"
-                                                value={selectedWing}
+                                                value={selectedBuilding}
                                                 onChange={(val) => {
-                                                    setSelectedWing(String(val));
+                                                    const v = typeof val === "string" ? val : "";
+                                                    setSelectedBuilding(v);
                                                     setCurrentPage(1);
                                                 }}
                                             />
                                         </div>
-                                        <div className="w-[250px] shrink-0">
+                                        {/* Dynamic Floor Selector */}
+                                        <div className="w-[240px] shrink-0">
                                             <FormSelectField
                                                 label="Floor"
                                                 hideLabel
-                                                options={[
-                                                    { label: "Floor", value: "" },
-                                                    { label: "Floor 1", value: "Floor 1" },
-                                                    { label: "Floor 2", value: "Floor 2" },
-                                                    { label: "Floor 3", value: "Floor 3" }
-                                                ]}
+                                                options={floorOptions}
                                                 placeholder="Floor"
                                                 mode="single"
                                                 background="normal"
                                                 value={selectedFloor}
                                                 onChange={(val) => {
-                                                    setSelectedFloor(String(val));
+                                                    const v = typeof val === "string" ? val : "";
+                                                    setSelectedFloor(v);
                                                     setCurrentPage(1);
                                                 }}
                                             />
                                         </div>
-                                        <div className="w-[250px] shrink-0">
+                                        {/* Room Type Selector */}
+                                        <div className="w-[240px] shrink-0">
+                                            <FormSelectField
+                                                label="Room Type"
+                                                hideLabel
+                                                options={roomTypeOptions}
+                                                placeholder="Room Type"
+                                                mode="single"
+                                                background="normal"
+                                                value={selectedRoomType}
+                                                onChange={(val) => {
+                                                    const v = typeof val === "string" ? val : "";
+                                                    setSelectedRoomType(v);
+                                                    setCurrentPage(1);
+                                                }}
+                                            />
+                                        </div>
+                                        {/* Room Status Selector */}
+                                        <div className="w-[240px] shrink-0">
                                             <FormSelectField
                                                 label="Room Status"
                                                 hideLabel
                                                 options={[
-                                                    { label: "Room Status", value: "" },
-                                                    { label: "Available", value: "Available" },
-                                                    { label: "Occupied", value: "Occupied" },
-                                                    { label: "Under Cleaning", value: "Under Cleaning" },
-                                                    { label: "Checkout", value: "Checkout" },
-                                                    { label: "Not Available", value: "Not Available" }
+                                                    { label: "All", value: "" },
+                                                    { label: "Vacant / Available", value: "vacant" },
+                                                    { label: "Fully Occupied", value: "fully occupied" },
+                                                    { label: "Partially Occupied", value: "partially occupied" },
+                                                    { label: "Reserved", value: "reserved" },
+                                                    { label: "Under Maintenance", value: "under maintenance" }
                                                 ]}
                                                 placeholder="Room Status"
                                                 mode="single"
@@ -489,15 +477,24 @@ export default function ManageRoomPage() {
                                         </div>
                                     </div>
                                 ),
-                                customContent: (
+                                customContent: isRoomsLoading ? (
+                                    <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
+                                        Loading Rooms...
+                                    </div>
+                                ) : roomsData.length === 0 ? (
+                                    <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
+                                        No rooms found matching filters.
+                                    </div>
+                                ) : (
                                     <div className={`grid grid-cols-1 md:grid-cols-2 ${selectedRoomId ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-6 pb-2`}>
-                                        {paginatedRooms.map((room) => (
+                                        {roomsData.map((room) => (
                                             <RoomCard
                                                 key={room.id}
                                                 room={room}
                                                 isSelected={selectedRoomId === room.id}
                                                 onClick={() => {
                                                     setSelectedRoomId(room.id === selectedRoomId ? null : room.id);
+                                                    setSelectedBed(null);
                                                 }}
                                             />
                                         ))}
@@ -505,11 +502,11 @@ export default function ManageRoomPage() {
                                 ),
                                 pagination: {
                                     currentPage: currentPage,
-                                    totalItems: filteredRooms.length,
+                                    totalItems: totalRooms,
                                     itemsPerPage: itemsPerPage,
                                     onPageChange: (page) => setCurrentPage(page),
                                     onItemsPerPageChange: (size) => setItemsPerPage(size),
-                                    itemsPerPageOptions: [6, 12, 24],
+                                    itemsPerPageOptions: [10, 20, 50, 100],
                                 }
                             }
                         ]}
@@ -520,13 +517,13 @@ export default function ManageRoomPage() {
                     {selectedRoom && (
                         <div className="xl:col-span-1 bg-white p-6 rounded-[24px] border border-[#DFE0E2] shadow-sm flex flex-col gap-6 transition-all duration-200">
                             {/* Header details */}
-                            <div className="flex justify-between items-start  pb-0">
+                            <div className="flex justify-between items-start pb-0">
                                 <div className="flex flex-col gap-1">
                                     <h3 className="text-base font-semibold text-[#262D3B]">
                                         Bed Allocation - {selectedRoom.roomNumber}
                                     </h3>
                                     <span className="text-xs font-semibold text-[#787E8C]">
-                                        General Ward • {selectedRoom.floor} • Total Beds: 10
+                                        {selectedRoom.roomType.toUpperCase()} • {selectedRoom.floor || "N/A"} • Total Beds: {selectedRoom.totalBeds}
                                     </span>
                                 </div>
                                 <button
@@ -541,10 +538,10 @@ export default function ManageRoomPage() {
                             {/* Bed Stat Widgets */}
                             <div className="grid grid-cols-4 gap-2 text-center p-3 rounded-xl border border-[#E3EEE1] bg-white shadow-sm">
                                 {[
-                                    { label: "Total Beds", value: "10", labelColor: "text-[#787E8C]", valueColor: "text-[#262D3B]" },
-                                    { label: "Available", value: "4", labelColor: "text-[#0B8C00]", valueColor: "text-[#0B8C00]" },
-                                    { label: "Occupied", value: "5", labelColor: "text-[#787E8C]", valueColor: "text-[#EF4444]" },
-                                    { label: "Reserved", value: "1", labelColor: "text-[#787E8C]", valueColor: "text-[#D97706]" },
+                                    { label: "Total Beds", value: bedDetailRes?.data?.stats?.totalBeds ?? selectedRoom.totalBeds, labelColor: "text-[#787E8C]", valueColor: "text-[#262D3B]" },
+                                    { label: "Available", value: bedDetailRes?.data?.stats?.available ?? selectedRoom.availableBeds, labelColor: "text-[#0B8C00]", valueColor: "text-[#0B8C00]" },
+                                    { label: "Occupied", value: bedDetailRes?.data?.stats?.occupied ?? selectedRoom.occupiedBeds, labelColor: "text-[#787E8C]", valueColor: "text-[#EF4444]" },
+                                    { label: "Reserved", value: bedDetailRes?.data?.stats?.reserved ?? selectedRoom.reservedBeds, labelColor: "text-[#787E8C]", valueColor: "text-[#D97706]" },
                                 ].map((stat) => (
                                     <div key={stat.label} className="flex flex-col gap-0.5">
                                         <span className={`text-xs font-semibold ${stat.labelColor}`}>{stat.label}</span>
@@ -553,31 +550,48 @@ export default function ManageRoomPage() {
                                 ))}
                             </div>
 
-                            {/* Bed Layout Grid */}
+                            {/* Bed Layout Grid (Unified single layout flat grid without row labels) */}
                             <div className="flex flex-col gap-5">
-                                <h4 className="text-sm font-semibold text-[#262D3B]">Bed Layout</h4>
+                                <h4 className="text-sm font-semibold text-[#262D3B]">All Beds in Room</h4>
 
-                                {bedsByRow.map((row) => (
-                                    <div key={row.rowName} className="flex flex-col gap-2">
-                                        <span className="text-sm font-semibold text-[#434956]">{row.rowName}</span>
-                                        <div className="grid grid-cols-4 gap-3">
-                                            {row.beds.map((bed) => (
-                                                <BedCard
-                                                    key={bed.id}
-                                                    bed={bed}
-                                                    isBedSelected={selectedBed === bed.id}
-                                                    onClick={() => {
-                                                        if (bed.status === "Available") {
-                                                            setSelectedBed(bed.id);
-                                                        } else {
-                                                            alert(`Bed ${bed.id} is currently ${bed.status === "Occupied" ? "Occupied by " + bed.patientName : "Reserved on Hold"}.`);
-                                                        }
-                                                    }}
-                                                />
-                                            ))}
-                                        </div>
+                                {isBedsLoading ? (
+                                    <div className="flex items-center justify-center p-8 text-sm text-[#787E8C]">
+                                        Loading Bed Layout...
                                     </div>
-                                ))}
+                                ) : !bedDetailRes?.data?.bedLayout || bedDetailRes.data.bedLayout.length === 0 ? (
+                                    <div className="flex items-center justify-center p-8 text-sm text-[#787E8C]">
+                                        No beds configured for this room.
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-4 gap-3">
+                                        {bedDetailRes.data.bedLayout.map((bed) => (
+                                            <BedCard
+                                                key={bed.bedId}
+                                                bed={{
+                                                    id: bed.bedId.toString(),
+                                                    label: bed.bedNumber,
+                                                    status: bed.status,
+                                                    patientName: bed.patientName,
+                                                    patientUhid: bed.patientUhid,
+                                                }}
+                                                isBedSelected={selectedBed === bed.bedId.toString()}
+                                                onClick={() => {
+                                                    const statusLower = bed.status?.toLowerCase() || "";
+                                                    if (statusLower === "available" || statusLower === "free") {
+                                                        const bedIdStr = bed.bedId.toString();
+                                                        if (selectedBed === bedIdStr) {
+                                                            setSelectedBed(null);
+                                                        } else {
+                                                            setSelectedBed(bedIdStr);
+                                                        }
+                                                    } else {
+                                                        alert(`Bed ${bed.bedNumber} is currently ${statusLower === "occupied" || statusLower === "fully occupied" ? "Occupied by " + bed.patientName : "Reserved"}.`);
+                                                    }
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

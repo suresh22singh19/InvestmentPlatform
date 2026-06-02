@@ -45,6 +45,18 @@ export interface DoctorDropdownResponse {
   data: DoctorDropdownItem[];
 }
 
+export interface RoomTypeDropdownItem {
+  id: number;
+  name: string;
+}
+
+export interface RoomTypeDropdownResponse {
+  message: string;
+  statusCode: number;
+  timestamp: string;
+  data: RoomTypeDropdownItem[];
+}
+
 export const commonApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -69,6 +81,13 @@ export const commonApi = baseApi.injectEndpoints({
         params: params || undefined,
       }),
     }),
+    getRoomTypeDropdown: builder.query<RoomTypeDropdownResponse, DropdownParams | void>({
+      query: (params) => ({
+        url: "/common/room-type-dropdown-list",
+        method: "GET",
+        params: params || undefined,
+      }),
+    }),
   }),
 });
 
@@ -76,4 +95,5 @@ export const {
   useGetBuildingDropdownQuery,
   useGetFloorDropdownQuery,
   useGetDoctorDropdownQuery,
+  useGetRoomTypeDropdownQuery,
 } = commonApi;

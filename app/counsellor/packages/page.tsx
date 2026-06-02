@@ -134,7 +134,7 @@ export default function CounsellorPackagesPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const debouncedSearch = useDebounce(searchTerm, 500);
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(8); // 8 items to perfectly render 2 full rows of 4 columns
+    const [itemsPerPage, setItemsPerPage] = useState(10); // 8 items to perfectly render 2 full rows of 4 columns
 
     const {
         selectedBranchFilter: selectedBranch,
@@ -270,7 +270,7 @@ export default function CounsellorPackagesPage() {
                                     setItemsPerPage(items);
                                     setCurrentPage(1);
                                 },
-                                itemsPerPageOptions: [8, 16, 32, 80],
+                                itemsPerPageOptions: [10, 20, 50, 100],
                             },
                         },
                     ]}
