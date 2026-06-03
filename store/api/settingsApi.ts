@@ -440,7 +440,7 @@ export interface AddUserResponse {
   statusCode: number;
 }
 
-/** PUT /admin/settings/users/:id */
+/** PUT /admin/settings/updateUser/:id */
 export interface UpdateUserResponse {
   success: boolean;
   message: string;
@@ -2255,7 +2255,7 @@ export const settingsApi = baseApi.injectEndpoints({
     }),
     updateUser: builder.mutation<UpdateUserResponse, { id: number; body: UpdateUserBody }>({
       query: ({ id, body }) => ({
-        url: `/admin/settings/users/${id}`,
+        url: `/admin/settings/updateUser/${id}`,
         method: "PUT",
         body,
       }),

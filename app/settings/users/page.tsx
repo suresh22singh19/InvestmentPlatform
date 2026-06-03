@@ -362,6 +362,8 @@ export default function UsersPage() {
     return { usersList: list, totalUsers: total };
   }, [usersRes, itemsPerPage, currentPage]);
 
+  const [togglingStatusUserId, setTogglingStatusUserId] = useState<number | null>(null);
+
   const [addUser, { isLoading: isAddingUser }] = useAddUserMutation();
   const [updateUser, { isLoading: isUpdatingUser }] = useUpdateUserMutation();
   const [triggerUsersPdf] = useLazyGenerateUsersPdfQuery();
@@ -459,6 +461,20 @@ export default function UsersPage() {
       userType: user.userType,
     });
     setDialogMode("view");
+  };
+
+  const handleStatusToggle = async (user: User) => {
+    if (!canEdit || togglingStatusUserId !== null) return;
+    const newStatus = user.status === "Active" ? "inactive" : "active";
+    setTogglingStatusUserId(user.id);
+    try {
+      await updateUser({ id: user.id, body: { status: newStatus } }).unwrap();
+      setMessageDialog({ open: true, variant: "success", message: "Status updated successfully" });
+    } catch (err) {
+      setMessageDialog({ open: true, variant: "error", message: getRtkErrorMessage(err, "Failed to update status") });
+    } finally {
+      setTogglingStatusUserId(null);
+    }
   };
 
   const validateForm = (): boolean => {
@@ -789,6 +805,8 @@ export default function UsersPage() {
                     onView={() => handleView(user)}
                     onEdit={() => handleEdit(user)}
                     onSetDate={() => {}}
+                    onStatusToggle={canEdit ? () => handleStatusToggle(user) : undefined}
+                    isTogglingStatus={togglingStatusUserId === user.id}
                     showViewButton={canView}
                     showEditButton={canEdit}
                   />
