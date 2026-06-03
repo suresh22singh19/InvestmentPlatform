@@ -1,4 +1,8 @@
-import type { ReceptionDashboardStats } from "@/lib/ipd-reception/types";
+import type {
+  ReceptionDashboardStats,
+  ReceptionStatSubtextKey,
+} from "@/lib/ipd-reception/types";
+import type { StatCardSubtextTone } from "@/components/ui/StatCard";
 
 type IpdDashboardStatsBreakdown = Array<{ wardType: string; freeCount?: number }>;
 
@@ -35,4 +39,43 @@ export function mapIpdDashboardStatsToView(
     admittedRecentCount: data.admittedToday?.lastHourCount ?? 0,
     generalWardFreeBeds: findGeneralWardFreeCount(data.availableBeds?.breakdown ?? []),
   };
+}
+
+export function formatIpdDashboardStatValue(
+  value: number | undefined | null,
+  padValue: boolean
+): string | number {
+  if (value === undefined || value === null) return "N/A";
+  if (padValue) return String(value).padStart(2, "0");
+  return value;
+}
+
+export function getIpdDashboardStatSubtext(
+  key: ReceptionStatSubtextKey,
+  stats?: ReceptionDashboardStats
+): { text: string; tone: StatCardSubtextTone } {
+  switch (key) {
+    case "awaitingSubtext":
+      return {
+        text: `+ ${stats?.awaitingRecentCount ?? 0} new in last hour`,
+        tone: "green",
+      };
+    case "admittedSubtext":
+      return {
+        text: `+ ${stats?.admittedRecentCount ?? 0} new in last hour`,
+        tone: "green",
+      };
+    case "bedsSubtext":
+      return {
+        text: `General Ward: ${stats?.generalWardFreeBeds ?? 0} free`,
+        tone: "muted",
+      };
+    case "dischargeSubtext":
+      return {
+        text: "Requires immediate file closure",
+        tone: "muted",
+      };
+    default:
+      return { text: "", tone: "muted" };
+  }
 }

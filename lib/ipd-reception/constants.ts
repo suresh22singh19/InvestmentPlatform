@@ -1,7 +1,5 @@
-import type {
-  ReceptionStatSubtextIcon,
-  WardCapacityStatusColor,
-} from "./types";
+import type { WardCapacityStatusColor } from "./types";
+import type { StatCardSubtextIcon } from "@/components/ui/StatCard";
 
 export const RECEPTION_LOGIN_TYPE = "reception";
 
@@ -27,9 +25,8 @@ export const RECEPTION_STAT_CARDS = [
     id: "totalAwaiting",
     title: "Total Awaiting",
     iconSrc: "/icons/scheduledIcon.svg",
-    iconTone: "green" as const,
     subtextKey: "awaitingSubtext" as const,
-    subtextIcon: "trend" as ReceptionStatSubtextIcon,
+    subtextIcon: "trend" as StatCardSubtextIcon,
     dataKey: "totalAwaiting" as const,
     padValue: false,
   },
@@ -37,9 +34,8 @@ export const RECEPTION_STAT_CARDS = [
     id: "admittedToday",
     title: "Admitted Today",
     iconSrc: "/icons/addPatient.svg",
-    iconTone: "green" as const,
     subtextKey: "admittedSubtext" as const,
-    subtextIcon: "clock" as ReceptionStatSubtextIcon,
+    subtextIcon: "clock" as StatCardSubtextIcon,
     dataKey: "admittedToday" as const,
     padValue: false,
   },
@@ -47,9 +43,8 @@ export const RECEPTION_STAT_CARDS = [
     id: "availableBeds",
     title: "Available Beds",
     iconSrc: "/icons/bedDarkIcon.svg",
-    iconTone: "green" as const,
     subtextKey: "bedsSubtext" as const,
-    subtextIcon: "info" as ReceptionStatSubtextIcon,
+    subtextIcon: "info" as StatCardSubtextIcon,
     dataKey: "availableBeds" as const,
     padValue: false,
   },
@@ -57,26 +52,12 @@ export const RECEPTION_STAT_CARDS = [
     id: "dischargePending",
     title: "Discharge Pending",
     iconSrc: "/icons/exitIcon.svg",
-    iconTone: "red" as const,
     subtextKey: "dischargeSubtext" as const,
-    subtextIcon: "info" as ReceptionStatSubtextIcon,
+    subtextIcon: "info" as StatCardSubtextIcon,
     dataKey: "dischargePending" as const,
     padValue: true,
   },
-];
-
-export const AWAITING_TABLE_COLUMNS = [
-  "Sr no.",
-  "Patient Name",
-  "Patient UHID",
-  "Admission Type",
-  "Counsellor",
-  "Waiting Time",
-  "Action",
 ] as const;
-
-export const DEFAULT_ITEMS_PER_PAGE = 6;
-export const ITEMS_PER_PAGE_OPTIONS = [6, 10, 20, 50, 100];
 
 export const WARD_CAPACITY_LEFT_IDS = ["general-ward", "private-suite", "private-ward"];
 

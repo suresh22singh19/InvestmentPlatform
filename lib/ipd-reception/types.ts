@@ -51,8 +51,6 @@ export type ReceptionStatSubtextKey =
   | "bedsSubtext"
   | "dischargeSubtext";
 
-export type ReceptionStatSubtextIcon = "trend" | "clock" | "info";
-
 // ---------------------------------------------------------------------------
 // Dashboard stats API
 // ---------------------------------------------------------------------------
@@ -179,6 +177,7 @@ export interface AwaitingPatient {
   admissionDate: string;
   createdAt: string;
   status: string;
+  isPatientAdmitted: string;
   waitingTimeMinutes: number;
   patientComplianceStatus: string;
   requiredDocuments: RequiredDocumentItem[];

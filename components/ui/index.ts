@@ -20,6 +20,7 @@ export { FieldUserCard } from "./FieldUserCard";
 export { SMSCard } from "./SMSCard";
 export { RazarPayCard } from "./RazarPayCard";
 export { StatCard } from "./StatCard";
+export type { StatCardSubtextIcon, StatCardSubtextTone } from "./StatCard";
 export { FacilityCard } from "./FacilityCard";
 export { Breadcrumb } from "./Breadcrumb";
 export { ConfigurationProgress } from "./ConfigurationProgress";
