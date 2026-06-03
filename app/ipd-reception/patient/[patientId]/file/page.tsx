@@ -304,7 +304,7 @@ export default function ReceptionOpenFilePage() {
           onConfirmConsentsReceivedChange={setConfirmConsentsReceived}
           confirmIdTag={confirmIdTag}
           onConfirmIdTagChange={setConfirmIdTag}
-          onBack={() => setCurrentStep(1)}
+          onBack={nonCompliantMode ? () => router.back() : () => setCurrentStep(1)}
           onFinalize={() => void handleFinalize()}
           canFinalize={canFinalize}
           isFinalizing={nonCompliantMode ? isSubmittingDocuments : isCreatingAdmission}

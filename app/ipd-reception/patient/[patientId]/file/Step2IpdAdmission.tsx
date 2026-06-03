@@ -193,16 +193,27 @@ export function Step2IpdAdmission({
                 </p>
               </>
             ) : (
-              <Button
-                variant="primary"
-                size="small"
-                className="!min-w-0 !rounded-full !px-5"
-                onClick={onFinalize}
-                disabled={!canFinalize || isFinalizing}
-                isLoading={isFinalizing}
-              >
-                Update Document
-              </Button>
+              <div className="flex shrink-0 flex-row flex-wrap gap-3">
+                <Button
+                  variant="primary"
+                  size="small"
+                  className="!min-w-0 !rounded-full !px-5"
+                  onClick={onFinalize}
+                  disabled={!canFinalize || isFinalizing}
+                  isLoading={isFinalizing}
+                >
+                  Update Document
+                </Button>
+                <Button
+                  variant="outline"
+                  size="small"
+                  className="!min-w-0 !rounded-full !border-[#9A7909] !bg-white !px-5 !text-[#9A7909] shadow-none hover:!bg-[#FBF8F2] active:!bg-[#F5F0E6]"
+                  onClick={onBack}
+                  leftIcon={<Image src="/icons/LeftArrowIcon.svg" alt="" width={16} height={16} />}
+                >
+                  Back
+                </Button>
+              </div>
             )}
           </div>
         </div>
