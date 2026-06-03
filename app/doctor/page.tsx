@@ -435,11 +435,11 @@ export default function DoctorListPage() {
                                                         type="button"
                                                         onClick={() => doctorPerm.canEdit ? setConfirmToggleRow(row) : undefined}
                                                         disabled={togglingStatusId === row.id}
-                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-opacity ${
+                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors ${
                                                             row.status?.toLowerCase() === "inactive"
-                                                                ? "border-[#F6776E] bg-white text-[#F6776E]"
-                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                                                        } ${doctorPerm.canEdit ? "cursor-pointer hover:opacity-70 active:opacity-50" : "cursor-default"} ${togglingStatusId === row.id ? "opacity-50" : ""}`}
+                                                                ? "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
+                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:bg-[#E8F5E9]"
+                                                        } ${doctorPerm.canEdit ? "cursor-pointer" : "cursor-default"} ${togglingStatusId === row.id ? "opacity-50 pointer-events-none" : ""}`}
                                                     >
                                                         {togglingStatusId === row.id ? "..." : row.status?.toLowerCase() === "inactive" ? "Inactive" : "Active"}
                                                     </button>

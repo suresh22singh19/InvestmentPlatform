@@ -38,6 +38,7 @@ import { DEPARTMENT_SLUG_TO_API_ID } from "@/lib/doctor/mapDoctorApi";
 import { doctorFormSchema, mapDoctorFormYupErrors } from "@/lib/validation/doctorFormSchema";
 import { sanitizeEmailInput } from "@/lib/utils/emailValidation";
 import { fileNameFromUrl } from "@/lib/doctor/doctorPhoto";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 const MAX_FIELD_LEN = 100;
 const MAX_EMPLOYEE_ID_LEN = 20;
@@ -848,6 +849,27 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                         mode="single"
                         background="white"
                         error={formErrors.loginType}
+                        labelSlot={
+                            <Tooltip
+                                position="top"
+                                content={
+                                    <div className="text-left text-[10px]" style={{ whiteSpace: "nowrap" }}>
+                                        <p className="mb-1 font-semibold">Login Type determines how the doctor can log in to the system.</p>
+                                        <p><span className="font-semibold">IP</span> — Login allowed only from registered hospital IP address.</p>
+                                        <p><span className="font-semibold">OTP</span> — Login using One-Time Password verification.</p>
+                                        <p><span className="font-semibold">IP/OTP</span> — Both IP restriction and OTP verification required.</p>
+                                        <p><span className="font-semibold">No Auth</span> — Login without IP restriction or OTP verification.</p>
+                                    </div>
+                                }
+                                maxWidth={420}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="cursor-pointer text-[#7B8089]">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="12" y1="16" x2="12" y2="12" />
+                                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                                </svg>
+                            </Tooltip>
+                        }
                     />
                      <FormInputField
                             label="Employee Id *"

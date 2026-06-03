@@ -39,7 +39,6 @@ export const UserCard = ({
   status,
   onView,
   onEdit,
-  onSetDate,
   onStatusToggle,
   isTogglingStatus = false,
   showViewButton = true,
@@ -90,11 +89,11 @@ export const UserCard = ({
           type="button"
           onClick={handleStatusClick}
           disabled={isTogglingStatus || !onStatusToggle}
-          className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] transition-opacity ${
+          className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] transition-colors ${
             status === "Active"
-              ? "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]"
-              : "border-[#F6776E] bg-white text-[#F6776E]"
-          } ${onStatusToggle ? "cursor-pointer hover:opacity-70 active:opacity-50" : "cursor-default"} ${isTogglingStatus ? "opacity-50" : ""}`}
+              ? "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00] hover:bg-[#E8F5E9]"
+              : "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
+          } ${onStatusToggle ? "cursor-pointer" : "cursor-default"} ${isTogglingStatus ? "opacity-50 pointer-events-none" : ""}`}
         >
           {isTogglingStatus ? "..." : status}
         </button>

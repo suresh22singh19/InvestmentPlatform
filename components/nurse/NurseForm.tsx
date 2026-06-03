@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { FormInputField } from "@/components/ui/FormInputField";
 import { FormSelectField, type SelectOption } from "@/components/ui/FormSelectField";
 import { FileUploadField } from "@/components/ui/FileUploadField";
@@ -23,6 +24,7 @@ import {
     type GetBranchRoleByCategoryTypeParams,
 } from "@/store/api/settingsApi";
 import { sanitizeEmailInput } from "@/lib/utils/emailValidation";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 const PROFILE_IMAGE_ACCEPT = "image/png,image/jpeg,.png,.jpg,.jpeg";
 const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg"]);
@@ -344,6 +346,27 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
                             setFormErrors((err) => ({ ...err, loginType: "" }));
                         }}
                         error={formErrors.loginType}
+                        labelSlot={
+                            <Tooltip
+                                position="top"
+                                content={
+                                    <div className="text-left text-[10px]" style={{ whiteSpace: "nowrap" }}>
+                                        <p className="mb-1 font-semibold">Login Type determines how the nurse can log in to the system.</p>
+                                        <p><span className="font-semibold">IP</span> — Login allowed only from registered hospital IP address.</p>
+                                        <p><span className="font-semibold">OTP</span> — Login using One-Time Password verification.</p>
+                                        <p><span className="font-semibold">IP/OTP</span> — Both IP restriction and OTP verification required.</p>
+                                        <p><span className="font-semibold">No Auth</span> — Login without IP restriction or OTP verification.</p>
+                                    </div>
+                                }
+                                maxWidth={420}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="cursor-pointer text-[#7B8089]">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="12" y1="16" x2="12" y2="12" />
+                                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                                </svg>
+                            </Tooltip>
+                        }
                     />
                     </NurseFormFieldSlot>
                     <NurseFormFieldSlot editOrder={isEdit ? 9 : undefined}>
