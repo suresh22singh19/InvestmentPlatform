@@ -343,9 +343,7 @@ export default function ReceptionDashboardPage() {
                       >
                         <TableData variant="primary">{srNo}</TableData>
                         <TableData>{patient.patientName}</TableData>
-                        <TableData>
-                          <span className="font-medium text-[#0B8C00]">{patient.patientUhid}</span>
-                        </TableData>
+                        <TableData>{patient.patientUhid}</TableData>
                         <TableData>
                           <Badge
                             variant={getAdmissionTypeVariant(patient.admissionType)}
