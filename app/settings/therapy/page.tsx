@@ -201,7 +201,7 @@ export default function PanelTherapyPage() {
         id: therapy.id,
         branchId: therapy.branches?.[0]?.id,
         branch: therapy.branches?.[0]?.name,
-        therapyName: therapy.medicineName,
+        therapyName: therapy.therapyName ?? therapy.medicineName,
         price: priceStr,
         productCode: therapy.productCode,
         hsnCode: therapy.hsnCode,
@@ -540,7 +540,7 @@ export default function PanelTherapyPage() {
                     ) : (
                       <>
                         <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
-                        <TableHead sortable sortDirection={getSortDirection("medicineName")} onSort={() => handleSort("medicineName")}>Therapy</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("medicinename")} onSort={() => handleSort("medicineName")}>Therapy</TableHead>
                         <TableHead sortable sortDirection={getSortDirection("price")} onSort={() => handleSort("price")}>Price</TableHead>
                         <TableHead sortable sortDirection={getSortDirection("productCode")} onSort={() => handleSort("productCode")}>Product Code</TableHead>
                         <TableHead className="whitespace-nowrap" sortable sortDirection={getSortDirection("hsnCode")} onSort={() => handleSort("hsnCode")}>HSN Code</TableHead>

@@ -1683,6 +1683,7 @@ interface UpdateArogyaCardResponse {
 interface Therapy {
   id: number;
   medicineName: string;
+  therapyName?: string;
   price: string;
   productCode: string;
   hsnCode: string;
