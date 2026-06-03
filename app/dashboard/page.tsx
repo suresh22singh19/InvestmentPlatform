@@ -9,12 +9,7 @@ import { FaInfoCircle, FaUserAlt, FaUsers } from "react-icons/fa";
 import { FaUserDoctor } from "react-icons/fa6";
 import { PiStethoscopeBold } from "react-icons/pi";
 import { useAppSelector } from "@/store/hooks";
-import {
-  selectLoginType,
-  selectPermissionsMap,
-  selectSelectedBranch,
-  selectUserBranchId,
-} from "@/store/slices/authSlice";
+import { selectPermissionsMap, selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
 import { hasOnlyGateModuleViewAccess } from "@/utils/permission";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
@@ -30,6 +25,7 @@ import {
 } from "@/store/api/dashboardApi";
 import type { DashboardSupportCategory, DashboardSupportContact } from "@/store/api/dashboardApi";
 import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
+import { useGetNursesQuery } from "@/store/api/nurseApi";
 import { usePermission } from "@/hooks/usePermission";
 
 const DASHBOARD_ESCALATION_CARD_TITLE =
@@ -55,10 +51,6 @@ function capitalizeFirst(str: string | null | undefined): string {
 }
 
 export default function DashboardPage() {
-  return <StandardDashboardPage />;
-}
-
-function StandardDashboardPage() {
   const router = useRouter();
   const permissionsMap = useAppSelector(selectPermissionsMap);
   const dashboardPermission = usePermission("Dashboard");
@@ -186,6 +178,12 @@ function StandardDashboardPage() {
     { skip: skipBranch, refetchOnMountOrArgChange: true }
   );
   const totalDoctorCount = doctorsData?.total ?? null;
+
+  const { data: nursesData, isLoading: isNursesLoading } = useGetNursesQuery(
+    { branchId, page: 1, limit: 100 },
+    { skip: skipBranch, refetchOnMountOrArgChange: true }
+  );
+  const totalNurseCount = nursesData?.total ?? null;
   const {
     data: supportContactsResponse,
     isLoading: isSupportContactsLoading,
@@ -196,7 +194,6 @@ function StandardDashboardPage() {
     if (!Array.isArray(list)) return [];
     return [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) as DashboardSupportCategory[];
   }, [supportContactsResponse?.data]);
-
   if (!canView) {
     return (
       <AppShell>
@@ -480,7 +477,9 @@ function StandardDashboardPage() {
           <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
             <div>
               <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Nurse</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
+              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
+                {isNursesLoading ? "—" : totalNurseCount !== null ? totalNurseCount : "—"}
+              </h4>
             </div>
             <div>
               <FaUserDoctor fontSize={45} color="#0B8C00" />

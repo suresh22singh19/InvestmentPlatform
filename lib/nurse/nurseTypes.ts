@@ -23,7 +23,7 @@ export const NURSE_LOGIN_TYPE_OPTIONS: SelectOption[] = [
     { value: "ip", label: "IP" },
     { value: "otp", label: "OTP" },
     { value: "ip-otp", label: "IP/OTP" },
-    { value: "no-auth", label: "No Auth" },
+    { value: "no-auth", label: "No Authentication" },
 ];
 
 export const NURSE_STATUS_OPTIONS: SelectOption[] = [
@@ -40,7 +40,7 @@ export function createEmptyNursePayload(): NursePayload {
         address: "",
         phone: "",
         empId: "",
-        loginType: "no-auth",
+        loginType: "ip",
         roleId: "",
         status: "Active",
     };

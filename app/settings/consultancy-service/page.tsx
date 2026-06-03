@@ -13,12 +13,14 @@ import {
   Pagination,
   PanelCard,
   MessageDialog,
+  FormSelectField,
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import {
   settingsApi,
   useGetAllMasterServicesQuery,
   useCreateMasterServiceMutation,
+  useUpdateMasterServiceMutation,
   type GetAllMasterServicesResponse,
 } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -102,10 +104,11 @@ export default function ConsultancyServiceSettingsPage() {
   const [searchTerm, setSearchTerm] = useState<string>(() => loadState().searchTerm);
   const [currentPage, setCurrentPage] = useState<number>(() => loadState().currentPage);
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => loadState().itemsPerPage);
-  const [dialogMode, setDialogMode] = useState<"add" | "view" | null>(null);
+  const [dialogMode, setDialogMode] = useState<"add" | "view" | "edit" | null>(null);
   const [selectedService, setSelectedService] = useState<MasterServiceRow | null>(null);
   const [formValues, setFormValues] = useState({
     price: "",
+    status: "true",
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -133,6 +136,7 @@ export default function ConsultancyServiceSettingsPage() {
   });
 
   const [createMasterService, { isLoading: isCreating }] = useCreateMasterServiceMutation();
+  const [updateMasterService, { isLoading: isUpdating }] = useUpdateMasterServiceMutation();
 
   const consultancyFiltered = useMemo(() => {
     const list =
@@ -172,7 +176,7 @@ export default function ConsultancyServiceSettingsPage() {
 
   const handleAddNew = () => {
     if (!canAdd) return;
-    setFormValues({ price: "" });
+    setFormValues({ price: "", status: "true" });
     setFormErrors({});
     setSelectedService(null);
     setDialogMode("add");
@@ -181,9 +185,18 @@ export default function ConsultancyServiceSettingsPage() {
   const openView = (service: MasterServiceRow) => {
     if (!canView && !canEdit) return;
     setSelectedService(service);
-    setFormValues({ price: String(service.price) });
+    setFormValues({ price: String(service.price), status: String(service.status) });
     setFormErrors({});
     setDialogMode("view");
+  };
+
+  const openEdit = (service: MasterServiceRow) => {
+    debugger
+    if (!canEdit) return;
+    setSelectedService(service);
+    setFormValues({ price: String(service.price), status: String(service.status) });
+    setFormErrors({});
+    setDialogMode("edit");
   };
 
   const validateForm = (): boolean => {
@@ -238,13 +251,79 @@ export default function ConsultancyServiceSettingsPage() {
       }
 
       setDialogMode(null);
-      setFormValues({ price: "" });
+      setFormValues({ price: "", status: "true" });
       setFormErrors({});
       setSelectedService(null);
     } catch (error: unknown) {
       console.error("Failed to create master service:", error);
 
       let errorMsg = "Failed to create consultancy service. Please try again.";
+      const err = error as {
+        data?: { message?: string; error?: string };
+        error?: string;
+        message?: string;
+      };
+      if (err?.data?.message) {
+        errorMsg = err.data.message;
+      } else if (err?.data?.error) {
+        errorMsg = err.data.error;
+      } else if (err?.error) {
+        errorMsg = err.error;
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+
+      setApiErrorMessage(errorMsg);
+      setShowApiErrorDialog(true);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!canEdit || !selectedService) return;
+
+    if (!validateForm()) {
+      return;
+    }
+
+    try {
+      const price = Number(formValues.price.trim());
+      const status = formValues.status === "true";
+      const result = await updateMasterService({
+        id: selectedService.id,
+        price,
+        status,
+      }).unwrap();
+
+      setSuccessMessage(result?.message || "Consultancy service updated successfully");
+      setShowSuccessDialog(true);
+
+      if (result?.data) {
+        dispatch(
+          settingsApi.util.updateQueryData(
+            "getAllMasterServices",
+            undefined,
+            (draft: GetAllMasterServicesResponse) => {
+              if (Array.isArray(draft.data)) {
+                const idx = draft.data.findIndex((item) => item.id === result.data!.id);
+                if (idx !== -1) {
+                  draft.data[idx] = result.data!;
+                }
+              }
+            }
+          )
+        );
+      }
+
+      setDialogMode(null);
+      setFormValues({ price: "", status: "true" });
+      setFormErrors({});
+      setSelectedService(null);
+    } catch (error: unknown) {
+      console.error("Failed to update master service:", error);
+
+      let errorMsg = "Failed to update consultancy service. Please try again.";
       const err = error as {
         data?: { message?: string; error?: string };
         error?: string;
@@ -333,7 +412,7 @@ export default function ConsultancyServiceSettingsPage() {
                         showViewButton={canView}
                         showEditButton={canEdit}
                         onView={() => openView(row.service)}
-                        onEdit={() => openView(row.service)}
+                        onEdit={() => openEdit(row.service)}
                       />
                     ))}
                   </div>
@@ -371,10 +450,25 @@ export default function ConsultancyServiceSettingsPage() {
           setFormErrors({});
           setSelectedService(null);
         }}
-        title={dialogMode === "add" ? "Add Consultancy Fee" : "View Consultancy Fee"}
+        title={
+          dialogMode === "add"
+            ? "Add Consultancy Fee"
+            : dialogMode === "edit"
+              ? "Edit Consultancy Fee"
+              : "View Consultancy Fee"
+        }
         width={686}
       >
-        <form onSubmit={dialogMode === "add" ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
+        <form
+          onSubmit={
+            dialogMode === "add"
+              ? handleSubmit
+              : dialogMode === "edit"
+                ? handleEditSubmit
+                : (e) => e.preventDefault()
+          }
+          className="space-y-6"
+        >
           <div className="space-y-6">
             <div className="rounded-[12px] border border-[#E3EEE1] bg-[#F9FAF9] px-4 py-3 text-sm text-[#434956]">
               <p className="font-medium text-[#262D3B]">Master service</p>
@@ -400,21 +494,35 @@ export default function ConsultancyServiceSettingsPage() {
                 }}
                 height={44}
                 placeholder="e.g. 500"
-                required={dialogMode === "add"}
+                required={dialogMode === "add" || dialogMode === "edit"}
                 disabled={dialogMode === "view"}
                 error={formErrors.price}
                 inputMode="decimal"
               />
             </div>
 
-            {dialogMode === "view" && selectedService && (
-              <div className="rounded-[12px] bg-white px-4 py-3 text-sm text-[#434956]">
-                <p>
-                  Status:{" "}
-                  <span className="font-medium">
-                    {selectedService.status ? "Active" : "Inactive"}
-                  </span>
-                </p>
+            {(dialogMode === "view" || dialogMode === "edit") && (
+              <div>
+                <FormSelectField
+                  label="Status *"
+                  options={[
+                    { label: "Active", value: "true" },
+                    { label: "Inactive", value: "false" },
+                  ]}
+                  placeholder="Select status"
+                  mode="single"
+                  background="white"
+                  width="100%"
+                  value={formValues.status}
+                  onChange={(value) => {
+                    if (dialogMode === "view") return;
+                    const val = typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
+                    setFormValues((prev) => ({ ...prev, status: val }));
+                    setFormErrors((prev) => ({ ...prev, status: "" }));
+                  }}
+                  disabled={dialogMode === "view"}
+                  error={formErrors.status}
+                />
               </div>
             )}
           </div>
@@ -432,6 +540,24 @@ export default function ConsultancyServiceSettingsPage() {
               >
                 Close
               </Button>
+            ) : dialogMode === "edit" ? (
+              <>
+                <Button type="submit" variant="primary" isLoading={isUpdating} disabled={isUpdating}>
+                  Update Consultancy Fee
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDialogMode(null);
+                    setFormErrors({});
+                    setSelectedService(null);
+                  }}
+                  disabled={isUpdating}
+                >
+                  Cancel
+                </Button>
+              </>
             ) : (
               <>
                 <Button type="submit" variant="primary" isLoading={isCreating} disabled={isCreating}>

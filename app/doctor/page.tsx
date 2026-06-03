@@ -28,11 +28,7 @@ import {
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
 import type { ApiDoctorListItem } from "@/lib/doctor/mapDoctorApi";
-import {
-    buildUpdateDoctorBody,
-    departmentLabelFromApiId,
-    mapApiDoctorListItemToPayload,
-} from "@/lib/doctor/mapDoctorApi";
+import { departmentLabelFromApiId } from "@/lib/doctor/mapDoctorApi";
 import { DoctorAvatarImage } from "@/components/doctor/DoctorAvatarImage";
 import { useAppSelector } from "@/store/hooks";
 import { selectLoginType, selectSelectedBranch } from "@/store/slices/authSlice";
@@ -41,7 +37,6 @@ import {
     useGetAllDoctorsDetailsQuery,
     useLazyGenerateCsvForDoctorQuery,
     useLazyGeneratePdfForDoctorQuery,
-    useUpdateDoctorDetailsMutation,
 } from "@/store/api/doctorApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -56,14 +51,6 @@ function rtkErrorMessage(e: unknown): string {
     if (typeof x?.data?.message === "string") return x.data.message;
     if (typeof x?.message === "string") return x.message;
     return "Something went wrong";
-}
-
-function doctorIsInactive(row: Pick<ApiDoctorListItem, "status">): boolean {
-    return row.status?.toLowerCase() === "inactive";
-}
-
-function doctorStatusLabel(row: Pick<ApiDoctorListItem, "status">): string {
-    return doctorIsInactive(row) ? "Inactive" : "Active";
 }
 
 export default function DoctorListPage() {
@@ -142,15 +129,6 @@ export default function DoctorListPage() {
 
     const [exportError, setExportError] = useState("");
     const [showExportErrorDialog, setShowExportErrorDialog] = useState(false);
-    const [pendingStatusToggle, setPendingStatusToggle] = useState<ApiDoctorListItem | null>(null);
-    const [messageDialog, setMessageDialog] = useState<{
-        open: boolean;
-        variant: "success" | "error";
-        message: string;
-    }>({ open: false, variant: "success", message: "" });
-
-    const [updateDoctorDetails, { isLoading: isUpdatingDoctor }] = useUpdateDoctorDetailsMutation();
-
     const loginType = useAppSelector(selectLoginType);
     const checkLoginType = loginType?.toLowerCase() === "doctor" ? true : false;
 
@@ -238,47 +216,6 @@ export default function DoctorListPage() {
 
     const handleRefresh = () => {
         void refetch();
-    };
-
-    const dismissMessageDialog = () => {
-        setMessageDialog((m) => ({ ...m, open: false }));
-    };
-
-    const handleConfirmStatusToggle = async () => {
-        if (!pendingStatusToggle || isUpdatingDoctor) return;
-
-        const nextStatusApi = doctorIsInactive(pendingStatusToggle) ? "active" : "inactive";
-        const payload = mapApiDoctorListItemToPayload(pendingStatusToggle);
-        const body = buildUpdateDoctorBody(
-            {
-                ...payload,
-                status: nextStatusApi === "active" ? "Active" : "Inactive",
-            },
-            pendingStatusToggle.roleId
-        );
-
-        try {
-            await updateDoctorDetails({
-                id: pendingStatusToggle.id,
-                body,
-            }).unwrap();
-            setPendingStatusToggle(null);
-            setMessageDialog({
-                open: true,
-                variant: "success",
-                message:
-                    nextStatusApi === "active"
-                        ? "Doctor has been activated successfully."
-                        : "Doctor has been inactivated successfully.",
-            });
-        } catch (e) {
-            setPendingStatusToggle(null);
-            setMessageDialog({
-                open: true,
-                variant: "error",
-                message: rtkErrorMessage(e),
-            });
-        }
     };
 
     const goView = (row: ApiDoctorListItem) =>
@@ -469,30 +406,17 @@ export default function DoctorListPage() {
                                                     {row.nabh?.toLowerCase() === "yes" ? "Yes" : "No"}
                                                 </TableData>
                                                 <TableData>
-                                                    {doctorPerm.canEdit ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setPendingStatusToggle(row)}
-                                                            className={`inline-flex h-[30px] min-w-[76px] cursor-pointer items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors duration-150 ${
-                                                                doctorIsInactive(row)
-                                                                    ? "border-[#F6776E] bg-white text-[#F6776E] hover:border-[#F6776E] hover:bg-[#FFEBEE] hover:shadow-sm"
-                                                                    : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:border-[#0B8C00]/50 hover:bg-[#E8F5E9] hover:shadow-sm"
-                                                            }`}
-                                                            aria-label={`Change status from ${doctorStatusLabel(row)}`}
-                                                        >
-                                                            {doctorStatusLabel(row)}
-                                                        </button>
-                                                    ) : (
-                                                        <span
-                                                            className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${
-                                                                doctorIsInactive(row)
-                                                                    ? "border-[#F6776E] bg-white text-[#F6776E]"
-                                                                    : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                                                            }`}
-                                                        >
-                                                            {doctorStatusLabel(row)}
-                                                        </span>
-                                                    )}
+                                                    <span
+                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${
+                                                            row.status?.toLowerCase() === "inactive"
+                                                                ? "border-[#F6776E] bg-white text-[#F6776E]"
+                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
+                                                        }`}
+                                                    >
+                                                        {row.status?.toLowerCase() === "inactive"
+                                                            ? "Inactive"
+                                                            : "Active"}
+                                                    </span>
                                                 </TableData>
                                                 <TableData>
                                                     <div className="flex items-center gap-2">
@@ -571,45 +495,6 @@ export default function DoctorListPage() {
                     </div>
                 </ListBorder>
             </div>
-
-            <MessageDialog
-                open={!!pendingStatusToggle}
-                onClose={() => {
-                    if (!isUpdatingDoctor) setPendingStatusToggle(null);
-                }}
-                icon="/icons/questionMark.svg"
-                iconBgColor="#FFF8E1"
-                message={
-                    pendingStatusToggle
-                        ? doctorIsInactive(pendingStatusToggle)
-                            ? "Are you sure you want to Active this Doctor"
-                            : "Are you sure you want to Inactive this Doctor"
-                        : ""
-                }
-                confirmText="Confirm"
-                cancelText="Cancel"
-                showCancel
-                isActionLoading={isUpdatingDoctor}
-                onConfirm={handleConfirmStatusToggle}
-                onCancel={() => {
-                    if (!isUpdatingDoctor) setPendingStatusToggle(null);
-                }}
-            />
-
-            <MessageDialog
-                open={messageDialog.open}
-                onClose={dismissMessageDialog}
-                message={messageDialog.message}
-                icon={
-                    messageDialog.variant === "success"
-                        ? "/icons/SuccessCheck.svg"
-                        : "/icons/ErrorIcon.svg"
-                }
-                iconBgColor={messageDialog.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
-                confirmText="OK"
-                showCancel={false}
-                onConfirm={dismissMessageDialog}
-            />
 
             <MessageDialog
                 open={showExportErrorDialog}

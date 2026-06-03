@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { Button, Dialog, FormInputField, FormSelectField, TableSearchInput, Pagination, ExportButton, UserCard, MessageDialog } from "@/components/ui";
-import { LoginTypeInfoIcon } from "@/components/ui/LoginTypeInfoIcon";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import {
@@ -13,7 +12,7 @@ import {
   useGetBranchRoleByCategoryTypeQuery,
   useGetUsersQuery,
   useAddUserMutation,
-  useUpdateSettingsUserMutation,
+  useUpdateUserMutation,
   useLazyGenerateUsersPdfQuery,
   normalizeGetUsersResponse,
   type GetBranchRoleByCategoryTypeParams,
@@ -308,7 +307,6 @@ export default function UsersPage() {
     variant: "success" | "error";
     message: string;
   }>({ open: false, variant: "success", message: "" });
-  const [pendingStatusToggle, setPendingStatusToggle] = useState<User | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(searchTerm), 350);
@@ -365,7 +363,7 @@ export default function UsersPage() {
   }, [usersRes, itemsPerPage, currentPage]);
 
   const [addUser, { isLoading: isAddingUser }] = useAddUserMutation();
-  const [updateSettingsUser, { isLoading: isUpdatingUser }] = useUpdateSettingsUserMutation();
+  const [updateUser, { isLoading: isUpdatingUser }] = useUpdateUserMutation();
   const [triggerUsersPdf] = useLazyGenerateUsersPdfQuery();
 
   /** Corporate: only `roleCategoryType` (no `branchId` key). Facility: include `branchId` only when a valid branch is selected. */
@@ -405,35 +403,6 @@ export default function UsersPage() {
 
   const dismissMessageDialog = () => {
     setMessageDialog((m) => ({ ...m, open: false }));
-  };
-
-  const handleConfirmStatusToggle = async () => {
-    if (!pendingStatusToggle || isUpdatingUser) return;
-
-    const nextStatusApi = pendingStatusToggle.status === "Active" ? "inactive" : "active";
-
-    try {
-      await updateSettingsUser({
-        id: pendingStatusToggle.id,
-        body: { status: nextStatusApi },
-      }).unwrap();
-      setPendingStatusToggle(null);
-      setMessageDialog({
-        open: true,
-        variant: "success",
-        message:
-          nextStatusApi === "active"
-            ? "User has been activated successfully."
-            : "User has been inactivated successfully.",
-      });
-    } catch (err) {
-      setPendingStatusToggle(null);
-      setMessageDialog({
-        open: true,
-        variant: "error",
-        message: getRtkErrorMessage(err, "Failed to update user status"),
-      });
-    }
   };
 
   const handleAddNew = () => {
@@ -626,7 +595,7 @@ export default function UsersPage() {
         if (formValues.userType === "Facility" && formValues.branch) {
           body.branchId = Number.parseInt(formValues.branch, 10);
         }
-        await updateSettingsUser({ id: selectedUser.id, body }).unwrap();
+        await updateUser({ id: selectedUser.id, body }).unwrap();
         setMessageDialog({ open: true, variant: "success", message: "User updated successfully" });
       }
 
@@ -715,30 +684,6 @@ export default function UsersPage() {
 
   return (
     <AppShell>
-      <MessageDialog
-        open={!!pendingStatusToggle}
-        onClose={() => {
-          if (!isUpdatingUser) setPendingStatusToggle(null);
-        }}
-        icon="/icons/questionMark.svg"
-        iconBgColor="#FFF8E1"
-        message={
-          pendingStatusToggle
-            ? pendingStatusToggle.status === "Active"
-              ? "Are you sure you want to Inactive this User"
-              : "Are you sure you want to Active this User"
-            : ""
-        }
-        confirmText="Confirm"
-        cancelText="Cancel"
-        showCancel
-        isActionLoading={isUpdatingUser}
-        onConfirm={handleConfirmStatusToggle}
-        onCancel={() => {
-          if (!isUpdatingUser) setPendingStatusToggle(null);
-        }}
-      />
-
       <MessageDialog
         open={messageDialog.open}
         onClose={dismissMessageDialog}
@@ -844,7 +789,6 @@ export default function UsersPage() {
                     onView={() => handleView(user)}
                     onEdit={() => handleEdit(user)}
                     onSetDate={() => {}}
-                    onStatusClick={canEdit ? () => setPendingStatusToggle(user) : undefined}
                     showViewButton={canView}
                     showEditButton={canEdit}
                   />
@@ -1059,7 +1003,6 @@ export default function UsersPage() {
             <div>
               <FormSelectField
                 label="Login Type"
-                labelSuffix={dialogMode !== "view" ? <LoginTypeInfoIcon entity="user" /> : undefined}
                 value={formValues.loginType}
                 onChange={(value) => {
                   if (dialogMode === "view") return;
@@ -1097,7 +1040,7 @@ export default function UsersPage() {
                 placeholder="Status"
                 mode="single"
                 background="white"
-                disabled={dialogMode === "view"}
+                disabled={dialogMode === "view" || isEditMode}
               />
             </div>
           </div>

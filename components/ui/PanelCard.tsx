@@ -90,11 +90,10 @@ export const PanelCard = ({
               type="button"
               onClick={isDefaultPanel ? undefined : onEdit}
               disabled={isDefaultPanel}
-              className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors ${
-                isDefaultPanel
-                  ? "cursor-not-allowed opacity-70"
-                  : "cursor-pointer hover:bg-[#0A7F00]"
-              }`}
+              className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors ${isDefaultPanel
+                ? "cursor-not-allowed opacity-70"
+                : "cursor-pointer hover:bg-[#0A7F00]"
+                }`}
             >
               <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
               Edit
@@ -104,11 +103,10 @@ export const PanelCard = ({
                 type="button"
                 onClick={isDefaultPanel ? undefined : onDelete}
                 disabled={isDefaultPanel}
-                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors ${
-                  isDefaultPanel
-                    ? "cursor-not-allowed opacity-70"
-                    : "cursor-pointer hover:bg-[#0A7F00]"
-                }`}
+                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors ${isDefaultPanel
+                  ? "cursor-not-allowed opacity-70"
+                  : "cursor-pointer hover:bg-[#0A7F00]"
+                  }`}
               >
                 <Image src="/icons/DeleteWhiteIcon.svg" alt="Delete" width={14} height={15} className="shrink-0" />
                 Delete
@@ -132,11 +130,10 @@ export const PanelCard = ({
                 type="button"
                 onClick={isDefaultPanel ? undefined : onEdit}
                 disabled={isDefaultPanel}
-                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-3 text-xs font-medium leading-[120%] text-white transition-colors ${
-                  isDefaultPanel
-                    ? "cursor-not-allowed opacity-70"
-                    : "cursor-pointer hover:bg-[#0A7F00]"
-                }`}
+                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-3 text-xs font-medium leading-[120%] text-white transition-colors ${isDefaultPanel
+                  ? "cursor-not-allowed opacity-70"
+                  : "cursor-pointer hover:bg-[#0A7F00]"
+                  }`}
               >
                 <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
                 Edit
@@ -147,11 +144,10 @@ export const PanelCard = ({
                 type="button"
                 onClick={isDefaultPanel ? undefined : onDelete}
                 disabled={isDefaultPanel}
-                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-3 text-xs font-medium leading-[120%] text-white transition-colors ${
-                  isDefaultPanel
-                    ? "cursor-not-allowed opacity-70"
-                    : "cursor-pointer hover:bg-[#0A7F00]"
-                }`}
+                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-3 text-xs font-medium leading-[120%] text-white transition-colors ${isDefaultPanel
+                  ? "cursor-not-allowed opacity-70"
+                  : "cursor-pointer hover:bg-[#0A7F00]"
+                  }`}
               >
                 <Image src="/icons/DeleteWhiteIcon.svg" alt="Delete" width={14} height={15} className="shrink-0" />
                 Delete
@@ -173,13 +169,9 @@ export const PanelCard = ({
             {showEditButton ? (
               <button
                 type="button"
-                onClick={isDefaultPanel ? undefined : onEdit}
-                disabled={isDefaultPanel}
-                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors ${
-                  isDefaultPanel
-                    ? "cursor-not-allowed"
-                    : "hover:bg-[#0A7F00] cursor-pointer"
-                }`}
+                onClick={onEdit}
+                // disabled={isDefaultPanel}
+                className={`flex h-[30px] flex-1 items-center justify-center gap-1 rounded-[32px] bg-[#0B8C00] px-4 text-xs font-medium leading-[120%] text-white transition-colors hover:bg-[#0A7F00] cursor-pointer`}
               >
                 <Image src="/icons/EditLightIcon.svg" alt="Edit" width={14} height={14} className="shrink-0" />
                 Edit

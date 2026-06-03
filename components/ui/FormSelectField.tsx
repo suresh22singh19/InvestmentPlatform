@@ -44,8 +44,6 @@ export type FormSelectFieldProps = {
   error?: string;
   emptyMessage?: string; // Custom message when no options are available
   hideLabel?: boolean; // When true, do not render label (e.g. for compact header use)
-  /** Renders beside the floating label (e.g. info icon with tooltip). */
-  labelSuffix?: ReactNode;
   className?: string;
 };
 
@@ -121,7 +119,6 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       error,
       emptyMessage = "No results found",
       hideLabel = false,
-      labelSuffix,
       className="",
       onBlur,
       onOpen,
@@ -132,14 +129,8 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
   const isMultiple = props.mode === "multiple";
   const Check_Cursor_pointer = className ? className : "";
   
-  const labelIsRequired = label.includes("*");
-  const labelTextWithoutRequired = useMemo(() => {
-    if (!labelIsRequired) return label;
-    return label.split("*")[0].trimEnd();
-  }, [label, labelIsRequired]);
-
   const renderLabel = useMemo(() => {
-    if (labelIsRequired) {
+    if (label.includes("*")) {
       const parts = label.split("*");
       return (
         <>
@@ -150,11 +141,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       );
     }
     return label;
-  }, [label, labelIsRequired]);
-
-  const requiredAsterisk = (
-    <span className="pointer-events-none text-[#F6776E]">*</span>
-  );
+  }, [label]);
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [keyboardSearch, setKeyboardSearch] = useState("");
@@ -1303,23 +1290,15 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       style={wrapperStyles}
     >
       {!hideLabel ? (
-        <span
-          className={`absolute left-6 top-0 z-10 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089] ${labelSuffix ? "cursor-default" : "pointer-events-none"}`}
-        >
-          <span className={labelSuffix ? "cursor-default" : undefined}>
-            {labelSuffix && labelIsRequired ? labelTextWithoutRequired : renderLabel}
-          </span>
-          {labelSuffix}
-          {labelSuffix && labelIsRequired ? (
-            <span className="cursor-default">{requiredAsterisk}</span>
-          ) : null}
+        <span className="pointer-events-none absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
+          {renderLabel}
         </span>
       ) : null}
 
       <button
         ref={buttonRef}
         type="button"
-        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : labelSuffix ? "cursor-default" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""} ${Check_Cursor_pointer}`}
+        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""} ${Check_Cursor_pointer}`}
         onClick={toggleOpen}
         onKeyDown={handleKeyDown}
         onBlur={(e) => {

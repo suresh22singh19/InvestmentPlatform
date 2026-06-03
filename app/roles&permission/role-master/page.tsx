@@ -33,6 +33,7 @@ import Image from "next/image";
 import { BackToPreviousPageButton } from "@/components/ui";
 import type {
     ModuleListItem,
+    RoleListItem,
     RoleByIdData,
     RoleAccessPayload,
     RolePermissionPayload,
@@ -48,6 +49,7 @@ import {
     useLazyGetStatesByZoneQuery,
     useLazyGetRoleListDropdownQuery,
     useUpdateRoleMutation,
+    useUpdateRoleStatusMutation,
 } from "@/store/api/roleAndPermission";
 import { useAppSelector } from "@/store/hooks";
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
@@ -722,6 +724,7 @@ export default function RoleMasterPage() {
 
     const [createRoles, { isLoading: isCreating }] = useCreateRolesMutation();
     const [updateRoleMutation, { isLoading: isUpdating }] = useUpdateRoleMutation();
+    const [updateRoleStatus, { isLoading: isUpdatingStatus }] = useUpdateRoleStatusMutation();
     const [triggerGetRoleById] = useLazyGetRoleByIdQuery();
     const [triggerStatesByZone] = useLazyGetStatesByZoneQuery();
     const { data: indiaStatesData } = useGetStatesQuery({ countryId: 6 });
@@ -758,7 +761,11 @@ export default function RoleMasterPage() {
     /** Autocomplete for define-step role name field (all presets) */
     const [roleDropdownItems, setRoleDropdownItems] = useState<RoleDropdownItem[]>([]);
     const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+    const [statusConfirmRole, setStatusConfirmRole] = useState<RoleListItem | null>(null);
+    const [statusConfirmIsActive, setStatusConfirmIsActive] = useState<boolean>(true);
     const roleDropdownRef = useRef<HTMLDivElement>(null);
+    const isRoleInputFocusedRef = useRef(false);
+    const justSelectedRef = useRef(false);
     const [fetchRoleDropdown] = useLazyGetRoleListDropdownQuery();
 
     useEffect(() => {
@@ -818,7 +825,14 @@ export default function RoleMasterPage() {
                 if (cancelled) return;
                 const apiItems: RoleDropdownItem[] = res.success && Array.isArray(res.data) ? res.data : [];
                 setRoleDropdownItems(apiItems);
-                setRoleDropdownOpen(apiItems.length > 0);
+                if (justSelectedRef.current) {
+                    justSelectedRef.current = false;
+                    setRoleDropdownOpen(false);
+                } else if (isRoleInputFocusedRef.current) {
+                    setRoleDropdownOpen(apiItems.length > 0);
+                } else {
+                    setRoleDropdownOpen(false);
+                }
             })
             .catch(() => {
                 if (cancelled) return;
@@ -836,11 +850,13 @@ export default function RoleMasterPage() {
         setRoleDropdownOpen(false);
         setRoleDropdownItems([]);
         setRoleName("");
+        justSelectedRef.current = false;
     }, []);
 
     const onRoleNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
         const val = sanitizeRoleWizardTextLikePatientName(e.target.value);
         setRoleName(val);
+        justSelectedRef.current = false;
         if (val.trim()) setDefineErrors((prev) => ({ ...prev, roleName: "" }));
 
         if (val.trim().length === 0) {
@@ -848,9 +864,18 @@ export default function RoleMasterPage() {
             setRoleDropdownOpen(false);
         }
     }, []);
+    const onRoleNameFocus = useCallback(() => {
+        isRoleInputFocusedRef.current = true;
+        if (roleDropdownItems.length > 0) {
+            setRoleDropdownOpen(true);
+        }
+    }, [roleDropdownItems]);
+
     const onRoleNameBlur = useCallback((e: FocusEvent<HTMLInputElement>) => {
         const trimmed = e.target.value.trim();
         if (trimmed !== e.target.value) setRoleName(trimmed);
+
+        isRoleInputFocusedRef.current = false;
 
         // Auto-select first dropdown item on blur if dropdown is open
         setRoleDropdownItems((prevItems) => {
@@ -1287,6 +1312,7 @@ export default function RoleMasterPage() {
         setEditingRoleId(null);
         setEditingIsActive(true);
         setFacilitySelectedModuleIds([]);
+        isRoleInputFocusedRef.current = false;
     }, [permissionSections, isRoleListSuperAdmin, selectedBranchFilter]);
 
     const selectCorporateDataScope = useCallback((id: DataScopeLevel) => {
@@ -1565,6 +1591,31 @@ export default function RoleMasterPage() {
         } catch {
             showMessage("error", "Could not load role for editing.");
             closeWizard();
+        }
+    };
+
+    const openStatusUpdateDialog = (row: RoleListItem) => {
+        setStatusConfirmRole(row);
+        setStatusConfirmIsActive(Boolean(row.isActive));
+    };
+
+    const handleUpdateStatusSubmit = async () => {
+        if (!statusConfirmRole) return;
+        try {
+            const res = await updateRoleStatus({
+                roleId: statusConfirmRole.id,
+                isActive: statusConfirmIsActive,
+            }).unwrap();
+
+            showMessage("success", res.message || "Role status updated successfully.");
+            setStatusConfirmRole(null);
+        } catch (e: unknown) {
+            let errorMsg = "Failed to update role status. Please try again.";
+            if (e && typeof e === "object" && "data" in e) {
+                const d = (e as { data?: { message?: string } }).data;
+                if (d?.message && typeof d.message === "string") errorMsg = d.message;
+            }
+            showMessage("error", errorMsg);
         }
     };
 
@@ -2295,6 +2346,56 @@ export default function RoleMasterPage() {
                 </div>
             </Dialog>
 
+            <Dialog
+                open={statusConfirmRole !== null}
+                onClose={() => setStatusConfirmRole(null)}
+                title="Update Role Status"
+                width={480}
+            >
+                <div className="space-y-6">
+                    <p className="text-sm text-[#434956]">
+                        Update status for role <span className="font-semibold text-[#262D3B]">{statusConfirmRole?.name}</span>:
+                    </p>
+                    <div>
+                        <FormSelectField
+                            label="Status *"
+                            options={[
+                                { label: "Active", value: "true" },
+                                { label: "Inactive", value: "false" },
+                            ]}
+                            placeholder="Select status"
+                            mode="single"
+                            background="white"
+                            width="100%"
+                            value={String(statusConfirmIsActive)}
+                            onChange={(value) => {
+                                const val = typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
+                                setStatusConfirmIsActive(val === "true");
+                            }}
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setStatusConfirmRole(null)}
+                            disabled={isUpdatingStatus}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="primary"
+                            onClick={handleUpdateStatusSubmit}
+                            isLoading={isUpdatingStatus}
+                            disabled={isUpdatingStatus}
+                        >
+                            Update
+                        </Button>
+                    </div>
+                </div>
+            </Dialog>
+
             {!isRoleWizardOpen && !manageView && !manageLoading && (
                 <div className="space-y-8">
                     <div className="flex items-start justify-between">
@@ -2491,10 +2592,18 @@ export default function RoleMasterPage() {
                                                         </TableData>
                                                         <TableData>{permissionCountDisplay}</TableData>
                                                         <TableData>
-                                                            <span className="inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border border-[#0B8C00]/20 bg-white py-2 px-5 text-xs leading-[120%] text-[#0B8C00]">
-                                                                Active
-                                                            </span>
-                                                        </TableData>
+                                                             <button
+                                                                 type="button"
+                                                                 onClick={() => openStatusUpdateDialog(row)}
+                                                                 className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border bg-white py-2 px-5 text-xs leading-[120%] cursor-pointer transition-colors ${
+                                                                     row.isActive
+                                                                         ? "border-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/5"
+                                                                         : "border-[#F6776E]/20 text-[#F6776E] hover:bg-[#F6776E]/5"
+                                                                 }`}
+                                                             >
+                                                                 {row.isActive ? "Active" : "Inactive"}
+                                                             </button>
+                                                         </TableData>
                                                         <TableData>
                                                             <div className="flex flex-wrap items-center gap-2">
                                                                 <button
@@ -2682,6 +2791,7 @@ export default function RoleMasterPage() {
                                             value={roleName}
                                             maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
                                             onChange={onRoleNameChange}
+                                            onFocus={onRoleNameFocus}
                                             onBlur={onRoleNameBlur}
                                             error={defineErrors.roleName || undefined}
                                             autoComplete="off"
@@ -2704,6 +2814,7 @@ export default function RoleMasterPage() {
                                                                 } else {
                                                                     setRoleName(item.name);
                                                                 }
+                                                                justSelectedRef.current = true;
                                                                 setRoleDropdownOpen(false);
                                                                 setRoleDropdownItems([]);
                                                                 setDefineErrors((prev) => ({ ...prev, roleName: "" }));
@@ -2833,6 +2944,7 @@ export default function RoleMasterPage() {
                                             value={roleName}
                                             maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
                                             onChange={onRoleNameChange}
+                                            onFocus={onRoleNameFocus}
                                             onBlur={onRoleNameBlur}
                                             error={defineErrors.roleName || undefined}
                                             autoComplete="off"
@@ -2847,6 +2959,7 @@ export default function RoleMasterPage() {
                                                             onMouseDown={(e) => {
                                                                 e.preventDefault();
                                                                 setRoleName(item.name);
+                                                                justSelectedRef.current = true;
                                                                 setRoleDropdownOpen(false);
                                                                 setRoleDropdownItems([]);
                                                                 setDefineErrors((prev) => ({ ...prev, roleName: "" }));

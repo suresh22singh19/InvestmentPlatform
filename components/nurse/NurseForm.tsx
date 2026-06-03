@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { FormInputField } from "@/components/ui/FormInputField";
 import { FormSelectField, type SelectOption } from "@/components/ui/FormSelectField";
-import { LoginTypeInfoIcon } from "@/components/ui/LoginTypeInfoIcon";
 import { FileUploadField } from "@/components/ui/FileUploadField";
 import { Button } from "@/components/ui/Button";
 import { BackToPreviousPageButton } from "@/components/ui/Buttons";
@@ -280,23 +279,6 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
 
     const existingPhotoLabel = fileNameFromUrl(form.imgUrl);
 
-    const loginTypeField = (
-        <FormSelectField
-            label="Login Type *"
-            labelSuffix={<LoginTypeInfoIcon entity="nurse" size={14} />}
-            value={form.loginType}
-            options={NURSE_LOGIN_TYPE_OPTIONS}
-            mode="single"
-            background="white"
-            placeholder="Select"
-            onChange={(v) => {
-                setForm((p) => ({ ...p, loginType: pickSingle(v) }));
-                setFormErrors((err) => ({ ...err, loginType: "" }));
-            }}
-            error={formErrors.loginType}
-        />
-    );
-
     return (
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
             <div className="overflow-visible rounded-[20px] border border-[#E3EEE1] bg-white p-5">
@@ -350,7 +332,19 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
                     </NurseFormReadOnlyShell>
                     </NurseFormFieldSlot>
                     <NurseFormFieldSlot editOrder={isEdit ? 8 : undefined}>
-                    {loginTypeField}
+                    <FormSelectField
+                        label="Login Type *"
+                        value={form.loginType}
+                        options={NURSE_LOGIN_TYPE_OPTIONS}
+                        mode="single"
+                        background="white"
+                        placeholder="Select"
+                        onChange={(v) => {
+                            setForm((p) => ({ ...p, loginType: pickSingle(v) }));
+                            setFormErrors((err) => ({ ...err, loginType: "" }));
+                        }}
+                        error={formErrors.loginType}
+                    />
                     </NurseFormFieldSlot>
                     <NurseFormFieldSlot editOrder={isEdit ? 9 : undefined}>
                         <FileUploadField

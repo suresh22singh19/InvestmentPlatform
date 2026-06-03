@@ -440,7 +440,7 @@ export interface AddUserResponse {
   statusCode: number;
 }
 
-/** PUT /admin/settings/users/:id and PUT /admin/settings/updateUser/:id */
+/** PUT /admin/settings/users/:id */
 export interface UpdateUserResponse {
   success: boolean;
   message: string;
@@ -1408,6 +1408,20 @@ interface CreateMasterServiceResponse {
   statusCode?: number;
 }
 
+export interface UpdateMasterServiceRequest {
+  id: number;
+  price: number;
+  status: boolean;
+}
+
+export interface UpdateMasterServiceResponse {
+  success: boolean;
+  data?: MasterServiceItem;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
 interface DiagnosisCategory {
   id: number;
   name: string;
@@ -2247,14 +2261,6 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Settings"],
     }),
-    updateSettingsUser: builder.mutation<UpdateUserResponse, { id: number; body: UpdateUserBody }>({
-      query: ({ id, body }) => ({
-        url: `/admin/settings/updateUser/${id}`,
-        method: "PUT",
-        body,
-      }),
-      invalidatesTags: ["Settings"],
-    }),
     generateUsersPdf: builder.query<GenerateUsersPdfResponse, { branchId?: number } | void>({
       query: (params) => {
         const queryParams = new URLSearchParams();
@@ -2812,6 +2818,14 @@ export const settingsApi = baseApi.injectEndpoints({
         method: "POST",
         body: payload,
       }),
+    }),
+    updateMasterService: builder.mutation<UpdateMasterServiceResponse, UpdateMasterServiceRequest>({
+      query: ({ id, ...payload }) => ({
+        url: `/admin/settings/master-service/updateMasterService/${id}`,
+        method: "PATCH",
+        body: payload,
+      }),
+      invalidatesTags: ["MasterServices"],
     }),
     getDiagnosisCategoriesOnly: builder.query<DiagnosisCategoriesOnlyResponse, GetDiagnosisCategoriesOnlyParams | void>({
       query: (params) => {
@@ -3435,7 +3449,6 @@ export const {
   useGetUsersQuery,
   useAddUserMutation,
   useUpdateUserMutation,
-  useUpdateSettingsUserMutation,
   useLazyGenerateUsersPdfQuery,
   useGetLabTestsQuery,
   useGetLabTestsByBranchQuery,
@@ -3480,6 +3493,7 @@ export const {
   useDeleteRoomTypeMutation,
   useGetAllMasterServicesQuery,
   useCreateMasterServiceMutation,
+  useUpdateMasterServiceMutation,
   useGetDiagnosisCategoriesOnlyQuery,
   useGetDiagnosisCategoriesQuery,
   useCreateDiagnosisCategoryMutation,

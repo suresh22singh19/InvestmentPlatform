@@ -19,7 +19,6 @@ type UserCardProps = {
   onView: () => void;
   onEdit: () => void;
   onSetDate: () => void;
-  onStatusClick?: () => void;
   showViewButton?: boolean;
   showEditButton?: boolean;
 };
@@ -37,21 +36,9 @@ export const UserCard = ({
   onView,
   onEdit,
   onSetDate,
-  onStatusClick,
   showViewButton = true,
   showEditButton = true,
 }: UserCardProps) => {
-  const statusBaseClassName =
-    "inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%]";
-  const statusClassName = `${statusBaseClassName} ${
-    status === "Active"
-      ? "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]"
-      : "border-[#F6776E] bg-white text-[#F6776E]"
-  }`;
-  const statusHoverClassName =
-    status === "Active"
-      ? "hover:border-[#0B8C00]/50 hover:bg-[#E8F5E9] hover:shadow-sm"
-      : "hover:border-[#F6776E] hover:bg-[#FFEBEE] hover:shadow-sm";
   return (
     <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-5 shadow-[0px_1px_8px_rgba(25,33,61,0.06)]">
       <div className="-mx-5 mb-5 flex items-start justify-between gap-3 border-b border-[#DFE0E2] px-5 pb-5">
@@ -79,18 +66,15 @@ export const UserCard = ({
             <p className="mt-0.5 text-xs leading-[120%] text-[#525763]">{email}</p>
           </div>
         </div>
-        {onStatusClick ? (
-          <button
-            type="button"
-            onClick={onStatusClick}
-            className={`${statusClassName} ${statusHoverClassName} cursor-pointer transition-colors duration-150`}
-            aria-label={`Change status from ${status}`}
-          >
-            {status}
-          </button>
-        ) : (
-          <span className={statusClassName}>{status}</span>
-        )}
+        <span
+          className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${
+            status === "Active"
+              ? "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00]"
+              : "border-[#F6776E] bg-white text-[#F6776E]"
+          }`}
+        >
+          {status}
+        </span>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-6">

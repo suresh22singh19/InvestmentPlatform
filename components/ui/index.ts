@@ -106,4 +106,5 @@ export { SpecializedPhysicalExamCard } from "./SpecializedPhysicalExamCard";
 export type { SpecializedPhysicalExamCardProps } from "./SpecializedPhysicalExamCard";
 export { ClinicalAssessmentRecord } from "./ClinicalAssessmentRecord";
 export type { ClinicalAssessmentRecordProps } from "./ClinicalAssessmentRecord";
+export { Slider } from "./Slider";
 

@@ -7,10 +7,16 @@ import { FormSelectField } from "./FormSelectField";
 import { FormTextareaField } from "./FormTextareaField";
 import { PatientTypeButtonGroup } from "./PatientTypeButtonGroup";
 import { Button } from "./Button";
+import { DatePicker } from "./DatePicker";
+import { Slider } from "./Slider";
+import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { MessageDialog } from "./MessageDialog";
 
 export interface ClinicalAssessmentRecordProps {
     className?: string;
     onComplete?: () => void;
+    initialGender?: string;
+    initialVisitCount?: number;
 }
 
 interface BodyMarker {
@@ -40,6 +46,17 @@ const GENDER_OPTIONS = [
     { label: "Female", value: "Female" },
     { label: "Other", value: "Other" },
 ];
+
+const DOCTOR_OPTIONS = [
+    { label: "Dr. Shiv Ram Singh", value: "Dr. Shiv Ram Singh" },
+    { label: "Dr. Aakash Dave", value: "Dr. Aakash Dave" },
+    { label: "Dr. Heera Singh", value: "Dr. Heera Singh" },
+    { label: "Dr. Neha Singh", value: "Dr. Neha Singh" },
+    { label: "Dr. Rajesh Kumar", value: "Dr. Rajesh Kumar" },
+    { label: "Dr. Kadambaree", value: "Dr. Kadambaree" },
+];
+
+// Slider component is loaded from E:\Work\hiims\components\ui\Slider.tsx
 
 // Medicine Options
 const MEDICINE_OPTIONS = [
@@ -77,12 +94,33 @@ const DURATION_OPTIONS = [
     { label: "30 Days", value: "30 Days" },
 ];
 
-export function ClinicalAssessmentRecord({ className = "", onComplete }: ClinicalAssessmentRecordProps) {
+export function ClinicalAssessmentRecord({ className = "", onComplete, initialGender, initialVisitCount }: ClinicalAssessmentRecordProps) {
+    // Dialog & Submission States
+    const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [showErrorDialog, setShowErrorDialog] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleConfirmSubmit = () => {
+        setIsSubmitting(true);
+        setTimeout(() => {
+            setIsSubmitting(false);
+            setIsConfirmDialogOpen(false);
+            setShowSuccessDialog(true);
+        }, 800);
+    };
+
     // ------------------ 1. Patient Presentation State ------------------
     const [chiefComplaint, setChiefComplaint] = useState("");
     const [symptoms, setSymptoms] = useState("");
     const [hpi, setHpi] = useState("");
-    const [gender, setGender] = useState("");
+    const [gender, setGender] = useState(initialGender || "");
+
+    useEffect(() => {
+        if (initialGender) {
+            setGender(initialGender);
+        }
+    }, [initialGender]);
     const [socialHistory, setSocialHistory] = useState("");
     const [pastMedicalHistory, setPastMedicalHistory] = useState("");
     const [familyHistory, setFamilyHistory] = useState("");
@@ -103,7 +141,35 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
     const [allergyHistory, setAllergyHistory] = useState<"food" | "drug" | "skin" | "no" | "">("");
     const [allergyDetails, setAllergyDetails] = useState("");
 
+    // ------------------ Visit Details State ------------------
+    const [visitDate, setVisitDate] = useState("2025-05-01");
+    const [visitDoctor, setVisitDoctor] = useState("");
+    const [visitLocation, setVisitLocation] = useState("");
+
+    // ------------------ 8. Progress Monitoring State ------------------
+    const [visitCount, setVisitCount] = useState(initialVisitCount || 1);
+    const [progressStatus, setProgressStatus] = useState("");
+    const [medicineAdherence, setMedicineAdherence] = useState("");
+    const [painRecovery, setPainRecovery] = useState(50);
+    const [digestionRecovery, setDigestionRecovery] = useState(50);
+    const [energyRecovery, setEnergyRecovery] = useState(50);
+    const [sleepRecovery, setSleepRecovery] = useState(50);
+    const [clinicalRemarks, setClinicalRemarks] = useState("");
+
+    useEffect(() => {
+        if (initialVisitCount !== undefined) {
+            setVisitCount(initialVisitCount);
+        }
+    }, [initialVisitCount]);
+
     // ------------------ 4. Specialized History State ------------------
+    const [cycle, setCycle] = useState("");
+    const [flow, setFlow] = useState("");
+    const [gynaecPain, setGynaecPain] = useState("");
+    const [discharge, setDischarge] = useState("");
+    const [pregnancy, setPregnancy] = useState("");
+    const [miscarriage, setMiscarriage] = useState("");
+
     const [anxiety, setAnxiety] = useState("");
     const [depression, setDepression] = useState("");
     const [sleepQuality, setSleepQuality] = useState("");
@@ -146,10 +212,15 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
     const [sparsha, setSparsha] = useState("");
     const [druk, setDruk] = useState("");
     const [akruti, setAkruti] = useState("");
+    const [nakha, setNakha] = useState("");
+    const [vata, setVata] = useState("");
+    const [pitta, setPitta] = useState("");
+    const [kapha, setKapha] = useState("");
+    const [prakriti, setPrakriti] = useState("");
 
     // ------------------ 6. Investigations & Radiology State ------------------
-    const [radiologySelected, setRadiologySelected] = useState<string[]>([]);
-    const [pathologySelected, setPathologySelected] = useState<string[]>([]);
+    const [radiologySelected, setRadiologySelected] = useState("");
+    const [pathologySelected, setPathologySelected] = useState("");
     const [radiologyRemarks, setRadiologyRemarks] = useState("");
     const [prescribedLabTests, setPrescribedLabTests] = useState("");
     const [provisionalDiagnosis, setProvisionalDiagnosis] = useState("");
@@ -159,11 +230,48 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
     const [patientInstruction, setPatientInstruction] = useState("");
     const [medicines, setMedicines] = useState([
         { name: "", dosage: "", frequency: "", timing: "", duration: "" },
-        { name: "", dosage: "", frequency: "", timing: "", duration: "" },
     ]);
     const [dietAdvice, setDietAdvice] = useState("");
     const [lifestyleChanges, setLifestyleChanges] = useState("");
     const [physicalExercises, setPhysicalExercises] = useState("");
+
+    // Validation State
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [medicineErrors, setMedicineErrors] = useState<Record<string, string>[]>([{}]);
+
+    // Validation Refs
+    const visitDateRef = useRef<HTMLDivElement>(null);
+    const visitDoctorRef = useRef<HTMLDivElement>(null);
+    const visitLocationRef = useRef<HTMLInputElement>(null);
+
+    const chiefComplaintRef = useRef<HTMLInputElement>(null);
+    const symptomsRef = useRef<HTMLInputElement>(null);
+    const genderRef = useRef<HTMLDivElement>(null);
+
+    const diabetesRef = useRef<HTMLDivElement>(null);
+    const bloodPressureRef = useRef<HTMLDivElement>(null);
+    const thyroidRef = useRef<HTMLDivElement>(null);
+    const allergyHistoryRef = useRef<HTMLDivElement>(null);
+
+    const gastricValueRef = useRef<HTMLDivElement>(null);
+    const stressLevelRef = useRef<HTMLDivElement>(null);
+
+    const sittingRef = useRef<HTMLDivElement>(null);
+    const standingRef = useRef<HTMLDivElement>(null);
+    const walkingRef = useRef<HTMLDivElement>(null);
+
+    const prakritiRef = useRef<HTMLInputElement>(null);
+    const finalDiagnosisRef = useRef<HTMLInputElement>(null);
+
+    const medicineRowRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const dietAdviceRef = useRef<HTMLInputElement>(null);
+
+    const progressStatusRef = useRef<HTMLDivElement>(null);
+    const medicineAdherenceRef = useRef<HTMLDivElement>(null);
+    const clinicalRemarksRef = useRef<HTMLInputElement>(null);
+
+    const containerRef = useRef<HTMLDivElement>(null);
+    useArrowKeyNavigation(containerRef, true);
 
     // Active Section Scroll Reference
     const section1Ref = useRef<HTMLDivElement>(null);
@@ -173,6 +281,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
     const section5Ref = useRef<HTMLDivElement>(null);
     const section6Ref = useRef<HTMLDivElement>(null);
     const section7Ref = useRef<HTMLDivElement>(null);
+    const section8Ref = useRef<HTMLDivElement>(null);
 
     const [activeTimelineStep, setActiveTimelineStep] = useState(1);
 
@@ -192,7 +301,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
         if (diabetes || bloodPressure) filledCount++;
         if (anxiety || stressLevel || gastricValue) filledCount++;
         if (sitting || standing || painScale !== null || markers.length > 0) filledCount++;
-        if (radiologySelected.length > 0 || pathologySelected.length > 0) filledCount++;
+        if (radiologySelected || pathologySelected) filledCount++;
         if (medicines.some(m => m.name)) filledCount++;
 
         return Math.round((filledCount / totalFields) * 100);
@@ -201,16 +310,254 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
     // Row Handlers for medicines
     const handleAddRow = () => {
         setMedicines([...medicines, { name: "", dosage: "", frequency: "", timing: "", duration: "" }]);
+        setMedicineErrors([...medicineErrors, {}]);
     };
 
     const handleDeleteRow = (index: number) => {
         setMedicines(medicines.filter((_, idx) => idx !== index));
+        setMedicineErrors(medicineErrors.filter((_, idx) => idx !== index));
     };
 
     const handleRowChange = (index: number, field: string, value: string) => {
         const updated = [...medicines];
         updated[index] = { ...updated[index], [field]: value };
         setMedicines(updated);
+
+        // Clear medicine error for this field
+        if (medicineErrors[index]?.[field]) {
+            const updatedErrors = [...medicineErrors];
+            if (updatedErrors[index]) {
+                const nextRowErrors = { ...updatedErrors[index] };
+                delete nextRowErrors[field];
+                updatedErrors[index] = nextRowErrors;
+                setMedicineErrors(updatedErrors);
+            }
+        }
+    };
+
+    const handleSaveAndContinue = () => {
+        const newErrors: Record<string, string> = {};
+        let isValid = true;
+
+        if (!visitDate) {
+            newErrors.visitDate = "Visit Date is required";
+            isValid = false;
+        }
+        if (!visitDoctor) {
+            newErrors.visitDoctor = "Doctor is required";
+            isValid = false;
+        }
+        if (!visitLocation) {
+            newErrors.visitLocation = "Location is required";
+            isValid = false;
+        }
+        if (!chiefComplaint.trim()) {
+            newErrors.chiefComplaint = "Chief Complaint is required";
+            isValid = false;
+        }
+        if (!symptoms.trim()) {
+            newErrors.symptoms = "Symptoms are required";
+            isValid = false;
+        }
+        if (!gender) {
+            newErrors.gender = "Gender is required";
+            isValid = false;
+        }
+        if (!diabetes) {
+            newErrors.diabetes = "Diabetes status is required";
+            isValid = false;
+        }
+        if (!bloodPressure) {
+            newErrors.bloodPressure = "Blood Pressure status is required";
+            isValid = false;
+        }
+        if (!thyroid) {
+            newErrors.thyroid = "Thyroid status is required";
+            isValid = false;
+        }
+        if (!allergyHistory) {
+            newErrors.allergyHistory = "Allergy History status is required";
+            isValid = false;
+        }
+        if (!gastricValue) {
+            newErrors.gastricValue = "Gastric Complaints status is required";
+            isValid = false;
+        }
+        if (!stressLevel) {
+            newErrors.stressLevel = "Stress Level is required";
+            isValid = false;
+        }
+        if (!sitting) {
+            newErrors.sitting = "Sitting status is required";
+            isValid = false;
+        }
+        if (!standing) {
+            newErrors.standing = "Standing status is required";
+            isValid = false;
+        }
+        if (!walking) {
+            newErrors.walking = "Walking status is required";
+            isValid = false;
+        }
+        if (!prakriti) {
+            newErrors.prakriti = "Overall Prakriti is required";
+            isValid = false;
+        }
+        if (!finalDiagnosis.trim()) {
+            newErrors.finalDiagnosis = "Final Diagnosis is required";
+            isValid = false;
+        }
+        if (!dietAdvice.trim()) {
+            newErrors.dietAdvice = "Diet Advice is required";
+            isValid = false;
+        }
+        if (!progressStatus) {
+            newErrors.progressStatus = "Progress Status is required";
+            isValid = false;
+        }
+        if (!medicineAdherence) {
+            newErrors.medicineAdherence = "Medicine Adherence is required";
+            isValid = false;
+        }
+        if (!clinicalRemarks.trim()) {
+            newErrors.clinicalRemarks = "Clinical Remarks are required";
+            isValid = false;
+        }
+
+        // Medicines validation
+        const newMedErrors: Record<string, string>[] = [];
+        let isMedValid = true;
+
+        medicines.forEach((med, idx) => {
+            const rowErrors: Record<string, string> = {};
+            if (!med.name) {
+                rowErrors.name = "Medicine Name is required";
+                isValid = false;
+                isMedValid = false;
+            }
+            if (!med.dosage) {
+                rowErrors.dosage = "Dosage is required";
+                isValid = false;
+                isMedValid = false;
+            }
+            if (!med.frequency) {
+                rowErrors.frequency = "Frequency is required";
+                isValid = false;
+                isMedValid = false;
+            }
+            if (!med.timing) {
+                rowErrors.timing = "Timing is required";
+                isValid = false;
+                isMedValid = false;
+            }
+            if (!med.duration) {
+                rowErrors.duration = "Duration is required";
+                isValid = false;
+                isMedValid = false;
+            }
+            newMedErrors[idx] = rowErrors;
+        });
+
+        setErrors(newErrors);
+        setMedicineErrors(newMedErrors);
+
+        if (!isValid) {
+            // Find first error and scroll & focus
+            if (newErrors.visitDate) {
+                visitDateRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => {
+                    const input = visitDateRef.current?.querySelector("input");
+                    input?.focus();
+                }, 100);
+            } else if (newErrors.visitDoctor) {
+                visitDoctorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => {
+                    const button = visitDoctorRef.current?.querySelector("button");
+                    button?.focus();
+                }, 100);
+            } else if (newErrors.visitLocation) {
+                visitLocationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => visitLocationRef.current?.focus(), 100);
+            } else if (newErrors.chiefComplaint) {
+                chiefComplaintRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => chiefComplaintRef.current?.focus(), 100);
+            } else if (newErrors.symptoms) {
+                symptomsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => symptomsRef.current?.focus(), 100);
+            } else if (newErrors.gender) {
+                genderRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => {
+                    const button = genderRef.current?.querySelector("button");
+                    button?.focus();
+                }, 100);
+            } else if (newErrors.diabetes) {
+                diabetesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => diabetesRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.bloodPressure) {
+                bloodPressureRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => bloodPressureRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.thyroid) {
+                thyroidRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => thyroidRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.allergyHistory) {
+                allergyHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => allergyHistoryRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.gastricValue) {
+                gastricValueRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => gastricValueRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.stressLevel) {
+                stressLevelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => stressLevelRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.sitting) {
+                sittingRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => sittingRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.standing) {
+                standingRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => standingRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.walking) {
+                walkingRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => walkingRef.current?.querySelector("button")?.focus(), 100);
+            } else if (!isMedValid) {
+                const firstErrIdx = newMedErrors.findIndex(x => Object.keys(x).length > 0);
+                if (firstErrIdx >= 0) {
+                    const rowEl = medicineRowRefs.current[firstErrIdx];
+                    rowEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    
+                    const err = newMedErrors[firstErrIdx];
+                    const fieldsOrder = ["name", "dosage", "frequency", "timing", "duration"];
+                    const missingFieldIdx = fieldsOrder.findIndex(f => err[f]);
+                    if (missingFieldIdx >= 0) {
+                        setTimeout(() => {
+                            const buttons = rowEl?.querySelectorAll("button");
+                            if (buttons && buttons.length > missingFieldIdx) {
+                                buttons[missingFieldIdx]?.focus();
+                            }
+                        }, 200);
+                    }
+                }
+            } else if (newErrors.prakriti) {
+                prakritiRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => prakritiRef.current?.focus(), 100);
+            } else if (newErrors.finalDiagnosis) {
+                finalDiagnosisRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => finalDiagnosisRef.current?.focus(), 100);
+            } else if (newErrors.dietAdvice) {
+                dietAdviceRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => dietAdviceRef.current?.focus(), 100);
+            } else if (newErrors.progressStatus) {
+                progressStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => progressStatusRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.medicineAdherence) {
+                medicineAdherenceRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => medicineAdherenceRef.current?.querySelector("button")?.focus(), 100);
+            } else if (newErrors.clinicalRemarks) {
+                clinicalRemarksRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                setTimeout(() => clinicalRemarksRef.current?.focus(), 100);
+            }
+            return;
+        }
+
+        setIsConfirmDialogOpen(true);
     };
 
     // Handle multiselect buttons toggling
@@ -316,7 +663,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
     };
 
     return (
-        <div className={`flex flex-col gap-6 w-full ${className}`}>
+        <div ref={containerRef} className={`flex flex-col gap-6 w-full ${className}`}>
 
             {/* FORM COMPLETION STATUS PROGRESS BOARD */}
             <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-4">
@@ -324,20 +671,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                     <h3 className="font-inter font-bold text-sm text-[#262D3B]">Form Completion Status</h3>
                     <div className="flex items-center gap-2">
                         <span className="font-inter font-bold text-lg text-[#EAB308]">{getCompletionPercent()}%</span>
-                        <span className="text-xs font-semibold text-[#7B8089]">0 of 9 sections complete</span>
+                        <span className="text-xs font-semibold text-[#7B8089]">0 of 8 sections complete</span>
                     </div>
                 </div>
 
                 {/* Progress Timeline Buttons */}
                 <div className="relative w-full py-4 select-none">
                     {/* Background horizontal bar */}
-                    <div className="absolute left-[57.5px] right-[57.5px] top-[33px] h-[6px] bg-[#D9D9D9] rounded-[10px] -translate-y-1/2" />
+                    <div className="absolute left-[6.25%] right-[6.25%] top-[33px] h-[6px] bg-[#D9D9D9] rounded-[10px] -translate-y-1/2" />
 
                     {/* Active progress horizontal bar */}
                     <div
-                        className="absolute left-[57.5px] top-[33px] h-[6px] bg-[#0B8C00] rounded-[10px] -translate-y-1/2 transition-all duration-300"
+                        className="absolute left-[6.25%] top-[33px] h-[6px] bg-[#0B8C00] rounded-[10px] -translate-y-1/2 transition-all duration-300"
                         style={{
-                            width: `calc(${(activeTimelineStep - 1) / 7} * (100% - 115px))`
+                            width: `calc(${(activeTimelineStep - 1) / 7} * 87.5%)`
                         }}
                     />
 
@@ -350,7 +697,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                             { step: 5, label: "Physical Exam", ref: section5Ref },
                             { step: 6, label: "Investigations", ref: section6Ref },
                             { step: 7, label: "Treatment Plan", ref: section7Ref },
-                            { step: 8, label: "Progress", ref: section7Ref },
+                            { step: 8, label: "Progress", ref: section8Ref },
                         ].map((item, idx) => {
                             const isActive = activeTimelineStep >= item.step;
                             const isCurrent = activeTimelineStep === item.step;
@@ -397,12 +744,78 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
             </div>
 
             {/* MASTER FORM TITLE */}
-            <div className="flex items-center justify-between">
-                <h2 className="font-inter font-bold text-lg text-[#262D3B]">Clinical Assessment Record</h2>
+
+            {/* here section for Visit Details */}
+            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-4">
+                <h3 className="font-inter font-bold text-sm text-[#262D3B]">Visit Details</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div ref={visitDateRef} className="w-full">
+                        <DatePicker
+                            label="Visit Date *"
+                            placeholder="Choose date"
+                            value={visitDate}
+                            onChange={(val) => {
+                                setVisitDate(val);
+                                if (errors.visitDate) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.visitDate;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            background="white"
+                            width="100%"
+                            required
+                            error={errors.visitDate}
+                        />
+                    </div>
+                    <FormSelectField
+                        ref={visitDoctorRef}
+                        label="Doctor *"
+                        placeholder="Select"
+                        options={DOCTOR_OPTIONS}
+                        value={visitDoctor}
+                        onChange={(val) => {
+                            setVisitDoctor(val as string);
+                            if (errors.visitDoctor) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.visitDoctor;
+                                    return next;
+                                });
+                            }
+                        }}
+                        background="white"
+                        width="100%"
+                        error={errors.visitDoctor}
+                    />
+                    <FormInputField
+                        ref={visitLocationRef}
+                        label="Location *"
+                        placeholder="Clinic / branch..."
+                        value={visitLocation}
+                        onChange={(e) => {
+                            setVisitLocation(e.target.value);
+                            if (errors.visitLocation) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.visitLocation;
+                                    return next;
+                                });
+                            }
+                        }}
+                        width="100%"
+                        error={errors.visitLocation}
+                    />
+                </div>
             </div>
 
             {/* 1. PATIENT PRESENTATION */}
             <div ref={section1Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
+                <div className="flex items-center justify-between">
+                    <h2 className="font-semibold text-lg text-[#262D3B]">Clinical Assessment Record</h2>
+                </div>
                 <div className="flex items-center justify-between ">
                     <div className="flex items-center gap-3">
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">1</div>
@@ -418,18 +831,40 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <FormInputField
+                        ref={chiefComplaintRef}
                         label="Chief Complaint *"
                         placeholder="Describe the main complaint..."
                         value={chiefComplaint}
-                        onChange={(e) => setChiefComplaint(e.target.value)}
+                        onChange={(e) => {
+                            setChiefComplaint(e.target.value);
+                            if (errors.chiefComplaint) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.chiefComplaint;
+                                    return next;
+                                });
+                            }
+                        }}
                         width="100%"
+                        error={errors.chiefComplaint}
                     />
                     <FormInputField
+                        ref={symptomsRef}
                         label="Symptoms *"
                         placeholder="Symptoms"
                         value={symptoms}
-                        onChange={(e) => setSymptoms(e.target.value)}
+                        onChange={(e) => {
+                            setSymptoms(e.target.value);
+                            if (errors.symptoms) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.symptoms;
+                                    return next;
+                                });
+                            }
+                        }}
                         width="100%"
+                        error={errors.symptoms}
                     />
                     <FormInputField
                         label="History of Present Illness (HPI)"
@@ -439,13 +874,24 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         width="100%"
                     />
                     <FormSelectField
+                        ref={genderRef}
                         label="Gender *"
                         placeholder="Select"
                         options={GENDER_OPTIONS}
                         value={gender}
-                        onChange={(val) => setGender(val as string)}
+                        onChange={(val) => {
+                            setGender(val as string);
+                            if (errors.gender) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.gender;
+                                    return next;
+                                });
+                            }
+                        }}
                         background="white"
                         width="100%"
+                        error={errors.gender}
                     />
                     <FormInputField
                         label="Social History"
@@ -535,9 +981,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["Yes", "No"]}
                             value={diabetes}
-                            onChange={(val) => setDiabetes(val as any)}
-                            label="Diabetes Mellitus"
+                            onChange={(val) => {
+                                setDiabetes(val as any);
+                                if (errors.diabetes) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.diabetes;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Diabetes Mellitus *"
                             required={true}
+                            fieldRef={diabetesRef}
+                            error={errors.diabetes}
                         />
                         <FormInputField
                             label="Years (if Diabetic)"
@@ -561,9 +1018,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["High BP", "High BP", "No"]}
                             value={bloodPressure}
-                            onChange={(val) => setBloodPressure(val as any)}
-                            label="Blood Pressure"
+                            onChange={(val) => {
+                                setBloodPressure(val as any);
+                                if (errors.bloodPressure) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.bloodPressure;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Blood Pressure *"
                             required={true}
+                            fieldRef={bloodPressureRef}
+                            error={errors.bloodPressure}
                         />
                         <FormInputField
                             label="Remarks"
@@ -579,9 +1047,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["Hypothyroid", "Hyperthyroid", "No"]}
                             value={thyroid}
-                            onChange={(val) => setThyroid(val as any)}
-                            label="Thyroid Disorder"
+                            onChange={(val) => {
+                                setThyroid(val as any);
+                                if (errors.thyroid) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.thyroid;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Thyroid Disorder *"
                             required={true}
+                            fieldRef={thyroidRef}
+                            error={errors.thyroid}
                         />
                         <FormInputField
                             label="Remarks"
@@ -597,9 +1076,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["Food", "Drug", "Skin", "No"]}
                             value={allergyHistory}
-                            onChange={(val) => setAllergyHistory(val as any)}
-                            label="Allergy History"
+                            onChange={(val) => {
+                                setAllergyHistory(val as any);
+                                if (errors.allergyHistory) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.allergyHistory;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Allergy History *"
                             required={true}
+                            fieldRef={allergyHistoryRef}
+                            error={errors.allergyHistory}
                         />
                         <FormInputField
                             label="Allergy Details"
@@ -628,6 +1118,55 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
                     </div>
                 </div>
+
+                {/* Gynaec / Obs History (Only shown for female patients) */}
+                {gender?.toLowerCase() === "female" && (
+                    <div className="space-y-4 pb-4 border-b border-[#EBECED]">
+                        <h4 className="font-inter font-semibold text-sm text-[#434956]">Gynaec / Obs History</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <PatientTypeButtonGroup
+                                options={["Regular", "Irregular"]}
+                                value={cycle}
+                                onChange={(val) => setCycle(val)}
+                                label="Cycle"
+                            />
+                            <PatientTypeButtonGroup
+                                options={["Normal", "Heavy", "Scanty"]}
+                                value={flow}
+                                onChange={(val) => setFlow(val)}
+                                label="Flow"
+                            />
+                            <FormInputField
+                                label="Pain"
+                                placeholder="Details"
+                                value={gynaecPain}
+                                onChange={(e) => setGynaecPain(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Discharge"
+                                placeholder="Details"
+                                value={discharge}
+                                onChange={(e) => setDischarge(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Pregnancy"
+                                placeholder="G_ P_ A_ L_..."
+                                value={pregnancy}
+                                onChange={(e) => setPregnancy(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Miscarriage"
+                                placeholder="Details"
+                                value={miscarriage}
+                                onChange={(e) => setMiscarriage(e.target.value)}
+                                width="100%"
+                            />
+                        </div>
+                    </div>
+                )}
 
                 {/* Mental Health */}
                 <div className="space-y-4">
@@ -663,8 +1202,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["Mild", "Moderate", "Severe", "None"]}
                             value={stressLevel}
-                            onChange={(val) => setStressLevel(val as any)}
-                            label="Stress Level"
+                            onChange={(val) => {
+                                setStressLevel(val as any);
+                                if (errors.stressLevel) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.stressLevel;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Stress Level *"
+                            required={true}
+                            fieldRef={stressLevelRef}
+                            error={errors.stressLevel}
                         />
                     </div>
                     <FormInputField
@@ -685,8 +1236,20 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["Acidity", "GERD", "Gas", "Abd Pain", "Constipation", "Loose Stool", "Nausea", "None"]}
                             value={gastricValue}
-                            onChange={(val) => setGastricValue(val)}
-                            label="Gastric Complaints"
+                            onChange={(val) => {
+                                setGastricValue(val);
+                                if (errors.gastricValue) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.gastricValue;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Gastric Complaints *"
+                            required={true}
+                            fieldRef={gastricValueRef}
+                            error={errors.gastricValue}
                         />
                         <FormInputField
                             label="Remarks / Doctor Notes"
@@ -794,23 +1357,56 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <PatientTypeButtonGroup
                             options={["Normal", "Abnormal"]}
                             value={sitting}
-                            onChange={(val) => setSitting(val as any)}
-                            label="Sitting"
+                            onChange={(val) => {
+                                setSitting(val as any);
+                                if (errors.sitting) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.sitting;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Sitting *"
                             required={true}
+                            fieldRef={sittingRef}
+                            error={errors.sitting}
                         />
                         <PatientTypeButtonGroup
                             options={["Normal", "Abnormal"]}
                             value={standing}
-                            onChange={(val) => setStanding(val as any)}
-                            label="Standing"
+                            onChange={(val) => {
+                                setStanding(val as any);
+                                if (errors.standing) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.standing;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Standing *"
                             required={true}
+                            fieldRef={standingRef}
+                            error={errors.standing}
                         />
                         <PatientTypeButtonGroup
                             options={["Normal", "Abnormal"]}
                             value={walking}
-                            onChange={(val) => setWalking(val as any)}
-                            label="Walking"
+                            onChange={(val) => {
+                                setWalking(val as any);
+                                if (errors.walking) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.walking;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Walking *"
                             required={true}
+                            fieldRef={walkingRef}
+                            error={errors.walking}
                         />
                     </div>
                     <FormInputField
@@ -859,7 +1455,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                         <span className="block text-xs text-[#7B8089] font-medium">Click on the body diagram to mark pain areas. Click on a marker to remove it.</span>
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
                             {/* Left Side: Body diagrams & Legends */}
-                            <div className="lg:col-span-9 flex flex-row flex-wrap sm:flex-nowrap gap-2 items-start">
+                            <div className="lg:col-span-8 flex flex-row flex-wrap sm:flex-nowrap gap-2 items-start">
                                 {/* Front View Card */}
                                 <div className="rounded-2xl p-1 flex flex-col items-center select-none ">
                                     <span className="text-[10px] font-bold text-[#7B8089] mb-1.5">Front</span>
@@ -867,7 +1463,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                         onClick={(e) => handleBodyClick(e, "front")}
                                         className="relative w-[150px] h-[250px] rounded-lg bg-white flex items-center justify-center cursor-crosshair overflow-hidden"
                                     >
-                                        <Image src="/icons/maleBodyFrontView.svg" alt="Front View" fill className="object-contain p-0" />
+                                        <Image src={gender?.toLowerCase() === "female" ? "/icons/femaleBodyFrontView.svg" : "/icons/maleBodyFrontView.svg"} alt="Front View" fill className="object-contain p-0" />
                                         {markers.filter(m => m.view === "front").map((marker) => (
                                             <button
                                                 key={marker.id}
@@ -888,7 +1484,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                         onClick={(e) => handleBodyClick(e, "back")}
                                         className="relative w-[150px] h-[250px] rounded-lg bg-white flex items-center justify-center cursor-crosshair overflow-hidden"
                                     >
-                                        <Image src="/icons/maleBodyBackView.svg" alt="Back View" fill className="object-contain p-0" />
+                                        <Image src={gender?.toLowerCase() === "female" ? "/icons/femaleBodyBackView.svg" : "/icons/maleBodyBackView.svg"} alt="Back View" fill className="object-contain p-0" />
                                         {markers.filter(m => m.view === "back").map((marker) => (
                                             <button
                                                 key={marker.id}
@@ -980,7 +1576,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                             </div>
 
                             {/* Right Side: Pain Location Notes */}
-                            <div className="lg:col-span-3 flex flex-col justify-stretch h-full self-stretch">
+                            <div className="lg:col-span-4 flex flex-col justify-stretch h-full self-stretch">
                                 <FormTextareaField
                                     label="Pain Location Notes"
                                     placeholder="e.g. Lower back (L4-L5), right knee lateral..."
@@ -995,17 +1591,89 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                 </div>
 
                 {/* Ashta Vidha Pariksha */}
-                <div className="space-y-4 pt-4 border-t border-dashed border-[#EBECED]">
-                    <h4 className="font-inter font-semibold text-sm text-[#434956] ">Ashta Vidha Pariksha</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <FormInputField label="Nadi (Pulse)" placeholder="Appearance" value={nadi} onChange={(e) => setNadi(e.target.value)} width="100%" />
-                        <FormInputField label="Mala (Stool)" placeholder="Quality / Notes" value={mala} onChange={(e) => setMala(e.target.value)} width="100%" />
-                        <FormInputField label="Mutra (Urine)" placeholder="Urine Status" value={mutra} onChange={(e) => setMutra(e.target.value)} width="100%" />
-                        <FormInputField label="Jihva (Tongue)" placeholder="Appearance" value={jihva} onChange={(e) => setJihva(e.target.value)} width="100%" />
-                        <FormInputField label="Shabda (Voice)" placeholder="Voice Quality" value={shabda} onChange={(e) => setShabda(e.target.value)} width="100%" />
-                        <FormInputField label="Sparsha (Touch)" placeholder="Touch / Temp" value={sparsha} onChange={(e) => setSparsha(e.target.value)} width="100%" />
-                        <FormInputField label="Druk (Eyes)" placeholder="Eyes / Vision" value={druk} onChange={(e) => setDruk(e.target.value)} width="100%" />
-                        <FormInputField label="Akruti (Body Build)" placeholder="General Build" value={akruti} onChange={(e) => setAkruti(e.target.value)} width="100%" />
+                <div className="space-y-4">
+                    <h4 className="font-inter font-semibold text-sm text-[#434956] ">
+                        Ashta Vidha Pariksha <span className="text-[#F6776E]">*</span>
+                    </h4>
+                    <div className="space-y-4">
+                        {/* Row 1 */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <FormInputField
+                                label="Tongue (Jihva)"
+                                placeholder="Appearance"
+                                value={jihva}
+                                onChange={(e) => setJihva(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Pulse (Nadi)"
+                                placeholder="Quality, Rate..."
+                                value={nadi}
+                                onChange={(e) => setNadi(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Eyes (Drink)"
+                                placeholder="Observations"
+                                value={druk}
+                                onChange={(e) => setDruk(e.target.value)}
+                                width="100%"
+                            />
+                        </div>
+
+                        {/* Row 2 */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <FormInputField
+                                label="Nails (Nakha)"
+                                placeholder="Color, Texture..."
+                                value={nakha}
+                                onChange={(e) => setNakha(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Dosha-Vata"
+                                placeholder="Assessment..."
+                                value={vata}
+                                onChange={(e) => setVata(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                label="Pitta"
+                                placeholder="Assessment..."
+                                value={pitta}
+                                onChange={(e) => setPitta(e.target.value)}
+                                width="100%"
+                            />
+                        </div>
+
+                        {/* Row 3 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormInputField
+                                label="Kapha"
+                                placeholder="Assessment..."
+                                value={kapha}
+                                onChange={(e) => setKapha(e.target.value)}
+                                width="100%"
+                            />
+                            <FormInputField
+                                ref={prakritiRef}
+                                label="Overall Prakriti *"
+                                placeholder="Constitution"
+                                value={prakriti}
+                                onChange={(e) => {
+                                    setPrakriti(e.target.value);
+                                    if (errors.prakriti) {
+                                        setErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.prakriti;
+                                            return next;
+                                        });
+                                    }
+                                }}
+                                width="100%"
+                                error={errors.prakriti}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1026,75 +1694,65 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                 </div>
 
                 <div className="space-y-4">
+                    {/* Row 1: Button Groups */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <span className="block text-xs font-semibold text-[#7B8089]">Radiology Findings</span>
-                            <div className="flex flex-wrap gap-2">
-                                {["X-Ray", "MRI", "Ultrasound", "None"].map((option) => (
-                                    <button
-                                        key={option}
-                                        type="button"
-                                        onClick={() => handleToggleOption(option, radiologySelected, setRadiologySelected)}
-                                        className={`font-inter text-xs font-medium px-4 py-1.5 rounded-full border transition-all duration-150 ${radiologySelected.includes(option)
-                                            ? "bg-[#0B8C00] text-white border-[#0B8C00]"
-                                            : "bg-white text-[#434956] border-[#EBECED] hover:bg-[#F5FBF5]"
-                                            }`}
-                                    >
-                                        {option}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <span className="block text-xs font-semibold text-[#7B8089]">Pathology Findings</span>
-                            <div className="flex flex-wrap gap-2">
-                                {["Blood", "Urine", "Culture", "Nil"].map((option) => (
-                                    <button
-                                        key={option}
-                                        type="button"
-                                        onClick={() => handleToggleOption(option, pathologySelected, setPathologySelected)}
-                                        className={`font-inter text-xs font-medium px-4 py-1.5 rounded-full border transition-all duration-150 ${pathologySelected.includes(option)
-                                            ? "bg-[#0B8C00] text-white border-[#0B8C00]"
-                                            : "bg-white text-[#434956] border-[#EBECED] hover:bg-[#F5FBF5]"
-                                            }`}
-                                    >
-                                        {option}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        <PatientTypeButtonGroup
+                            options={["X-Ray", "MRI", "Ultrasound", "Nil"]}
+                            value={radiologySelected}
+                            onChange={(val) => setRadiologySelected(val)}
+                            label="Radiology Findings"
+                        />
+                        <PatientTypeButtonGroup
+                            options={["Blood", "Urine", "Culture", "Nil"]}
+                            value={pathologySelected}
+                            onChange={(val) => setPathologySelected(val)}
+                            label="Pathology Findings"
+                        />
                     </div>
 
-                    <FormTextareaField
-                        label="Radiology Remarks"
-                        placeholder="Remarks / Doctor Notes..."
-                        value={radiologyRemarks}
-                        onChange={(e) => setRadiologyRemarks(e.target.value)}
-                        width="100%"
-                        height={70}
-                    />
+                    {/* Row 2: Remarks, Lab Tests, and Provisional Diagnosis */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FormInputField
+                            label="Radiology Remarks"
+                            placeholder="Remarks on radiology findings..."
+                            value={radiologyRemarks}
+                            onChange={(e) => setRadiologyRemarks(e.target.value)}
+                            width="100%"
+                        />
+                        <FormInputField
+                            label="Lab Tests Prescribed By Doctor"
+                            placeholder="e.g. CBC, LFT, RFT, HbA1c..."
+                            value={prescribedLabTests}
+                            onChange={(e) => setPrescribedLabTests(e.target.value)}
+                            width="100%"
+                        />
+                        <FormInputField
+                            label="Provisional Diagnosis"
+                            placeholder="Working diagnosis..."
+                            value={provisionalDiagnosis}
+                            onChange={(e) => setProvisionalDiagnosis(e.target.value)}
+                            width="100%"
+                        />
+                    </div>
 
+                    {/* Row 3: Final Diagnosis */}
                     <FormInputField
-                        label="Lab Tests Prescribed by Doctor"
-                        placeholder="e.g. CBC, LFT, KFT, Thyroid..."
-                        value={prescribedLabTests}
-                        onChange={(e) => setPrescribedLabTests(e.target.value)}
-                        width="100%"
-                    />
-                    <FormInputField
-                        label="Provisional Diagnosis"
-                        placeholder="With clinic diagnostics..."
-                        value={provisionalDiagnosis}
-                        onChange={(e) => setProvisionalDiagnosis(e.target.value)}
-                        width="100%"
-                    />
-                    <FormInputField
+                        ref={finalDiagnosisRef}
                         label="Final Diagnosis *"
                         placeholder="Confirmed diagnosis after investigations..."
                         value={finalDiagnosis}
-                        onChange={(e) => setFinalDiagnosis(e.target.value)}
+                        onChange={(e) => {
+                            setFinalDiagnosis(e.target.value);
+                            if (errors.finalDiagnosis) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.finalDiagnosis;
+                                    return next;
+                                });
+                            }
+                        }}
                         width="100%"
+                        error={errors.finalDiagnosis}
                     />
                 </div>
             </div>
@@ -1104,7 +1762,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                 <div className="flex items-center justify-between ">
                     <div className="flex items-center gap-3">
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">7</div>
-                        <h3 className="font-inter font-semibold text-base text-[#262D3B]">Treatment Plan & education</h3>
+                        <h3 className="font-inter font-semibold text-base text-[#262D3B]">Treatment Plan & Education</h3>
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
@@ -1116,8 +1774,8 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
 
                 <div className="space-y-4">
                     <FormInputField
-                        label="Patient Instruction"
-                        placeholder="Instructions provided to the patient..."
+                        label="Patient Education"
+                        placeholder="What was explained to the patient..."
                         value={patientInstruction}
                         onChange={(e) => setPatientInstruction(e.target.value)}
                         width="100%"
@@ -1125,12 +1783,12 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
 
                     {/* Medicine Prescribed Table */}
                     <div className="space-y-4 pt-2">
-                        <span className="block text-xs font-bold text-[#434956] uppercase tracking-wider">Medicine Prescribed *</span>
+                        <span className="text-sm font-normal text-gray-500 ">Medicine Prescribed <span className="text-[#F6776E]">*</span></span>
 
-                        <div className="space-y-3">
+                        <div className="space-y-2 pt-1">
                             {/* Header */}
-                            <div className="hidden md:grid grid-cols-12 gap-3 pb-1 border-b border-gray-50 text-xs font-semibold text-[#7B8089]">
-                                <div className="col-span-3 pl-3">Name</div>
+                            <div className="hidden md:grid grid-cols-11 gap-3 py-3 px-2 border border-[#EBECED] rounded-xl text-xs font-semibold text-[#7B8089] items-center">
+                                <div className="col-span-2 pl-3">Name</div>
                                 <div className="col-span-2">Dosage</div>
                                 <div className="col-span-2">Frequency</div>
                                 <div className="col-span-2">Timing</div>
@@ -1140,8 +1798,14 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
 
                             {/* Rows */}
                             {medicines.map((med, idx) => (
-                                <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-[#FAFAFA] md:bg-transparent p-3 md:p-0 rounded-xl border border-gray-100 md:border-none">
-                                    <div className="col-span-1 md:col-span-3">
+                                <div
+                                    key={idx}
+                                    ref={(el) => {
+                                        medicineRowRefs.current[idx] = el;
+                                    }}
+                                    className="grid grid-cols-1 md:grid-cols-11 gap-2 items-center bg-[#FAFAFA] md:bg-transparent p-0 md:py-0.5 md:px-0 rounded-xl border border-gray-100 md:border-none"
+                                >
+                                    <div className="col-span-1 md:col-span-2">
                                         <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Name</span>
                                         <FormSelectField
                                             label="Name"
@@ -1152,6 +1816,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                             background="white"
                                             hideLabel={true}
                                             width="100%"
+                                            error={medicineErrors[idx]?.name}
                                         />
                                     </div>
                                     <div className="col-span-1 md:col-span-2">
@@ -1165,6 +1830,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                             background="white"
                                             hideLabel={true}
                                             width="100%"
+                                            error={medicineErrors[idx]?.dosage}
                                         />
                                     </div>
                                     <div className="col-span-1 md:col-span-2">
@@ -1178,6 +1844,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                             background="white"
                                             hideLabel={true}
                                             width="100%"
+                                            error={medicineErrors[idx]?.frequency}
                                         />
                                     </div>
                                     <div className="col-span-1 md:col-span-2">
@@ -1191,6 +1858,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                             background="white"
                                             hideLabel={true}
                                             width="100%"
+                                            error={medicineErrors[idx]?.timing}
                                         />
                                     </div>
                                     <div className="col-span-1 md:col-span-2">
@@ -1204,27 +1872,28 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                                             background="white"
                                             hideLabel={true}
                                             width="100%"
+                                            error={medicineErrors[idx]?.duration}
                                         />
                                     </div>
                                     <div className="col-span-1 md:col-span-1 flex justify-center pt-2 md:pt-0">
                                         <button
                                             type="button"
                                             onClick={() => handleDeleteRow(idx)}
-                                            className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-red-50 transition-colors focus:outline-none"
+                                            className="flex items-center justify-center w-6 h-6 rounded-full bg-[#EF4444] text-white hover:bg-red-600 transition-colors font-bold text-[10px] focus:outline-none"
                                         >
-                                            <Image src="/icons/ErrorIcon.svg" alt="Delete" width={20} height={20} />
+                                            ✕
                                         </button>
                                     </div>
                                 </div>
                             ))}
                         </div>
 
-                        <div className="pt-2">
+                        <div className="pt-0 pb-4">
                             <Button
                                 variant="primary"
                                 size="small"
                                 onClick={handleAddRow}
-                                className="bg-[#0B8C00] hover:bg-[#0A7F00] text-xs h-9 px-6 rounded-full font-bold"
+                            // className="bg-[#0B8C00] hover:bg-[#0A7F00] text-xs h-9 px-6 rounded-full font-bold"
                             >
                                 Add Row
                             </Button>
@@ -1232,24 +1901,35 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                     </div>
 
                     {/* Footer Advices */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-4 border-t border-dashed border-[#EBECED]">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 ">
                         <FormInputField
-                            label="Diet Advice"
-                            placeholder="Follow diet plan..."
+                            ref={dietAdviceRef}
+                            label="Diet Advice *"
+                            placeholder="Pathya-Apathya..."
                             value={dietAdvice}
-                            onChange={(e) => setDietAdvice(e.target.value)}
+                            onChange={(e) => {
+                                setDietAdvice(e.target.value);
+                                if (errors.dietAdvice) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.dietAdvice;
+                                        return next;
+                                    });
+                                }
+                            }}
                             width="100%"
+                            error={errors.dietAdvice}
                         />
                         <FormInputField
                             label="Lifestyle Changes"
-                            placeholder="Sleep habits..."
+                            placeholder="Sleep, exercise..."
                             value={lifestyleChanges}
                             onChange={(e) => setLifestyleChanges(e.target.value)}
                             width="100%"
                         />
                         <FormInputField
-                            label="Physical Exercises"
-                            placeholder="Specific exercises..."
+                            label="Yoga / Pranayama"
+                            placeholder="Specific asanas..."
                             value={physicalExercises}
                             onChange={(e) => setPhysicalExercises(e.target.value)}
                             width="100%"
@@ -1258,6 +1938,92 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                 </div>
             </div>
 
+            {/* 8. Section Progress Monitoring (Visit [Count]) for revisit ok */}
+            <div ref={section8Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
+                <div className="flex items-center justify-between ">
+                    <div className="flex items-center gap-3">
+                        <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">8</div>
+                        <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Visit {visitCount})</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
+                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
+                        </div>
+                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <PatientTypeButtonGroup
+                        options={["Better", "Same", "Worse", "New Symptoms"]}
+                        value={progressStatus}
+                        onChange={(val) => {
+                            setProgressStatus(val);
+                            if (errors.progressStatus) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.progressStatus;
+                                    return next;
+                                });
+                            }
+                        }}
+                        label="Progress Status *"
+                        required
+                        fieldRef={progressStatusRef}
+                        error={errors.progressStatus}
+                    />
+                    <PatientTypeButtonGroup
+                        options={["Regular", "Irregular", "Side Effects"]}
+                        value={medicineAdherence}
+                        onChange={(val) => {
+                            setMedicineAdherence(val);
+                            if (errors.medicineAdherence) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.medicineAdherence;
+                                    return next;
+                                });
+                            }
+                        }}
+                        label="Medicine Adherence *"
+                        required
+                        fieldRef={medicineAdherenceRef}
+                        error={errors.medicineAdherence}
+                    />
+                </div>
+
+                {/* Symptom Recovery % */}
+                <div className="space-y-4 pt-2">
+                    <h4 className="font-inter font-semibold text-sm text-[#434956]">Symptom Recovery %</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+                        <Slider label="Pain" value={painRecovery} onChange={setPainRecovery} />
+                        <Slider label="Digestion" value={digestionRecovery} onChange={setDigestionRecovery} />
+                        <Slider label="Energy" value={energyRecovery} onChange={setEnergyRecovery} />
+                        <Slider label="Sleep" value={sleepRecovery} onChange={setSleepRecovery} />
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <FormInputField
+                        ref={clinicalRemarksRef}
+                        label="Clinical Remarks *"
+                        placeholder="Detailed clinical observations..."
+                        value={clinicalRemarks}
+                        onChange={(e) => {
+                            setClinicalRemarks(e.target.value);
+                            if (errors.clinicalRemarks) {
+                                setErrors(prev => {
+                                    const next = { ...prev };
+                                    delete next.clinicalRemarks;
+                                    return next;
+                                });
+                            }
+                        }}
+                        width="100%"
+                        error={errors.clinicalRemarks}
+                    />
+                </div>
+            </div>
             {/* ACTION BUTTON CONTROLS */}
             <div className="flex justify-end gap-3 pt-4">
                 <Button
@@ -1272,11 +2038,59 @@ export function ClinicalAssessmentRecord({ className = "", onComplete }: Clinica
                     variant="primary"
                     size="large"
                     className="bg-[#0B8C00] hover:bg-[#0A7F00] h-11 px-8 rounded-full font-semibold"
-                    onClick={onComplete}
+                    onClick={handleSaveAndContinue}
                 >
-                    Save & Continue
+                    Submit
                 </Button>
             </div>
+
+            {/* Confirmation Dialog */}
+            <MessageDialog
+                open={isConfirmDialogOpen}
+                onClose={() => !isSubmitting && setIsConfirmDialogOpen(false)}
+                iconSlot={
+                    <div className="flex h-[74px] w-[74px] items-center justify-center rounded-full bg-[#0B8C00]">
+                        <span className="text-[48px] font-bold text-white leading-none font-inter select-none">?</span>
+                    </div>
+                }
+                message="Are you sure that the data you have filled in is accurate and correct?"
+                confirmText="Yes"
+                cancelText="No"
+                showCancel={true}
+                onConfirm={handleConfirmSubmit}
+                onCancel={() => setIsConfirmDialogOpen(false)}
+                isActionLoading={isSubmitting}
+            />
+
+            {/* Success Dialog */}
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => {
+                    setShowSuccessDialog(false);
+                    onComplete?.();
+                }}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message="Consultation and Physical Examination saved successfully!"
+                confirmText="Success"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowSuccessDialog(false);
+                    onComplete?.();
+                }}
+            />
+
+            {/* Error Dialog */}
+            <MessageDialog
+                open={showErrorDialog}
+                onClose={() => setShowErrorDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message="Something went wrong while saving the consultation data. Please try again."
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowErrorDialog(false)}
+            />
 
         </div>
     );

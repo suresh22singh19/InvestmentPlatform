@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -173,8 +173,13 @@ const PATIENT_FILE_ITEMS: PatientFileItem[] = [
     { name: "Medical Prescription.pdf", size: "150kb" },
 ];
 
-export default function TodayAppointmentPage() {
+function TodayAppointmentContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const patientName = searchParams?.get("name") || "Jacob Jones";
+    const patientGender = searchParams?.get("gender") || "Male";
+    const patientAge = searchParams?.get("age") || "40";
+    const patientContact = searchParams?.get("contact") || "XXXXX35353";
 
     // Consultation view step (1: Voice Record & Notes, 2: Diagnosis & Medicines, 3: Specialized & Physical Exam)
     const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -187,13 +192,20 @@ export default function TodayAppointmentPage() {
     const [followUpDate, setFollowUpDate] = useState("");
     const [followUpRemarks, setFollowUpRemarks] = useState("");
 
+    const consultationFormRef = useRef<{ validate: () => boolean }>(null);
+
     const handleSaveNextClick = () => {
         if (step === 1) {
             setStep(2);
         } else if (step === 2) {
+            if (consultationFormRef.current) {
+                const isValid = consultationFormRef.current.validate();
+                if (!isValid) {
+                    return; // Prevent transitioning to next step if validation fails
+                }
+            }
             setStep(3);
         } else {
-            alert("Consultation and Physical Examination saved successfully!");
             router.push("/today-appointment");
         }
     };
@@ -219,8 +231,8 @@ export default function TodayAppointmentPage() {
                         <div className="grid grid-cols-2 gap-4">
 
                             <PatientDetailsCard
-                                name="Jacob Jones"
-                                subtitle="Contact Number: XXXXX35353 • Age : 40 Years • Gender : Male"
+                                name={patientName}
+                                subtitle={`Contact Number: ${patientContact} • Age : ${patientAge} Years • Gender : ${patientGender}`}
                                 badges={PATIENT_DETAILS_BADGES}
                                 infoItems={PATIENT_DETAILS_INFO_ITEMS}
                             />
@@ -242,14 +254,14 @@ export default function TodayAppointmentPage() {
                         {step === 2 && (
                             <>
                                 {/* This is Step 2 */}
-                                <DoctorConsultationFormCard />
+                                <DoctorConsultationFormCard ref={consultationFormRef} />
                                 {/* This is Step 2 */}
                             </>
                         )}
                         {step === 3 && (
                             <>
                                 {/* This is Step 3 */}
-                                <ClinicalAssessmentRecord onComplete={handleSaveNextClick} />
+                                <ClinicalAssessmentRecord onComplete={handleSaveNextClick} initialGender={patientGender} />
                                 {/* This is Step 3 */}
                             </>
                         )}
@@ -319,5 +331,19 @@ export default function TodayAppointmentPage() {
 
             </div>
         </AppShell>
+    );
+}
+
+export default function TodayAppointmentPage() {
+    return (
+        <Suspense fallback={
+            <AppShell>
+                <div className="py-12 text-center text-sm text-[#9CA3AF]">
+                    Loading appointment details...
+                </div>
+            </AppShell>
+        }>
+            <TodayAppointmentContent />
+        </Suspense>
     );
 }
