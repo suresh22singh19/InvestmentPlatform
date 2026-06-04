@@ -55,6 +55,8 @@ export interface CounsellorTentativeOrArchivedParams {
   order?: "ASC" | "DESC" | "asc" | "desc";
   search?: string;
   type: "tentative" | "archived";
+  fromDate?: string;
+  toDate?: string;
 }
 
 export interface CounsellorTentativeOrArchivedItem {
@@ -115,6 +117,41 @@ export interface CounsellorAvailableRoomResponse {
   success: boolean;
   data: CounsellorAvailableRoomItem[];
   total: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface CounsellorAdvanceBookingParams {
+  sortBy?: string;
+  order?: "ASC" | "DESC" | "asc" | "desc";
+  page?: number;
+  limit?: number;
+  search?: string;
+  branchId?: number | string;
+  fromDate?: string;
+  toDate?: string;
+}
+
+export interface CounsellorAdvanceBookingItem {
+  id: number;
+  patientName: string;
+  patientUhid: string;
+  packageName: string;
+  referringDoctor: string;
+  chiefComplaint: string;
+  admissionDate: string;
+  createdAt: string;
+  branchId: number;
+}
+
+export interface CounsellorAdvanceBookingResponse {
+  success: boolean;
+  data: CounsellorAdvanceBookingItem[];
+  total: number;
+  page: number;
   limit: number;
   totalPages: number;
   message: string;
@@ -351,6 +388,17 @@ export const counsellorApi = baseApi.injectEndpoints({
     }),
 
     /**
+     * Get counsellor advance bookings list
+     */
+    getAdvanceBookingList: builder.query<CounsellorAdvanceBookingResponse, CounsellorAdvanceBookingParams>({
+      query: (params) => ({
+        url: "/counsellor/getAdvanceBookingList",
+        method: "GET",
+        params,
+      }),
+    }),
+
+    /**
      * Get future admissions & bookings tracker list
      */
     getFutureAdmissions: builder.query<FutureAdmissionResponse, FutureAdmissionParams>({
@@ -462,6 +510,46 @@ export const counsellorApi = baseApi.injectEndpoints({
         url: `/counsellor/update-schedule-patient/${patientScheduleId}`,
         method: "PUT",
         body,
+      }),
+    }),
+
+    /**
+     * Get patient details for view
+     */
+    getPatientDetail: builder.query<any, number | string>({
+      query: (patientId) => ({
+        url: `/counsellor/view-patient-detail/${patientId}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
+     * Get advance booking detail for view
+     */
+    getAdvanceBookingDetail: builder.query<any, number | string>({
+      query: (id) => ({
+        url: `/counsellor/getAdvanceBookingDetail/${id}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
+     * Get treatment package detail
+     */
+    getPackageDetail: builder.query<any, number | string>({
+      query: (id) => ({
+        url: `/counsellor/getPackageDetail/${id}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
+     * Send admission reminder
+     */
+    sendReminder: builder.mutation<any, number | string>({
+      query: (patientPackageId) => ({
+        url: `/counsellor/send-reminder/${patientPackageId}`,
+        method: "POST",
       }),
     }),
   }),
@@ -601,6 +689,7 @@ export const {
   useGetTodayAvailableRoomsQuery,
   useGetCounsellorAllPackagesQuery,
   useGetTentativeOrArchivedListQuery,
+  useGetAdvanceBookingListQuery,
   useGetFutureAdmissionsQuery,
   useGetTreatmentPackagesQuery,
   useGetPatientAdmissionsQuery,
@@ -612,5 +701,12 @@ export const {
   useGetSchedulePatientQuery,
   useLazyGetSchedulePatientQuery,
   useUpdateSchedulePatientMutation,
+  useGetPatientDetailQuery,
+  useLazyGetPatientDetailQuery,
+  useGetAdvanceBookingDetailQuery,
+  useLazyGetAdvanceBookingDetailQuery,
+  useGetPackageDetailQuery,
+  useLazyGetPackageDetailQuery,
+  useSendReminderMutation,
 } = counsellorApi;
 

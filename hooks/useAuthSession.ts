@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { logout as logoutAction, selectUser } from "@/store/slices/authSlice";
+import { logoutJatayu } from "@/store/api/jatayuApi";
 
 /**
  * Shell auth: prefer Redux user (set on login, restored by redux-persist) so the first
@@ -27,6 +28,7 @@ export const useAuthSession = () => {
   }, [user, router]);
 
   const logout = () => {
+    logoutJatayu().catch((err) => console.error("Jatayu logout failed:", err));
     dispatch(logoutAction());
     router.replace("/");
   };

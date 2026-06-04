@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -9,24 +10,65 @@ import {
     TableListingCard,
     Button,
     MessageDialog,
+    ViewAppointment,
+    BackToPreviousPageButton,
+    SpinnerLoader,
 } from "@/components/ui";
 import {
     useGetTentativeOrArchivedListQuery,
     useRevertToOpdMutation,
     useLazyCheckFirstDayPaymentQuery,
+    useLazyGetPatientDetailQuery,
 } from "@/store/api/counsellorApi";
 import { useDebounce } from "@/hooks/useDebounce";
 import RoomAllocation from "../start-counselling/roomAllowcation";
+import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
+
+
 
 export default function CounsellorArchivedPage() {
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState("");
+    const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
+    const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
     const debouncedSearch = useDebounce(searchTerm, 500);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10); // Displays 10 items as in reference image
     const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("ASC");
     const [sortBy, setSortBy] = useState<string>("patientName");
     const [activeAllocationPatient, setActiveAllocationPatient] = useState<{ patient: any; payment: any } | null>(null);
+
+    // Date Filter State
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const filterRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const handleFilterClick = () => setIsFilterOpen((prev) => !prev);
+    const handleFilter = (from: string, to: string) => {
+        setFromDate(from);
+        setToDate(to);
+        setIsFilterOpen(false);
+        setCurrentPage(1);
+    };
+    const handleClear = () => {
+        setFromDate("");
+        setToDate("");
+        setIsFilterOpen(false);
+        setCurrentPage(1);
+    };
 
     // Confirmation dialog and submitting states
     const [pendingAction, setPendingAction] = useState<{ type: "refer" | "startAdmission"; item: any } | null>(null);
@@ -41,6 +83,11 @@ export default function CounsellorArchivedPage() {
     } | null>(null);
     const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
     const [apiErrorMessage, setApiErrorMessage] = useState("");
+
+    // Dynamic detailed patient data loading states
+    const [getPatientDetail] = useLazyGetPatientDetailQuery();
+    const [loadingPatientId, setLoadingPatientId] = useState<number | string | null>(null);
+    const [fetchedPatientData, setFetchedPatientData] = useState<any>(null);
 
     const [revertToOpd] = useRevertToOpdMutation();
     const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
@@ -63,6 +110,8 @@ export default function CounsellorArchivedPage() {
         sortBy: sortBy === "patientName" ? "patientName" : undefined,
         order: sortOrder,
         type: "archived",
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
     });
 
     const currentList = listRes?.data || [];
@@ -188,6 +237,7 @@ export default function CounsellorArchivedPage() {
             </span>
         );
 
+        const isButtonLoading = loadingPatientId === item.id;
         // Action buttons
         const actions = (
             <div className="flex items-center gap-2">
@@ -202,9 +252,36 @@ export default function CounsellorArchivedPage() {
                 <Button
                     variant="outline"
                     size="xsmall"
-                    className="whitespace-nowrap"
+                    className="whitespace-nowrap flex items-center justify-center min-w-[50px]"
+                    onClick={async () => {
+                        if (!item.id) return;
+                        setLoadingPatientId(item.id);
+                        try {
+                            const res = await getPatientDetail(item.id).unwrap();
+                            if (res && res.success) {
+                                setFetchedPatientData(res.data);
+                                setSelectedPatient(item);
+                                setViewAppointmentMode(true);
+                            } else {
+                                setApiErrorMessage(res?.message || "Failed to load patient details.");
+                                setShowApiErrorDialog(true);
+                            }
+                        } catch (err: any) {
+                            console.error("Error fetching patient details:", err);
+                            const msg = err?.data?.message || err?.message || "An error occurred while fetching patient details.";
+                            setApiErrorMessage(msg);
+                            setShowApiErrorDialog(true);
+                        } finally {
+                            setLoadingPatientId(null);
+                        }
+                    }}
+                    disabled={isButtonLoading}
                 >
-                    View
+                    {isButtonLoading ? (
+                        <SpinnerLoader size={16} />
+                    ) : (
+                        "View"
+                    )}
                 </Button>
                 <Button
                     variant="primary"
@@ -230,7 +307,151 @@ export default function CounsellorArchivedPage() {
 
     return (
         <AppShell>
-            {activeAllocationPatient ? (
+            {viewAppointmentMode ? (
+                <div className="flex flex-col gap-6">
+                    <div className="flex items-start justify-between">
+                        <PageHeading title="View" />
+                        <BackToPreviousPageButton
+                            text="Back"
+                            onClick={() => {
+                                setViewAppointmentMode(false);
+                                setSelectedPatient(null);
+                            }}
+                        />
+                    </div>
+                    {(() => {
+                        const appDetail = fetchedPatientData?.appointmentDetail || {};
+                        const patDetails = fetchedPatientData?.patientDetails || {};
+                        const refDetail = fetchedPatientData?.referralDetail || {};
+                        const medInfo = fetchedPatientData?.medicalInfo || {};
+                        const otherInfo = fetchedPatientData?.otherInformation || {};
+
+                        const appointmentItems = [
+                            { label: "UHID", value: appDetail.uhid || "N/A" },
+                            { label: "OPD ID", value: appDetail.opid?.toString() || "N/A" },
+                            { label: "Branch", value: appDetail.branch || "N/A" },
+                            { label: "Doctor", value: appDetail.doctor || "N/A" },
+                            { label: "Doctor OPD Fee", value: appDetail.doctorCpdFee !== undefined ? `Rs. ${appDetail.doctorCpdFee}` : "N/A" },
+                            // { label: "Entry Fee", value: appDetail.entryFee !== undefined ? `Rs. ${appDetail.entryFee}` : "N/A" },
+                            { label: "Appointment Date", value: appDetail.appointmentDate || "N/A" },
+                            { label: "Time Slot", value: appDetail.timeSlot || "N/A" },
+                            { label: "Created Date", value: appDetail.createdDate ? new Date(appDetail.createdDate).toLocaleString() : "N/A" },
+                            { label: "Remark", value: appDetail.remark || "N/A", multiline: true },
+                        ];
+
+                        const referralItems = [
+                            { label: "Source", value: refDetail.source || "N/A" },
+                            { label: "Sub Source", value: refDetail.subSource || "N/A" },
+                            { label: "Referral Doctor", value: refDetail.referralDoctor || "N/A" },
+                            { label: "Referral Name", value: refDetail.referralName || "N/A" },
+                            { label: "Mobile", value: refDetail.mobile || "N/A" },
+                        ];
+
+                        const patientName = patDetails.name || "N/A";
+                        const patientSubtitle = `Contact Number: ${patDetails.contactNumber || "N/A"} • Age : ${patDetails.age || "N/A"} Years • Gender : ${patDetails.gender || "N/A"}`;
+
+                        const patientBadges = [
+                            ...(medInfo.bloodGroup && medInfo.bloodGroup !== "N/A" ? [{
+                                label: medInfo.bloodGroup,
+                                className: "inline-flex h-[30px] min-w-[76px] me-2 items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]"
+                            }] : []),
+                            ...(otherInfo.patientType ? [{
+                                label: otherInfo.patientType,
+                                className: "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#0B8C00]/20 bg-white text-[#0B8C00]"
+                            }] : [])
+                        ];
+
+                        const patientInfoItems = [
+                            {
+                                iconSrc: "/icons/UserGear.svg",
+                                iconAlt: "Father/Husband",
+                                label: "Father’s/Husband’s Name",
+                                value: patDetails.fatherHusbandName || patDetails.guardianName || "N/A",
+                            },
+                            {
+                                iconSrc: "/icons/gendericon.svg",
+                                iconAlt: "Marital Status",
+                                label: "Marital Status",
+                                value: patDetails.maritalStatus || "N/A",
+                            },
+                            {
+                                iconSrc: "/icons/mapicon.svg",
+                                iconAlt: "Address",
+                                label: "Address",
+                                value: patDetails.address || "N/A",
+                            },
+                            {
+                                iconSrc: "/icons/adharcardicon.svg",
+                                iconAlt: "Aadhar Card Number",
+                                label: "Aadhar Card Number",
+                                value: patDetails.aadharCardNumber || "N/A",
+                            },
+                        ];
+
+                        const vitalsItems = [
+                            { label: "Blood Pressure", value: patDetails.bloodPressure || "N/A", unit: "bp" },
+                            { label: "Sugar Level", value: patDetails.sugarLevel || "N/A", unit: "mg/dL" },
+                            { label: "Temperature", value: patDetails.temperature || "N/A", unit: "" },
+                            { label: "Heart Rate", value: patDetails.heartRate || "N/A", unit: "bpm" },
+                        ];
+
+                        const medicalItems = [
+                            { label: "Diagnosis", value: medInfo.diagnosis || "N/A" },
+                            { label: "Disease", value: medInfo.disease || "N/A" },
+                            { label: "Blood Group", value: medInfo.bloodGroup || "N/A" },
+                            { label: "Allergies", value: medInfo.allergies || "N/A" },
+                            { label: "Surgeries", value: medInfo.surgeries || "N/A" },
+                            { label: "Addiction", value: medInfo.addiction || "N/A" },
+                            { label: "Height", value: patDetails.height || medInfo.height || "N/A" },
+                            { label: "Weight", value: patDetails.weight || medInfo.weight || "N/A" },
+                            { label: "Diet Type", value: medInfo.dietType || "N/A" },
+                            { label: "Remark", value: medInfo.remark || "N/A", multiline: true },
+                        ];
+
+                        const otherInfoItems = [
+                            { label: "Patient Type", value: otherInfo.patientType || "N/A" },
+                            { label: "Patient Sub Type", value: otherInfo.patientSubType || "N/A" },
+                            { label: "Beneficiary ID", value: "N/A" },
+                            { label: "Insurance Company", value: "N/A" },
+                            { label: "Ayush Covered", value: "N/A" },
+                        ];
+
+                        const timelineItems = fetchedPatientData?.patientHistory?.map((h: any) => ({
+                            dateLabel: h.date || h.createdDate || "N/A",
+                            detail: {
+                                primaryComplaintTitle: "Chief Complaint",
+                                primaryComplaintText: h.chiefComplaint || h.remark || "N/A",
+                                detailsTitle: "Symptoms",
+                                detailsItems: Array.isArray(h.symptoms) ? h.symptoms : (h.symptoms ? [h.symptoms] : ["N/A"]),
+                                actionsTitle: "Medicines Prescribed",
+                                actionItems: Array.isArray(h.medicines) ? h.medicines : (h.medicines ? [h.medicines] : ["N/A"]),
+                            }
+                        })) || [];
+
+                        const healthCardNo = patDetails.jsHealthCardNo || "N/A";
+
+                        return (
+                            <ViewAppointment
+                                appointmentItems={appointmentItems}
+                                walletRemainingAmount="Rs. 0"
+                                walletDetails={undefined}
+                                referralItems={referralItems}
+                                patientName={patientName}
+                                patientSubtitle={patientSubtitle}
+                                patientBadges={patientBadges}
+                                patientInfoItems={patientInfoItems}
+                                showVitals={true}
+                                vitalsItems={vitalsItems}
+                                timelineItems={timelineItems.length > 0 ? timelineItems : undefined}
+                                healthCardNo={healthCardNo}
+                                medicalItems={medicalItems}
+                                fileItems={[]}
+                                otherInfoItems={otherInfoItems}
+                            />
+                        );
+                    })()}
+                </div>
+            ) : activeAllocationPatient ? (
                 <div className="flex flex-col gap-6">
                     <div className="flex items-start justify-between">
                         <PageHeading title={`Room Allocation - ${activeAllocationPatient.patient.patientName || "Patient"}`} />
@@ -285,12 +506,36 @@ export default function CounsellorArchivedPage() {
                                     id: "archived-patients-list",
                                     title: "Archived",
                                     titleRightContent: (
-                                        <div style={{ width: "300px" }}>
-                                            <TableSearchInput
-                                                value={searchTerm}
-                                                onChange={setSearchTerm}
-                                                placeholder="Search Here..."
-                                            />
+                                        <div className="flex items-center gap-3">
+                                            <div className="relative" ref={filterRef}>
+                                                <button
+                                                    onClick={handleFilterClick}
+                                                    className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center w-[108px] h-10 rounded-[32px] border border-[#0B8C00] bg-white hover:bg-[#F7FAF7] relative z-10"
+                                                >
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <Image src="/icons/FilterIcon.svg" alt="filter" width={24} height={24} />
+                                                        <span className="font-inter font-medium text-sm leading-[120%] text-[#0B8C00]">Filter</span>
+                                                    </div>
+                                                </button>
+                                                {isFilterOpen && (
+                                                    <div className="absolute right-0 top-full mt-2 z-50">
+                                                        <DateFilterDropdown
+                                                            onFilter={handleFilter}
+                                                            onClear={handleClear}
+                                                            initialFromDate={fromDate}
+                                                            initialToDate={toDate}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div style={{ width: "300px" }}>
+                                                <TableSearchInput
+                                                    value={searchTerm}
+                                                    onChange={setSearchTerm}
+                                                    placeholder="Search Here..."
+                                                />
+                                            </div>
                                         </div>
                                     ),
                                     columns,

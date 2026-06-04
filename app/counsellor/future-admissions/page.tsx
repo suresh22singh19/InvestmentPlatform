@@ -16,7 +16,7 @@ import {
     Badge,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useGetFutureAdmissionsQuery } from "@/store/api/counsellorApi";
+import { useGetFutureAdmissionsQuery, useSendReminderMutation } from "@/store/api/counsellorApi";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 
 // StatCard Component specifically designed for Future Admissions
@@ -142,6 +142,7 @@ export default function FutureAdmissionsPage() {
 
     // Query Hook call
     const { data: apiResponse, isLoading: isFutureLoading } = useGetFutureAdmissionsQuery(queryParams);
+    const [sendReminder] = useSendReminderMutation();
 
     const metrics = apiResponse?.data?.metrics;
     const listingData = apiResponse?.data?.listing?.data || [];
@@ -200,15 +201,28 @@ export default function FutureAdmissionsPage() {
 
     // Handle Action Trigger: Send Reminder
     const handleSendReminder = async (item: any) => {
+        const targetId = item.id;
+        if (!targetId) return;
         setSubmittingItemId(item.id);
         setIsSubmitting(true);
-        // Simulate background processing API call delay
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        setIsSubmitting(false);
-        setSubmittingItemId(null);
-        setSuccessMessage(`Admission reminder sent successfully to ${item.patientName}!`);
-        setShowSuccessDialog(true);
+        try {
+            const res = await sendReminder(targetId).unwrap();
+            if (res && res.success) {
+                setSuccessMessage(res.message || `Admission reminder sent successfully to ${item.patientName}!`);
+                setShowSuccessDialog(true);
+            } else {
+                setApiErrorMessage(res?.message || "Failed to send admission reminder.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: any) {
+            console.error("Error sending reminder:", err);
+            const msg = err?.data?.message || err?.message || "An error occurred while sending the reminder.";
+            setApiErrorMessage(msg);
+            setShowApiErrorDialog(true);
+        } finally {
+            setIsSubmitting(false);
+            setSubmittingItemId(null);
+        }
     };
 
     // Date formatter helper

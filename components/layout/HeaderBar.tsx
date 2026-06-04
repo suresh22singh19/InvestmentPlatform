@@ -24,6 +24,7 @@ import {
   setSelectedBranch,
 } from "@/store/slices/authSlice";
 import { useLogoutMutation } from "@/store/api/authApi";
+import { logoutJatayu } from "@/store/api/jatayuApi";
 
 const GLOBAL_SEARCH_TYPE_OPTIONS: SelectOption[] = [
   { label: "None", value: "" },
@@ -624,6 +625,11 @@ export function HeaderBar({
                 className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#D14D4F] transition hover:bg-[#FFF2F2] cursor-pointer"
                 onClick={async () => {
                   setIsAccountMenuOpen(false);
+                  try {
+                    await logoutJatayu();
+                  } catch (e) {
+                    console.error("Jatayu logout failed:", e);
+                  }
                   try {
                     await logoutApi().unwrap();
                   } catch {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -13,72 +13,19 @@ import {
     Button,
     DatePicker,
     FormInputField,
+    ViewAppointment,
+    BackToPreviousPageButton,
+    SpinnerLoader,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
+import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
+import {
+    useGetAdvanceBookingListQuery,
+    useLazyGetAdvanceBookingDetailQuery,
+} from "@/store/api/counsellorApi";
+import { selectUserBranchId } from "@/store/slices/authSlice";
+import { useAppSelector } from "@/store/hooks";
 
-// Static interactive data matching the reference image for Advance Bookings
-const STATIC_ADVANCE_BOOKINGS = [
-    {
-        id: 1,
-        patientName: "Ajay Kumar",
-        packageName: "Cardiac Premium Care",
-        patientUhid: "JSKL41712025",
-        doctorName: "Dr Shiv Ram Singh",
-        chiefComplaint: "Fever & Body Pain",
-        lastVisitDate: "18 May 2026",
-        admissionDate: "18 May 2026",
-    },
-    {
-        id: 2,
-        patientName: "Rohit Singh",
-        packageName: "Cardiac Standard",
-        patientUhid: "JSKL41712025",
-        doctorName: "Dr. Aakash Dave",
-        chiefComplaint: "Chest Pain",
-        lastVisitDate: "17 May 2026",
-        admissionDate: "17 May 2026",
-    },
-    {
-        id: 3,
-        patientName: "Ajeet Kumar",
-        packageName: "Cardiac Advanced Care",
-        patientUhid: "JSKL41712025",
-        doctorName: "Dr Heera Singh",
-        chiefComplaint: "Migraine",
-        lastVisitDate: "16 May 2026",
-        admissionDate: "16 May 2026",
-    },
-    {
-        id: 4,
-        patientName: "Manish Soni",
-        packageName: "Cardiac Basic Care",
-        patientUhid: "JSKL41712025",
-        doctorName: "Dr Alok Ashok Tripathi",
-        chiefComplaint: "Stomach Infection",
-        lastVisitDate: "15 May 2026",
-        admissionDate: "15 May 2026",
-    },
-    {
-        id: 5,
-        patientName: "Pankaj Kumar",
-        packageName: "Cardiac Premium Care",
-        patientUhid: "JSKL41712025",
-        doctorName: "Dr Aishwarya Subhash Thorat",
-        chiefComplaint: "Back Pain",
-        lastVisitDate: "14 May 2026",
-        admissionDate: "14 May 2026",
-    },
-    {
-        id: 6,
-        patientName: "Aman Singh",
-        packageName: "Cardiac Standard",
-        patientUhid: "JSKL41712025",
-        doctorName: "Dr Kadambaree",
-        chiefComplaint: "High Blood Pressure",
-        lastVisitDate: "13 May 2026",
-        admissionDate: "13 May 2026",
-    },
-];
 
 // Helper to parse "18 May 2026" to "2026-05-18" for the DatePicker input
 const parseDateToInputFormat = (dateStr: string) => {
@@ -117,16 +64,72 @@ const formatDateToDisplayFormat = (dateStr: string) => {
     return dateStr;
 };
 
+
+
 export default function CounsellorAdvanceBookingsPage() {
     const router = useRouter();
-    const [bookingsList, setBookingsList] = useState(STATIC_ADVANCE_BOOKINGS);
+    const [bookingsList, setBookingsList] = useState<any[]>([]);
 
     const [searchTerm, setSearchTerm] = useState("");
+    const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
     const debouncedSearch = useDebounce(searchTerm, 500);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(6);
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
     const [sortBy, setSortBy] = useState<"patientName" | "">("patientName");
+
+    // Date Filter State
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const filterRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (!filterRef.current) return;
+            if (!filterRef.current.contains(event.target as Node)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const handleFilterClick = () => setIsFilterOpen((prev) => !prev);
+    const handleFilter = (newFromDate: string, newToDate: string) => {
+        setFromDate(newFromDate);
+        setToDate(newToDate);
+        setCurrentPage(1);
+        setIsFilterOpen(false);
+    };
+    const handleClear = () => {
+        setFromDate("");
+        setToDate("");
+        setCurrentPage(1);
+        setIsFilterOpen(false);
+    };
+
+    const authBranchId = useAppSelector(selectUserBranchId);
+    const branchId = authBranchId ? Number(authBranchId) : undefined;
+
+    const { data: bookingsRes, isLoading, isError, refetch } = useGetAdvanceBookingListQuery({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: debouncedSearch.trim() || undefined,
+        sortBy: sortBy || undefined,
+        order: sortOrder.toUpperCase() as "ASC" | "DESC",
+        branchId,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+    });
+
+    useEffect(() => {
+        if (bookingsRes?.data) {
+            setBookingsList(bookingsRes.data);
+        }
+    }, [bookingsRes]);
 
     // Modal state
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -141,44 +144,14 @@ export default function CounsellorAdvanceBookingsPage() {
     const [apiErrorMessage, setApiErrorMessage] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Dynamic detailed booking data loading states
+    const [getAdvanceBookingDetail] = useLazyGetAdvanceBookingDetailQuery();
+    const [loadingBookingId, setLoadingBookingId] = useState<number | string | null>(null);
+    const [fetchedBookingData, setFetchedBookingData] = useState<any>(null);
+
     // Client-side filtering, sorting, and pagination
-    const filteredAndSortedList = useMemo(() => {
-        let result = [...bookingsList];
-
-        // 1. Search Filter
-        const query = debouncedSearch.trim().toLowerCase();
-        if (query) {
-            result = result.filter(
-                (item) =>
-                    item.patientName.toLowerCase().includes(query) ||
-                    item.packageName.toLowerCase().includes(query) ||
-                    item.patientUhid.toLowerCase().includes(query) ||
-                    item.doctorName.toLowerCase().includes(query) ||
-                    item.chiefComplaint.toLowerCase().includes(query) ||
-                    item.lastVisitDate.toLowerCase().includes(query) ||
-                    item.admissionDate.toLowerCase().includes(query)
-            );
-        }
-
-        // 2. Sort by Patient Name
-        if (sortBy === "patientName") {
-            result.sort((a, b) => {
-                const nameA = a.patientName.toLowerCase();
-                const nameB = b.patientName.toLowerCase();
-                if (nameA < nameB) return sortOrder === "asc" ? -1 : 1;
-                if (nameA > nameB) return sortOrder === "asc" ? 1 : -1;
-                return 0;
-            });
-        }
-
-        return result;
-    }, [bookingsList, debouncedSearch, sortBy, sortOrder]);
-
-    const totalItems = filteredAndSortedList.length;
-    const paginatedList = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredAndSortedList.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredAndSortedList, currentPage, itemsPerPage]);
+    const totalItems = bookingsRes?.total ?? 0;
+    const paginatedList = bookingsList;
 
     // Setup columns matching the reference screenshot
     const columns = [
@@ -241,6 +214,11 @@ export default function CounsellorAdvanceBookingsPage() {
         });
 
         setBookingsList(updatedList);
+        try {
+            refetch();
+        } catch (e) {
+            console.warn("Failed to refetch bookings list:", e);
+        }
         setIsSubmitting(false);
         setIsEditDialogOpen(false);
         setSuccessMessage("Booking updated successfully!");
@@ -258,29 +236,51 @@ export default function CounsellorAdvanceBookingsPage() {
             </span>
         );
 
-        // Action Buttons: View (Eye) & Edit (Pencil)
+        const isButtonLoading = loadingBookingId === item.id;
         const actions = (
-            <div className="flex items-center gap-3">
-                <button type="button" className="cursor-pointer hover:opacity-80 transition-opacity">
-                    <Image
-                        src="/icons/ViewEyeIcon.svg"
-                        alt="View"
-                        width={20}
-                        height={20}
-                    />
-                </button>
-                <button
-                    type="button"
-                    onClick={() => handleEditClick(item)}
-                    className="cursor-pointer hover:opacity-80 transition-opacity"
+            <div className="flex items-center gap-2">
+                <Button
+                    variant="outline"
+                    size="xsmall"
+                    className="whitespace-nowrap flex items-center justify-center min-w-[50px]"
+                    onClick={async () => {
+                        if (!item.id) return;
+                        setLoadingBookingId(item.id);
+                        try {
+                            const res = await getAdvanceBookingDetail(item.id).unwrap();
+                            if (res && res.success) {
+                                setFetchedBookingData(res.data);
+                                setSelectedItem(item);
+                                setViewAppointmentMode(true);
+                            } else {
+                                setApiErrorMessage(res?.message || "Failed to load booking details.");
+                                setShowApiErrorDialog(true);
+                            }
+                        } catch (err: any) {
+                            console.error("Error fetching booking details:", err);
+                            const msg = err?.data?.message || err?.message || "An error occurred while fetching booking details.";
+                            setApiErrorMessage(msg);
+                            setShowApiErrorDialog(true);
+                        } finally {
+                            setLoadingBookingId(null);
+                        }
+                    }}
+                    disabled={isButtonLoading}
                 >
-                    <Image
-                        src="/icons/EditIconBlack.svg"
-                        alt="Edit"
-                        width={20}
-                        height={20}
-                    />
-                </button>
+                    {isButtonLoading ? (
+                        <SpinnerLoader size={16} />
+                    ) : (
+                        "View"
+                    )}
+                </Button>
+                <Button
+                    variant="primary"
+                    size="xsmall"
+                    className="whitespace-nowrap"
+                    onClick={() => router.push(`/counsellor/start-counselling?id=${item.id}`)}
+                >
+                    StartCounselling
+                </Button>
             </div>
         );
 
@@ -299,45 +299,219 @@ export default function CounsellorAdvanceBookingsPage() {
 
     return (
         <AppShell>
-            <div className="flex flex-col gap-6">
-                {/* Page Heading */}
-                <div className="flex items-start justify-between">
-                    <PageHeading title="Advance Bookings" />
-                </div>
+            {viewAppointmentMode ? (
+                <div className="flex flex-col gap-6">
+                    <div className="flex items-start justify-between">
+                        <PageHeading title="View" />
+                        <BackToPreviousPageButton
+                            text="Back"
+                            onClick={() => {
+                                setViewAppointmentMode(false);
+                                setSelectedItem(null);
+                            }}
+                        />
+                    </div>
+                    {(() => {
+                        const bookingDetail = fetchedBookingData?.bookingDetail || {};
+                        const patDetails = fetchedBookingData?.patientDetails || {};
+                        const referralDetail = fetchedBookingData?.referralDetail || {};
+                        const medicalInfo = fetchedBookingData?.medicalInfo || {};
+                        const packageInfo = fetchedBookingData?.packageInfo || {};
 
-                {/* Table Listing Card */}
-                <TableListingCard
-                    sections={[
-                        {
-                            id: "advance-bookings-list",
-                            title: "Advance Bookings",
-                            titleRightContent: (
-                                <div style={{ width: "300px" }}>
-                                    <TableSearchInput
-                                        value={searchTerm}
-                                        onChange={setSearchTerm}
-                                        placeholder="Search Here..."
-                                    />
-                                </div>
-                            ),
-                            columns,
-                            rows,
-                            emptyMessage: "No advance bookings found",
-                            pagination: {
-                                currentPage,
-                                totalItems,
-                                itemsPerPage,
-                                onPageChange: setCurrentPage,
-                                onItemsPerPageChange: (items: number) => {
-                                    setItemsPerPage(items);
-                                    setCurrentPage(1);
-                                },
-                                itemsPerPageOptions: [6, 12, 24, 60],
+                        const appointmentItems = [
+                            { label: "UHID", value: bookingDetail.uhid || "N/A" },
+                            { label: "OPD ID", value: bookingDetail.id?.toString() || "N/A" },
+                            { label: "Branch", value: bookingDetail.branch || "N/A" },
+                            { label: "Doctor", value: bookingDetail.doctor || "N/A" },
+                            { label: "Doctor OPD Fee", value: bookingDetail.doctorFee !== undefined ? `Rs. ${bookingDetail.doctorFee}` : "N/A" },
+                            // { label: "Entry Fee", value: bookingDetail.entryFee !== undefined ? `Rs. ${bookingDetail.entryFee}` : "N/A" },
+                            { label: "Appointment Date", value: bookingDetail.appointmentDate || "N/A" },
+                            { label: "Time Slot", value: bookingDetail.timeSlot || "N/A" },
+                            { label: "Created Date", value: bookingDetail.createdDate ? new Date(bookingDetail.createdDate).toLocaleString() : "N/A" },
+                            { label: "Remark", value: bookingDetail.remark || "N/A", multiline: true },
+                        ];
+
+                        const referralItems = [
+                            { label: "Source", value: referralDetail.source || "N/A" },
+                            { label: "Sub Source", value: referralDetail.subSource || "N/A" },
+                            { label: "Referral Doctor", value: referralDetail.referralDoctor || "N/A" },
+                            { label: "Referral Name", value: referralDetail.referralName || "N/A" },
+                            { label: "Mobile", value: referralDetail.mobile || "N/A" },
+                        ];
+
+                        const patientName = patDetails.name || "N/A";
+                        const patientSubtitle = `Contact Number: ${patDetails.contactNumber || "N/A"} • WhatsApp: ${patDetails.whatsappNumber || "N/A"} • Age : ${patDetails.age || "N/A"} Years • Gender : ${patDetails.gender || "N/A"}`;
+
+                        const patientBadges = [
+                            ...(patDetails.bloodGroup && patDetails.bloodGroup !== "N/A" ? [{
+                                label: patDetails.bloodGroup,
+                                className: "inline-flex h-[30px] min-w-[76px] me-2 items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]"
+                            }] : []),
+                            ...(patDetails.patientType ? [{
+                                label: patDetails.patientType,
+                                className: "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#0B8C00]/20 bg-white text-[#0B8C00]"
+                            }] : [])
+                        ];
+
+                        const patientInfoItems = [
+                            {
+                                iconSrc: "/icons/UserGear.svg",
+                                iconAlt: "Father/Husband",
+                                label: "Father’s/Husband’s Name",
+                                value: patDetails.guardianName || "N/A",
                             },
-                        },
-                    ]}
-                />
-            </div>
+                            {
+                                iconSrc: "/icons/gendericon.svg",
+                                iconAlt: "Marital Status",
+                                label: "Marital Status",
+                                value: patDetails.maritalStatus || "N/A",
+                            },
+                            {
+                                iconSrc: "/icons/mapicon.svg",
+                                iconAlt: "Address",
+                                label: "Address",
+                                value: patDetails.address || "N/A",
+                            },
+                            {
+                                iconSrc: "/icons/adharcardicon.svg",
+                                iconAlt: "Aadhar Card Number",
+                                label: "Aadhar Card Number",
+                                value: patDetails.aadharCardNumber || "N/A",
+                            },
+                        ];
+
+                        const vitalsItems = [
+                            { label: "Blood Pressure", value: patDetails.bloodPressure || "N/A", unit: "bp" },
+                            { label: "Sugar Level", value: patDetails.sugarLevel || "N/A", unit: "mg/dL" },
+                            { label: "Temperature", value: patDetails.temperature || "N/A", unit: "" },
+                            { label: "Heart Rate", value: patDetails.heartRate || "N/A", unit: "bpm" },
+                        ];
+
+                        let addictionVal = "N/A";
+                        if (medicalInfo.addiction) {
+                            try {
+                                const parsed = JSON.parse(medicalInfo.addiction);
+                                addictionVal = Array.isArray(parsed) ? parsed.join(", ") : String(parsed);
+                            } catch {
+                                addictionVal = String(medicalInfo.addiction);
+                            }
+                        }
+
+                        const medicalItems = [
+                            { label: "Diagnosis", value: medicalInfo.diagnosis || "N/A" },
+                            { label: "Disease", value: medicalInfo.diseases || "N/A" },
+                            { label: "Blood Group", value: patDetails.bloodGroup || "N/A" },
+                            { label: "Allergies", value: patDetails.allergies || "N/A" },
+                            { label: "Surgeries", value: patDetails.surgeries || "N/A" },
+                            { label: "Addiction", value: addictionVal },
+                            { label: "Height", value: patDetails.height || "N/A" },
+                            { label: "Weight", value: patDetails.weight || "N/A" },
+                            { label: "Diet Type", value: medicalInfo.dietType || "N/A" },
+                            { label: "Remark", value: medicalInfo.remark || "N/A", multiline: true },
+                        ];
+
+                        const otherInfoItems = [
+                            { label: "Patient Type", value: patDetails.patientType || "N/A" },
+                            { label: "Patient Sub Type", value: patDetails.patientSubType || "N/A" },
+                            { label: "Beneficiary ID", value: "N/A" },
+                            { label: "Insurance Company", value: "N/A" },
+                            { label: "Ayush Covered", value: "N/A" },
+                        ];
+
+                        const walletDetails = [
+                            { label: "Package", value: packageInfo.packageName || "N/A" },
+                            { label: "Start Date", value: packageInfo.startDate || "N/A" },
+                            { label: "End Date", value: packageInfo.endDate || "N/A" },
+                        ];
+
+                        return (
+                            <ViewAppointment
+                                appointmentItems={appointmentItems}
+                                walletRemainingAmount="Rs. 0"
+                                walletDetails={walletDetails}
+                                referralItems={referralItems}
+                                patientName={patientName}
+                                patientSubtitle={patientSubtitle}
+                                patientBadges={patientBadges}
+                                patientInfoItems={patientInfoItems}
+                                showVitals={true}
+                                vitalsItems={vitalsItems}
+                                timelineItems={undefined}
+                                healthCardNo="N/A"
+                                medicalItems={medicalItems}
+                                fileItems={[]}
+                                otherInfoItems={otherInfoItems}
+                            />
+                        );
+                    })()}
+                </div>
+            ) : (
+                <div className="flex flex-col gap-6">
+                    {/* Page Heading */}
+                    <div className="flex items-start justify-between">
+                        <PageHeading title="Advance Bookings" />
+                    </div>
+
+                    {/* Table Listing Card */}
+                    <TableListingCard
+                        sections={[
+                            {
+                                id: "advance-bookings-list",
+                                title: "Advance Bookings",
+                                titleRightContent: (
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative" ref={filterRef}>
+                                            <button
+                                                onClick={handleFilterClick}
+                                                className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center w-[108px] h-10 rounded-[32px] border border-[#0B8C00] bg-white hover:bg-[#F7FAF7] relative z-10"
+                                            >
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <Image src="/icons/FilterIcon.svg" alt="filter" width={24} height={24} />
+                                                    <span className="font-inter font-medium text-sm leading-[120%] text-[#0B8C00]">Filter</span>
+                                                </div>
+                                            </button>
+                                            {isFilterOpen && (
+                                                <div className="absolute right-0 top-full mt-2 z-50">
+                                                    <DateFilterDropdown
+                                                        onFilter={handleFilter}
+                                                        onClear={handleClear}
+                                                        initialFromDate={fromDate}
+                                                        initialToDate={toDate}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ width: "300px" }}>
+                                            <TableSearchInput
+                                                value={searchTerm}
+                                                onChange={setSearchTerm}
+                                                placeholder="Search Here..."
+                                            />
+                                        </div>
+                                    </div>
+                                ),
+                                columns,
+                                rows,
+                                isLoading,
+                                isError,
+                                errorMessage: "Facing server API error",
+                                emptyMessage: "No advance bookings found",
+                                pagination: {
+                                    currentPage,
+                                    totalItems,
+                                    itemsPerPage,
+                                    onPageChange: setCurrentPage,
+                                    onItemsPerPageChange: (items: number) => {
+                                        setItemsPerPage(items);
+                                        setCurrentPage(1);
+                                    },
+                                    itemsPerPageOptions: [6, 12, 24, 60],
+                                },
+                            },
+                        ]}
+                    />
+                </div>
+            )}
 
             {/* Edit Dialog */}
             <Dialog

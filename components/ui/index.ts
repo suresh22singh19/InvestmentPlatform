@@ -54,6 +54,8 @@ export type {
     PatientInformationTimelineDetail,
     PatientInformationTimelineItem,
 } from "./PatientInformationTimelineCard";
+export { ViewAppointment } from "./ViewAppointment";
+export type { ViewAppointmentProps } from "./ViewAppointment";
 export { HealthCardPreview } from "./HealthCardPreview";
 export { MedicalInformationCard } from "./MedicalInformationCard";
 export type { MedicalInformationItem } from "./MedicalInformationCard";

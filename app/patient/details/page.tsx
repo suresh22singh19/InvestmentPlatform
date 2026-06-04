@@ -184,7 +184,7 @@ const APPOINTMENT_DETAIL_ITEMS: AppointmentDetailItem[] = [
     { label: "Branch", value: "HIIMS Derabassi" },
     { label: "Doctor", value: "Dr.Suyash Pratap Singh" },
     { label: "Doctor OPD Fee", value: "500" },
-    { label: "Entry Fee", value: "100" },
+    // { label: "Entry Fee", value: "100" },
     { label: "Appointment Date", value: "26-11-2025" },
     { label: "Time Slot", value: "10:11:53" },
     { label: "Created Date", value: "26-11-2025 10:34 AM" },
@@ -3681,29 +3681,29 @@ export default function IpdPage() {
                                             opdPatientDetailsView && opdPatientDetailsView.badges.length > 0
                                                 ? opdPatientDetailsView.badges
                                                 : []
-                                                // : PATIENT_DETAILS_BADGES
+                                            // : PATIENT_DETAILS_BADGES
                                         }
                                         infoItems={
                                             opdPatientDetailsView && opdPatientDetailsView.infoItems.length > 0
                                                 ? opdPatientDetailsView.infoItems
-                                                :[]
-                                                // : PATIENT_DETAILS_INFO_ITEMS
+                                                : []
+                                            // : PATIENT_DETAILS_INFO_ITEMS
                                         }
                                     />
 
-                              
+
                                 </div>
                                 {showOverviewVitals ? <VitalsCard items={opdVitalsItems ?? VITALS_ITEMS} /> : null}
                             </div>
                             <PatientFilesCard
-                                    items={opdFileCardItems ?? (isLegacyPatientDetailRoute ? [] : PATIENT_FILE_ITEMS)}
-                                    emptyMessage={
-                                        isLegacyPatientDetailRoute && opdDetailLoadState === "loading"
-                                            ? "Loading..."
-                                            : "No Data Available"
-                                    }
-                                    plainEmptyState={true}
-                                />
+                                items={opdFileCardItems ?? (isLegacyPatientDetailRoute ? [] : PATIENT_FILE_ITEMS)}
+                                emptyMessage={
+                                    isLegacyPatientDetailRoute && opdDetailLoadState === "loading"
+                                        ? "Loading..."
+                                        : "No Data Available"
+                                }
+                                plainEmptyState={true}
+                            />
                             {showOverviewDietPlan ? (
                                 <DietPlanCard
                                     decoctionValue="Kadha"
@@ -4097,12 +4097,12 @@ export default function IpdPage() {
                             />
                         ) : isLegacyPatientDetailRoute && opdDetailLoadState === "ready" ? (
                             <>
-                              
+
                                 {(opdWalletTabTableSections ?? []).map((section) => (
                                     <TableListingCard key={section.id} sections={[section]} />
                                 ))}
-                                  <TableListingCard sections={healthCardPointsSections} />
-                                  <TableListingCard sections={healthCardTransactionSections} />
+                                <TableListingCard sections={healthCardPointsSections} />
+                                <TableListingCard sections={healthCardTransactionSections} />
                             </>
                         ) : (
                             <>

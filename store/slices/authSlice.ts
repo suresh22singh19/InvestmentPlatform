@@ -386,6 +386,7 @@ const authSlice = createSlice({
         localStorage.removeItem("permissions");
         localStorage.removeItem("branchAccess");
         localStorage.removeItem("selectedBranch");
+        localStorage.removeItem("jatayuToken");
         sessionStorage.removeItem("authToken");
         sessionStorage.removeItem("user");
       }

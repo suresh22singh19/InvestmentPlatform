@@ -478,6 +478,7 @@ interface CreatePackageProps {
     setAdmissionType: (type: string) => void;
     onNext: () => void;
     onCancel?: () => void;
+    onViewPatientOverview?: () => void;
 }
 
 export default function CreatePackage({
@@ -494,7 +495,8 @@ export default function CreatePackage({
     admissionType,
     setAdmissionType,
     onNext,
-    onCancel
+    onCancel,
+    onViewPatientOverview
 }: CreatePackageProps) {
     // Local step 1 filter states
     const [patientCategory, setPatientCategory] = useState("panel");
@@ -659,6 +661,7 @@ export default function CreatePackage({
                                         style={{ filter: "brightness(0) invert(1)" }}
                                     />
                                 }
+                                onClick={onViewPatientOverview}
                             >
                                 View Patient Overview
                             </Button>

@@ -254,7 +254,7 @@ export default function TokenViewListPage() {
     async (appointmentId: number) => {
       try {
         setMarkingAppointmentId(appointmentId);
-        const res = await markOpdComplete({ appointmentId }).unwrap();
+        const res = await markOpdComplete({ appointmentId, branchId: Number(branchId) }).unwrap();
         setFeedback({
           message: res?.message || "Appointment updated successfully",
           isError: false,
@@ -272,7 +272,7 @@ export default function TokenViewListPage() {
         setMarkingAppointmentId(null);
       }
     },
-    [markOpdComplete]
+    [markOpdComplete, branchId]
   );
 
   if (skip) {

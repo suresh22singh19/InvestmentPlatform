@@ -69,7 +69,7 @@ export const tokenApi = baseApi.injectEndpoints({
         },
       ],
     }),
-    markOpdComplete: builder.mutation<MarkOpdCompleteResponse, { appointmentId: number }>({
+    markOpdComplete: builder.mutation<MarkOpdCompleteResponse, { appointmentId: number; branchId: number }>({
       query: (body) => ({
         url: "/patient-token-display/MarkOpdComplete",
         method: "PATCH",
