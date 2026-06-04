@@ -350,6 +350,7 @@ export default function PanelTherapyPage() {
       } else if (dialogMode === "edit" && selectedTherapy) {
         const basePayload: Parameters<typeof updateTherapy>[0] = {
           id: selectedTherapy.id,
+          branchIds: [],
         };
         let payload: Parameters<typeof updateTherapy>[0];
         if (activeTab === "private") {

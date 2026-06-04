@@ -2951,7 +2951,7 @@ export const settingsApi = baseApi.injectEndpoints({
       query: (payload) => {
         const { id, ...rest } = payload;
         const body: Record<string, unknown> = {};
-        if (rest.branchIds != null && rest.branchIds.length > 0) body.branchIds = rest.branchIds;
+        if (rest.branchIds != null) body.branchIds = rest.branchIds;
         if (rest.therapyName != null) body.therapyName = rest.therapyName;
         if (rest.productCode != null) body.productCode = rest.productCode;
         if (rest.hsnCode != null) body.hsnCode = rest.hsnCode;
