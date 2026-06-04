@@ -201,7 +201,7 @@ export default function PanelTherapyPage() {
         id: therapy.id,
         branchId: therapy.branches?.[0]?.id,
         branch: therapy.branches?.[0]?.name,
-        therapyName: therapy.therapyName ?? therapy.medicineName,
+        therapyName: therapy.therapyName ?? "",
         price: priceStr,
         productCode: therapy.productCode,
         hsnCode: therapy.hsnCode,
@@ -294,8 +294,8 @@ export default function PanelTherapyPage() {
     // Price required when corresponding status is Active (only validate visible fields; in edit mode validate by tab)
     const isEdit = dialogMode === "edit";
     if (!isEdit || activeTab === "private" || activeTab === "all") {
-      if (formValues.privateStatus === "active" && !formValues.privatePrice?.trim()) {
-        errors.privatePrice = "Price is required when Private status is Active";
+      if (!formValues.privatePrice?.trim()) {
+        errors.privatePrice = "Private price is required";
       }
     }
     if (!isEdit || activeTab === "panel" || activeTab === "all") {
@@ -333,7 +333,7 @@ export default function PanelTherapyPage() {
 
         const payload = {
           branchIds,
-          medicineName: formValues.therapyName.trim(),
+          therapyName: formValues.therapyName.trim(),
           price: formValues.privatePrice.trim(),
           productCode: formValues.productCode.trim(),
           hsnCode: formValues.hsnCode.trim(),
@@ -540,7 +540,7 @@ export default function PanelTherapyPage() {
                     ) : (
                       <>
                         <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
-                        <TableHead sortable sortDirection={getSortDirection("medicinename")} onSort={() => handleSort("medicineName")}>Therapy</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("therapyName")} onSort={() => handleSort("therapyName")}>Therapy</TableHead>
                         <TableHead sortable sortDirection={getSortDirection("price")} onSort={() => handleSort("price")}>Price</TableHead>
                         <TableHead sortable sortDirection={getSortDirection("productCode")} onSort={() => handleSort("productCode")}>Product Code</TableHead>
                         <TableHead className="whitespace-nowrap" sortable sortDirection={getSortDirection("hsnCode")} onSort={() => handleSort("hsnCode")}>HSN Code</TableHead>
@@ -881,7 +881,7 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <FormInputField
-                    label="Private Price"
+                    label="Private Price *"
                     value={formValues.privatePrice}
                     onChange={(event) => {
                       const v = event.target.value.replace(/[^0-9.]/g, "");

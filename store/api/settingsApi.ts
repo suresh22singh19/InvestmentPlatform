@@ -1720,7 +1720,7 @@ interface TherapiesResponse {
 
 interface CreateTherapyRequest {
   branchIds: number[];
-  medicineName: string;
+  therapyName: string;
   price: string;
   productCode: string;
   hsnCode: string;
@@ -1742,7 +1742,7 @@ interface CreateTherapyResponse {
 interface UpdateTherapyRequest {
   id: number;
   branchIds?: number[]; // optional; needed if update only specific branch
-  medicineName?: string;
+  therapyName?: string;
   productCode?: string;
   hsnCode?: string;
   category?: string;
@@ -2952,7 +2952,7 @@ export const settingsApi = baseApi.injectEndpoints({
         const { id, ...rest } = payload;
         const body: Record<string, unknown> = {};
         if (rest.branchIds != null) body.branchIds = rest.branchIds;
-        if (rest.medicineName != null) body.medicineName = rest.medicineName;
+        if (rest.therapyName != null) body.therapyName = rest.therapyName;
         if (rest.productCode != null) body.productCode = rest.productCode;
         if (rest.hsnCode != null) body.hsnCode = rest.hsnCode;
         if (rest.category != null) body.category = rest.category;
