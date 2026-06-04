@@ -247,10 +247,13 @@ export default function PanelTherapyPage() {
     if (!canEdit) return;
     setSelectedTherapy(therapy);
 
-    // When a branch is selected in the page filter, show only that branch in Edit (and it will be non-editable)
+    // When a specific branch is selected in the filter, lock to that branch.
+    // When "All Branches" is selected (selectedBranch = ""), pre-select all available branches.
     const branchIds = selectedBranch
       ? [selectedBranch]
-      : therapy.branches?.map((b) => b.id.toString()) ?? (therapy.branchId && therapy.branchId > 0 ? [therapy.branchId.toString()] : []);
+      : (branchesData?.data ?? []).length > 0
+        ? (branchesData?.data ?? []).map((b) => b.id.toString())
+        : therapy.branches?.map((b) => b.id.toString()) ?? (therapy.branchId && therapy.branchId > 0 ? [therapy.branchId.toString()] : []);
     const toRawPrice = (v: string | undefined) => (v || "").replace(/[₹,\s]/g, "") || "";
     const privatePriceRaw = toRawPrice(therapy.privatePrice ?? therapy.price);
     const panelPriceRaw = toRawPrice(therapy.panelPrice ?? therapy.price);
@@ -348,9 +351,12 @@ export default function PanelTherapyPage() {
         result = await createTherapy(payload).unwrap();
         setSuccessMessage(result?.message || "Therapy created successfully");
       } else if (dialogMode === "edit" && selectedTherapy) {
+        const branchIds = (formValues.branchIds || [])
+          .map((id) => parseInt(id, 10))
+          .filter((id) => !isNaN(id));
         const basePayload: Parameters<typeof updateTherapy>[0] = {
           id: selectedTherapy.id,
-          branchIds: [],
+          branchIds,
         };
         let payload: Parameters<typeof updateTherapy>[0];
         if (activeTab === "private") {
