@@ -348,12 +348,8 @@ export default function PanelTherapyPage() {
         result = await createTherapy(payload).unwrap();
         setSuccessMessage(result?.message || "Therapy created successfully");
       } else if (dialogMode === "edit" && selectedTherapy) {
-        const branchIds = (formValues.branchIds ?? [])
-          .map((id) => parseInt(id, 10))
-          .filter((id) => !isNaN(id));
         const basePayload: Parameters<typeof updateTherapy>[0] = {
           id: selectedTherapy.id,
-          branchIds,
         };
         let payload: Parameters<typeof updateTherapy>[0];
         if (activeTab === "private") {
