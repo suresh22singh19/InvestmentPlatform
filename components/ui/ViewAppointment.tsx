@@ -25,14 +25,21 @@ import {
     type DietPlanEntry,
     type DietPlanHeaderAction,
 } from "@/components/ui";
+import { IAFCard, type IAFItem } from "./IAFCard";
+import { useMemo, useState } from "react";
+import { useGetPatientAssessmentHistoryQuery } from "@/store/api/doctorApi";
 
 export interface ViewAppointmentProps {
+    appointmentId?: number;
     // Left column
     appointmentItems?: AppointmentDetailItem[];
     walletRemainingAmount?: string;
     walletDetails?: PatientWalletDetailItem[];
     onWalletActionClick?: () => void;
     referralItems?: ReferralPatientInfoItem[];
+    iafItems?: IAFItem[];
+    showIAF?: boolean;
+    onIAFViewClick?: (item: IAFItem) => void;
 
     // Middle column
     patientName?: string;
@@ -58,12 +65,16 @@ export interface ViewAppointmentProps {
 }
 
 export function ViewAppointment({
+    appointmentId,
     // Left column
     appointmentItems,
     walletRemainingAmount = "Rs. 0",
     walletDetails,
     onWalletActionClick,
     referralItems,
+    iafItems,
+    showIAF = false,
+    onIAFViewClick,
 
     // Middle column
     patientName = "N/A",
@@ -87,6 +98,121 @@ export function ViewAppointment({
     filePlainEmptyState = true,
     otherInfoItems,
 }: ViewAppointmentProps) {
+    const [timeframe, setTimeframe] = useState<"6m" | "1y" | "lifetime">("6m");
+
+    const apiFilter = useMemo(() => {
+        if (timeframe === "6m") return "lastSixMonths";
+        if (timeframe === "1y") return "lastTwelveMonths";
+        return "all";
+    }, [timeframe]);
+
+    const { data: assessmentHistoryRes } = useGetPatientAssessmentHistoryQuery(
+        { appointmentId: appointmentId || 0, filter: apiFilter },
+        { skip: !appointmentId }
+    );
+
+    const formattedTimelineItems = useMemo(() => {
+        if (!appointmentId) {
+            return timelineItems || [];
+        }
+
+        const historyData = assessmentHistoryRes?.data;
+        if (!historyData || historyData.length === 0) {
+            return [];
+        }
+
+        const formatDate = (dateStr?: string) => {
+            if (!dateStr) return "N/A";
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const day = String(d.getDate()).padStart(2, "0");
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = months[d.getMonth()];
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
+        };
+
+        return historyData.map((h, index) => {
+            const dateStr = formatDate(h.createdAt);
+            const visitTypeSuffix = index === 0 ? " - First Visit" : " - Follow-up Visit";
+            const dateLabel = `${dateStr}${visitTypeSuffix}`;
+
+            const chiefComplaintText = h.patientPresentation?.chiefComplaint 
+                ? `${h.patientPresentation.chiefComplaint}${h.patientPresentation.duration ? ` (Duration: ${h.patientPresentation.duration})` : ""}`
+                : "N/A";
+
+            const detailsItems: string[] = [];
+
+            if (h.medications?.allergies && h.medications.allergies.length > 0) {
+                const nonNilAllergies = h.medications.allergies.filter((x: string) => x && x.trim().toLowerCase() !== "nil" && x.trim() !== "");
+                if (nonNilAllergies.length > 0) {
+                    detailsItems.push(`Allergies: ${nonNilAllergies.join(", ")}`);
+                }
+            }
+
+            if (h.physicalExamination) {
+                const parts: string[] = [];
+                if (h.physicalExamination.bp && h.physicalExamination.bp !== "N/A") parts.push(`BP: ${h.physicalExamination.bp}`);
+                if (h.physicalExamination.pulse && h.physicalExamination.pulse !== "N/A") parts.push(`Pulse: ${h.physicalExamination.pulse}`);
+                if (h.physicalExamination.temperature && h.physicalExamination.temperature !== "N/A") parts.push(`Temp: ${h.physicalExamination.temperature}`);
+                if (parts.length > 0) detailsItems.push(`Physical Exam: ${parts.join(" | ")}`);
+            }
+
+            if (h.systemicReview) {
+                const parts: string[] = [];
+                if (h.systemicReview.respiratory && h.systemicReview.respiratory.toLowerCase() !== "nil") parts.push(`Respiratory: ${h.systemicReview.respiratory}`);
+                if (h.systemicReview.cardiovascular && h.systemicReview.cardiovascular.toLowerCase() !== "nil") parts.push(`Cardiovascular: ${h.systemicReview.cardiovascular}`);
+                if (parts.length > 0) detailsItems.push(`Systemic Review: ${parts.join(" | ")}`);
+            }
+
+            if (h.specializedHistory) {
+                const parts: string[] = [];
+                if (h.specializedHistory.pastHistory && h.specializedHistory.pastHistory.toLowerCase() !== "nil") parts.push(`Past History: ${h.specializedHistory.pastHistory}`);
+                if (h.specializedHistory.familyHistory && h.specializedHistory.familyHistory.toLowerCase() !== "nil") parts.push(`Family History: ${h.specializedHistory.familyHistory}`);
+                if (parts.length > 0) detailsItems.push(`Specialized History: ${parts.join(" | ")}`);
+            }
+
+            if (h.investigations?.recommended && h.investigations.recommended.length > 0) {
+                const nonNilInvest = h.investigations.recommended.filter((x: string) => x && x.trim().toLowerCase() !== "nil" && x.trim() !== "");
+                if (nonNilInvest.length > 0) {
+                    detailsItems.push(`Recommended Investigations: ${nonNilInvest.join(", ")}`);
+                }
+            }
+
+            if (h.treatmentPlan) {
+                const parts: string[] = [];
+                if (h.treatmentPlan.advice && h.treatmentPlan.advice.toLowerCase() !== "nil") parts.push(`Advice: ${h.treatmentPlan.advice}`);
+                if (h.treatmentPlan.followUp && h.treatmentPlan.followUp.toLowerCase() !== "nil") parts.push(`Follow-up: ${h.treatmentPlan.followUp}`);
+                if (parts.length > 0) detailsItems.push(`Treatment Plan: ${parts.join(" | ")}`);
+            }
+
+            if (h.progressMonitoring?.notes && h.progressMonitoring.notes.toLowerCase() !== "nil") {
+                detailsItems.push(`Progress Notes: ${h.progressMonitoring.notes}`);
+            }
+
+            if (detailsItems.length === 0) {
+                detailsItems.push("No additional clinical details recorded.");
+            }
+
+            return {
+                dateLabel,
+                detail: {
+                    primaryComplaintTitle: "Chief Complaint",
+                    primaryComplaintText: chiefComplaintText,
+                    detailsTitle: "Clinical & Assessment Details",
+                    detailsItems,
+                    actionsTitle: "Medicines Prescribed",
+                    actionItems: Array.isArray(h.medications?.current) && h.medications.current.length > 0 
+                        ? h.medications.current 
+                        : ["N/A"],
+                    branch: h.branchName || "N/A",
+                    doctorName: h.doctorName || "N/A",
+                    iafDate: h.createdAt
+                }
+            };
+        });
+    }, [assessmentHistoryRes, appointmentId, timelineItems]);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             {/* Left Column */}
@@ -97,7 +223,7 @@ export function ViewAppointment({
 
                 {walletDetails && (
                     <PatientWalletInformationCard
-                        remainingAmount={walletRemainingAmount}
+                        remainingAmount={"N/A"}
                         details={walletDetails}
                         onActionClick={onWalletActionClick}
                     />
@@ -106,6 +232,10 @@ export function ViewAppointment({
                 {referralItems && (
                     <ReferralPatientInfoCard items={referralItems} />
                 )}
+
+                {/* {showIAF && (
+                    <IAFCard items={iafItems} onViewClick={onIAFViewClick} />
+                )} */}
             </div>
 
             {/* Middle Column */}
@@ -124,12 +254,14 @@ export function ViewAppointment({
                     )}
                 </div>
 
-                {timelineItems && timelineItems.length > 0 && (
-                    <PatientInformationTimelineCard
-                        title="Patient History"
-                        items={timelineItems}
-                    />
-                )}
+                <PatientInformationTimelineCard
+                    title="Patient History"
+                    items={formattedTimelineItems}
+                    onViewIaf={onIAFViewClick ? (date) => onIAFViewClick({ date } as any) : undefined}
+                    timeframe={timeframe}
+                    onTimeframeChange={setTimeframe}
+                    disableClientSideFilter={!!appointmentId}
+                />
 
                 {showDietPlan && (
                     <DietPlanCard

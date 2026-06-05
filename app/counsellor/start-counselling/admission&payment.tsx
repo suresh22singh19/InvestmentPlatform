@@ -5,9 +5,10 @@ import Image from "next/image";
 import PaymentDialogDetails from "@/components/registration/PaymentDialogDetails";
 import {
     FormInputField,
-    SegmentedToggle,
+    SegmentedButtonGroup,
     Badge,
     Button,
+    SegmentedToggle,
     BackToPreviousPageButton,
     FormTextareaField
 } from "@/components/ui";

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { uploadAudioReturn } from "@/store/api/jatayuApi";
+import { useGetPatientReferralForDoctorQuery } from "@/store/api/doctorApi";
 import {
     AppointmentDetailCard,
     type AppointmentDetailItem,
@@ -74,12 +75,14 @@ export interface DoctorActivityProps {
     appointment: any;
     onBack: () => void;
     branchName?: string;
+    branchId?: number | string;
 }
 
 export default function DoctorActivity({
     appointment,
     onBack,
     branchName,
+    branchId,
 }: DoctorActivityProps) {
     const router = useRouter();
     const appData = appointment || {};
@@ -95,15 +98,49 @@ export default function DoctorActivity({
     const [isUploading, setIsUploading] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [apiErrorMessage, setApiErrorMessage] = useState("");
+    const [showExitConfirmDialog, setShowExitConfirmDialog] = useState(false);
 
     // Therapies state
     const [therapies, setTherapies] = useState<string[]>([]);
+
+    const { data: referralData } = useGetPatientReferralForDoctorQuery(
+        { registrationId: appointment?.registrationId || appointment?.appointmentId || 0 },
+        { skip: !appointment?.registrationId && !appointment?.appointmentId }
+    );
+
+    const resolvedBranchId = branchId || appData.branchId || 2;
 
     // Follow-Up Form state
     const [followUpDate, setFollowUpDate] = useState("");
     const [followUpRemarks, setFollowUpRemarks] = useState("");
 
+    // Shared states between Step 2 and Step 3
+    const [chiefComplaint, setChiefComplaint] = useState("");
+    const [symptoms, setSymptoms] = useState("");
+    const [currentMedication, setCurrentMedication] = useState("");
+    const [finalDiagnosis, setFinalDiagnosis] = useState("");
+
+    // Section 2 State (Systemic Review)
+    const [diabetes, setDiabetes] = useState<"yes" | "no" | "">("");
+    const [bloodPressure, setBloodPressure] = useState<"high" | "low" | "no" | "">("");
+    const [thyroid, setThyroid] = useState<"hypo" | "hyper" | "no" | "">("");
+    const [allergy, setAllergy] = useState<"food" | "drug" | "skin" | "no" | "">("");
+
+    // Section 3 State (Physical Exam)
+    const [sitting, setSitting] = useState<"normal" | "abnormal" | "">("");
+    const [standing, setStanding] = useState<"normal" | "abnormal" | "">("");
+    const [walking, setWalking] = useState<"normal" | "abnormal" | "">("");
+
+    // Section 4 State (Medicines)
+    const [medicines, setMedicines] = useState([
+        { name: "", dosage: "", frequency: "", timing: "", duration: "" },
+    ]);
+
+    // AI Response tracked in parent
+    const [aiResponse, setAiResponse] = useState<any>(null);
+
     const consultationFormRef = useRef<{ validate: () => boolean }>(null);
+    const clinicalAssessmentRef = useRef<{ submit: () => void }>(null);
 
     const handleSaveNextClick = async () => {
         if (step === 1) {
@@ -165,13 +202,58 @@ export default function DoctorActivity({
                         }
                     };
 
-                    await uploadAudioReturn({
+                    const res = await uploadAudioReturn({
                         audio: audioArray,
                         email: "jeena1sikho@gmail.com",
                         fields: fieldsObject,
                         name: `appointment_${appData.appointmentId || "recording"}.wav`,
                         source: "med",
                     });
+                    if (res && res.summary) {
+                        const summaryObj = typeof res.summary === "string" ? {} : res.summary;
+                        const chief = summaryObj.chiefComplaints || "";
+                        const meds = summaryObj.medicines || "";
+                        if (chief) setChiefComplaint(chief);
+                        if (meds) setCurrentMedication(meds);
+
+                        setAiResponse({
+                            metadata: {
+                                timestamp: new Date().toISOString(),
+                                source: "jatayu-voice-ai"
+                            },
+                            patientPresentation: {
+                                chiefComplaint: chief || "",
+                                duration: ""
+                            },
+                            medications: {
+                                current: meds ? [meds] : [],
+                                allergies: []
+                            },
+                            systemicReview: {
+                                cardiovascular: "normal",
+                                respiratory: "normal"
+                            },
+                            specializedHistory: {
+                                familyHistory: "",
+                                pastHistory: ""
+                            },
+                            physicalExamination: {
+                                bp: appData.bloodPressure || "",
+                                pulse: appData.pulse || "",
+                                temperature: appData.temperature || ""
+                            },
+                            investigations: {
+                                recommended: []
+                            },
+                            treatmentPlan: {
+                                advice: "",
+                                followUp: ""
+                            },
+                            progressMonitoring: {
+                                notes: ""
+                            }
+                        });
+                    }
                     setStep(2);
                 } catch (err: any) {
                     console.error("Audio processing API error:", err);
@@ -253,7 +335,10 @@ export default function DoctorActivity({
     };
 
     // 1. Patient Details Card
-    const patientName = appData.patientName || "N/A";
+    const patientName =
+        `${appData.patientTitle || appData.patientName
+            ? `${appData.patientTitle || ""} ${appData.patientName || ""}`.trim()
+            : "N/A"}`
     const genderLabel = capitalizeFirstLetter(appData.gender);
     const patientSubtitle = `Contact Number: ${appData.contactNumber || "N/A"} • Age : ${appData.age || "N/A"} Years • Gender : ${genderLabel}`;
     const bloodGroupLabel = getBloodGroupLabel(appData.bloodGroup);
@@ -388,12 +473,13 @@ export default function DoctorActivity({
     ];
 
     // 8. Referral Detail Card
+    const referralInfo = referralData?.data;
     const referralItems: ReferralPatientInfoItem[] = [
-        { label: "Source", value: appData.source || appData.sourceOfReference || "N/A" },
-        { label: "Sub Source", value: appData.subSource || "N/A" },
-        { label: "Referral Doctor", value: appData.referralDoctor || "N/A" },
-        { label: "Referral Name", value: appData.referralName || "N/A" },
-        { label: "Mobile", value: appData.referralMobile || "N/A" },
+        { label: "Source", value: referralInfo?.source || appData.source || appData.sourceOfReference || "N/A" },
+        { label: "Sub Source", value: referralInfo?.sourceSelected || appData.subSource || "N/A" },
+        { label: "Referral Doctor", value: referralInfo?.doctor?.name || appData.referralDoctor || "N/A" },
+        { label: "Referral Name", value: referralInfo?.referralName || appData.referralName || "N/A" },
+        { label: "Mobile", value: referralInfo?.referralMobile || appData.referralMobile || "N/A" },
     ];
 
     return (
@@ -407,7 +493,7 @@ export default function DoctorActivity({
                     </div>
                     <BackToPreviousPageButton
                         text="Back"
-                        onClick={onBack}
+                        onClick={() => setShowExitConfirmDialog(true)}
                     />
                 </div>
 
@@ -443,37 +529,103 @@ export default function DoctorActivity({
                         )}
                         {step === 2 && (
                             <>
-                                <DoctorConsultationFormCard ref={consultationFormRef} />
+                                <DoctorConsultationFormCard
+                                    ref={consultationFormRef}
+                                    chiefComplaint={chiefComplaint}
+                                    setChiefComplaint={setChiefComplaint}
+                                    symptoms={symptoms}
+                                    setSymptoms={setSymptoms}
+                                    currentMedication={currentMedication}
+                                    setCurrentMedication={setCurrentMedication}
+                                    finalDiagnosis={finalDiagnosis}
+                                    setFinalDiagnosis={setFinalDiagnosis}
+                                    diabetes={diabetes}
+                                    setDiabetes={setDiabetes}
+                                    bloodPressure={bloodPressure}
+                                    setBloodPressure={setBloodPressure}
+                                    thyroid={thyroid}
+                                    setThyroid={setThyroid}
+                                    allergy={allergy}
+                                    setAllergy={setAllergy}
+                                    sitting={sitting}
+                                    setSitting={setSitting}
+                                    standing={standing}
+                                    setStanding={setStanding}
+                                    walking={walking}
+                                    setWalking={setWalking}
+                                    medicines={medicines}
+                                    setMedicines={setMedicines}
+                                />
                             </>
                         )}
                         {step === 3 && (
                             <>
                                 <ClinicalAssessmentRecord
+                                    ref={clinicalAssessmentRef}
                                     onComplete={handleSaveNextClick}
                                     initialGender={appData.gender ? (appData.gender.charAt(0).toUpperCase() + appData.gender.slice(1).toLowerCase()) : "Male"}
+                                    appData={appData}
+                                    branchId={resolvedBranchId}
+                                    branchName={branchName}
+                                    chiefComplaint={chiefComplaint}
+                                    setChiefComplaint={setChiefComplaint}
+                                    symptoms={symptoms}
+                                    setSymptoms={setSymptoms}
+                                    finalDiagnosis={finalDiagnosis}
+                                    setFinalDiagnosis={setFinalDiagnosis}
+                                    diabetes={diabetes}
+                                    setDiabetes={setDiabetes}
+                                    bloodPressure={bloodPressure}
+                                    setBloodPressure={setBloodPressure}
+                                    thyroid={thyroid}
+                                    setThyroid={setThyroid}
+                                    allergy={allergy}
+                                    setAllergy={setAllergy}
+                                    sitting={sitting}
+                                    setSitting={setSitting}
+                                    standing={standing}
+                                    setStanding={setStanding}
+                                    walking={walking}
+                                    setWalking={setWalking}
+                                    medicines={medicines}
+                                    setMedicines={setMedicines}
+                                    followUpDate={followUpDate}
+                                    aiResponse={aiResponse}
                                 />
                             </>
                         )}
-                        {step !== 3 && (
-                            <div className="flex justify-end pt-5">
-                                <Button
-                                    variant="primary"
-                                    size="large"
-                                    onClick={handleSaveNextClick}
-                                    disabled={isUploading}
-                                    className="flex items-center gap-2"
-                                >
-                                    {isUploading ? (
-                                        <>
-                                            <SpinnerLoader size={16} color="white" />
-                                            <span>Processing...</span>
-                                        </>
-                                    ) : (
-                                        <span>Save & Next</span>
-                                    )}
-                                </Button>
-                            </div>
-                        )}
+                        <div className="flex justify-end gap-3 pt-5 items-center">
+                            {step === 3 && (
+                                <BackToPreviousPageButton
+                                    text="Back"
+                                    onClick={() => setStep(2)}
+                                />
+                            )}
+                            <Button
+                                variant="primary"
+                                size="large"
+                                onClick={() => {
+                                    if (step === 1) {
+                                        handleSaveNextClick();
+                                    } else if (step === 2) {
+                                        handleSaveNextClick();
+                                    } else if (step === 3) {
+                                        clinicalAssessmentRef.current?.submit();
+                                    }
+                                }}
+                                disabled={isUploading}
+                                className="flex items-center gap-2"
+                            >
+                                {isUploading ? (
+                                    <>
+                                        <SpinnerLoader size={16} color="white" />
+                                        <span>Processing...</span>
+                                    </>
+                                ) : (
+                                    <span>{step === 3 ? "Submit" : "Next"}</span>
+                                )}
+                            </Button>
+                        </div>
 
                     </div>
 
@@ -518,6 +670,7 @@ export default function DoctorActivity({
                         <TherapiesCard
                             therapies={therapies}
                             onTherapiesChange={setTherapies}
+                            branchId={resolvedBranchId}
                         />
 
                     </div>
@@ -535,6 +688,21 @@ export default function DoctorActivity({
                 confirmText="OK"
                 showCancel={false}
                 onConfirm={() => setShowErrorDialog(false)}
+            />
+            {/* Exit Confirmation Dialog */}
+            <MessageDialog
+                open={showExitConfirmDialog}
+                onClose={() => setShowExitConfirmDialog(false)}
+                icon="/icons/questionMark.svg"
+                message="Are you sure you want to exit? Any unsaved changes will be lost."
+                confirmText="Exit"
+                cancelText="Cancel"
+                showCancel={true}
+                onConfirm={() => {
+                    setShowExitConfirmDialog(false);
+                    onBack();
+                }}
+                onCancel={() => setShowExitConfirmDialog(false)}
             />
         </AppShell>
     );

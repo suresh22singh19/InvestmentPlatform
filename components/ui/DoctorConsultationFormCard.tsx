@@ -10,6 +10,30 @@ import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
 
 export interface DoctorConsultationFormCardProps {
     className?: string;
+    chiefComplaint: string;
+    setChiefComplaint: (val: string) => void;
+    symptoms: string;
+    setSymptoms: (val: string) => void;
+    currentMedication: string;
+    setCurrentMedication: (val: string) => void;
+    finalDiagnosis: string;
+    setFinalDiagnosis: (val: string) => void;
+    diabetes: "yes" | "no" | "";
+    setDiabetes: (val: "yes" | "no" | "") => void;
+    bloodPressure: "high" | "low" | "no" | "";
+    setBloodPressure: (val: "high" | "low" | "no" | "") => void;
+    thyroid: "hypo" | "hyper" | "no" | "";
+    setThyroid: (val: "hypo" | "hyper" | "no" | "") => void;
+    allergy: "food" | "drug" | "skin" | "no" | "";
+    setAllergy: (val: "food" | "drug" | "skin" | "no" | "") => void;
+    sitting: "normal" | "abnormal" | "";
+    setSitting: (val: "normal" | "abnormal" | "") => void;
+    standing: "normal" | "abnormal" | "";
+    setStanding: (val: "normal" | "abnormal" | "") => void;
+    walking: "normal" | "abnormal" | "";
+    setWalking: (val: "normal" | "abnormal" | "") => void;
+    medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>;
+    setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>>>;
 }
 
 const MEDICINE_OPTIONS = [
@@ -48,28 +72,33 @@ const DURATION_OPTIONS = [
 ];
 
 export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }, DoctorConsultationFormCardProps>(
-    ({ className = "" }, ref) => {
-        // Section 1 State
-        const [chiefComplaint, setChiefComplaint] = useState("");
-        const [symptoms, setSymptoms] = useState("");
-        const [currentMedication, setCurrentMedication] = useState("");
-        const [finalDiagnosis, setFinalDiagnosis] = useState("");
-
-        // Section 2 State (Systemic Review)
-        const [diabetes, setDiabetes] = useState<"yes" | "no" | "">("");
-        const [bloodPressure, setBloodPressure] = useState<"high" | "low" | "no" | "">("");
-        const [thyroid, setThyroid] = useState<"hypo" | "hyper" | "no" | "">("");
-        const [allergy, setAllergy] = useState<"food" | "drug" | "skin" | "no" | "">("");
-
-        // Section 3 State (Physical Exam)
-        const [sitting, setSitting] = useState<"normal" | "abnormal" | "">("");
-        const [standing, setStanding] = useState<"normal" | "abnormal" | "">("");
-        const [walking, setWalking] = useState<"normal" | "abnormal" | "">("");
-
-        // Section 4 State (Medicines)
-        const [medicines, setMedicines] = useState([
-            { name: "", dosage: "", frequency: "", timing: "", duration: "" },
-        ]);
+    ({
+        className = "",
+        chiefComplaint,
+        setChiefComplaint,
+        symptoms,
+        setSymptoms,
+        currentMedication,
+        setCurrentMedication,
+        finalDiagnosis,
+        setFinalDiagnosis,
+        diabetes,
+        setDiabetes,
+        bloodPressure,
+        setBloodPressure,
+        thyroid,
+        setThyroid,
+        allergy,
+        setAllergy,
+        sitting,
+        setSitting,
+        standing,
+        setStanding,
+        walking,
+        setWalking,
+        medicines,
+        setMedicines,
+    }, ref) => {
 
         // Validation State
         const [errors, setErrors] = useState<Record<string, string>>({});

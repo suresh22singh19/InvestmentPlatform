@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import Image from "next/image";
 import { FormInputField } from "./FormInputField";
 import { FormSelectField } from "./FormSelectField";
@@ -11,12 +11,44 @@ import { DatePicker } from "./DatePicker";
 import { Slider } from "./Slider";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
 import { MessageDialog } from "./MessageDialog";
+import { useCreateOpdAssessmentMutation } from "@/store/api/doctorApi";
 
 export interface ClinicalAssessmentRecordProps {
     className?: string;
     onComplete?: () => void;
     initialGender?: string;
     initialVisitCount?: number;
+    appData?: any;
+    branchId?: number | string;
+    branchName?: string;
+
+    // Shared state props
+    chiefComplaint: string;
+    setChiefComplaint: (val: string) => void;
+    symptoms: string;
+    setSymptoms: (val: string) => void;
+    finalDiagnosis: string;
+    setFinalDiagnosis: (val: string) => void;
+    diabetes: "yes" | "no" | "";
+    setDiabetes: (val: "yes" | "no" | "") => void;
+    bloodPressure: "high" | "low" | "no" | "";
+    setBloodPressure: (val: "high" | "low" | "no" | "") => void;
+    thyroid: "hypo" | "hyper" | "no" | "";
+    setThyroid: (val: "hypo" | "hyper" | "no" | "") => void;
+    allergy: "food" | "drug" | "skin" | "no" | "";
+    setAllergy: (val: "food" | "drug" | "skin" | "no" | "") => void;
+    sitting: "normal" | "abnormal" | "";
+    setSitting: (val: "normal" | "abnormal" | "") => void;
+    standing: "normal" | "abnormal" | "";
+    setStanding: (val: "normal" | "abnormal" | "") => void;
+    walking: "normal" | "abnormal" | "";
+    setWalking: (val: "normal" | "abnormal" | "") => void;
+    medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>;
+    setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>>>;
+
+    // Extra fields
+    followUpDate?: string;
+    aiResponse?: any;
 }
 
 interface BodyMarker {
@@ -94,25 +126,476 @@ const DURATION_OPTIONS = [
     { label: "30 Days", value: "30 Days" },
 ];
 
-export function ClinicalAssessmentRecord({ className = "", onComplete, initialGender, initialVisitCount }: ClinicalAssessmentRecordProps) {
+export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, ClinicalAssessmentRecordProps>(
+    function ClinicalAssessmentRecord({
+        className = "",
+        onComplete,
+        initialGender,
+        initialVisitCount,
+        appData,
+        branchId,
+        branchName,
+        chiefComplaint,
+        setChiefComplaint,
+        symptoms,
+        setSymptoms,
+        finalDiagnosis,
+        setFinalDiagnosis,
+        diabetes,
+        setDiabetes,
+        bloodPressure,
+        setBloodPressure,
+        thyroid,
+        setThyroid,
+        allergy,
+        setAllergy,
+        sitting,
+        setSitting,
+        standing,
+        setStanding,
+        walking,
+        setWalking,
+        medicines,
+        setMedicines,
+        followUpDate,
+        aiResponse,
+    }, ref) {
     // Dialog & Submission States
     const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleConfirmSubmit = () => {
+    useImperativeHandle(ref, () => ({
+        submit: () => {
+            handleSaveAndContinue();
+        }
+    }));
+
+    const [createOpdAssessment] = useCreateOpdAssessmentMutation();
+
+    const handleConfirmSubmit = async () => {
         setIsSubmitting(true);
-        setTimeout(() => {
-            setIsSubmitting(false);
+        try {
+            const buildResponse = (baseObject: any, isUpdated: boolean) => {
+                const getVisitType = () => {
+                    const vt = (appData?.visitType || baseObject?.metadata?.visitType || aiResponse?.metadata?.visitType || "first").trim().toLowerCase();
+                    if (vt === "first") return "first";
+                    if (vt === "follow-up" || vt === "followup") return "follow-up";
+                    return "other";
+                };
+
+                const metadata = {
+                    visitId: baseObject?.metadata?.visitId || aiResponse?.metadata?.visitId || "550e8400-e29b-41d4-a716-446655440000",
+                    visitType: getVisitType(),
+                    timestamp: baseObject?.metadata?.timestamp || new Date().toISOString(),
+                    timezone: baseObject?.metadata?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata",
+                    provider: baseObject?.metadata?.provider || aiResponse?.metadata?.provider || { 
+                        doctorName: appData?.doctorName || "Dr. Sharma", 
+                        doctorId: appData?.doctorId?.toString() || "DOC001" 
+                    },
+                    language: baseObject?.metadata?.language || aiResponse?.metadata?.language || "en",
+                    source: baseObject?.metadata?.source || aiResponse?.metadata?.source || "VoiceDocAI",
+                    version: baseObject?.metadata?.version || aiResponse?.metadata?.version || "1.0",
+                    transcriptKey: baseObject?.metadata?.transcriptKey || aiResponse?.metadata?.transcriptKey || ""
+                };
+
+                const doctorParts = (appData?.doctorName || "").trim().split(/\s+/);
+                const doctorFirstName = doctorParts[0] || baseObject?.doctorInfo?.firstName || aiResponse?.doctorInfo?.firstName || "Dr.";
+                const doctorLastName = doctorParts.slice(1).join(" ") || baseObject?.doctorInfo?.lastName || aiResponse?.doctorInfo?.lastName || "Sharma";
+
+                const doctorInfo = {
+                    emailID: baseObject?.doctorInfo?.emailID || aiResponse?.doctorInfo?.emailID || "doctor@hiims.in",
+                    doctorID: appData?.doctorId?.toString() || baseObject?.doctorInfo?.doctorID || aiResponse?.doctorInfo?.doctorID || "DOC001",
+                    firstName: doctorFirstName,
+                    lastName: doctorLastName,
+                    clinicName: baseObject?.doctorInfo?.clinicName || aiResponse?.doctorInfo?.clinicName || "HIIMS",
+                    clinicLocation: appData?.branchName || branchName || baseObject?.doctorInfo?.clinicLocation || aiResponse?.doctorInfo?.clinicLocation || "Mohali",
+                    doctorSpecialization: baseObject?.doctorInfo?.doctorSpecialization || aiResponse?.doctorInfo?.doctorSpecialization || "Naturopathy",
+                    clinicPincode: baseObject?.doctorInfo?.clinicPincode || aiResponse?.doctorInfo?.clinicPincode || "140507",
+                    remarks: baseObject?.doctorInfo?.remarks || aiResponse?.doctorInfo?.remarks || ""
+                };
+
+                const patientParts = (appData?.patientName || "").trim().split(/\s+/);
+                const patientFirstName = patientParts[0] || baseObject?.patientInfo?.firstName || aiResponse?.patientInfo?.firstName || "Patient";
+                const patientLastName = patientParts.slice(1).join(" ") || baseObject?.patientInfo?.lastName || aiResponse?.patientInfo?.lastName || "Name";
+
+                const getGenderValue = () => {
+                    const raw = gender || appData?.gender || baseObject?.patientInfo?.gender || aiResponse?.patientInfo?.gender || "";
+                    const g = raw.trim().toLowerCase();
+                    if (g === "male") return "Male";
+                    if (g === "female") return "Female";
+                    if (g === "other") return "Other";
+                    if (raw) return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+                    return "Male";
+                };
+
+                const contactParts = [
+                    appData?.contactNumber ? `Contact: ${appData.contactNumber}` : "",
+                    appData?.city ? `City: ${appData.city}` : "",
+                    appData?.state ? `State: ${appData.state}` : ""
+                ].filter(Boolean).join(" • ");
+
+                const patientInfo = {
+                    patientID: appData?.uhid || appData?.patientID || baseObject?.patientInfo?.patientID || aiResponse?.patientInfo?.patientID || "DRBS012026",
+                    firstName: patientFirstName,
+                    lastName: patientLastName,
+                    gender: getGenderValue() as any,
+                    age: Number(appData?.age) || Number(baseObject?.patientInfo?.age) || Number(aiResponse?.patientInfo?.age) || 0,
+                    language: baseObject?.patientInfo?.language || aiResponse?.patientInfo?.language || "en",
+                    remarks: baseObject?.patientInfo?.remarks || aiResponse?.patientInfo?.remarks || contactParts || ""
+                };
+
+                const patientPresentation = {
+                    chiefComplaint: isUpdated 
+                        ? [{ complaint: chiefComplaint, confidence: 1.0 }]
+                        : (baseObject?.patientPresentation?.chiefComplaint || aiResponse?.patientPresentation?.chiefComplaint || [{ complaint: chiefComplaint, confidence: 1.0 }]),
+                    symptoms: isUpdated
+                        ? (symptoms ? symptoms.split(",").map((s: string) => s.trim()).filter(Boolean) : [])
+                        : (baseObject?.patientPresentation?.symptoms || aiResponse?.patientPresentation?.symptoms || []),
+                    hpi: isUpdated
+                        ? (hpi ? hpi.split("\n").map((h: string) => h.trim()).filter(Boolean) : [])
+                        : (baseObject?.patientPresentation?.hpi || aiResponse?.patientPresentation?.hpi || []),
+                    socialHistory: isUpdated
+                        ? (socialHistory ? socialHistory.split("\n").map((s: string) => s.trim()).filter(Boolean) : [])
+                        : (baseObject?.patientPresentation?.socialHistory || aiResponse?.patientPresentation?.socialHistory || []),
+                    pastMedicalHistory: isUpdated
+                        ? (pastMedicalHistory ? pastMedicalHistory.split("\n").map((p: string) => p.trim()).filter(Boolean) : [])
+                        : (baseObject?.patientPresentation?.pastMedicalHistory || aiResponse?.patientPresentation?.pastMedicalHistory || []),
+                    familyHistory: isUpdated
+                        ? (familyHistory ? familyHistory.split("\n").map((f: string) => f.trim()).filter(Boolean) : [])
+                        : (baseObject?.patientPresentation?.familyHistory || aiResponse?.patientPresentation?.familyHistory || []),
+                    remarks: baseObject?.patientPresentation?.remarks || aiResponse?.patientPresentation?.remarks || ""
+                };
+
+                const medications = {
+                    currentMedication: isUpdated
+                        ? (currentMedications?.toUpperCase() === "YES" ? "YES" : "NO")
+                        : (baseObject?.medications?.currentMedication || aiResponse?.medications?.currentMedication || "NO"),
+                    doctorNotes: isUpdated
+                        ? (medRemarks || "")
+                        : (baseObject?.medications?.doctorNotes || aiResponse?.medications?.doctorNotes || ""),
+                    surgeryHistory: isUpdated
+                        ? (surgeryHistory || "")
+                        : (baseObject?.medications?.surgeryHistory || aiResponse?.medications?.surgeryHistory || ""),
+                    currentMedicines: baseObject?.medications?.currentMedicines || aiResponse?.medications?.currentMedicines || []
+                };
+
+                const mapAllergy = (a: string) => {
+                    if (a === "food") return "Food";
+                    if (a === "drug") return "Drug";
+                    if (a === "skin") return "Skin";
+                    return "Nil";
+                };
+
+                const systemicReview = {
+                    diabetes: isUpdated
+                        ? { status: (diabetes === "yes" ? "YES" : "NO") as any, yearsIfDiabetic: Number(diabeticYears) || 0, notes: diabetesNotes || "" }
+                        : { 
+                            status: (baseObject?.systemicReview?.diabetes?.status || aiResponse?.systemicReview?.diabetes?.status || "NO") as any, 
+                            yearsIfDiabetic: Number(baseObject?.systemicReview?.diabetes?.yearsIfDiabetic) || Number(aiResponse?.systemicReview?.diabetes?.yearsIfDiabetic) || 0, 
+                            notes: baseObject?.systemicReview?.diabetes?.notes || aiResponse?.systemicReview?.diabetes?.notes || "" 
+                          },
+                    bloodPressure: isUpdated
+                        ? { status: (bloodPressure === "high" ? "High BP" : (bloodPressure === "low" ? "Low BP" : "No")) as any, remarks: bpRemarks || "" }
+                        : { 
+                            status: (baseObject?.systemicReview?.bloodPressure?.status || aiResponse?.systemicReview?.bloodPressure?.status || "No") as any, 
+                            remarks: baseObject?.systemicReview?.bloodPressure?.remarks || aiResponse?.systemicReview?.bloodPressure?.remarks || "" 
+                          },
+                    thyroid: isUpdated
+                        ? { status: (thyroid === "hypo" ? "Hypothyroid" : (thyroid === "hyper" ? "Hyperthyroid" : "No")) as any, remarks: thyroidRemarks || "" }
+                        : { 
+                            status: (baseObject?.systemicReview?.thyroid?.status || aiResponse?.systemicReview?.thyroid?.status || "No") as any, 
+                            remarks: baseObject?.systemicReview?.thyroid?.remarks || aiResponse?.systemicReview?.thyroid?.remarks || "" 
+                          },
+                    allergy: isUpdated
+                        ? { types: [{ type: mapAllergy(allergyHistory) as any, stamp: { Std_Code: "", Std_Name: "" } }], details: allergyDetails || "" }
+                        : { 
+                            types: baseObject?.systemicReview?.allergy?.types || aiResponse?.systemicReview?.allergy?.types || [{ type: "Nil", stamp: { Std_Code: "", Std_Name: "" } }], 
+                            details: baseObject?.systemicReview?.allergy?.details || aiResponse?.systemicReview?.allergy?.details || "" 
+                          }
+                };
+
+                const isMale = (gender || appData?.gender || "").toLowerCase() === "male";
+                const gynaecObj = isMale 
+                    ? null 
+                    : (isUpdated 
+                        ? {
+                            cycle: (cycle || "Regular") as any,
+                            flow: (flow || "Normal") as any,
+                            pain: gynaecPain || "",
+                            discharge: discharge || "",
+                            pregnancy: pregnancy || "",
+                            miscarriage: miscarriage || "",
+                            remarks: ""
+                          }
+                        : (baseObject?.specializedHistory?.gynaecHistory || aiResponse?.specializedHistory?.gynaecHistory || null));
+
+                const specializedHistory = {
+                    gynaecHistory: gynaecObj,
+                    mentalHealth: isUpdated
+                        ? {
+                            symptoms: [anxiety, depression, sleepQuality].filter(Boolean) as any[],
+                            anxietyDetails: "",
+                            depressionDetails: "",
+                            sleepDetails: "",
+                            stressLevel: (stressLevel ? (stressLevel.charAt(0).toUpperCase() + stressLevel.slice(1)) : "None") as any,
+                            doctorNotes: mentalRemarks || ""
+                          }
+                        : {
+                            symptoms: baseObject?.specializedHistory?.mentalHealth?.symptoms || aiResponse?.specializedHistory?.mentalHealth?.symptoms || [],
+                            anxietyDetails: baseObject?.specializedHistory?.mentalHealth?.anxietyDetails || aiResponse?.specializedHistory?.mentalHealth?.anxietyDetails || "",
+                            depressionDetails: baseObject?.specializedHistory?.mentalHealth?.depressionDetails || aiResponse?.specializedHistory?.mentalHealth?.depressionDetails || "",
+                            sleepDetails: baseObject?.specializedHistory?.mentalHealth?.sleepDetails || aiResponse?.specializedHistory?.mentalHealth?.sleepDetails || "",
+                            stressLevel: baseObject?.specializedHistory?.mentalHealth?.stressLevel || aiResponse?.specializedHistory?.mentalHealth?.stressLevel || "None",
+                            doctorNotes: baseObject?.specializedHistory?.mentalHealth?.doctorNotes || aiResponse?.specializedHistory?.mentalHealth?.doctorNotes || ""
+                          },
+                    systemicNotes: isUpdated
+                        ? {
+                            gastro: { symptoms: gastricValue ? [gastricValue] as any[] : ["Nil"], remarks: gastricRemarks || "" },
+                            respiratory: { symptoms: respiratoryValue ? [respiratoryValue] as any[] : ["Nil"], remarks: respiratoryRemarks || "" },
+                            cardiac: { symptoms: cardiacValue ? [cardiacValue] as any[] : ["Nil"], remarks: cardiacRemarks || "" },
+                            nervous: { symptoms: nervousValue ? [nervousValue] as any[] : ["Nil"], remarks: nervousRemarks || "" },
+                            urinary: { symptoms: urinaryValue ? [urinaryValue] as any[] : ["Nil"], remarks: urinaryRemarks || "" }
+                          }
+                        : {
+                            gastro: { 
+                                symptoms: baseObject?.specializedHistory?.systemicNotes?.gastro?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.gastro?.symptoms || ["Nil"], 
+                                remarks: baseObject?.specializedHistory?.systemicNotes?.gastro?.remarks || aiResponse?.specializedHistory?.systemicNotes?.gastro?.remarks || "" 
+                            },
+                            respiratory: { 
+                                symptoms: baseObject?.specializedHistory?.systemicNotes?.respiratory?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.symptoms || ["Nil"], 
+                                remarks: baseObject?.specializedHistory?.systemicNotes?.respiratory?.remarks || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.remarks || "" 
+                            },
+                            cardiac: { 
+                                symptoms: baseObject?.specializedHistory?.systemicNotes?.cardiac?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.symptoms || ["Nil"], 
+                                remarks: baseObject?.specializedHistory?.systemicNotes?.cardiac?.remarks || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.remarks || "" 
+                            },
+                            nervous: { 
+                                symptoms: baseObject?.specializedHistory?.systemicNotes?.nervous?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.nervous?.symptoms || ["Nil"], 
+                                remarks: baseObject?.specializedHistory?.systemicNotes?.nervous?.remarks || aiResponse?.specializedHistory?.systemicNotes?.nervous?.remarks || "" 
+                            },
+                            urinary: { 
+                                symptoms: baseObject?.specializedHistory?.systemicNotes?.urinary?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.urinary?.symptoms || ["Nil"], 
+                                remarks: baseObject?.specializedHistory?.systemicNotes?.urinary?.remarks || aiResponse?.specializedHistory?.systemicNotes?.urinary?.remarks || "" 
+                            }
+                          }
+                };
+
+                const physicalExamination = {
+                    balanceMobility: isUpdated
+                        ? { sitting: (sitting || "Normal") as any, standing: (standing || "Normal") as any, walking: (walking || "Normal") as any, remarks: mobilityRemarks || "" }
+                        : { 
+                            sitting: baseObject?.physicalExamination?.balanceMobility?.sitting || aiResponse?.physicalExamination?.balanceMobility?.sitting || "Normal", 
+                            standing: baseObject?.physicalExamination?.balanceMobility?.standing || aiResponse?.physicalExamination?.balanceMobility?.standing || "Normal", 
+                            walking: baseObject?.physicalExamination?.balanceMobility?.walking || aiResponse?.physicalExamination?.balanceMobility?.walking || "Normal", 
+                            remarks: baseObject?.physicalExamination?.balanceMobility?.remarks || aiResponse?.physicalExamination?.balanceMobility?.remarks || "" 
+                          },
+                    pain: isUpdated
+                        ? { site: painSite || "", scale: Number(painScale) || 0, characteristics: activeMarkType ? [activeMarkType.charAt(0).toUpperCase() + activeMarkType.slice(1)] as any[] : [], locationNotes: painNotes || "", remarks: "" }
+                        : { 
+                            site: baseObject?.physicalExamination?.pain?.site || aiResponse?.physicalExamination?.pain?.site || "", 
+                            scale: Number(baseObject?.physicalExamination?.pain?.scale) || Number(aiResponse?.physicalExamination?.pain?.scale) || 0, 
+                            characteristics: baseObject?.physicalExamination?.pain?.characteristics || aiResponse?.physicalExamination?.pain?.characteristics || [], 
+                            locationNotes: baseObject?.physicalExamination?.pain?.locationNotes || aiResponse?.physicalExamination?.pain?.locationNotes || "", 
+                            remarks: baseObject?.physicalExamination?.pain?.remarks || aiResponse?.physicalExamination?.pain?.remarks || "" 
+                          },
+                    painMapping: isUpdated
+                        ? markers.map((m: any) => {
+                            const bodyHalf = m.x < 33 ? "left" : (m.x > 66 ? "right" : "center");
+                            const bodyVertical = m.y < 33 ? "upper" : (m.y > 66 ? "lower" : "middle");
+                            const bodyZone = bodyHalf === "center" 
+                                ? (bodyVertical === "lower" ? "center-lower" : "center-upper") 
+                                : `${bodyHalf}-${bodyVertical}`;
+                            return {
+                                id: m.id?.toString() || "",
+                                view: (m.view || "front") as any,
+                                markerType: (m.type || "pain") as any,
+                                bodyZone: bodyZone as any,
+                                bodyHalf: bodyHalf as any,
+                                bodyVertical: bodyVertical as any,
+                                xPercent: Number(m.x) || 0,
+                                yPercent: Number(m.y) || 0,
+                                bilateralSymmetry: !!m.bilateralSymmetry,
+                                notes: m.notes || ""
+                            };
+                          })
+                        : (baseObject?.physicalExamination?.painMapping || aiResponse?.physicalExamination?.painMapping || []),
+                    asthaVidhaPariksha: isUpdated
+                        ? { tongue: jihva || "", pulse: nadi || "", eyes: druk || "", nails: nakha || "", vataNotes: vata || "", pittaNotes: pitta || "", kaphaNotes: kapha || "", overallPrakriti: prakriti || "", remarks: "" }
+                        : { 
+                            tongue: baseObject?.physicalExamination?.asthaVidhaPariksha?.tongue || aiResponse?.physicalExamination?.asthaVidhaPariksha?.tongue || "", 
+                            pulse: baseObject?.physicalExamination?.asthaVidhaPariksha?.pulse || aiResponse?.physicalExamination?.asthaVidhaPariksha?.pulse || "", 
+                            eyes: baseObject?.physicalExamination?.asthaVidhaPariksha?.eyes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.eyes || "", 
+                            nails: baseObject?.physicalExamination?.asthaVidhaPariksha?.nails || aiResponse?.physicalExamination?.asthaVidhaPariksha?.nails || "", 
+                            vataNotes: baseObject?.physicalExamination?.asthaVidhaPariksha?.vataNotes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.vataNotes || "", 
+                            pittaNotes: baseObject?.physicalExamination?.asthaVidhaPariksha?.pittaNotes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.pittaNotes || "", 
+                            kaphaNotes: baseObject?.physicalExamination?.asthaVidhaPariksha?.kaphaNotes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.kaphaNotes || "", 
+                            overallPrakriti: baseObject?.physicalExamination?.asthaVidhaPariksha?.overallPrakriti || aiResponse?.physicalExamination?.asthaVidhaPariksha?.overallPrakriti || "", 
+                            remarks: baseObject?.physicalExamination?.asthaVidhaPariksha?.remarks || aiResponse?.physicalExamination?.asthaVidhaPariksha?.remarks || "" 
+                          }
+                };
+
+                const investigations = {
+                    radiology: isUpdated
+                        ? { findings: radiologySelected ? [radiologySelected] as any[] : ["Nil"], remarks: radiologyRemarks || "" }
+                        : { 
+                            findings: baseObject?.investigations?.radiology?.findings || aiResponse?.investigations?.radiology?.findings || ["Nil"], 
+                            remarks: baseObject?.investigations?.radiology?.remarks || aiResponse?.investigations?.radiology?.remarks || "" 
+                          },
+                    laboratory: isUpdated
+                        ? { tests: pathologySelected ? [pathologySelected] as any[] : ["Nil"], testsPrescribed: prescribedLabTests || "", remarks: "" }
+                        : { 
+                            tests: baseObject?.investigations?.laboratory?.tests || aiResponse?.investigations?.laboratory?.tests || ["Nil"], 
+                            testsPrescribed: baseObject?.investigations?.laboratory?.testsPrescribed || aiResponse?.investigations?.laboratory?.testsPrescribed || "", 
+                            remarks: baseObject?.investigations?.laboratory?.remarks || aiResponse?.investigations?.laboratory?.remarks || "" 
+                          },
+                    diagnosis: isUpdated
+                        ? { provisional: provisionalDiagnosis || "", provisionalConfidence: 1.0, final: finalDiagnosis || "", finalConfidence: 1.0, remarks: "", stamp: { Std_Code: "", Std_Name: "" } }
+                        : { 
+                            provisional: baseObject?.investigations?.diagnosis?.provisional || aiResponse?.investigations?.diagnosis?.provisional || "", 
+                            provisionalConfidence: Number(baseObject?.investigations?.diagnosis?.provisionalConfidence) || Number(aiResponse?.investigations?.diagnosis?.provisionalConfidence) || 0, 
+                            final: baseObject?.investigations?.diagnosis?.final || aiResponse?.investigations?.diagnosis?.final || "", 
+                            finalConfidence: Number(baseObject?.investigations?.diagnosis?.finalConfidence) || Number(aiResponse?.investigations?.diagnosis?.finalConfidence) || 0, 
+                            remarks: baseObject?.investigations?.diagnosis?.remarks || aiResponse?.investigations?.diagnosis?.remarks || "", 
+                            stamp: baseObject?.investigations?.diagnosis?.stamp || aiResponse?.investigations?.diagnosis?.stamp || { Std_Code: "", Std_Name: "" } 
+                          }
+                };
+
+                const treatmentPlan = {
+                    patientEducation: isUpdated
+                        ? (patientInstruction || "")
+                        : (baseObject?.treatmentPlan?.patientEducation || aiResponse?.treatmentPlan?.patientEducation || ""),
+                    prescribedMedicines: isUpdated
+                        ? medicines.map((m: any) => ({
+                            medicineName: m.name || "",
+                            medicineDosage: m.dosage || "",
+                            medicineFrequency: m.frequency || "",
+                            medicineTiming: m.timing || "",
+                            medicineDuration: m.duration || "",
+                            confidence: 1.0,
+                            stamp: { Std_Code: "", Std_Name: "" }
+                          }))
+                        : (baseObject?.treatmentPlan?.prescribedMedicines || aiResponse?.treatmentPlan?.prescribedMedicines || []),
+                    diet: isUpdated ? (dietAdvice || "") : (baseObject?.treatmentPlan?.diet || aiResponse?.treatmentPlan?.diet || ""),
+                    lifestyle: isUpdated ? (lifestyleChanges || "") : (baseObject?.treatmentPlan?.lifestyle || aiResponse?.treatmentPlan?.lifestyle || ""),
+                    yogaPranayama: isUpdated ? (physicalExercises || "") : (baseObject?.treatmentPlan?.yogaPranayama || aiResponse?.treatmentPlan?.yogaPranayama || ""),
+                    treatmentNotes: isUpdated ? (clinicalRemarks || "") : (baseObject?.treatmentPlan?.treatmentNotes || aiResponse?.treatmentPlan?.treatmentNotes || "")
+                };
+
+                const getImprovement = () => {
+                    if (Number(visitCount) <= 1 || appData?.visitType === "first") return "First Visit";
+                    if (progressStatus === "Better") return "Improved";
+                    if (progressStatus === "Same") return "Stable";
+                    if (progressStatus === "Worse" || progressStatus === "New Symptoms") return "Worsened";
+                    return "Stable";
+                };
+
+                const progressMonitoring = {
+                    visitNumber: Number(visitCount) || 1,
+                    followUpRequired: isUpdated
+                        ? (followUpDate ? "YES" : "NO")
+                        : (baseObject?.progressMonitoring?.followUpRequired || aiResponse?.progressMonitoring?.followUpRequired || "NO"),
+                    followUpDate: isUpdated
+                        ? (followUpDate ? new Date(followUpDate).toISOString() : "")
+                        : (baseObject?.progressMonitoring?.followUpDate || aiResponse?.progressMonitoring?.followUpDate || ""),
+                    progressNotes: isUpdated ? (clinicalRemarks || "") : (baseObject?.progressMonitoring?.progressNotes || aiResponse?.progressMonitoring?.progressNotes || ""),
+                    comparisonWithPreviousVisit: isUpdated ? (progressStatus || "") : (baseObject?.progressMonitoring?.comparisonWithPreviousVisit || aiResponse?.progressMonitoring?.comparisonWithPreviousVisit || ""),
+                    overallImprovement: isUpdated
+                        ? (getImprovement() as any)
+                        : (baseObject?.progressMonitoring?.overallImprovement || aiResponse?.progressMonitoring?.overallImprovement || "First Visit")
+                };
+
+                const p1 = getSection1Percent();
+                const p2 = getSection2Percent();
+                const p3 = getSection3Percent();
+                const p4 = getSection4Percent();
+                const p5 = getSection5Percent();
+                const p6 = getSection6Percent();
+                const p7 = getSection7Percent();
+                const p8 = getSection8Percent();
+
+                const overallCompletion = Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8);
+
+                const getStatus = (p: number) => {
+                    if (p === 0) return "Not Started";
+                    if (p === 100) return "Completed";
+                    return "In Progress";
+                };
+
+                const completedSections = [p1, p2, p3, p4, p5, p6, p7, p8].filter(p => p === 100).length;
+
+                const progressTracking = {
+                    overallCompletion,
+                    sectionCompletion: {
+                        patientPresentation: p1,
+                        medications: p2,
+                        systemicReview: p3,
+                        specializedHistory: p4,
+                        physicalExamination: p5,
+                        investigations: p6,
+                        treatmentPlan: p7,
+                        progressMonitoring: p8
+                    },
+                    completedSections,
+                    sectionStatus: {
+                        patientPresentation: getStatus(p1) as any,
+                        medications: getStatus(p2) as any,
+                        systemicReview: getStatus(p3) as any,
+                        specializedHistory: getStatus(p4) as any,
+                        physicalExamination: getStatus(p5) as any,
+                        investigations: getStatus(p6) as any,
+                        treatmentPlan: getStatus(p7) as any,
+                        progressMonitoring: getStatus(p8) as any
+                    }
+                };
+
+                return {
+                    metadata,
+                    doctorInfo,
+                    patientInfo,
+                    patientPresentation,
+                    medications,
+                    systemicReview,
+                    specializedHistory,
+                    physicalExamination,
+                    investigations,
+                    treatmentPlan,
+                    progressMonitoring,
+                    progressTracking
+                };
+            };
+
+            const finalAi = buildResponse(aiResponse, false);
+            const updatedResponse = buildResponse(aiResponse, true);
+
+            const payload = {
+                appointmentId: Number(appData?.appointmentId) || 101,
+                branchId: Number(branchId) || Number(appData?.branchId) || 2,
+                visitType: appData?.visitType || "first",
+                isEdited: true,
+                aiResponse: finalAi,
+                updatedResponse: updatedResponse
+            };
+
+            const result = await createOpdAssessment(payload).unwrap();
+            console.log("CreateOpdAssessment success:", result);
             setIsConfirmDialogOpen(false);
             setShowSuccessDialog(true);
-        }, 800);
+        } catch (error) {
+            console.error("CreateOpdAssessment error:", error);
+            setIsConfirmDialogOpen(false);
+            setShowErrorDialog(true);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
+    // Mapping allergyHistory to allergy prop
+    const allergyHistory = allergy;
+    const setAllergyHistory = setAllergy;
+
     // ------------------ 1. Patient Presentation State ------------------
-    const [chiefComplaint, setChiefComplaint] = useState("");
-    const [symptoms, setSymptoms] = useState("");
     const [hpi, setHpi] = useState("");
     const [gender, setGender] = useState(initialGender || "");
 
@@ -131,14 +614,10 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
     const [surgeryHistory, setSurgeryHistory] = useState("");
 
     // ------------------ 3. Systemic Review & Co-morbidities State ------------------
-    const [diabetes, setDiabetes] = useState<"yes" | "no" | "">("");
     const [diabeticYears, setDiabeticYears] = useState("");
     const [diabetesNotes, setDiabetesNotes] = useState("");
-    const [bloodPressure, setBloodPressure] = useState<"high" | "low" | "no" | "">("");
     const [bpRemarks, setBpRemarks] = useState("");
-    const [thyroid, setThyroid] = useState<"hypo" | "hyper" | "no" | "">("");
     const [thyroidRemarks, setThyroidRemarks] = useState("");
-    const [allergyHistory, setAllergyHistory] = useState<"food" | "drug" | "skin" | "no" | "">("");
     const [allergyDetails, setAllergyDetails] = useState("");
 
     // ------------------ Visit Details State ------------------
@@ -193,9 +672,6 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
     const [urinaryRemarks, setUrinaryRemarks] = useState("");
 
     // ------------------ 5. Physical Examination & Disorders State ------------------
-    const [sitting, setSitting] = useState<"normal" | "abnormal" | "">("");
-    const [standing, setStanding] = useState<"normal" | "abnormal" | "">("");
-    const [walking, setWalking] = useState<"normal" | "abnormal" | "">("");
     const [mobilityRemarks, setMobilityRemarks] = useState("");
 
     const [painSite, setPainSite] = useState("");
@@ -224,13 +700,9 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
     const [radiologyRemarks, setRadiologyRemarks] = useState("");
     const [prescribedLabTests, setPrescribedLabTests] = useState("");
     const [provisionalDiagnosis, setProvisionalDiagnosis] = useState("");
-    const [finalDiagnosis, setFinalDiagnosis] = useState("");
 
     // ------------------ 7. Treatment Plan & Education State ------------------
     const [patientInstruction, setPatientInstruction] = useState("");
-    const [medicines, setMedicines] = useState([
-        { name: "", dosage: "", frequency: "", timing: "", duration: "" },
-    ]);
     const [dietAdvice, setDietAdvice] = useState("");
     const [lifestyleChanges, setLifestyleChanges] = useState("");
     const [physicalExercises, setPhysicalExercises] = useState("");
@@ -240,10 +712,6 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
     const [medicineErrors, setMedicineErrors] = useState<Record<string, string>[]>([{}]);
 
     // Validation Refs
-    const visitDateRef = useRef<HTMLDivElement>(null);
-    const visitDoctorRef = useRef<HTMLDivElement>(null);
-    const visitLocationRef = useRef<HTMLInputElement>(null);
-
     const chiefComplaintRef = useRef<HTMLInputElement>(null);
     const symptomsRef = useRef<HTMLInputElement>(null);
     const genderRef = useRef<HTMLDivElement>(null);
@@ -291,20 +759,185 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
         }
     };
 
+    // Section Progress Calculations
+    const getSection1Percent = () => {
+        const fields = [chiefComplaint, symptoms, hpi, gender, socialHistory, pastMedicalHistory, familyHistory];
+        const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        return Math.round((filled / fields.length) * 100);
+    };
+
+    const getSection2Percent = () => {
+        const fields = [currentMedications, medRemarks, surgeryHistory];
+        const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        return Math.round((filled / fields.length) * 100);
+    };
+
+    const getSection3Percent = () => {
+        const fields = [
+            diabetes,
+            diabeticYears,
+            diabetesNotes,
+            bloodPressure,
+            bpRemarks,
+            thyroid,
+            thyroidRemarks,
+            allergyHistory,
+            allergyDetails
+        ];
+        const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        return Math.round((filled / fields.length) * 100);
+    };
+
+    const getSection4Percent = () => {
+        const commonFields = [
+            anxiety,
+            depression,
+            sleepQuality,
+            stressLevel,
+            mentalRemarks,
+            gastricValue,
+            gastricRemarks,
+            respiratoryValue,
+            respiratoryRemarks,
+            cardiacValue,
+            cardiacRemarks,
+            nervousValue,
+            nervousRemarks,
+            urinaryValue,
+            urinaryRemarks
+        ];
+        const isFemale = gender?.toLowerCase() === "female";
+        const femaleFields = isFemale ? [cycle, flow, gynaecPain, discharge, pregnancy, miscarriage] : [];
+        const allFields = [...commonFields, ...femaleFields];
+        const filled = allFields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        return Math.round((filled / allFields.length) * 100);
+    };
+
+    const getSection5Percent = () => {
+        const fields = [
+            sitting,
+            standing,
+            walking,
+            mobilityRemarks,
+            painSite,
+            painNotes,
+            jihva,
+            nadi,
+            druk,
+            nakha,
+            vata,
+            pitta,
+            kapha,
+            prakriti
+        ];
+        let filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        if (painScale !== null) filled++;
+        if (markers.length > 0) filled++;
+        const totalFields = fields.length + 2;
+        return Math.round((filled / totalFields) * 100);
+    };
+
+    const getSection6Percent = () => {
+        const fields = [
+            radiologySelected,
+            pathologySelected,
+            radiologyRemarks,
+            prescribedLabTests,
+            provisionalDiagnosis,
+            finalDiagnosis
+        ];
+        const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        return Math.round((filled / fields.length) * 100);
+    };
+
+    const getSection7Percent = () => {
+        const fields = [
+            patientInstruction,
+            dietAdvice,
+            lifestyleChanges,
+            physicalExercises
+        ];
+        let filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        if (medicines.some(m => m.name && m.name.trim() !== "")) {
+            filled++;
+        }
+        const totalFields = fields.length + 1;
+        return Math.round((filled / totalFields) * 100);
+    };
+
+    const getSection8Percent = () => {
+        const fields = [progressStatus, medicineAdherence, clinicalRemarks];
+        const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
+        return Math.round((filled / fields.length) * 100);
+    };
+
+    const getSectionPercent = (step: number) => {
+        switch (step) {
+            case 1: return getSection1Percent();
+            case 2: return getSection2Percent();
+            case 3: return getSection3Percent();
+            case 4: return getSection4Percent();
+            case 5: return getSection5Percent();
+            case 6: return getSection6Percent();
+            case 7: return getSection7Percent();
+            case 8: return getSection8Percent();
+            default: return 0;
+        }
+    };
+
+    const getProgressColorAndLabel = (percent: number) => {
+        if (percent === 0) {
+            return {
+                color: "#EF4444", // Red
+                text: "Not Started"
+            };
+        } else if (percent < 100) {
+            return {
+                color: "#EAB308", // Yellow
+                text: "In Progress"
+            };
+        } else {
+            return {
+                color: "#0B8C00", // Green
+                text: "Completed"
+            };
+        }
+    };
+
+    const SectionProgress = ({ percent }: { percent: number }) => {
+        const { color, text } = getProgressColorAndLabel(percent);
+        return (
+            <div className="flex items-center gap-2">
+                <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
+                    <div 
+                        className="h-full transition-all duration-300" 
+                        style={{ 
+                            width: `${percent}%`,
+                            backgroundColor: color
+                        }} 
+                    />
+                </div>
+                <span 
+                    className="text-xs font-semibold transition-colors duration-300"
+                    style={{ color }}
+                >
+                    {percent}% {text}
+                </span>
+            </div>
+        );
+    };
+
     // Calculate overall completion percent dynamically
     const getCompletionPercent = () => {
-        let filledCount = 0;
-        const totalFields = 9;
-
-        if (chiefComplaint || symptoms) filledCount++;
-        if (currentMedications) filledCount++;
-        if (diabetes || bloodPressure) filledCount++;
-        if (anxiety || stressLevel || gastricValue) filledCount++;
-        if (sitting || standing || painScale !== null || markers.length > 0) filledCount++;
-        if (radiologySelected || pathologySelected) filledCount++;
-        if (medicines.some(m => m.name)) filledCount++;
-
-        return Math.round((filledCount / totalFields) * 100);
+        const p1 = getSection1Percent();
+        const p2 = getSection2Percent();
+        const p3 = getSection3Percent();
+        const p4 = getSection4Percent();
+        const p5 = getSection5Percent();
+        const p6 = getSection6Percent();
+        const p7 = getSection7Percent();
+        const p8 = getSection8Percent();
+        return Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8);
     };
 
     // Row Handlers for medicines
@@ -339,18 +972,6 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
         const newErrors: Record<string, string> = {};
         let isValid = true;
 
-        if (!visitDate) {
-            newErrors.visitDate = "Visit Date is required";
-            isValid = false;
-        }
-        if (!visitDoctor) {
-            newErrors.visitDoctor = "Doctor is required";
-            isValid = false;
-        }
-        if (!visitLocation) {
-            newErrors.visitLocation = "Location is required";
-            isValid = false;
-        }
         if (!chiefComplaint.trim()) {
             newErrors.chiefComplaint = "Chief Complaint is required";
             isValid = false;
@@ -463,22 +1084,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
 
         if (!isValid) {
             // Find first error and scroll & focus
-            if (newErrors.visitDate) {
-                visitDateRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-                setTimeout(() => {
-                    const input = visitDateRef.current?.querySelector("input");
-                    input?.focus();
-                }, 100);
-            } else if (newErrors.visitDoctor) {
-                visitDoctorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-                setTimeout(() => {
-                    const button = visitDoctorRef.current?.querySelector("button");
-                    button?.focus();
-                }, 100);
-            } else if (newErrors.visitLocation) {
-                visitLocationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-                setTimeout(() => visitLocationRef.current?.focus(), 100);
-            } else if (newErrors.chiefComplaint) {
+            if (newErrors.chiefComplaint) {
                 chiefComplaintRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                 setTimeout(() => chiefComplaintRef.current?.focus(), 100);
             } else if (newErrors.symptoms) {
@@ -670,8 +1276,19 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                 <div className="flex items-center justify-between ">
                     <h3 className="font-inter font-bold text-sm text-[#262D3B]">Form Completion Status</h3>
                     <div className="flex items-center gap-2">
-                        <span className="font-inter font-bold text-lg text-[#EAB308]">{getCompletionPercent()}%</span>
-                        <span className="text-xs font-semibold text-[#7B8089]">0 of 8 sections complete</span>
+                        <span className="font-inter font-bold text-lg" style={{ color: getProgressColorAndLabel(getCompletionPercent()).color }}>{getCompletionPercent()}%</span>
+                        <span className="text-xs font-semibold text-[#7B8089]">
+                            {[
+                                getSection1Percent(),
+                                getSection2Percent(),
+                                getSection3Percent(),
+                                getSection4Percent(),
+                                getSection5Percent(),
+                                getSection6Percent(),
+                                getSection7Percent(),
+                                getSection8Percent()
+                            ].filter(p => p === 100).length} of 8 sections complete
+                        </span>
                     </div>
                 </div>
 
@@ -701,6 +1318,8 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         ].map((item, idx) => {
                             const isActive = activeTimelineStep >= item.step;
                             const isCurrent = activeTimelineStep === item.step;
+                            const sectionPercent = getSectionPercent(item.step);
+                            const { color: sectionColor } = getProgressColorAndLabel(sectionPercent);
                             return (
                                 <button
                                     key={item.step}
@@ -732,82 +1351,17 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                                         >
                                             {item.label}
                                         </span>
-                                        <span className="font-inter font-medium text-[18px] leading-tight text-[#EAB308] text-center block">
-                                            0%
+                                        <span 
+                                            className="font-inter font-medium text-[18px] leading-tight text-center block transition-colors duration-300"
+                                            style={{ color: sectionColor }}
+                                        >
+                                            {sectionPercent}%
                                         </span>
                                     </div>
                                 </button>
                             );
                         })}
                     </div>
-                </div>
-            </div>
-
-            {/* MASTER FORM TITLE */}
-
-            {/* here section for Visit Details */}
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-4">
-                <h3 className="font-inter font-bold text-sm text-[#262D3B]">Visit Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div ref={visitDateRef} className="w-full">
-                        <DatePicker
-                            label="Visit Date *"
-                            placeholder="Choose date"
-                            value={visitDate}
-                            onChange={(val) => {
-                                setVisitDate(val);
-                                if (errors.visitDate) {
-                                    setErrors(prev => {
-                                        const next = { ...prev };
-                                        delete next.visitDate;
-                                        return next;
-                                    });
-                                }
-                            }}
-                            background="white"
-                            width="100%"
-                            required
-                            error={errors.visitDate}
-                        />
-                    </div>
-                    <FormSelectField
-                        ref={visitDoctorRef}
-                        label="Doctor *"
-                        placeholder="Select"
-                        options={DOCTOR_OPTIONS}
-                        value={visitDoctor}
-                        onChange={(val) => {
-                            setVisitDoctor(val as string);
-                            if (errors.visitDoctor) {
-                                setErrors(prev => {
-                                    const next = { ...prev };
-                                    delete next.visitDoctor;
-                                    return next;
-                                });
-                            }
-                        }}
-                        background="white"
-                        width="100%"
-                        error={errors.visitDoctor}
-                    />
-                    <FormInputField
-                        ref={visitLocationRef}
-                        label="Location *"
-                        placeholder="Clinic / branch..."
-                        value={visitLocation}
-                        onChange={(e) => {
-                            setVisitLocation(e.target.value);
-                            if (errors.visitLocation) {
-                                setErrors(prev => {
-                                    const next = { ...prev };
-                                    delete next.visitLocation;
-                                    return next;
-                                });
-                            }
-                        }}
-                        width="100%"
-                        error={errors.visitLocation}
-                    />
                 </div>
             </div>
 
@@ -821,12 +1375,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">1</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Patient Presentation</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EF4444] h-full" style={{ width: '16%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EF4444]">16% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection1Percent()} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -924,12 +1473,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">2</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Medications & Supplements</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection2Percent()} />
                 </div>
 
                 <div className="w-full md:w-[350px]">
@@ -967,12 +1511,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">3</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Systemic Review & Co-morbidities</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection3Percent()} />
                 </div>
 
                 <div className="space-y-4">
@@ -1111,12 +1650,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">4</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Specialized History</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection4Percent()} />
                 </div>
 
                 {/* Gynaec / Obs History (Only shown for female patients) */}
@@ -1342,12 +1876,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">5</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Physical Examination & Disorders</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection5Percent()} />
                 </div>
 
                 {/* Balance & Mobility */}
@@ -1685,12 +2214,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">6</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Investigations & Radiology</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection6Percent()} />
                 </div>
 
                 <div className="space-y-4">
@@ -1764,12 +2288,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">7</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Treatment Plan & Education</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection7Percent()} />
                 </div>
 
                 <div className="space-y-4">
@@ -1945,12 +2464,7 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                         <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">8</div>
                         <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Visit {visitCount})</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                            <div className="bg-[#EAB308] h-full" style={{ width: '28%' }}></div>
-                        </div>
-                        <span className="text-xs font-semibold text-[#EAB308]">28% Not Started</span>
-                    </div>
+                    <SectionProgress percent={getSection8Percent()} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2025,24 +2539,6 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
                 </div>
             </div>
             {/* ACTION BUTTON CONTROLS */}
-            <div className="flex justify-end gap-3 pt-4">
-                <Button
-                    variant="outline"
-                    size="large"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50 h-11 px-8 rounded-full font-semibold"
-                    onClick={() => alert("Draft saved successfully!")}
-                >
-                    Save Draft
-                </Button>
-                <Button
-                    variant="primary"
-                    size="large"
-                    className="bg-[#0B8C00] hover:bg-[#0A7F00] h-11 px-8 rounded-full font-semibold"
-                    onClick={handleSaveAndContinue}
-                >
-                    Submit
-                </Button>
-            </div>
 
             {/* Confirmation Dialog */}
             <MessageDialog
@@ -2094,4 +2590,4 @@ export function ClinicalAssessmentRecord({ className = "", onComplete, initialGe
 
         </div>
     );
-}
+});

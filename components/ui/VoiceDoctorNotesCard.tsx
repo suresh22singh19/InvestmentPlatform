@@ -175,7 +175,7 @@ export function VoiceDoctorNotesCard({
             )}
 
             {/* Voice Dictation Centered Controls */}
-            <div className="flex flex-col items-center justify-center w-full min-h-[96px] py-2 border-b border-dashed border-[#E3EEE1] pb-6">
+            <div className="flex flex-col items-center justify-center w-full min-h-[96px] py-2">
 
                 {/* 1. Permission Denied State */}
                 {permissionStatus === "denied" && (
