@@ -82,7 +82,7 @@ export function Step1PatientFileVerification({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[35%_65%]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[35%_1fr]">
         <SectionCard title="UHID & Admission Details">
           <div className="space-y-4">
             <div className="flex w-full flex-col items-center text-center">
@@ -318,9 +318,9 @@ export function Step1PatientFileVerification({
         >
           Back
         </Button>
-        <Button variant="outline" size="medium" className="!min-w-0" onClick={onSaveDraft}>
+        {/* <Button variant="outline" size="medium" className="!min-w-0" onClick={onSaveDraft}>
           Save Draft
-        </Button>
+        </Button> */}
         <Button
           variant="primary"
           size="medium"

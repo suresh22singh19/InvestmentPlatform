@@ -77,7 +77,7 @@ export function Step2IpdAdmission({
         className={
           nonCompliantMode
             ? "grid grid-cols-1 gap-4"
-            : "grid grid-cols-1 gap-4 lg:grid-cols-[65%_35%] lg:items-start"
+            : "grid grid-cols-1 gap-4 lg:grid-cols-[65%_1fr] lg:items-start"
         }
       >
         <div className="min-w-0 space-y-4">
