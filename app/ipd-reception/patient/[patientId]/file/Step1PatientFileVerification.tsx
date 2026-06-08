@@ -278,7 +278,7 @@ export function Step1PatientFileVerification({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   <FormSelectField
-                    label="Diet Plan Request *"
+                    label="Diet Plan Request"
                     value={form.dietary.dietPlanRequest}
                     onChange={(v) => updateDietary("dietPlanRequest", String(v))}
                     options={OPEN_FILE_DIET_OPTIONS}
