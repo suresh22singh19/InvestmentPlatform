@@ -356,7 +356,8 @@ export default function PanelTherapyPage() {
           .filter((id) => !isNaN(id));
         const basePayload: Parameters<typeof updateTherapy>[0] = {
           id: selectedTherapy.id,
-          branchIds,
+          //  branchIds,
+            branchIds: selectedBranch === "" ? [] : branchIds,
         };
         let payload: Parameters<typeof updateTherapy>[0];
         if (activeTab === "private") {
