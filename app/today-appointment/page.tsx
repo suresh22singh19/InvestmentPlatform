@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { usePermission } from "@/hooks/usePermission";
 import { AppShell } from "@/components/layout/AppShell";
@@ -10,106 +10,19 @@ import {
     TableListingCard,
     Button,
     RefreshButton,
+    FormSelectField,
+    BackToPreviousPageButton,
+    ViewAppointment
 } from "@/components/ui";
+import DoctorActivity from "./doctorActivity";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserId, selectUserBranchId, selectRoleCategoryType, selectUserBranchName } from "@/store/slices/authSlice";
+import { useGetAppointmentsOfDoctorQuery, useGetPatientReferralForDoctorQuery } from "@/store/api/doctorApi";
+import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
+import { useDebounce } from "@/hooks/useDebounce";
 
-const MOCK_LISTING_DATA = [
-    {
-        sr: 1,
-        patient: "Amit Sharma",
-        uhid: "JSKL41712025",
-        patientPer: "Regular",
-        opdId: "OPD5001",
-        doctor: "Dr Shiv Ram Singh",
-        appDateTime: "01-Jun-2026 09:00 AM",
-        gender: "Male",
-        age: 35,
-        contact: "9876543210",
-        type: "OPD",
-        city: "Delhi",
-        state: "Delhi",
-        createdAt: "01-Jun-2026 08:30 AM"
-    },
-    {
-        sr: 2,
-        patient: "Priya Verma",
-        uhid: "JSKL41712025",
-        patientPer: "New",
-        opdId: "OPD5002",
-        doctor: "Dr. Aakash Dave",
-        appDateTime: "01-Jun-2026 09:00 AM",
-        gender: "Female",
-        age: 28,
-        contact: "9876543211",
-        type: "OPD",
-        city: "Jaipur",
-        state: "Rajasthan",
-        createdAt: "01-Jun-2026 08:30 AM"
-    },
-    {
-        sr: 3,
-        patient: "Rohit Gupta",
-        uhid: "JSKL41712025",
-        patientPer: "Follow-up",
-        opdId: "OPD5003",
-        doctor: "Dr Heera Singh",
-        appDateTime: "01-Jun-2026 09:00 AM",
-        gender: "Male",
-        age: 42,
-        contact: "9876543212",
-        type: "OPD",
-        city: "Lucknow",
-        state: "Uttar Pradesh",
-        createdAt: "01-Jun-2026 08:30 AM"
-    },
-    {
-        sr: 4,
-        patient: "Sunita Devi",
-        uhid: "JSKL41712025",
-        patientPer: "Regular",
-        opdId: "OPD5004",
-        doctor: "Dr. Neha Singh",
-        appDateTime: "01-Jun-2026 09:00 AM",
-        gender: "Female",
-        age: 51,
-        contact: "9876543213",
-        type: "OPD",
-        city: "Chandigarh",
-        state: "Chandigarh",
-        createdAt: "01-Jun-2026 08:30 AM"
-    },
-    {
-        sr: 5,
-        patient: "Ankit Jain",
-        uhid: "JSKL41712025",
-        patientPer: "New",
-        opdId: "OPD5005",
-        doctor: "Dr. Rajesh Kumar",
-        appDateTime: "01-Jun-2026 09:00 AM",
-        gender: "Male",
-        age: 31,
-        contact: "9876543214",
-        type: "OPD",
-        city: "Indore",
-        state: "Madhya Pradesh",
-        createdAt: "01-Jun-2026 08:30 AM"
-    },
-    {
-        sr: 6,
-        patient: "Pooja Mishra",
-        uhid: "JSKL41712025",
-        patientPer: "Follow-up",
-        opdId: "OPD5006",
-        doctor: "Dr Kadambaree",
-        appDateTime: "01-Jun-2026 09:00 AM",
-        gender: "Female",
-        age: 39,
-        contact: "9876543215",
-        type: "OPD",
-        city: "Patna",
-        state: "Bihar",
-        createdAt: "01-Jun-2026 08:30 AM"
-    }
-];
+
 
 export default function DoctorListingPage() {
     const router = useRouter();
@@ -119,14 +32,114 @@ export default function DoctorListingPage() {
     const canAdd = todayAppointmentPermission.canAdd || todayAppointmentSubPermission.canAdd;
 
     const [searchTerm, setSearchTerm] = useState("");
+    const debouncedSearch = useDebounce(searchTerm, 500);
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(6);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
+    const [selectedPatientView, setSelectedPatientView] = useState(false);
+    const [selectedItem, setSelectedItem] = useState<any | null>(null);
 
-    const filteredData = MOCK_LISTING_DATA.filter((item) =>
-        item.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.uhid.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.doctor.toLowerCase().includes(searchTerm.toLowerCase())
+    const { data: referralData } = useGetPatientReferralForDoctorQuery(
+        { registrationId: selectedItem?.registrationId || selectedItem?.appointmentId || 0 },
+        { skip: !selectedItem }
     );
+
+    const authDoctorId = useAppSelector(selectUserId) || 3;
+    const authBranchId = useAppSelector(selectUserBranchId) || 1;
+    const roleCategoryType = useAppSelector(selectRoleCategoryType);
+    const isSuperAdmin = roleCategoryType?.toLowerCase() === "superadmin";
+    const userBranchName = useAppSelector(selectUserBranchName);
+    const appointmentDate = "";
+
+    // Branch select filter state & query hook
+    const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>("");
+    const { data: branchesData, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
+        skip: !isSuperAdmin,
+    });
+
+    const branchOptions = useMemo(() => {
+        if (!branchesData?.data) return [];
+        return branchesData.data.map((b: any) => {
+            const typeLabel = b.type ? b.type.charAt(0).toUpperCase() + b.type.slice(1).toLowerCase() : "";
+            const label = typeLabel ? `${b.name} (${typeLabel})` : b.name;
+            return { value: b.id.toString(), label };
+        });
+    }, [branchesData]);
+
+    const resolvedBranchName = useMemo(() => {
+        if (isSuperAdmin) {
+            const foundObj = branchesData?.data?.find((b: any) => b.id.toString() === selectedBranchFilter);
+            if (foundObj?.name) return foundObj.name;
+            const foundOpt = branchOptions.find((opt) => opt.value === selectedBranchFilter);
+            if (foundOpt) return foundOpt.label;
+        }
+        return userBranchName || "";
+    }, [isSuperAdmin, branchesData, branchOptions, selectedBranchFilter, userBranchName]);
+
+    // Select default branch
+    useEffect(() => {
+        if (isSuperAdmin) {
+            if (branchOptions.length > 0 && !selectedBranchFilter) {
+                setSelectedBranchFilter(branchOptions[0].value);
+            }
+        } else {
+            setSelectedBranchFilter(authBranchId.toString());
+        }
+    }, [isSuperAdmin, branchOptions, selectedBranchFilter, authBranchId]);
+
+    // Doctor select filter state & query hook
+    const [selectedDoctorFilter, setSelectedDoctorFilter] = useState<string>("");
+    const { data: doctorsData, isLoading: isLoadingDoctors } = useGetDoctorsByBranchQuery(
+        { branchId: selectedBranchFilter },
+        { skip: !isSuperAdmin || !selectedBranchFilter }
+    );
+
+    const doctorOptions = useMemo(() => {
+        if (!doctorsData?.data) return [];
+        return doctorsData.data.map((doc: any) => ({
+            value: doc.id.toString(),
+            label: doc.name,
+        }));
+    }, [doctorsData]);
+
+    // Automatically select default doctor
+    useEffect(() => {
+        if (isSuperAdmin) {
+            if (doctorOptions.length > 0) {
+                const hasSelectedDoctor = doctorOptions.some((d) => d.value === selectedDoctorFilter);
+                if (!hasSelectedDoctor) {
+                    setSelectedDoctorFilter(doctorOptions[0].value);
+                }
+            } else {
+                setSelectedDoctorFilter("");
+            }
+        } else {
+            setSelectedDoctorFilter(authDoctorId.toString());
+        }
+    }, [isSuperAdmin, doctorOptions, selectedDoctorFilter, authDoctorId]);
+
+    const queryParams = {
+        appointmentDate,
+        doctorId: selectedDoctorFilter,
+        branchId: selectedBranchFilter,
+        page: currentPage,
+        limit: itemsPerPage,
+        sortBy: "createdAt",
+        order: "DESC" as const,
+        search: debouncedSearch.trim() || undefined,
+    };
+
+    const { data: apiResponse, isLoading, isError, refetch } = useGetAppointmentsOfDoctorQuery(
+        queryParams,
+        { skip: !selectedBranchFilter || !selectedDoctorFilter }
+    );
+
+    const isPageLoading = isLoading || (isSuperAdmin && (isLoadingBranches || isLoadingDoctors));
+
+    const appointmentsList = apiResponse?.data || [];
+    const totalItems = apiResponse?.total || 0;
+
+    const filteredData = appointmentsList;
 
     const columns = [
         { label: "Sr no.", position: "first" as const },
@@ -146,14 +159,16 @@ export default function DoctorListingPage() {
         ...(canAdd ? [{ label: "Action", position: "last" as const }] : [])
     ];
 
-    const rows = filteredData.map((item) => {
+    const rows = filteredData.map((item, index) => {
+        const sr = (currentPage - 1) * itemsPerPage + index + 1;
+
         const uhid = (
             <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline" onClick={() => {
                 if (canAdd) {
-                    router.push(`/today-appointment/new?name=${encodeURIComponent(item.patient)}&gender=${encodeURIComponent(item.gender)}&age=${item.age}&contact=${encodeURIComponent(item.contact)}`);
+                    setSelectedPatient(item);
                 }
             }}>
-                {item.uhid}
+                {item.uhid || "N/A"}
             </span>
         );
 
@@ -163,93 +178,339 @@ export default function DoctorListingPage() {
                     variant="primary"
                     size="xsmall"
                     className="whitespace-nowrap"
-                    onClick={() => router.push(`/today-appointment/new?name=${encodeURIComponent(item.patient)}&gender=${encodeURIComponent(item.gender)}&age=${item.age}&contact=${encodeURIComponent(item.contact)}`)}
+                    onClick={() => { setSelectedItem(item); setSelectedPatientView(true); }}
                 >
                     View Patient
                 </Button>
-                <Button
-                    variant="outline"
-                    size="xsmall"
-                    className="whitespace-nowrap"
-                    onClick={() => alert(`Start Consultation for ${item.patient}`)}
-                >
-                    Start Consultation
-                </Button>
+                {item.isDoctorChecked ? (
+                    <Button
+                        variant="outline"
+                        size="xsmall"
+                        className="whitespace-nowrap cursor-not-allowed opacity-100"
+                        disabled={true}
+                    >
+                        Completed
+                    </Button>
+                ) : (
+                    <Button
+                        variant="outline"
+                        size="xsmall"
+                        className="whitespace-nowrap"
+                        onClick={() => setSelectedPatient(item)}
+                    >
+                        Start Consultation
+                    </Button>
+                )}
             </div>
         );
 
         return [
-            item.sr,
-            item.patient,
-            uhid,
-            item.patientPer,
-            item.opdId,
-            item.doctor,
-            item.appDateTime,
-            item.gender,
-            item.age,
-            item.contact,
-            item.type,
-            item.city,
-            item.state,
-            item.createdAt,
+            sr,
+            `${item.patientTitle || item.patientName
+                ? `${item.patientTitle || ""} ${item.patientName || ""}`.trim()
+                : "N/A"}`, uhid,
+            "N/A",
+            item.appointmentId?.toString() || "N/A",
+            item.doctorName || "N/A",
+            item.appointmentDate ? new Date(item.appointmentDate).toLocaleDateString('en-GB') + " " + (item.timeSlot || "") : "N/A",
+            item.gender ? (item.gender.charAt(0).toUpperCase() + item.gender.slice(1).toLowerCase()) : "N/A",
+            item.age || "N/A",
+            item.contactNumber || "N/A",
+            "OPD",
+            item.city || "N/A",
+            item.state || "N/A",
+            item.createdAt ? new Date(item.createdAt).toLocaleString('en-GB') : "N/A",
             ...(canAdd ? [actions] : [])
         ];
     });
+
+    if (selectedPatient) {
+        return (
+            <DoctorActivity
+                appointment={selectedPatient}
+                branchName={resolvedBranchName}
+                branchId={selectedBranchFilter}
+                onBack={() => setSelectedPatient(null)}
+            />
+        );
+    }
 
     return (
         <AppShell>
             <div className="flex flex-col gap-6">
                 {/* Page Heading */}
-                <div className="flex items-start justify-between">
-                    <PageHeading title="Today Appointment" />
-                </div>
+
 
                 {!canView ? (
                     <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
                         You don&apos;t have permission to view today appointments.
                     </div>
                 ) : (
-                    /* Table Listing Card */
-                    <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
-                        <TableListingCard
-                            sections={[
+
+                    selectedPatientView ? (<div className="flex flex-col gap-6">
+                        <div className="flex items-start justify-between">
+                            <PageHeading title="View" />
+                            <BackToPreviousPageButton
+                                text="Back"
+                                onClick={() => {
+                                    setSelectedPatientView(false);
+                                    setSelectedItem(null);
+                                }}
+                            />
+                        </div>
+                        {(() => {
+                            const appointmentItems = [
+                                { label: "UHID", value: selectedItem?.uhid || "N/A" },
+                                { label: "OPD ID", value: selectedItem?.appointmentId?.toString() || "N/A" },
+                                { label: "Branch", value: resolvedBranchName || "N/A" },
+                                { label: "Doctor", value: selectedItem?.doctorName || "N/A" },
+                                { label: "Doctor OPD Fee", value: selectedItem?.doctorFee !== undefined ? `Rs. ${selectedItem.doctorFee}` : "N/A" },
+                                { label: "Appointment Date", value: selectedItem?.appointmentDate ? new Date(selectedItem.appointmentDate).toLocaleDateString('en-GB') : "N/A" },
+                                { label: "Time Slot", value: selectedItem?.timeSlot || "N/A" },
+                                { label: "Created Date", value: selectedItem?.createdAt ? new Date(selectedItem.createdAt).toLocaleString() : "N/A" },
+                                { label: "Remark", value: selectedItem?.diagnosisRemarks || "N/A", multiline: true },
+                            ];
+
+                            const referralInfo = referralData?.data;
+                            const referralItems = [
+                                { label: "Source", value: referralInfo?.source || selectedItem?.source || "N/A" },
+                                { label: "Sub Source", value: referralInfo?.sourceSelected || selectedItem?.subSource || "N/A" },
+                                { label: "Referral Doctor", value: referralInfo?.doctor?.name || selectedItem?.referralDoctor || "N/A" },
+                                { label: "Referral Name", value: referralInfo?.referralName || selectedItem?.referralName || "N/A" },
+                                { label: "Mobile", value: referralInfo?.referralMobile || selectedItem?.mobile || "N/A" },
+                            ];
+
+                            const patientName = selectedItem?.patientName
+                                ? `${selectedItem.patientTitle || ""} ${selectedItem.patientName}`.trim()
+                                : "N/A";
+                            const patientSubtitle = `Contact Number: ${selectedItem?.contactNumber || "N/A"} • WhatsApp: ${selectedItem?.whatsappNumber || "N/A"} • Age : ${selectedItem?.age || "N/A"} Years • Gender : ${selectedItem?.gender ? (selectedItem.gender.charAt(0).toUpperCase() + selectedItem.gender.slice(1).toLowerCase()) : "N/A"}`;
+
+                            const patientBadges = [
+                                ...(selectedItem?.bloodGroup && selectedItem?.bloodGroup !== "N/A" ? [{
+                                    label: selectedItem.bloodGroup.toUpperCase(),
+                                    className: "inline-flex h-[30px] min-w-[76px] me-2 items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]"
+                                }] : []),
+                                ...(selectedItem?.panelName ? [{
+                                    label: selectedItem.panelName,
+                                    className: "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#0B8C00]/20 bg-white text-[#0B8C00]"
+                                }] : [])
+                            ];
+
+                            const patientInfoItems = [
                                 {
-                                    id: "doctor-patients-list",
-                                    title: "",
-                                    titleRightContent: (
-                                        <div className="flex items-center gap-3">
-                                            <div style={{ width: "300px" }}>
-                                                <TableSearchInput
-                                                    value={searchTerm}
-                                                    onChange={setSearchTerm}
-                                                    placeholder="Search Here..."
-                                                />
-                                            </div>
-                                            <RefreshButton onClick={() => console.log("Refreshed listing data!")} />
-                                        </div>
-                                    ),
-                                    columns,
-                                    rows,
-                                    isLoading: false,
-                                    isError: false,
-                                    errorMessage: "Facing server API error",
-                                    emptyMessage: "No appointments found",
-                                    pagination: {
-                                        currentPage,
-                                        totalItems: 1000,
-                                        itemsPerPage,
-                                        onPageChange: setCurrentPage,
-                                        onItemsPerPageChange: (items: number) => {
-                                            setItemsPerPage(items);
-                                            setCurrentPage(1);
-                                        },
-                                        itemsPerPageOptions: [10, 20, 50, 100],
-                                    },
+                                    iconSrc: "/icons/UserGear.svg",
+                                    iconAlt: "Father/Husband",
+                                    label: "Father’s/Husband’s Name",
+                                    value: selectedItem?.guardianName
+                                        ? `${selectedItem.guardianTitle || ""} ${selectedItem.guardianName}`.trim()
+                                        : "N/A",
                                 },
-                            ]}
-                        />
-                    </div>
+                                {
+                                    iconSrc: "/icons/gendericon.svg",
+                                    iconAlt: "Marital Status",
+                                    label: "Marital Status",
+                                    value: selectedItem?.maritalStatus
+                                        ? (selectedItem.maritalStatus.charAt(0).toUpperCase() + selectedItem.maritalStatus.slice(1).toLowerCase())
+                                        : "N/A",
+                                },
+                                {
+                                    iconSrc: "/icons/mapicon.svg",
+                                    iconAlt: "Address",
+                                    label: "Address",
+                                    value: [
+                                        selectedItem?.address,
+                                        selectedItem?.addressLine1,
+                                        selectedItem?.addressLine2,
+                                        selectedItem?.area,
+                                        selectedItem?.tehsil,
+                                        selectedItem?.city,
+                                        selectedItem?.state,
+                                        selectedItem?.country,
+                                        selectedItem?.pinCode
+                                    ].filter(Boolean).join(", ") || "N/A",
+                                },
+                                {
+                                    iconSrc: "/icons/adharcardicon.svg",
+                                    iconAlt: "Aadhar Card Number",
+                                    label: "Aadhar Card Number",
+                                    value: selectedItem?.aadharCardNo || "N/A",
+                                },
+                            ];
+
+                            const vitalsItems = [
+                                { label: "Blood Pressure", value: selectedItem?.bloodPressure || "N/A", unit: "bp" },
+                                { label: "Sugar Level", value: selectedItem?.sugarLevel || "N/A", unit: "mg/dL" },
+                                { label: "Temperature", value: selectedItem?.temperature || "N/A", unit: "" },
+                                { label: "Heart Rate", value: selectedItem?.pulse || "N/A", unit: "bpm" },
+                            ];
+
+                            let addictionVal = "N/A";
+                            if (selectedItem?.addictionType) {
+                                const types = Array.isArray(selectedItem.addictionType)
+                                    ? selectedItem.addictionType.join(", ")
+                                    : String(selectedItem.addictionType);
+                                const specify = selectedItem.addictionSpecify ? ` (${selectedItem.addictionSpecify})` : "";
+                                addictionVal = (types || specify) ? `${types}${specify}`.trim() : "N/A";
+                            }
+
+                            const medicalItems = [
+                                { label: "Diagnosis", value: selectedItem?.diagnosisName || "N/A" },
+                                { label: "Disease", value: selectedItem?.subDiagnosisName || "N/A" },
+                                { label: "Blood Group", value: selectedItem?.bloodGroup?.toUpperCase() || "N/A" },
+                                { label: "Allergies", value: selectedItem?.allergies || "N/A" },
+                                { label: "Surgeries", value: selectedItem?.surgeries || "N/A" },
+                                { label: "Addiction", value: addictionVal },
+                                { label: "Height", value: selectedItem?.height || "N/A" },
+                                { label: "Weight", value: selectedItem?.weight || "N/A" },
+                                { label: "Diet Type", value: selectedItem?.dietType || "N/A" },
+                                { label: "Remark", value: selectedItem?.diagnosisRemarks || "N/A", multiline: true },
+                            ];
+
+                            const otherInfoItems = [
+                                { label: "Patient Type", value: selectedItem?.panelName || "N/A" },
+                                { label: "Patient Sub Type", value: "N/A" },
+                                { label: "Beneficiary ID", value: selectedItem?.benificiaryId || "N/A" },
+                                { label: "Insurance Company", value: selectedItem?.insuranceCompany || "N/A" },
+                                { label: "Ayush Covered", value: "N/A" },
+                            ];
+
+                            const walletDetails = [
+                                { label: "Package", value: "N/A" },
+                                { label: "Start Date", value: "N/A" },
+                                { label: "End Date", value: "N/A" },
+                            ];
+
+                            const iafItems = [
+                                { srNo: 1, date: "01-Jun-2026" },
+                                { srNo: 2, date: "02-Jun-2026" },
+                            ];
+
+                            return (
+                                <ViewAppointment
+                                    appointmentId={selectedItem?.appointmentId}
+                                    appointmentItems={appointmentItems}
+                                    walletRemainingAmount="N/A"
+                                    walletDetails={walletDetails}
+                                    referralItems={referralItems}
+                                    showIAF={true}
+                                    iafItems={iafItems}
+                                    onIAFViewClick={(item) => alert(`View IAF for Date: ${item.date}`)}
+                                    patientName={patientName}
+                                    patientSubtitle={patientSubtitle}
+                                    patientBadges={patientBadges}
+                                    patientInfoItems={patientInfoItems}
+                                    showVitals={true}
+                                    vitalsItems={vitalsItems}
+                                    timelineItems={[]}
+                                    healthCardNo={selectedItem?.jsHealthCardNo || "N/A"}
+                                    medicalItems={medicalItems}
+                                    fileItems={[]}
+                                    otherInfoItems={otherInfoItems}
+                                />
+                            );
+                        })()}
+                    </div>) : (<>
+                        <div className="flex items-start justify-between">
+                            <PageHeading title="Today Appointment" />
+                        </div>
+                        <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
+                            <TableListingCard
+                                sections={[
+                                    {
+                                        id: "doctor-patients-list",
+                                        title: "",
+                                        titleRightContent: (
+                                            <div className="flex gap-2">
+                                                {/* Branch Filter */}
+                                                {isSuperAdmin && (
+                                                    <div style={{ width: "280px" }}>
+                                                        <FormSelectField
+                                                            label=""
+                                                            hideLabel
+                                                            options={branchOptions}
+                                                            value={selectedBranchFilter}
+                                                            onChange={(value) => {
+                                                                setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                                                                setCurrentPage(1);
+                                                            }}
+                                                            placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                                                            mode="single"
+                                                            background="normal"
+                                                            width={280}
+                                                            disabled={isLoadingBranches}
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {/* Doctor Filter */}
+                                                {isSuperAdmin && (
+                                                    <div style={{ width: "280px" }}>
+                                                        <FormSelectField
+                                                            label=""
+                                                            hideLabel
+                                                            options={doctorOptions}
+                                                            value={selectedDoctorFilter}
+                                                            onChange={(value) => {
+                                                                setSelectedDoctorFilter(Array.isArray(value) ? value[0] : value || "");
+                                                                setCurrentPage(1);
+                                                            }}
+                                                            placeholder={isLoadingDoctors ? "Loading doctors..." : "Select Doctor"}
+                                                            mode="single"
+                                                            background="normal"
+                                                            width={280}
+                                                            disabled={isLoadingDoctors || !selectedBranchFilter}
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {/* Search Input */}
+                                                <div style={{ width: "280px" }}>
+                                                    <TableSearchInput
+                                                        value={searchTerm}
+                                                        onChange={(val) => {
+                                                            setSearchTerm(val);
+                                                            setCurrentPage(1);
+                                                        }}
+                                                        placeholder="Search Here..."
+                                                    />
+                                                </div>
+                                                <RefreshButton onClick={() => {
+                                                    setSearchTerm("");
+                                                    setCurrentPage(1);
+                                                    if (isSuperAdmin) {
+                                                        setSelectedBranchFilter(branchOptions[0]?.value || "");
+                                                        setSelectedDoctorFilter("");
+                                                    } else {
+                                                        setSelectedBranchFilter(authBranchId.toString());
+                                                        setSelectedDoctorFilter(authDoctorId.toString());
+                                                    }
+                                                    refetch();
+                                                }} />
+                                            </div>
+                                        ),
+                                        columns,
+                                        rows,
+                                        isLoading: isPageLoading,
+                                        isError,
+                                        errorMessage: "Facing server API error",
+                                        emptyMessage: "No appointments found",
+                                        pagination: {
+                                            currentPage,
+                                            totalItems,
+                                            itemsPerPage,
+                                            onPageChange: setCurrentPage,
+                                            onItemsPerPageChange: (items: number) => {
+                                                setItemsPerPage(items);
+                                                setCurrentPage(1);
+                                            },
+                                            itemsPerPageOptions: [10, 20, 50, 100],
+                                        },
+                                    },
+                                ]}
+                            />
+                        </div>
+                    </>
+                    )
                 )}
             </div>
         </AppShell>

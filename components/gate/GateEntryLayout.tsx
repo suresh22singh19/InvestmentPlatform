@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { GateHeaderBar } from "@/components/layout/GateHeaderBar";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
+import { logoutJatayu } from "@/store/api/jatayuApi";
 import {
   selectUser,
   selectLoginType,
@@ -108,6 +109,7 @@ export default function GateEntryLayout({ title, subModuleName, children }: Gate
   }
 
   const handleLogout = () => {
+    logoutJatayu().catch((err) => console.error("Jatayu logout failed:", err));
     dispatch(logout());
     router.push("/");
   };

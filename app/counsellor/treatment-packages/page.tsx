@@ -10,9 +10,11 @@ import {
     Button,
     Badge,
     Dialog,
+    MessageDialog,
+    SpinnerLoader,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useGetTreatmentPackagesQuery } from "@/store/api/counsellorApi";
+import { useGetTreatmentPackagesQuery, useLazyGetPackageDetailQuery } from "@/store/api/counsellorApi";
 
 // Helper component to render the package category icon
 interface PackageIconProps {
@@ -77,9 +79,10 @@ interface PackageCardProps {
         description?: string;
     };
     onViewDetails: (item: any) => void;
+    isDetailsLoading?: boolean;
 }
 
-function PackageCard({ item, onViewDetails }: PackageCardProps) {
+function PackageCard({ item, onViewDetails, isDetailsLoading = false }: PackageCardProps) {
     const category = item.category || "Standard";
     const progress = item.progress !== undefined ? item.progress : 50;
     const iconSrc = item.iconSrc || "/icons/cardiacGoldIcon.svg";
@@ -149,13 +152,18 @@ function PackageCard({ item, onViewDetails }: PackageCardProps) {
             <div className="p-5">
                 <Button
                     variant="primary"
-                    className="!font-normal"
+                    className="!font-normal flex items-center justify-center gap-2"
                     size="large"
                     fullWidth
-                    leftIcon={<Image src="/icons/Eye.svg" className="brightness-0 invert" alt="" width={16} height={16} />}
+                    leftIcon={isDetailsLoading ? undefined : <Image src="/icons/Eye.svg" className="brightness-0 invert" alt="" width={16} height={16} />}
                     onClick={() => onViewDetails(item)}
+                    disabled={isDetailsLoading}
                 >
-                    View Details
+                    {isDetailsLoading ? (
+                        <SpinnerLoader size={16} className="text-white" />
+                    ) : (
+                        "View Details"
+                    )}
                 </Button>
             </div>
         </div>
@@ -170,6 +178,11 @@ export default function TreatmentPackagesPage() {
 
     // Selected package for detailing popup dialog
     const [selectedPackage, setSelectedPackage] = useState<any>(null);
+    const [loadingPackageId, setLoadingPackageId] = useState<number | null>(null);
+    const [showErrorDialog, setShowErrorDialog] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
+
+    const [getPackageDetail] = useLazyGetPackageDetailQuery();
 
     // API Query params
     const queryParams = {
@@ -191,8 +204,25 @@ export default function TreatmentPackagesPage() {
     const paginatedList = listingData;
     const totalItems = listingTotal;
 
-    const handleViewDetails = (item: any) => {
-        setSelectedPackage(item);
+    const handleViewDetails = async (item: any) => {
+        if (!item.id) return;
+        setLoadingPackageId(item.id);
+        try {
+            const res = await getPackageDetail(item.id).unwrap();
+            if (res && res.success) {
+                setSelectedPackage(res.data);
+            } else {
+                setErrorMessage(res?.message || "Failed to load package details.");
+                setShowErrorDialog(true);
+            }
+        } catch (err: any) {
+            console.error("Error fetching package details:", err);
+            const msg = err?.data?.message || err?.message || "An error occurred while fetching package details.";
+            setErrorMessage(msg);
+            setShowErrorDialog(true);
+        } finally {
+            setLoadingPackageId(null);
+        }
     };
 
     return (
@@ -248,6 +278,7 @@ export default function TreatmentPackagesPage() {
                                             key={pkg.id}
                                             item={pkg}
                                             onViewDetails={handleViewDetails}
+                                            isDetailsLoading={loadingPackageId === pkg.id}
                                         />
                                     ))}
                                 </div>
@@ -272,54 +303,105 @@ export default function TreatmentPackagesPage() {
             <Dialog
                 open={!!selectedPackage}
                 onClose={() => setSelectedPackage(null)}
-                title="Package Details"
+                title="Package details"
                 width={600}
             >
-                {selectedPackage && (
-                    <div className="flex flex-col text-left gap-5">
-                        <div className="flex justify-between items-center border-b border-[#DFE0E2] pb-3">
-                            <h3 className="font-extrabold text-lg text-[#262D3B]">{selectedPackage.packageName}</h3>
-                            <Badge variant="success" className="bg-transparent border border-[#0B8C0033] text-[#0B8C00] px-3 py-1 font-normal rounded-full text-xs">
-                                {selectedPackage.category || "Standard"}
-                            </Badge>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                            <span className="text-xs font-semibold text-[#787E8C] uppercase tracking-wider">Description</span>
-                            <p className="text-sm font-medium text-[#4B5563] leading-relaxed">
-                                {selectedPackage.description || "Specialized therapeutic package designed for optimized inpatient or outpatient recovery, routine wellness check-ups, and holistic medical care."}
-                            </p>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3 border-t border-[#DFE0E2] pt-4">
-                            <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
-                                <span className="text-[10px] font-bold text-[#6B7280] uppercase">Cost / Day</span>
-                                <span className="text-sm font-extrabold text-[#0B8C00]">{selectedPackage.totalPerDayCost || "₹0"}</span>
+                {selectedPackage && (() => {
+                    const pkgName = selectedPackage.packageName || "N/A";
+                    const roomType = selectedPackage.branchRoomType?.roomType || selectedPackage.packageType?.toUpperCase() || "N/A";
+                    const medicineVal = selectedPackage.medicineEnabled ? Number(selectedPackage.medicinePrice) : 0;
+                    const mealsVal = selectedPackage.mealsEnabled ? Number(selectedPackage.mealsPrice) : 0;
+                    const doctorVal = selectedPackage.doctorFeeEnabled ? Number(selectedPackage.doctorFeePrice) : 0;
+                    const nurseVal = selectedPackage.nurseFeeEnabled ? Number(selectedPackage.nurseFeePrice) : 0;
+                    const attendantVal = selectedPackage.attendantFeeEnabled ? Number(selectedPackage.attendantFeePrice) : 0;
+                    const therapyVal = selectedPackage.therapyEnabled ? Number(selectedPackage.therapyPrice) : 0;
+                    const roomRentVal = selectedPackage.branchRoomType?.roomRentPrice ? Number(selectedPackage.branchRoomType.roomRentPrice) : (selectedPackage.v1price ? Number(selectedPackage.v1price) : 0);
+
+                    const totalCalculated = roomRentVal + medicineVal + mealsVal + doctorVal + nurseVal + attendantVal + therapyVal;
+                    const totalPriceVal = selectedPackage.totalPrice ? Number(selectedPackage.totalPrice) : totalCalculated;
+
+                    const desc = selectedPackage.remark || selectedPackage.description || "No description provided.";
+
+                    const formatPrice = (amount: number) => {
+                        return `₹ ${amount.toLocaleString("en-IN")}`;
+                    };
+
+                    return (
+                        <div className="flex flex-col text-left gap-5">
+                            {/* Outer Card Wrapper exactly matching mockup */}
+                            <div className="border border-[#DFE0E2] rounded-[20px] p-5 bg-white flex flex-col gap-5 shadow-sm">
+                                {/* Title inside Card */}
+                                <div className="border-b border-[#DFE0E2] pb-4">
+                                    <h3 className="text-xl font-bold text-[#262D3B]">{pkgName}</h3>
+                                </div>
+
+                                {/* Details Sub-Table */}
+                                <div className="flex flex-col border border-[#DFE0E2] rounded-lg overflow-hidden">
+                                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                        <span className="text-[#7B8088] font-medium">Package Name</span>
+                                        <span className="text-[#262D3B] font-bold">{pkgName}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                        <span className="text-[#7B8088] font-medium">Room Type Selection</span>
+                                        <span className="text-[#262D3B] font-bold">{roomType}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                        <span className="text-[#7B8088] font-medium">Medicine</span>
+                                        <span className="text-[#262D3B] font-bold">{formatPrice(medicineVal)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                        <span className="text-[#7B8088] font-medium">Doctor Fees</span>
+                                        <span className="text-[#262D3B] font-bold">{formatPrice(doctorVal)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center px-4 py-3 text-sm bg-white">
+                                        <span className="text-[#7B8088] font-medium">Price</span>
+                                        <span className="text-[#262D3B] font-bold">{formatPrice(roomRentVal)}</span>
+                                    </div>
+                                </div>
+
+                                {/* Description Block */}
+                                <div className="flex flex-col gap-1 items-start mt-2">
+                                    <span className="text-sm font-bold text-[#262D3B]">Description</span>
+                                    <p className="text-xs font-medium text-[#787E8C] leading-relaxed text-left">
+                                        {desc}
+                                    </p>
+                                </div>
+
+                                {/* Total Price Block (light green background, dark text) */}
+                                <div className="h-14 px-4 bg-[#E3EEE1] flex justify-between items-center rounded-lg font-semibold text-sm">
+                                    <span className="text-[#262D3B] font-bold">Total Price</span>
+                                    <span className="text-[#262D3B] font-extrabold text-lg">
+                                        {formatPrice(totalPriceVal)}
+                                    </span>
+                                </div>
                             </div>
-                            <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
-                                <span className="text-[10px] font-bold text-[#6B7280] uppercase">Active</span>
-                                <span className="text-sm font-extrabold text-[#111827]">{selectedPackage.activePatients ?? 0} Patients</span>
-                            </div>
-                            <div className="flex flex-col gap-1 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
-                                <span className="text-[10px] font-bold text-[#6B7280] uppercase">Admissions</span>
-                                <span className="text-sm font-extrabold text-[#111827]">
-                                    {selectedPackage.totalAdmissions !== undefined && selectedPackage.totalAdmissions !== null
-                                        ? selectedPackage.totalAdmissions.toLocaleString()
-                                        : "0"
-                                    }
-                                </span>
+
+                            {/* Cancel button below card */}
+                            <div className="flex justify-start">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedPackage(null)}
+                                    className="border border-[#0B8C00] text-[#0B8C00] hover:bg-[#F2F8F2] font-semibold transition-colors px-6 py-2 rounded-full text-sm"
+                                >
+                                    Cancel
+                                </button>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 mt-4">
-                            <Button
-                                variant="primary"
-                                onClick={() => setSelectedPackage(null)}
-                                className="px-6"
-                            >
-                                Done
-                            </Button>
-                        </div>
-                    </div>
-                )}
+                    );
+                })()}
             </Dialog>
+
+            {/* API Error Dialog */}
+            <MessageDialog
+                open={showErrorDialog}
+                onClose={() => setShowErrorDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={errorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowErrorDialog(false)}
+            />
         </AppShell>
     );
 }

@@ -78,8 +78,270 @@ function toQueryString(params: Record<string, string | number | undefined>) {
     return qs ? `?${qs}` : "";
 }
 
+export type GetAppointmentsOfDoctorParams = {
+    appointmentDate: string;
+    doctorId: number | string;
+    branchId: number | string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    order?: "ASC" | "DESC" | "asc" | "desc";
+    search?: string;
+};
+
+export type AppointmentOfDoctorItem = {
+    appointmentId: number;
+    uhid: string;
+    appointmentDate: string;
+    timeSlot: string;
+    bloodPressure: string | null;
+    pulse: string | null;
+    temperature: string | null;
+    patientIpdId: number | null;
+    registrationId?: number | null;
+    doctorFee: string | null;
+    diagnosisRemarks: string | null;
+    createdAt: string;
+    patientName: string;
+    gender: string;
+    age: string;
+    contactNumber: string;
+    aadharCardNo: string | null;
+    jsHealthCardNo?: string | null;
+    guardianName: string | null;
+    guardianTitle: string | null;
+    dietType: string | null;
+    allergies: string | null;
+    surgeries: string | null;
+    addictionType: string | null;
+    addictionSpecify: string | null;
+    height: string | null;
+    weight: string | null;
+    bloodGroup: string | null;
+    doctorId: number;
+    doctorName: string;
+    address: string | null;
+    city: string | null;
+    state: string | null;
+    diagnosisId: number | null;
+    diagnosisName: string | null;
+    subDiagnosisId: number | null;
+    subDiagnosisName: string | null;
+    panelId: number | null;
+    panelName: string | null;
+    isDefaultPanel: boolean;
+    isDoctorChecked?: boolean;
+    maritalStatus?: string | null;
+    benificiaryId?: string | null;
+    insuranceCompany?: string | null;
+    sugarLevel?: string | null;
+    patientTitle?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    area?: string | null;
+    tehsil?: string | null;
+    country?: string | null;
+    pinCode?: string | null;
+    branchName?: string | null;
+    source?: string | null;
+    sourceOfReference?: string | null;
+    subSource?: string | null;
+    referralDoctor?: string | null;
+    referralName?: string | null;
+    referralMobile?: string | null;
+};
+
+export type GetAppointmentsOfDoctorResponse = {
+    success: boolean;
+    data: AppointmentOfDoctorItem[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    message?: string;
+    timestamp?: string;
+    statusCode?: number;
+};
+
+export type GetPatientReferralForDoctorResponse = {
+    success: boolean;
+    data: {
+        id: number;
+        uhid: string;
+        registrationId: number;
+        source: string | null;
+        sourceSelected: string | null;
+        referralRegistrationId: number | null;
+        referralName: string | null;
+        referralMobile: string | null;
+        doctor?: {
+            id: number;
+            name: string;
+            phone: string;
+        } | null;
+    } | null;
+    message?: string;
+    timestamp?: string;
+    statusCode?: number;
+};
+
+export type GetDBranchTherapyListForDoctorParams = {
+    branchId: number | string;
+    category: string;
+    search?: string;
+};
+
+export type TherapyItemForDoctor = {
+    therapyId: number;
+    therapyName: string;
+    category: string;
+};
+
+export type GetDBranchTherapyListForDoctorResponse = {
+    success: boolean;
+    data: TherapyItemForDoctor[];
+    message?: string;
+    timestamp?: string;
+    statusCode?: number;
+};
+
+export type CreateOpdAssessmentRequest = {
+    appointmentId: number;
+    branchId: number;
+    visitType: string;
+    isEdited: boolean;
+    aiResponse: Record<string, any> | null;
+    updatedResponse: Record<string, any>;
+};
+
+export type CreateOpdAssessmentResponse = {
+    success: boolean;
+    data: {
+        opdAssessmentId: number;
+    };
+    message?: string;
+    timestamp?: string;
+    statusCode?: number;
+};
+
+export type GetPatientAssessmentHistoryParams = {
+    appointmentId: number | string;
+    filter: "lastSixMonths" | "lastTwelveMonths" | "all";
+};
+
+export type PatientAssessmentHistoryItem = {
+    id: number;
+    appointmentId: number;
+    doctorId: number;
+    branchId: number;
+    doctorName: string | null;
+    branchName: string | null;
+    isEdited: boolean;
+    patientPresentation: {
+        duration?: string;
+        chiefComplaint?: string;
+    };
+    medications: {
+        current?: string[];
+        allergies?: string[];
+    };
+    systemicReview?: {
+        respiratory?: string;
+        cardiovascular?: string;
+    };
+    specializedHistory?: {
+        pastHistory?: string;
+        familyHistory?: string;
+    };
+    physicalExamination?: {
+        bp?: string;
+        pulse?: string;
+        temperature?: string;
+    };
+    investigations?: {
+        recommended?: string[];
+    };
+    treatmentPlan?: {
+        advice?: string;
+        followUp?: string;
+    };
+    progressMonitoring?: {
+        notes?: string;
+    };
+    createdBy: number | null;
+    updatedBy: number | null;
+    createdAt: string;
+    updatedAt: string | null;
+};
+
+export type GetPatientAssessmentHistoryResponse = {
+    success: boolean;
+    data: PatientAssessmentHistoryItem[];
+    message?: string;
+    timestamp?: string;
+    statusCode?: number;
+};
+
 export const doctorApi = baseApi.injectEndpoints({
     endpoints: (builder) => ({
+        createOpdAssessment: builder.mutation<CreateOpdAssessmentResponse, CreateOpdAssessmentRequest>({
+            query: (body) => ({
+                url: "/doctor/CreateOpdAssessment",
+                method: "POST",
+                body,
+            }),
+            invalidatesTags: ["Doctors"],
+        }),
+
+        getPatientAssessmentHistory: builder.query<GetPatientAssessmentHistoryResponse, GetPatientAssessmentHistoryParams>({
+            query: (params) => ({
+                url: `/doctor/GetAllAssessmentHistoryOfPatient?appointmentId=${params.appointmentId}&filter=${params.filter}`,
+                method: "GET",
+            }),
+            providesTags: ["Doctors"],
+        }),
+
+        getAppointmentsOfDoctor: builder.query<GetAppointmentsOfDoctorResponse, GetAppointmentsOfDoctorParams>({
+            query: (params) => {
+                const qs = toQueryString({
+                    appointmentDate: params.appointmentDate,
+                    doctorId: params.doctorId,
+                    branchId: params.branchId,
+                    page: params.page,
+                    limit: params.limit,
+                    sortBy: params.sortBy,
+                    order: params.order,
+                    search: params.search,
+                });
+                return {
+                    url: `/doctor/GetAppointmentsOfDoctor${qs}`,
+                    method: "GET",
+                };
+            },
+            providesTags: ["Doctors"],
+        }),
+
+        getPatientReferralForDoctor: builder.query<GetPatientReferralForDoctorResponse, { registrationId: number | string }>({
+            query: ({ registrationId }) => ({
+                url: `/doctor/GetPatientReferralForDoctor?registrationId=${registrationId}`,
+                method: "GET",
+            }),
+        }),
+
+        getDBranchTherapyListForDoctor: builder.query<GetDBranchTherapyListForDoctorResponse, GetDBranchTherapyListForDoctorParams>({
+            query: (params) => {
+                const qs = toQueryString({
+                    branchId: params.branchId,
+                    category: params.category,
+                    search: params.search,
+                });
+                return {
+                    url: `/doctor/GetBranchTherapyListForDoctor${qs}`,
+                    method: "GET",
+                };
+            },
+        }),
+
         getAllDepartmentsForDoctor: builder.query<GetAllDepartmentsForDoctorResponse, void>({
             query: () => ({
                 url: "/admin/doctor/getAllDepartmentsForDoctor",
@@ -105,9 +367,9 @@ export const doctorApi = baseApi.injectEndpoints({
             providesTags: (result) =>
                 result?.data
                     ? [
-                          { type: "Doctors" as const, id: "LIST" },
-                          ...result.data.map((d) => ({ type: "Doctors" as const, id: String(d.id) })),
-                      ]
+                        { type: "Doctors" as const, id: "LIST" },
+                        ...result.data.map((d) => ({ type: "Doctors" as const, id: String(d.id) })),
+                    ]
                     : [{ type: "Doctors" as const, id: "LIST" }],
         }),
 
@@ -217,4 +479,11 @@ export const {
     useUpdateDoctorPasswordMutation,
     useLazyGeneratePdfForDoctorQuery,
     useLazyGenerateCsvForDoctorQuery,
+    useGetAppointmentsOfDoctorQuery,
+    useLazyGetAppointmentsOfDoctorQuery,
+    useGetPatientReferralForDoctorQuery,
+    useGetDBranchTherapyListForDoctorQuery,
+    useCreateOpdAssessmentMutation,
+    useGetPatientAssessmentHistoryQuery,
+    useLazyGetPatientAssessmentHistoryQuery,
 } = doctorApi;

@@ -15,6 +15,7 @@ import {
 } from "@/store/slices/authSlice";
 import { baseApi } from "@/store/api/baseApi";
 import { useLogoutMutation } from "@/store/api/authApi";
+import { logoutJatayu } from "@/store/api/jatayuApi";
 
 type GateHeaderBarProps = {
   userName?: string | null;
@@ -171,6 +172,11 @@ export function GateHeaderBar({
                 className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#D14D4F] transition hover:bg-[#FFF2F2] cursor-pointer"
                 onClick={async () => {
                   setIsAccountMenuOpen(false);
+                  try {
+                    await logoutJatayu();
+                  } catch (e) {
+                    console.error("Jatayu logout failed:", e);
+                  }
                   try {
                     await logoutApi().unwrap();
                   } catch {

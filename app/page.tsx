@@ -14,6 +14,7 @@ import {
 } from "@/store/api/authApi";
 import { useAppDispatch } from "@/store/hooks";
 import { setCredentials } from "@/store/slices/authSlice";
+import { loginJatayu } from "@/store/api/jatayuApi";
 import { LoginFormValues } from "@/lib/validation/schemas";
 import { encrypt, decrypt } from "@/lib/utils/encryption";
 import type { LoginPermissionModule } from "@/store/api/authApi";
@@ -176,6 +177,17 @@ export default function LoginPage() {
         })
       );
 
+      const loginType = result.data.login_type?.toLowerCase();
+      const permissionsMap = formatPermissions(result.data.permissions ?? []);
+      const isGateUser = loginType?.includes("gate") || hasOnlyGateModuleViewAccess(permissionsMap);
+
+      // Asynchronously log in to Jatayu and store the token if not a gate user
+      if (!isGateUser) {
+        loginJatayu().catch((err) => {
+          console.error("Jatayu login failed:", err);
+        });
+      }
+
       if (typeof window !== "undefined") {
         localStorage.setItem("lastRememberMeState", values.rememberMe ? "true" : "false");
         setLastRememberMeState(values.rememberMe);
@@ -196,9 +208,6 @@ export default function LoginPage() {
           setSavedCredentials(null);
         }
       }
-
-      const loginType = result.data.login_type?.toLowerCase();
-      const permissionsMap = formatPermissions(result.data.permissions ?? []);
 
       if (loginType === "clinic user") {
         router.push("/registration");

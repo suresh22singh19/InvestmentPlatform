@@ -12,6 +12,7 @@ import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { selectSelectedBranch, selectUser, selectLoginType, updateUserProfile, logout } from "@/store/slices/authSlice";
 import { useRouter } from "next/navigation";
 import { GateHeaderBar } from "@/components/layout/GateHeaderBar";
+import { logoutJatayu } from "@/store/api/jatayuApi";
 
 const formatSmsValue = (value: string): string => {
   const lowerValue = value.toLowerCase();
@@ -29,6 +30,7 @@ export default function ProfilePage() {
   const isGateUser = Boolean(loginType && loginType.toLowerCase().includes("gate"));
 
   const handleGateLogout = useCallback(() => {
+    logoutJatayu().catch((err) => console.error("Jatayu logout failed:", err));
     dispatch(logout());
     router.push("/");
   }, [dispatch, router]);

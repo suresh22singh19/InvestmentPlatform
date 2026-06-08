@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { Button } from "./Button";
+import { useAudioRecorder, RecordingState } from "@/hooks/useAudioRecorder";
+import { MessageDialog } from "./MessageDialog";
 
 export interface VoiceDoctorNotesCardProps {
     notes?: string[];
     onSaveNext?: () => void;
     className?: string;
+    onAudioBlobChange?: (blob: Blob | null, duration: number) => void;
 }
 
 export function VoiceDoctorNotesCard({
@@ -18,123 +20,437 @@ export function VoiceDoctorNotesCard({
     ],
     onSaveNext,
     className = "",
+    onAudioBlobChange,
 }: VoiceDoctorNotesCardProps) {
-    // Voice recording state
-    const [isRecording, setIsRecording] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
-    const [seconds, setSeconds] = useState(0);
+    const {
+        recordingState,
+        duration,
+        audioUrl,
+        audioBlob,
+        permissionStatus,
+        errorMessage,
+        startRecording,
+        pauseRecording,
+        resumeRecording,
+        stopRecording,
+        deleteRecording,
+        reRecord,
+        retryPermissions,
+    } = useAudioRecorder();
+
+    // Playback state
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [audioDuration, setAudioDuration] = useState(0);
+    const [playbackSpeed, setPlaybackSpeed] = useState(1);
+
+    // Confirmation dialog states
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [showReRecordDialog, setShowReRecordDialog] = useState(false);
 
     // Collapsible Doctor's Notes state
     const [isNotesCollapsed, setIsNotesCollapsed] = useState(false);
 
-    // Record timer logic
+    // Reference to audio player element
+    const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+    // Fallback display duration using recorded duration if metadata is invalid, 0, Infinity, or NaN
+    const displayDuration = (audioDuration && isFinite(audioDuration) && !isNaN(audioDuration))
+        ? audioDuration
+        : duration;
+
+    // Reset playback stats when audioUrl changes
+    useEffect(() => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+        setAudioDuration(0);
+        setPlaybackSpeed(1);
+    }, [audioUrl]);
+
+    // Bubble up audio blob and duration changes to the parent
+    useEffect(() => {
+        onAudioBlobChange?.(audioBlob, displayDuration);
+    }, [audioBlob, displayDuration, onAudioBlobChange]);
+
+    // Wave tick animation state for the recording visualizer
+    const [waveTick, setWaveTick] = useState(0);
     useEffect(() => {
         let interval: NodeJS.Timeout | null = null;
-        if (isRecording && !isPaused) {
+        if (recordingState === RecordingState.RECORDING) {
             interval = setInterval(() => {
-                setSeconds((prev) => prev + 1);
-            }, 1000);
-        } else if (!isRecording) {
-            setSeconds(0);
+                setWaveTick((t) => t + 1);
+            }, 100);
         }
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [isRecording, isPaused]);
+    }, [recordingState]);
 
     const formatTime = (totalSeconds: number) => {
+        if (isNaN(totalSeconds) || totalSeconds === Infinity) return "00:00";
         const mins = Math.floor(totalSeconds / 60);
-        const secs = totalSeconds % 60;
+        const secs = Math.floor(totalSeconds % 60);
         return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     };
 
-    const handleStartStopRecording = () => {
-        if (!isRecording) {
-            setIsRecording(true);
-            setIsPaused(false);
+    // Playback control functions
+    const togglePlayPause = () => {
+        const audio = audioPlayerRef.current;
+        if (!audio) return;
+
+        if (isPlaying) {
+            audio.pause();
+            setIsPlaying(false);
         } else {
-            setIsRecording(false);
-            setIsPaused(false);
+            audio.play()
+                .then(() => {
+                    setIsPlaying(true);
+                })
+                .catch((err) => {
+                    console.error("Playback error:", err);
+                    alert("Unable to play recorded audio.");
+                });
         }
     };
 
-    const handlePauseResumeRecording = () => {
-        if (isRecording) {
-            setIsPaused(!isPaused);
+    const handleTimeUpdate = () => {
+        if (audioPlayerRef.current) {
+            setCurrentTime(audioPlayerRef.current.currentTime);
         }
     };
 
-    const handleStopRecording = () => {
-        setIsRecording(false);
-        setIsPaused(false);
-        setSeconds(0);
+    const handleLoadedMetadata = () => {
+        if (audioPlayerRef.current) {
+            setAudioDuration(audioPlayerRef.current.duration);
+        }
+    };
+
+    const handlePlaybackEnded = () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+    };
+
+    const handleSeek = (time: number) => {
+        const audio = audioPlayerRef.current;
+        if (!audio) return;
+        audio.currentTime = time;
+        setCurrentTime(time);
+    };
+
+    const handleSpeedChange = (speed: number) => {
+        setPlaybackSpeed(speed);
+        if (audioPlayerRef.current) {
+            audioPlayerRef.current.playbackRate = speed;
+        }
+    };
+
+    const seekBackward = () => {
+        handleSeek(Math.max(0, currentTime - 5));
+    };
+
+    const seekForward = () => {
+        handleSeek(Math.min(displayDuration, currentTime + 5));
+    };
+
+    const handleDelete = () => {
+        setShowDeleteDialog(true);
+    };
+
+    const handleReRecord = () => {
+        setShowReRecordDialog(true);
     };
 
     return (
         <div className={`rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 ${className}`}>
-            
+
+            {/* Hidden native audio element */}
+            {audioUrl && (
+                <audio
+                    ref={audioPlayerRef}
+                    src={audioUrl}
+                    onTimeUpdate={handleTimeUpdate}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onEnded={handlePlaybackEnded}
+                />
+            )}
+
             {/* Voice Dictation Centered Controls */}
-            <div className="flex justify-center w-full">
-                <div className="flex items-center gap-4 bg-[#FCF5E9] px-6 py-2.5 rounded-[32px] border border-[#F3E6D0]">
-                    
-                    {/* Mic Icon */}
-                    <div className="flex items-center justify-center">
-                        <Image src="/icons/mic.svg" alt="Mic Icon" width={18} height={18} />
+            <div className="flex flex-col items-center justify-center w-full min-h-[96px] py-2">
+
+                {/* 1. Permission Denied State */}
+                {permissionStatus === "denied" && (
+                    <div className="flex flex-col items-center gap-4 bg-[#FFF5F5] border border-[#FEE2E2] p-5 rounded-[20px] text-center w-full max-w-lg transition-all">
+                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-500 shadow-inner">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <div className="space-y-1">
+                            <h4 className="font-semibold text-red-800 text-sm">Microphone access is blocked.</h4>
+                            <p className="text-xs text-red-600">Please enable microphone access in your browser settings to record notes.</p>
+                        </div>
+
+                        <div className="w-full text-left text-xs bg-white border border-[#FEE2E2] p-4 rounded-xl space-y-2 text-gray-600 shadow-sm">
+                            <p className="font-semibold text-gray-700">Instructions to enable:</p>
+                            <ul className="list-disc pl-5 space-y-1.5 leading-relaxed">
+                                <li><strong>Chrome:</strong> Click the lock icon near the URL → Site Settings → Microphone → Change to <strong>Allow</strong> → Refresh page.</li>
+                                <li><strong>Firefox:</strong> Click the permissions icon in the address bar → Clear "Blocked" status.</li>
+                                <li><strong>Safari:</strong> Go to Website Settings → Allow microphone permission.</li>
+                            </ul>
+                        </div>
+
+                        <button
+                            onClick={retryPermissions}
+                            className="px-5 py-2.5 bg-red-600 text-white rounded-full text-xs font-semibold hover:bg-red-700 active:scale-98 transition-all shadow-sm"
+                        >
+                            Retry & Check Permission
+                        </button>
                     </div>
+                )}
 
-                    {/* Timer text */}
-                    <span className="font-mono text-sm font-semibold text-[#434956]">{formatTime(seconds)}</span>
+                {/* 2. Unsupported Browser State */}
+                {permissionStatus === "unsupported" && (
+                    <div className="flex flex-col items-center gap-3 bg-[#FFF5F5] border border-[#FEE2E2] p-5 rounded-[20px] text-center w-full max-w-md">
+                        <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <h4 className="font-semibold text-red-800 text-sm">Browser Not Supported</h4>
+                        <p className="text-xs text-red-600 leading-relaxed">
+                            {errorMessage || "Audio recording is not supported in this browser or environment (ensure you are using HTTPS)."}
+                        </p>
+                    </div>
+                )}
 
-                    {/* Record Button (Red Dot Icon) */}
-                    <button
-                        onClick={handleStartStopRecording}
-                        className="focus:outline-none flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
-                        title={isRecording ? "Stop Recording" : "Start Recording"}
-                    >
-                        <Image
-                            src="/icons/redCircle.svg"
-                            alt="Record Icon"
-                            width={24}
-                            height={24}
-                            className={`${isRecording && !isPaused ? "animate-pulse border border-red-500 rounded-full" : ""}`}
-                        />
-                    </button>
+                {/* 3. Idle / Initial State */}
+                {recordingState === RecordingState.IDLE && permissionStatus !== "denied" && permissionStatus !== "unsupported" && (
+                    <div className="flex flex-col items-center gap-3 transition-all">
+                        <button
+                            onClick={startRecording}
+                            className="flex cursor-pointer items-center gap-3 bg-[#0B8C00] text-white px-7 py-3 rounded-[32px] font-semibold text-sm hover:bg-[#097300] hover:shadow-lg active:scale-95 transition-all"
+                        >
+                            <span className="w-3.5 h-3.5 rounded-full bg-white relative flex items-center justify-center shadow-sm">
+                                <span className="absolute w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                <span className="absolute w-2 h-2 rounded-full bg-red-500" />
+                            </span>
+                            Start Recording
+                        </button>
+                        <span className="text-xs text-gray-400 font-medium">Click to request microphone access and start recording</span>
+                    </div>
+                )}
 
-                    {/* Pause/Resume Button */}
-                    <button
-                        onClick={handlePauseResumeRecording}
-                        disabled={!isRecording}
-                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${!isRecording ? "opacity-30 cursor-not-allowed" : isPaused ? "bg-[#0B8C00]/10 border border-[#0B8C00] scale-105" : "hover:bg-[#9A7909]/10"}`}
-                        title={isPaused ? "Resume" : "Pause"}
-                    >
-                        <Image
-                            src={isPaused ? "/icons/play.svg" : "/icons/pause.svg"}
-                            alt={isPaused ? "Play Icon" : "Pause Icon"}
-                            width={14}
-                            height={14}
-                            className={`${!isRecording ? "grayscale" : ""}`}
-                        />
-                    </button>
+                {/* 4. Active Recording / Paused State */}
+                {(recordingState === RecordingState.RECORDING || recordingState === RecordingState.PAUSED) && (
+                    <div className="flex flex-col items-center gap-4 w-full max-w-sm transition-all">
 
-                    {/* Stop Button */}
-                    <button
-                        onClick={handleStopRecording}
-                        disabled={!isRecording}
-                        className={`px-4 py-1.5 rounded-[20px] font-medium text-xs border transition-all ${!isRecording ? "opacity-40 cursor-not-allowed border-gray-300 text-gray-400 bg-gray-100" : "border-gray-300 text-[#434956] bg-[#E5E7EB] hover:bg-gray-300"}`}
-                    >
-                        Stop
-                    </button>
-                </div>
+                        <div className="flex items-center gap-4 bg-[#FCF5E9] px-6 py-3 rounded-[32px] border border-[#F3E6D0] shadow-sm w-full justify-between">
+                            {/* Left: Mic Icon and status */}
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white shadow-sm text-[#8B670A]">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                    </svg>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-semibold text-[#8B670A] uppercase tracking-wider">
+                                        {recordingState === RecordingState.RECORDING ? "Recording" : "Paused"}
+                                    </span>
+                                    <span className="font-mono text-sm font-bold text-[#434956] leading-none">
+                                        {formatTime(duration)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Center/Right: Action Buttons */}
+                            <div className="flex items-center gap-2">
+                                {/* Pause/Resume */}
+                                <button
+                                    onClick={recordingState === RecordingState.RECORDING ? pauseRecording : resumeRecording}
+                                    className={`w-9 h-9 cursor-pointer rounded-full flex items-center justify-center transition-all bg-white border border-[#E5E7EB] hover:scale-105 active:scale-95 shadow-sm`}
+                                    title={recordingState === RecordingState.RECORDING ? "Pause" : "Resume"}
+                                >
+                                    {recordingState === RecordingState.RECORDING ? (
+                                        <svg className="w-3.5 h-3.5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                            <path fillRule="evenodd" d="M18 16V8a1 1 0 00-1-1h-2a1 1 0 00-1 1v8a1 1 0 001 1h2a1 1 0 001-1zm-8 0V8a1 1 0 00-1-1H7a1 1 0 00-1 1v8a1 1 0 001 1h2a1 1 0 001-1z" clipRule="evenodd" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-3.5 h-3.5 text-[#0B8C00] pl-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                    )}
+                                </button>
+
+                                {/* Stop */}
+                                <button
+                                    onClick={stopRecording}
+                                    className="px-4 py-2 cursor-pointer rounded-full font-bold text-xs border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 hover:scale-102 active:scale-98 transition-all shadow-sm"
+                                    title="Stop Recording"
+                                >
+                                    Stop
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Interactive Waveform visualization */}
+                        <div className="w-full flex items-end justify-between h-8 px-4 gap-[4px] opacity-90 py-1 bg-gray-50 rounded-xl border border-gray-150">
+                            {[...Array(24)].map((_, i) => {
+                                const heights = [25, 45, 30, 60, 40, 75, 50, 90, 65, 35, 55, 80, 70, 40, 85, 60, 30, 50, 70, 40, 60, 35, 45, 25];
+                                const staticHeight = heights[i % heights.length];
+                                const isPlayingWave = recordingState === RecordingState.RECORDING;
+                                const activeHeight = isPlayingWave
+                                    ? Math.max(15, Math.sin((waveTick + i) * 0.4) * 35 + 50)
+                                    : 15;
+                                return (
+                                    <div
+                                        key={i}
+                                        className="w-1 rounded-full transition-all duration-100 bg-[#0B8C00]"
+                                        style={{
+                                            height: `${isPlayingWave ? activeHeight : staticHeight / 2}%`,
+                                        }}
+                                    />
+                                );
+                            })}
+                        </div>
+
+                    </div>
+                )}
+
+                {/* 5. Stopped / Completed State (Custom Player preview) */}
+                {recordingState === RecordingState.STOPPED && audioUrl && (
+                    <div className="flex flex-col gap-4 p-5 bg-[#F6FAF6] rounded-2xl border border-[#E3EEE1] w-full max-w-lg shadow-sm transition-all">
+
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-[#0B8C00] uppercase tracking-wider">Audio Review</span>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleReRecord}
+                                    className="text-xs cursor-pointer font-semibold text-[#0B8C00] hover:text-[#097300] hover:underline"
+                                >
+                                    Re-record
+                                </button>
+                                <span className="text-gray-300 text-sm">|</span>
+                                <button
+                                    onClick={handleDelete}
+                                    className="text-xs cursor-pointer font-semibold text-red-500 hover:text-red-700 hover:underline"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Audio Waveform visualization */}
+                        <div className="flex items-end justify-between h-9 w-full px-3 gap-[3px] bg-white rounded-xl border border-gray-150 py-1.5 shadow-inner">
+                            {[...Array(30)].map((_, i) => {
+                                const progress = (currentTime / (displayDuration || 1)) * 30;
+                                const isActive = i < progress;
+                                const heights = [20, 45, 30, 60, 40, 75, 50, 90, 65, 35, 55, 80, 70, 40, 85, 60, 30, 50, 70, 40, 60, 35, 45, 20, 50, 70, 35, 60, 45, 20];
+                                const height = heights[i % heights.length];
+                                return (
+                                    <div
+                                        key={i}
+                                        onClick={() => handleSeek(((i + 0.5) / 30) * displayDuration)}
+                                        className={`w-1 rounded-full transition-colors duration-150 cursor-pointer hover:bg-[#0B8C00]/70`}
+                                        style={{
+                                            height: `${height}%`,
+                                            backgroundColor: isActive ? "#0B8C00" : "#D1D5DB"
+                                        }}
+                                    />
+                                );
+                            })}
+                        </div>
+
+                        {/* Custom Player Controls */}
+                        <div className="flex items-center justify-between gap-4">
+
+                            {/* Left: Playback Actions */}
+                            <div className="flex items-center gap-2">
+                                {/* Seek Backward */}
+                                <button
+                                    onClick={seekBackward}
+                                    className="p-2 cursor-pointer rounded-full hover:bg-gray-150 text-gray-600 active:scale-95 transition-all"
+                                    title="Seek Backward 5s"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12.5 19.25l-7.25-7.25 7.25-7.25M20 19.25l-7.25-7.25 7.25-7.25" />
+                                    </svg>
+                                </button>
+
+                                {/* Play/Pause Toggle */}
+                                <button
+                                    onClick={togglePlayPause}
+                                    className="p-3 cursor-pointer rounded-full bg-[#0B8C00] text-white hover:bg-[#097300] transition-transform hover:scale-105 active:scale-95 shadow-md flex items-center justify-center w-11 h-11"
+                                    title={isPlaying ? "Pause Playback" : "Play Playback"}
+                                >
+                                    {isPlaying ? (
+                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path fillRule="evenodd" d="M18 16V8a1 1 0 00-1-1h-2a1 1 0 00-1 1v8a1 1 0 001 1h2a1 1 0 001-1zm-8 0V8a1 1 0 00-1-1H7a1 1 0 00-1 1v8a1 1 0 001 1h2a1 1 0 001-1z" clipRule="evenodd" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-5 h-5 pl-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                    )}
+                                </button>
+
+                                {/* Seek Forward */}
+                                <button
+                                    onClick={seekForward}
+                                    className="p-2 cursor-pointer rounded-full hover:bg-gray-150 text-gray-600 active:scale-95 transition-all"
+                                    title="Seek Forward 5s"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.5 4.75l7.25 7.25-7.25 7.25M4 4.75l7.25 7.25-7.25 7.25" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Center: Custom progress bar and time text */}
+                            <div className="flex-1 flex flex-col gap-1">
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={displayDuration || 1}
+                                    value={currentTime}
+                                    onChange={(e) => handleSeek(Number(e.target.value))}
+                                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0B8C00]"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500 font-bold leading-none mt-1">
+                                    <span>{formatTime(currentTime)}</span>
+                                    <span>{formatTime(displayDuration)}</span>
+                                </div>
+                            </div>
+
+                            {/* Right: Playback Speed Dropdown */}
+                            <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5 shadow-sm">
+                                {[1, 1.5, 2].map((speed) => (
+                                    <button
+                                        key={speed}
+                                        onClick={() => handleSpeedChange(speed)}
+                                        className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded transition-all leading-none ${playbackSpeed === speed
+                                            ? "bg-[#0B8C00] text-white"
+                                            : "text-gray-500 hover:bg-gray-100"
+                                            }`}
+                                    >
+                                        {speed}x
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                    </div>
+                )}
             </div>
 
             {/* Doctor's Notes Section */}
             <div className="space-y-4">
                 <div
                     onClick={() => setIsNotesCollapsed(!isNotesCollapsed)}
-                    className="flex items-center justify-between cursor-pointer"
+                    className="flex items-center justify-between cursor-pointer group"
                 >
-                    <span className="font-inter font-semibold text-base text-[#262D3B]">Doctor's Notes:</span>
-                    <button className="text-gray-500 hover:text-gray-700">
+                    <span className="font-inter font-semibold text-base text-[#262D3B] group-hover:text-[#0B8C00] transition-colors">Doctor's Notes:</span>
+                    <button className="text-gray-500 group-hover:text-[#0B8C00] transition-colors">
                         <svg
                             className={`w-5 h-5 transform transition-transform duration-200 ${isNotesCollapsed ? "" : "rotate-180"}`}
                             fill="none"
@@ -158,9 +474,41 @@ export function VoiceDoctorNotesCard({
                         ))}
                     </div>
                 )}
-
-
             </div>
+
+            {/* Delete Confirmation Dialog */}
+            <MessageDialog
+                open={showDeleteDialog}
+                onClose={() => setShowDeleteDialog(false)}
+                icon="/icons/questionMark.svg"
+                // iconBgColor="#FFEBEE"
+                message="Are you sure you want to delete this recording?"
+                confirmText="Delete"
+                cancelText="Cancel"
+                showCancel={true}
+                onConfirm={() => {
+                    deleteRecording();
+                    setShowDeleteDialog(false);
+                }}
+                onCancel={() => setShowDeleteDialog(false)}
+            />
+
+            {/* Re-record Confirmation Dialog */}
+            <MessageDialog
+                open={showReRecordDialog}
+                onClose={() => setShowReRecordDialog(false)}
+                icon="/icons/questionMark.svg"
+                // iconBgColor="#FFEBEE"
+                message="Are you sure you want to delete the current recording and start a new one?"
+                confirmText="Re-record"
+                cancelText="Cancel"
+                showCancel={true}
+                onConfirm={() => {
+                    reRecord();
+                    setShowReRecordDialog(false);
+                }}
+                onCancel={() => setShowReRecordDialog(false)}
+            />
         </div>
     );
 }

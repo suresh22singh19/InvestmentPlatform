@@ -44,6 +44,8 @@ export { OtherInformationCard } from "./OtherInformationCard";
 export type { OtherInformationItem } from "./OtherInformationCard";
 export { ReferralPatientInfoCard } from "./referralPatientInfo";
 export type { ReferralPatientInfoItem } from "./referralPatientInfo";
+export { IAFCard } from "./IAFCard";
+export type { IAFItem } from "./IAFCard";
 export { PatientDetailsCard } from "./PatientDetailsCard";
 export type { PatientDetailsBadge, PatientDetailsInfoItem } from "./PatientDetailsCard";
 export { VitalsCard } from "./VitalsCard";
@@ -55,6 +57,8 @@ export type {
     PatientInformationTimelineDetail,
     PatientInformationTimelineItem,
 } from "./PatientInformationTimelineCard";
+export { ViewAppointment } from "./ViewAppointment";
+export type { ViewAppointmentProps } from "./ViewAppointment";
 export { HealthCardPreview } from "./HealthCardPreview";
 export { MedicalInformationCard } from "./MedicalInformationCard";
 export type { MedicalInformationItem } from "./MedicalInformationCard";
@@ -93,6 +97,7 @@ export type { PatientReportListingItem } from "./PatientReportListingCard";
 export { Badge } from "./Badge";
 export type { BadgeProps, BadgeVariant } from "./Badge";
 export { SegmentedToggle } from "./SegmentedToggle";
+export { SegmentedButtonGroup } from "./SegmentedButtonGroup";
 export { VoiceDoctorNotesCard } from "./VoiceDoctorNotesCard";
 export type { VoiceDoctorNotesCardProps } from "./VoiceDoctorNotesCard";
 export { FollowUpCard } from "./FollowUpCard";

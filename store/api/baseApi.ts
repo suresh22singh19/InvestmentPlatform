@@ -13,6 +13,7 @@ import { getVisitClientIp } from "@/lib/api/clientVisitIp";
 import type { BaseQueryApi } from "@reduxjs/toolkit/query";
 import type { RootState } from "../index";
 import { logout } from "../slices/authSlice";
+import { logoutJatayu } from "./jatayuApi";
 
 /**
  * Paths for unauthenticated auth APIs. 401 on these must NOT run global logout + `window.location = /`
@@ -177,6 +178,11 @@ const baseQueryWithAuthHandling: typeof rawBaseQuery = async (args, api, extraOp
   if (isUnauthorized && !skipGlobalLogoutRedirect) {
     // Clear auth state
     api.dispatch(logout());
+
+    // Clear Jatayu token and logout
+    logoutJatayu().catch((err) => {
+      console.error("Jatayu auto-logout failed:", err);
+    });
 
     // Also redirect to login/root so user can re-authenticate
     if (typeof window !== "undefined") {

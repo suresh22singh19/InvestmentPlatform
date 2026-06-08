@@ -39,34 +39,46 @@ export function PatientWalletInformationCard({
                 </div>
             </div>
             <div className="content-js">
-                <div className="my-5">
-                    <h5 className="font-medium text-base leading-[19px] text-center tracking-[0.03em] text-[#9FA2AB] mb-2">
-                        {remainingAmountLabel}
-                    </h5>
-                    <h4 className="font-bold text-2xl leading-[28px] text-center text-[#1D1B23]">
-                        {remainingAmount}
-                    </h4>
-                </div>
-                <div className="border border-[#EBECED] rounded-md divide-y divide-gray-200 bg-white">
-                    {details.map((item) => (
-                        <div key={item.label} className="flex justify-between items-center px-5 py-[18px]">
-                            <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">{item.label}</p>
-                            <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
-                                {item.value}
-                            </p>
+                {remainingAmount === "N/A" ? (
+                    <p className="py-6 text-center font-inter text-sm font-medium leading-[120%] text-[#6E7480]">
+                        No Data Available
+                    </p>
+                ) : (
+                    <>
+                        <div className="my-5">
+                            <h5 className="font-medium text-base leading-[19px] text-center tracking-[0.03em] text-[#9FA2AB] mb-2">
+                                {remainingAmountLabel}
+                            </h5>
+                            <h4 className="font-bold text-2xl leading-[28px] text-center text-[#1D1B23]">
+                                {remainingAmount}
+                            </h4>
                         </div>
-                    ))}
-                </div>
-                <div className="flex justify-center mt-4">
-                    <button
-                        type="button"
-                        onClick={onActionClick}
-                        className="cursor-pointer flex flex-row justify-center items-center px-3 py-1.5 gap-2 bg-[rgba(11,140,0,0.15)] rounded-[32px] font-inter font-medium text-xs leading-[120%] text-center text-[#0B8C00] hover:bg-[rgba(11,140,0,0.25)] transition-colors"
-                    >
-                        <Image src="/icons/Eye.svg" alt="Eye icon" width={16} height={16} />
-                        {actionLabel}
-                    </button>
-                </div>
+                        {details && details.length > 0 && (
+                            <div className="border border-[#EBECED] rounded-md divide-y divide-gray-200 bg-white">
+                                {details.map((item) => (
+                                    <div key={item.label} className="flex justify-between items-center px-5 py-[18px]">
+                                        <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">{item.label}</p>
+                                        <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
+                                            {item.value}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {onActionClick && (
+                            <div className="flex justify-center mt-4">
+                                <button
+                                    type="button"
+                                    onClick={onActionClick}
+                                    className="cursor-pointer flex flex-row justify-center items-center px-3 py-1.5 gap-2 bg-[rgba(11,140,0,0.15)] rounded-[32px] font-inter font-medium text-xs leading-[120%] text-center text-[#0B8C00] hover:bg-[rgba(11,140,0,0.25)] transition-colors"
+                                >
+                                    <Image src="/icons/Eye.svg" alt="Eye icon" width={16} height={16} />
+                                    {actionLabel}
+                                </button>
+                            </div>
+                        )}
+                    </>
+                )}
             </div>
         </div>
     );

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Image from "next/image";
+import { useGetDBranchTherapyListForDoctorQuery } from "@/store/api/doctorApi";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { MessageDialog } from "./MessageDialog";
@@ -11,6 +12,7 @@ export interface TherapiesCardProps {
     therapies: string[];
     onTherapiesChange?: (therapies: string[]) => void;
     className?: string;
+    branchId?: number | string;
 }
 
 const THERAPY_OPTIONS = [
@@ -28,17 +30,39 @@ export function TherapiesCard({
     therapies,
     onTherapiesChange,
     className = "",
+    branchId,
 }: TherapiesCardProps) {
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [selectedTherapies, setSelectedTherapies] = useState<string[]>([]);
+    const [category, setCategory] = useState<string>("panchkarma");
 
     // Message Dialog states
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
 
+    // Fetch therapies list from API dynamically based on active category
+    const resolvedBranchId = branchId || 2;
+    const { data: therapiesData, isLoading: isLoadingTherapies } = useGetDBranchTherapyListForDoctorQuery(
+        { branchId: resolvedBranchId, category },
+        { skip: !resolvedBranchId }
+    );
+
+    const therapyOptions = useMemo(() => {
+        if (!therapiesData?.data || therapiesData.data.length === 0) {
+            return THERAPY_OPTIONS;
+        }
+        return therapiesData.data
+            .map((item) => {
+                if (!item.therapyName) return null;
+                return { label: item.therapyName, value: item.therapyName };
+            })
+            .filter(Boolean) as { label: string; value: string }[];
+    }, [therapiesData]);
+
     const handleOpenDialog = () => {
         setSelectedTherapies([]);
+        setCategory("panchkarma");
         setIsAddDialogOpen(true);
     };
 
@@ -136,16 +160,35 @@ export function TherapiesCard({
                 width={480}
             >
                 <form onSubmit={handleFormSubmit} className="space-y-6">
-                    <div className="pt-2">
+                    <div className="pt-2 space-y-4">
+                        <FormSelectField
+                            label="Category"
+                            placeholder="Select Category"
+                            options={[
+                                { label: "Panchakarma", value: "panchkarma" },
+                                { label: "Naturopathy", value: "naturopathy" },
+                            ]}
+                            mode="single"
+                            value={category}
+                            onChange={(val) => {
+                                const selectedVal = Array.isArray(val) ? val[0] : val;
+                                setCategory(selectedVal || "panchkarma");
+                                setSelectedTherapies([]); // Clear selected therapies when category changes
+                            }}
+                            background="white"
+                            width="100%"
+                        />
+
                         <FormSelectField
                             label="Therapy"
-                            placeholder="Select Therapies"
-                            options={THERAPY_OPTIONS}
+                            placeholder={isLoadingTherapies ? "Loading therapies..." : "Select Therapies"}
+                            options={therapyOptions}
                             mode="multiple"
                             value={selectedTherapies}
                             onChange={(val) => setSelectedTherapies(val as string[])}
                             background="white"
                             width="100%"
+                            disabled={isLoadingTherapies}
                         />
                     </div>
 
