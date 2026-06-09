@@ -163,6 +163,12 @@ const getAllSettingsItems = (): SettingsItem[] => [
     iconSrc: "/icons/BranchIPNetworkDarkIcon.svg",
   },
   {
+    key: "therapist",
+    label: "Therapist",
+    href: "/settings/therapist",
+    iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  },
+  {
     key: "duplicate-no-exp",
     label: "Duplicate Number Exceptions",
     href: "/settings/duplicate-number-exceptions",
@@ -551,7 +557,7 @@ type DropdownGridProps = {
 };
 
 const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: DropdownGridProps) => {
-  const ITEMS_PER_COLUMN = 6;
+  const ITEMS_PER_COLUMN = 7;
   const totalItems = items.length;
   const numberOfColumns = Math.ceil(totalItems / ITEMS_PER_COLUMN);
 
@@ -580,17 +586,19 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
     };
   }, []);
 
-  // Split items into columns
+
+  // Distribute items evenly across columns so all rows are as full as possible
   const columns: (
     | SettingsItem
     | HospitalInfrastructureItem
     | PatientItem
     | RolesPermissionItem
   )[][] = [];
+  let remaining = [...items];
   for (let i = 0; i < numberOfColumns; i++) {
-    const start = i * ITEMS_PER_COLUMN;
-    const end = start + ITEMS_PER_COLUMN;
-    columns.push(items.slice(start, end));
+    const colCount = Math.ceil(remaining.length / (numberOfColumns - i));
+    columns.push(remaining.slice(0, colCount));
+    remaining = remaining.slice(colCount);
   }
 
   // Calculate width based on number of columns (1/4, 2/4, 3/4, or 4/4 of 1400px) + extra padding on right
@@ -824,6 +832,7 @@ const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
   "room-type": ["room-type-master", "room-type"],
   "consultancy-service": ["consultancy-service"],
   "offer-master": ["offer-master", "offer"],
+  therapist: ["therapist"],
 };
 
 const ROLES_SUBMODULE_ALIASES: Record<string, string[]> = {

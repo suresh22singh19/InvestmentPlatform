@@ -56,6 +56,7 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     nurse: ["/nurse"],
+    therapist: ["/settings/therapist"],
     /** Matches login `moduleName` / `subModule.moduleName` "Tokens" → slug `tokens` */
     tokens: ["/token"],
     dashboard: ["/dashboard"],

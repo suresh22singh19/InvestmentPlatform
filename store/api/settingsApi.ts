@@ -2086,6 +2086,128 @@ export interface UpdateSupportContactRequest {
   role?: string;
 }
 
+// ─── Therapist Settings Module ───────────────────────────────────────────────
+
+interface TherapistSettingsItem {
+  id: number;
+  therapistName?: string;
+  price: string;
+  productCode: string;
+  hsnCode: string;
+  category: string;
+  status: "active" | "inactive";
+  tpaPrice?: number | string;
+  panelPrice?: number | string;
+  tpaStatus?: "active" | "inactive";
+  panelStatus?: "active" | "inactive";
+  createdAt: string;
+  branches?: { id: number; name: string }[];
+}
+
+interface GetTherapistEntriesParams {
+  branchId?: number;
+  page?: number;
+  limit?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  search?: string;
+}
+
+interface TherapistEntriesResponse {
+  success: boolean;
+  data: TherapistSettingsItem[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+}
+
+interface CreateTherapistEntryRequest {
+  branchIds: number[];
+  therapistName: string;
+  price: string;
+  productCode: string;
+  hsnCode: string;
+  category: string;
+  status: "active" | "inactive";
+  tpaPrice?: string;
+  panelPrice?: string;
+  tpaStatus?: "active" | "inactive";
+  panelStatus?: "active" | "inactive";
+}
+
+interface CreateTherapistEntryResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+interface UpdateTherapistEntryRequest {
+  id: number;
+  branchIds?: number[];
+  therapistName?: string;
+  productCode?: string;
+  hsnCode?: string;
+  category?: string;
+  price?: string;
+  panelPrice?: string;
+  tpaPrice?: string;
+  status?: "active" | "inactive";
+  panelStatus?: "active" | "inactive";
+  tpaStatus?: "active" | "inactive";
+}
+
+interface UpdateTherapistEntryResponse {
+  success: boolean;
+  data: {
+    id: number;
+    branchId: number;
+    therapistName: string;
+    price: string;
+    productCode: string;
+    hsnCode: string;
+    category: string;
+    status: "active" | "inactive";
+    createdAt: string;
+  };
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+// ─── End Therapist Settings Module ───────────────────────────────────────────
+
+// ─── Create Therapist (new endpoint) ─────────────────────────────────────────
+
+export interface CreateTherapistRequest {
+  branchId: number;
+  userName: string;
+  email?: string;
+  roleId: number;
+  phone: string;
+  empId?: string;
+  roleTypeId?: number;
+  loginType: string;
+  status: "active" | "inactive";
+  experience?: string;
+  speciality?: string;
+  certifications: string[];
+  therapyIds: number[];
+}
+
+export interface CreateTherapistResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+// ─── End Create Therapist ─────────────────────────────────────────────────────
+
 export const settingsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getAdminSupportContacts: builder.query<GetSupportContactsResponse, void>({
@@ -3431,6 +3553,62 @@ export const settingsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Settings"],
     }),
+    getTherapistEntries: builder.query<TherapistEntriesResponse, GetTherapistEntriesParams | void>({
+      query: (params) => {
+        const searchParams = new URLSearchParams();
+        if (params?.branchId != null) searchParams.set("branchId", String(params.branchId));
+        if (params?.page != null) searchParams.set("page", String(params.page));
+        if (params?.limit != null) searchParams.set("limit", String(params.limit));
+        if (params?.sort) searchParams.set("sort", params.sort);
+        if (params?.order) searchParams.set("order", params.order);
+        if (params?.search) searchParams.set("search", params.search);
+        const queryString = searchParams.toString();
+        return {
+          url: `/admin/settings/therapist${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createTherapistEntry: builder.mutation<CreateTherapistEntryResponse, CreateTherapistEntryRequest>({
+      query: (payload) => ({
+        url: "/admin/settings/therapist",
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateTherapistEntry: builder.mutation<UpdateTherapistEntryResponse, UpdateTherapistEntryRequest>({
+      query: (payload) => {
+        const { id, ...rest } = payload;
+        const body: Record<string, unknown> = {};
+        if (rest.branchIds != null) body.branchIds = rest.branchIds;
+        if (rest.therapistName != null) body.therapistName = rest.therapistName;
+        if (rest.productCode != null) body.productCode = rest.productCode;
+        if (rest.hsnCode != null) body.hsnCode = rest.hsnCode;
+        if (rest.category != null) body.category = rest.category;
+        if (rest.price != null) body.price = rest.price;
+        if (rest.panelPrice != null) body.panelPrice = rest.panelPrice;
+        if (rest.tpaPrice != null) body.tpaPrice = rest.tpaPrice;
+        if (rest.status != null) body.status = rest.status;
+        if (rest.panelStatus != null) body.panelStatus = rest.panelStatus;
+        if (rest.tpaStatus != null) body.tpaStatus = rest.tpaStatus;
+        return {
+          url: `/admin/settings/therapist/${id}`,
+          method: "PUT",
+          body,
+        };
+      },
+      invalidatesTags: ["Settings"],
+    }),
+    createTherapist: builder.mutation<CreateTherapistResponse, CreateTherapistRequest>({
+      query: (body) => ({
+        url: "/admin/settings/therapist/createTherapist",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
   }),
 });
 
@@ -3534,5 +3712,9 @@ export const {
   useCreateOfferMasterMutation,
   useUpdateOfferMasterMutation,
   useUpdateOfferMasterStatusMutation,
+  useGetTherapistEntriesQuery,
+  useCreateTherapistEntryMutation,
+  useUpdateTherapistEntryMutation,
+  useCreateTherapistMutation,
 } = settingsApi;
 
