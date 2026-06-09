@@ -774,9 +774,9 @@ const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => 
 // Note: Registration will be conditionally added based on login_type
 const BASE_TOP_NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { key: "today-appointment", label: "Today Appointment", href: "/today-appointment" },
   { key: "settings", label: "Settings", hasDropdown: true },
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
+  { key: "today-appointment", label: "Today Appointment", href: "/today-appointment" },
   { key: "patient", label: "Patient", hasDropdown: true },
   { key: "ipdreception", label: "IPD Reception", hasDropdown: true },
   { key: "doctors", label: "Doctor", href: "/doctor" },
