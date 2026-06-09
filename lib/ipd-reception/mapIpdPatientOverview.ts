@@ -59,7 +59,7 @@ type IpdPatientOverviewData = {
     allergies?: string | null;
     surgeries?: string | null;
   } | null;
-  roomType?: {
+  assignedRoom?: {
     roomNumber?: string | number | null;
     roomType?: string | null;
     bedNumber?: string | number | null;
@@ -173,7 +173,7 @@ export function mapIpdPatientOverviewToView(
   const reg = data.registration;
   const appt = data.appointment;
   const vitals = data.vitals;
-  const room = data.roomType;
+  const room = data.assignedRoom;
   const referral = data.patientRefferal;
 
   const patientName = [reg?.patient_title, reg?.patient_name].filter(Boolean).join(" ").trim() || "N/A";
