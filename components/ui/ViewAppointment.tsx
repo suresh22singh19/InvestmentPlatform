@@ -24,6 +24,7 @@ import {
     DietPlanCard,
     type DietPlanEntry,
     type DietPlanHeaderAction,
+    IafDetailsDialog,
 } from "@/components/ui";
 import { IAFCard, type IAFItem } from "./IAFCard";
 import { useMemo, useState } from "react";
@@ -99,6 +100,7 @@ export function ViewAppointment({
     otherInfoItems,
 }: ViewAppointmentProps) {
     const [timeframe, setTimeframe] = useState<"6m" | "1y" | "lifetime">("6m");
+    const [selectedIafId, setSelectedIafId] = useState<string | null>(null);
 
     const apiFilter = useMemo(() => {
         if (timeframe === "6m") return "lastSixMonths";
@@ -132,14 +134,76 @@ export function ViewAppointment({
             return `${day}/${month}/${year}`;
         };
 
+        const parseMedicineString = (itemStr: string) => {
+            const detailsMatch = itemStr.match(/^(.*?)\s*-\s*(.*?)\s*\((Dosage|dosage):\s*(.*?),\s*(Frequency|frequency):\s*(.*?),\s*(Timing|timing):\s*(.*?)\)$/i);
+            if (detailsMatch) {
+                return {
+                    medicineName: detailsMatch[1].trim(),
+                    medicineDuration: detailsMatch[2].trim(),
+                    medicineDosage: detailsMatch[4].trim(),
+                    medicineFrequency: detailsMatch[6].trim(),
+                    medicineTiming: detailsMatch[8].trim()
+                };
+            }
+
+            const nameMatch = itemStr.split(" - ");
+            const name = nameMatch[0]?.trim() || itemStr;
+            let duration = "N/A";
+            let dosage = "N/A";
+            let frequency = "N/A";
+            let timing = "N/A";
+
+            const durationMatch = itemStr.match(/-\s*([^(]+)/);
+            if (durationMatch) {
+                duration = durationMatch[1].trim();
+            }
+            const dosageMatch = itemStr.match(/Dosage:\s*([^,)]+)/i);
+            if (dosageMatch) {
+                dosage = dosageMatch[1].trim();
+            }
+            const freqMatch = itemStr.match(/Frequency:\s*([^,)]+)/i);
+            if (freqMatch) {
+                frequency = freqMatch[1].trim();
+            }
+            const timingMatch = itemStr.match(/Timing:\s*([^,)]+)/i);
+            if (timingMatch) {
+                timing = timingMatch[1].trim();
+            }
+
+            return {
+                medicineName: name,
+                medicineDuration: duration,
+                medicineDosage: dosage,
+                medicineFrequency: frequency,
+                medicineTiming: timing
+            };
+        };
+
         return historyData.map((h, index) => {
             const dateStr = formatDate(h.createdAt);
             const visitTypeSuffix = index === 0 ? " - First Visit" : " - Follow-up Visit";
             const dateLabel = `${dateStr}${visitTypeSuffix}`;
 
-            const chiefComplaintText = h.patientPresentation?.chiefComplaint 
-                ? `${h.patientPresentation.chiefComplaint}${h.patientPresentation.duration ? ` (Duration: ${h.patientPresentation.duration})` : ""}`
-                : "N/A";
+            let chiefComplaintText = "N/A";
+            if (h.patientPresentation?.chiefComplaint) {
+                if (Array.isArray(h.patientPresentation.chiefComplaint)) {
+                    chiefComplaintText = h.patientPresentation.chiefComplaint
+                        .map((cc: any) => cc?.complaint || "")
+                        .filter(Boolean)
+                        .join(", ");
+                } else if (typeof h.patientPresentation.chiefComplaint === "string") {
+                    chiefComplaintText = h.patientPresentation.chiefComplaint;
+                }
+            }
+
+            let symptomsText = "";
+            if (h.patientPresentation?.symptoms) {
+                if (Array.isArray(h.patientPresentation.symptoms)) {
+                    symptomsText = h.patientPresentation.symptoms.filter(Boolean).join(", ");
+                } else if (typeof h.patientPresentation.symptoms === "string") {
+                    symptomsText = h.patientPresentation.symptoms;
+                }
+            }
 
             const detailsItems: string[] = [];
 
@@ -190,8 +254,17 @@ export function ViewAppointment({
                 detailsItems.push(`Progress Notes: ${h.progressMonitoring.notes}`);
             }
 
-            if (detailsItems.length === 0) {
-                detailsItems.push("No additional clinical details recorded.");
+            let prescribedMedicines: any[] = [];
+            if (h.treatmentPlan?.prescribedMedicines && h.treatmentPlan.prescribedMedicines.length > 0) {
+                prescribedMedicines = h.treatmentPlan.prescribedMedicines.map((m: any) => ({
+                    medicineName: m.medicineName || "N/A",
+                    medicineDosage: m.medicineDosage || "N/A",
+                    medicineFrequency: m.medicineFrequency || "N/A",
+                    medicineTiming: m.medicineTiming || "N/A",
+                    medicineDuration: m.medicineDuration || "N/A"
+                }));
+            } else if (Array.isArray(h.medications?.current) && h.medications.current.length > 0) {
+                prescribedMedicines = h.medications.current.map((medStr: string) => parseMedicineString(medStr));
             }
 
             return {
@@ -200,14 +273,15 @@ export function ViewAppointment({
                     primaryComplaintTitle: "Chief Complaint",
                     primaryComplaintText: chiefComplaintText,
                     detailsTitle: "Clinical & Assessment Details",
-                    detailsItems,
+                    detailsItems: detailsItems.length > 0 ? detailsItems : undefined,
                     actionsTitle: "Medicines Prescribed",
-                    actionItems: Array.isArray(h.medications?.current) && h.medications.current.length > 0 
-                        ? h.medications.current 
-                        : ["N/A"],
                     branch: h.branchName || "N/A",
                     doctorName: h.doctorName || "N/A",
-                    iafDate: h.createdAt
+                    iafDate: h.createdAt,
+                    chiefComplaint: chiefComplaintText,
+                    symptoms: symptomsText || undefined,
+                    prescribedMedicines,
+                    opdAssessmentId: h.id
                 }
             };
         });
@@ -257,7 +331,14 @@ export function ViewAppointment({
                 <PatientInformationTimelineCard
                     title="Patient History"
                     items={formattedTimelineItems}
-                    onViewIaf={onIAFViewClick ? (date) => onIAFViewClick({ date } as any) : undefined}
+                    onViewIaf={(iafId) => {
+                        const isNumeric = /^\d+$/.test(iafId);
+                        if (isNumeric) {
+                            setSelectedIafId(iafId);
+                        } else if (onIAFViewClick) {
+                            onIAFViewClick({ date: iafId } as any);
+                        }
+                    }}
                     timeframe={timeframe}
                     onTimeframeChange={setTimeframe}
                     disableClientSideFilter={!!appointmentId}
@@ -293,6 +374,13 @@ export function ViewAppointment({
                     <OtherInformationCard items={otherInfoItems} />
                 )}
             </div>
+
+            {selectedIafId && (
+                <IafDetailsDialog
+                    opdAssessmentId={Number(selectedIafId)}
+                    onClose={() => setSelectedIafId(null)}
+                />
+            )}
         </div>
     );
 }

@@ -208,10 +208,17 @@ export type GetDBranchTherapyListForDoctorResponse = {
 export type CreateOpdAssessmentRequest = {
     appointmentId: number;
     branchId: number;
+    doctorId: number;
     visitType: string;
     isEdited: boolean;
     aiResponse: Record<string, any> | null;
     updatedResponse: Record<string, any>;
+    therapies?: Array<{
+        uhid: string;
+        appointmentId: number;
+        therapyId: number;
+        patientType: string;
+    }>;
 };
 
 export type CreateOpdAssessmentResponse = {
@@ -237,36 +244,50 @@ export type PatientAssessmentHistoryItem = {
     doctorName: string | null;
     branchName: string | null;
     isEdited: boolean;
-    patientPresentation: {
+    patientPresentation?: {
         duration?: string;
-        chiefComplaint?: string;
+        chiefComplaint?: string | any;
+        symptoms?: string | string[];
+        [key: string]: any;
     };
-    medications: {
+    medications?: {
         current?: string[];
         allergies?: string[];
+        [key: string]: any;
     };
     systemicReview?: {
         respiratory?: string;
         cardiovascular?: string;
+        [key: string]: any;
     };
     specializedHistory?: {
         pastHistory?: string;
         familyHistory?: string;
+        [key: string]: any;
     };
     physicalExamination?: {
         bp?: string;
         pulse?: string;
         temperature?: string;
+        [key: string]: any;
     };
     investigations?: {
         recommended?: string[];
+        [key: string]: any;
     };
     treatmentPlan?: {
         advice?: string;
         followUp?: string;
+        diet?: string;
+        lifestyle?: string;
+        yogaPranayama?: string;
+        treatmentNotes?: string;
+        patientEducation?: string;
+        prescribedMedicines?: any[];
     };
     progressMonitoring?: {
         notes?: string;
+        [key: string]: any;
     };
     createdBy: number | null;
     updatedBy: number | null;
@@ -296,6 +317,14 @@ export const doctorApi = baseApi.injectEndpoints({
         getPatientAssessmentHistory: builder.query<GetPatientAssessmentHistoryResponse, GetPatientAssessmentHistoryParams>({
             query: (params) => ({
                 url: `/doctor/GetAllAssessmentHistoryOfPatient?appointmentId=${params.appointmentId}&filter=${params.filter}`,
+                method: "GET",
+            }),
+            providesTags: ["Doctors"],
+        }),
+
+        getSpecificAssessmentHistoryDetailOfPatient: builder.query<{ success: boolean; data: any; message?: string }, number | string>({
+            query: (opdAssessmentId) => ({
+                url: `/doctor/GetSpecificAssessmentHistoryDetailOfPatient?opdAssessmentId=${opdAssessmentId}`,
                 method: "GET",
             }),
             providesTags: ["Doctors"],
@@ -486,4 +515,6 @@ export const {
     useCreateOpdAssessmentMutation,
     useGetPatientAssessmentHistoryQuery,
     useLazyGetPatientAssessmentHistoryQuery,
+    useGetSpecificAssessmentHistoryDetailOfPatientQuery,
+    useLazyGetSpecificAssessmentHistoryDetailOfPatientQuery,
 } = doctorApi;

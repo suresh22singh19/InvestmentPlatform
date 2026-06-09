@@ -12,6 +12,8 @@ import { Slider } from "./Slider";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
 import { MessageDialog } from "./MessageDialog";
 import { useCreateOpdAssessmentMutation } from "@/store/api/doctorApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserId } from "@/store/slices/authSlice";
 
 export interface ClinicalAssessmentRecordProps {
     className?: string;
@@ -49,6 +51,7 @@ export interface ClinicalAssessmentRecordProps {
     // Extra fields
     followUpDate?: string;
     aiResponse?: any;
+    therapies?: Array<{ therapyId: number; therapyName: string }>;
 }
 
 interface BodyMarker {
@@ -158,8 +161,29 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         medicines,
         setMedicines,
         followUpDate,
-        aiResponse,
+        aiResponse: incomingAiResponse,
+        therapies,
     }, ref) {
+    const authDoctorId = useAppSelector(selectUserId);
+    const aiResponse = incomingAiResponse || {};
+
+    // Check if patient is old (appointmentCreatedAt - registrationCreatedAt > 1 hour)
+    const isPatientOld = (appData: any): boolean => {
+        if (!appData) return false;
+        const appTimeStr = appData.appointmentCreatedAt || appData.createdAt;
+        const regTimeStr = appData.registrationCreatedAt;
+        if (!appTimeStr || !regTimeStr) return false;
+
+        const appTime = new Date(appTimeStr).getTime();
+        const regTime = new Date(regTimeStr).getTime();
+        if (isNaN(appTime) || isNaN(regTime)) return false;
+
+        const oneHourInMs = 60 * 60 * 1000;
+        return (appTime - regTime) > oneHourInMs;
+    };
+
+    const showProgressMonitoring = isPatientOld(appData);
+
     // Dialog & Submission States
     const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -248,35 +272,35 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                 const patientPresentation = {
                     chiefComplaint: isUpdated 
-                        ? [{ complaint: chiefComplaint, confidence: 1.0 }]
+                        ? [{ complaint: chiefComplaint || baseObject?.patientPresentation?.chiefComplaint?.[0]?.complaint || aiResponse?.patientPresentation?.chiefComplaint?.[0]?.complaint || "", confidence: 1.0 }]
                         : (baseObject?.patientPresentation?.chiefComplaint || aiResponse?.patientPresentation?.chiefComplaint || [{ complaint: chiefComplaint, confidence: 1.0 }]),
                     symptoms: isUpdated
-                        ? (symptoms ? symptoms.split(",").map((s: string) => s.trim()).filter(Boolean) : [])
+                        ? (symptoms ? symptoms.split(",").map((s: string) => s.trim()).filter(Boolean) : (baseObject?.patientPresentation?.symptoms || aiResponse?.patientPresentation?.symptoms || []))
                         : (baseObject?.patientPresentation?.symptoms || aiResponse?.patientPresentation?.symptoms || []),
                     hpi: isUpdated
-                        ? (hpi ? hpi.split("\n").map((h: string) => h.trim()).filter(Boolean) : [])
+                        ? (hpi ? hpi.split("\n").map((h: string) => h.trim()).filter(Boolean) : (baseObject?.patientPresentation?.hpi || aiResponse?.patientPresentation?.hpi || []))
                         : (baseObject?.patientPresentation?.hpi || aiResponse?.patientPresentation?.hpi || []),
                     socialHistory: isUpdated
-                        ? (socialHistory ? socialHistory.split("\n").map((s: string) => s.trim()).filter(Boolean) : [])
+                        ? (socialHistory ? socialHistory.split("\n").map((s: string) => s.trim()).filter(Boolean) : (baseObject?.patientPresentation?.socialHistory || aiResponse?.patientPresentation?.socialHistory || []))
                         : (baseObject?.patientPresentation?.socialHistory || aiResponse?.patientPresentation?.socialHistory || []),
                     pastMedicalHistory: isUpdated
-                        ? (pastMedicalHistory ? pastMedicalHistory.split("\n").map((p: string) => p.trim()).filter(Boolean) : [])
+                        ? (pastMedicalHistory ? pastMedicalHistory.split("\n").map((p: string) => p.trim()).filter(Boolean) : (baseObject?.patientPresentation?.pastMedicalHistory || aiResponse?.patientPresentation?.pastMedicalHistory || []))
                         : (baseObject?.patientPresentation?.pastMedicalHistory || aiResponse?.patientPresentation?.pastMedicalHistory || []),
                     familyHistory: isUpdated
-                        ? (familyHistory ? familyHistory.split("\n").map((f: string) => f.trim()).filter(Boolean) : [])
+                        ? (familyHistory ? familyHistory.split("\n").map((f: string) => f.trim()).filter(Boolean) : (baseObject?.patientPresentation?.familyHistory || aiResponse?.patientPresentation?.familyHistory || []))
                         : (baseObject?.patientPresentation?.familyHistory || aiResponse?.patientPresentation?.familyHistory || []),
                     remarks: baseObject?.patientPresentation?.remarks || aiResponse?.patientPresentation?.remarks || ""
                 };
 
                 const medications = {
                     currentMedication: isUpdated
-                        ? (currentMedications?.toUpperCase() === "YES" ? "YES" : "NO")
+                        ? (currentMedications ? (currentMedications.toUpperCase() === "YES" ? "YES" : "NO") : (baseObject?.medications?.currentMedication || aiResponse?.medications?.currentMedication || "NO"))
                         : (baseObject?.medications?.currentMedication || aiResponse?.medications?.currentMedication || "NO"),
                     doctorNotes: isUpdated
-                        ? (medRemarks || "")
+                        ? (medRemarks || baseObject?.medications?.doctorNotes || aiResponse?.medications?.doctorNotes || "")
                         : (baseObject?.medications?.doctorNotes || aiResponse?.medications?.doctorNotes || ""),
                     surgeryHistory: isUpdated
-                        ? (surgeryHistory || "")
+                        ? (surgeryHistory || baseObject?.medications?.surgeryHistory || aiResponse?.medications?.surgeryHistory || "")
                         : (baseObject?.medications?.surgeryHistory || aiResponse?.medications?.surgeryHistory || ""),
                     currentMedicines: baseObject?.medications?.currentMedicines || aiResponse?.medications?.currentMedicines || []
                 };
@@ -290,26 +314,39 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                 const systemicReview = {
                     diabetes: isUpdated
-                        ? { status: (diabetes === "yes" ? "YES" : "NO") as any, yearsIfDiabetic: Number(diabeticYears) || 0, notes: diabetesNotes || "" }
+                        ? { 
+                            status: (diabetes ? (diabetes === "yes" ? "YES" : "NO") : (baseObject?.systemicReview?.diabetes?.status || aiResponse?.systemicReview?.diabetes?.status || "NO")) as any, 
+                            yearsIfDiabetic: Number(diabeticYears) || Number(baseObject?.systemicReview?.diabetes?.yearsIfDiabetic) || Number(aiResponse?.systemicReview?.diabetes?.yearsIfDiabetic) || 0, 
+                            notes: diabetesNotes || baseObject?.systemicReview?.diabetes?.notes || aiResponse?.systemicReview?.diabetes?.notes || "" 
+                          }
                         : { 
                             status: (baseObject?.systemicReview?.diabetes?.status || aiResponse?.systemicReview?.diabetes?.status || "NO") as any, 
                             yearsIfDiabetic: Number(baseObject?.systemicReview?.diabetes?.yearsIfDiabetic) || Number(aiResponse?.systemicReview?.diabetes?.yearsIfDiabetic) || 0, 
                             notes: baseObject?.systemicReview?.diabetes?.notes || aiResponse?.systemicReview?.diabetes?.notes || "" 
                           },
                     bloodPressure: isUpdated
-                        ? { status: (bloodPressure === "high" ? "High BP" : (bloodPressure === "low" ? "Low BP" : "No")) as any, remarks: bpRemarks || "" }
+                        ? { 
+                            status: (bloodPressure ? (bloodPressure === "high" ? "High BP" : (bloodPressure === "low" ? "Low BP" : "No")) : (baseObject?.systemicReview?.bloodPressure?.status || aiResponse?.systemicReview?.bloodPressure?.status || "No")) as any, 
+                            remarks: bpRemarks || baseObject?.systemicReview?.bloodPressure?.remarks || aiResponse?.systemicReview?.bloodPressure?.remarks || "" 
+                          }
                         : { 
                             status: (baseObject?.systemicReview?.bloodPressure?.status || aiResponse?.systemicReview?.bloodPressure?.status || "No") as any, 
                             remarks: baseObject?.systemicReview?.bloodPressure?.remarks || aiResponse?.systemicReview?.bloodPressure?.remarks || "" 
                           },
                     thyroid: isUpdated
-                        ? { status: (thyroid === "hypo" ? "Hypothyroid" : (thyroid === "hyper" ? "Hyperthyroid" : "No")) as any, remarks: thyroidRemarks || "" }
+                        ? { 
+                            status: (thyroid ? (thyroid === "hypo" ? "Hypothyroid" : (thyroid === "hyper" ? "Hyperthyroid" : "No")) : (baseObject?.systemicReview?.thyroid?.status || aiResponse?.systemicReview?.thyroid?.status || "No")) as any, 
+                            remarks: thyroidRemarks || baseObject?.systemicReview?.thyroid?.remarks || aiResponse?.systemicReview?.thyroid?.remarks || "" 
+                          }
                         : { 
                             status: (baseObject?.systemicReview?.thyroid?.status || aiResponse?.systemicReview?.thyroid?.status || "No") as any, 
                             remarks: baseObject?.systemicReview?.thyroid?.remarks || aiResponse?.systemicReview?.thyroid?.remarks || "" 
                           },
                     allergy: isUpdated
-                        ? { types: [{ type: mapAllergy(allergyHistory) as any, stamp: { Std_Code: "", Std_Name: "" } }], details: allergyDetails || "" }
+                        ? { 
+                            types: allergy ? [{ type: mapAllergy(allergyHistory) as any, stamp: { Std_Code: "", Std_Name: "" } }] : (baseObject?.systemicReview?.allergy?.types || aiResponse?.systemicReview?.allergy?.types || [{ type: "Nil", stamp: { Std_Code: "", Std_Name: "" } }]), 
+                            details: allergyDetails || baseObject?.systemicReview?.allergy?.details || aiResponse?.systemicReview?.allergy?.details || "" 
+                          }
                         : { 
                             types: baseObject?.systemicReview?.allergy?.types || aiResponse?.systemicReview?.allergy?.types || [{ type: "Nil", stamp: { Std_Code: "", Std_Name: "" } }], 
                             details: baseObject?.systemicReview?.allergy?.details || aiResponse?.systemicReview?.allergy?.details || "" 
@@ -321,13 +358,13 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     ? null 
                     : (isUpdated 
                         ? {
-                            cycle: (cycle || "Regular") as any,
-                            flow: (flow || "Normal") as any,
-                            pain: gynaecPain || "",
-                            discharge: discharge || "",
-                            pregnancy: pregnancy || "",
-                            miscarriage: miscarriage || "",
-                            remarks: ""
+                            cycle: (cycle || baseObject?.specializedHistory?.gynaecHistory?.cycle || "Regular") as any,
+                            flow: (flow || baseObject?.specializedHistory?.gynaecHistory?.flow || "Normal") as any,
+                            pain: gynaecPain || baseObject?.specializedHistory?.gynaecHistory?.pain || "",
+                            discharge: discharge || baseObject?.specializedHistory?.gynaecHistory?.discharge || "",
+                            pregnancy: pregnancy || baseObject?.specializedHistory?.gynaecHistory?.pregnancy || "",
+                            miscarriage: miscarriage || baseObject?.specializedHistory?.gynaecHistory?.miscarriage || "",
+                            remarks: baseObject?.specializedHistory?.gynaecHistory?.remarks || ""
                           }
                         : (baseObject?.specializedHistory?.gynaecHistory || aiResponse?.specializedHistory?.gynaecHistory || null));
 
@@ -335,12 +372,16 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     gynaecHistory: gynaecObj,
                     mentalHealth: isUpdated
                         ? {
-                            symptoms: [anxiety, depression, sleepQuality].filter(Boolean) as any[],
-                            anxietyDetails: "",
-                            depressionDetails: "",
-                            sleepDetails: "",
-                            stressLevel: (stressLevel ? (stressLevel.charAt(0).toUpperCase() + stressLevel.slice(1)) : "None") as any,
-                            doctorNotes: mentalRemarks || ""
+                            symptoms: (anxiety || depression || sleepQuality) 
+                                ? ([anxiety, depression, sleepQuality].filter(Boolean) as any[])
+                                : (baseObject?.specializedHistory?.mentalHealth?.symptoms || aiResponse?.specializedHistory?.mentalHealth?.symptoms || []),
+                            anxietyDetails: baseObject?.specializedHistory?.mentalHealth?.anxietyDetails || aiResponse?.specializedHistory?.mentalHealth?.anxietyDetails || "",
+                            depressionDetails: baseObject?.specializedHistory?.mentalHealth?.depressionDetails || aiResponse?.specializedHistory?.mentalHealth?.depressionDetails || "",
+                            sleepDetails: baseObject?.specializedHistory?.mentalHealth?.sleepDetails || aiResponse?.specializedHistory?.mentalHealth?.sleepDetails || "",
+                            stressLevel: stressLevel 
+                                ? ((stressLevel ? (stressLevel.charAt(0).toUpperCase() + stressLevel.slice(1)) : "None") as any)
+                                : (baseObject?.specializedHistory?.mentalHealth?.stressLevel || aiResponse?.specializedHistory?.mentalHealth?.stressLevel || "None"),
+                            doctorNotes: mentalRemarks || baseObject?.specializedHistory?.mentalHealth?.doctorNotes || aiResponse?.specializedHistory?.mentalHealth?.doctorNotes || ""
                           }
                         : {
                             symptoms: baseObject?.specializedHistory?.mentalHealth?.symptoms || aiResponse?.specializedHistory?.mentalHealth?.symptoms || [],
@@ -352,11 +393,26 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                           },
                     systemicNotes: isUpdated
                         ? {
-                            gastro: { symptoms: gastricValue ? [gastricValue] as any[] : ["Nil"], remarks: gastricRemarks || "" },
-                            respiratory: { symptoms: respiratoryValue ? [respiratoryValue] as any[] : ["Nil"], remarks: respiratoryRemarks || "" },
-                            cardiac: { symptoms: cardiacValue ? [cardiacValue] as any[] : ["Nil"], remarks: cardiacRemarks || "" },
-                            nervous: { symptoms: nervousValue ? [nervousValue] as any[] : ["Nil"], remarks: nervousRemarks || "" },
-                            urinary: { symptoms: urinaryValue ? [urinaryValue] as any[] : ["Nil"], remarks: urinaryRemarks || "" }
+                            gastro: { 
+                                symptoms: gastricValue ? [gastricValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.gastro?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.gastro?.symptoms || ["Nil"]), 
+                                remarks: gastricRemarks || baseObject?.specializedHistory?.systemicNotes?.gastro?.remarks || aiResponse?.specializedHistory?.systemicNotes?.gastro?.remarks || "" 
+                            },
+                            respiratory: { 
+                                symptoms: respiratoryValue ? [respiratoryValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.respiratory?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.symptoms || ["Nil"]), 
+                                remarks: respiratoryRemarks || baseObject?.specializedHistory?.systemicNotes?.respiratory?.remarks || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.remarks || "" 
+                            },
+                            cardiac: { 
+                                symptoms: cardiacValue ? [cardiacValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.cardiac?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.symptoms || ["Nil"]), 
+                                remarks: cardiacRemarks || baseObject?.specializedHistory?.systemicNotes?.cardiac?.remarks || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.remarks || "" 
+                            },
+                            nervous: { 
+                                symptoms: nervousValue ? [nervousValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.nervous?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.nervous?.symptoms || ["Nil"]), 
+                                remarks: nervousRemarks || baseObject?.specializedHistory?.systemicNotes?.nervous?.remarks || aiResponse?.specializedHistory?.systemicNotes?.nervous?.remarks || "" 
+                            },
+                            urinary: { 
+                                symptoms: urinaryValue ? [urinaryValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.urinary?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.urinary?.symptoms || ["Nil"]), 
+                                remarks: urinaryRemarks || baseObject?.specializedHistory?.systemicNotes?.urinary?.remarks || aiResponse?.specializedHistory?.systemicNotes?.urinary?.remarks || "" 
+                            }
                           }
                         : {
                             gastro: { 
@@ -384,7 +440,12 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                 const physicalExamination = {
                     balanceMobility: isUpdated
-                        ? { sitting: (sitting || "Normal") as any, standing: (standing || "Normal") as any, walking: (walking || "Normal") as any, remarks: mobilityRemarks || "" }
+                        ? { 
+                            sitting: (sitting || baseObject?.physicalExamination?.balanceMobility?.sitting || aiResponse?.physicalExamination?.balanceMobility?.sitting || "Normal") as any, 
+                            standing: (standing || baseObject?.physicalExamination?.balanceMobility?.standing || aiResponse?.physicalExamination?.balanceMobility?.standing || "Normal") as any, 
+                            walking: (walking || baseObject?.physicalExamination?.balanceMobility?.walking || aiResponse?.physicalExamination?.balanceMobility?.walking || "Normal") as any, 
+                            remarks: mobilityRemarks || baseObject?.physicalExamination?.balanceMobility?.remarks || aiResponse?.physicalExamination?.balanceMobility?.remarks || "" 
+                          }
                         : { 
                             sitting: baseObject?.physicalExamination?.balanceMobility?.sitting || aiResponse?.physicalExamination?.balanceMobility?.sitting || "Normal", 
                             standing: baseObject?.physicalExamination?.balanceMobility?.standing || aiResponse?.physicalExamination?.balanceMobility?.standing || "Normal", 
@@ -392,7 +453,13 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             remarks: baseObject?.physicalExamination?.balanceMobility?.remarks || aiResponse?.physicalExamination?.balanceMobility?.remarks || "" 
                           },
                     pain: isUpdated
-                        ? { site: painSite || "", scale: Number(painScale) || 0, characteristics: activeMarkType ? [activeMarkType.charAt(0).toUpperCase() + activeMarkType.slice(1)] as any[] : [], locationNotes: painNotes || "", remarks: "" }
+                        ? { 
+                            site: painSite || baseObject?.physicalExamination?.pain?.site || aiResponse?.physicalExamination?.pain?.site || "", 
+                            scale: painScale !== null ? Number(painScale) : (Number(baseObject?.physicalExamination?.pain?.scale) || Number(aiResponse?.physicalExamination?.pain?.scale) || 0), 
+                            characteristics: activeMarkType ? [activeMarkType.charAt(0).toUpperCase() + activeMarkType.slice(1)] as any[] : (baseObject?.physicalExamination?.pain?.characteristics || aiResponse?.physicalExamination?.pain?.characteristics || []), 
+                            locationNotes: painNotes || baseObject?.physicalExamination?.pain?.locationNotes || aiResponse?.physicalExamination?.pain?.locationNotes || "", 
+                            remarks: baseObject?.physicalExamination?.pain?.remarks || aiResponse?.physicalExamination?.pain?.remarks || "" 
+                          }
                         : { 
                             site: baseObject?.physicalExamination?.pain?.site || aiResponse?.physicalExamination?.pain?.site || "", 
                             scale: Number(baseObject?.physicalExamination?.pain?.scale) || Number(aiResponse?.physicalExamination?.pain?.scale) || 0, 
@@ -401,28 +468,40 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             remarks: baseObject?.physicalExamination?.pain?.remarks || aiResponse?.physicalExamination?.pain?.remarks || "" 
                           },
                     painMapping: isUpdated
-                        ? markers.map((m: any) => {
-                            const bodyHalf = m.x < 33 ? "left" : (m.x > 66 ? "right" : "center");
-                            const bodyVertical = m.y < 33 ? "upper" : (m.y > 66 ? "lower" : "middle");
-                            const bodyZone = bodyHalf === "center" 
-                                ? (bodyVertical === "lower" ? "center-lower" : "center-upper") 
-                                : `${bodyHalf}-${bodyVertical}`;
-                            return {
-                                id: m.id?.toString() || "",
-                                view: (m.view || "front") as any,
-                                markerType: (m.type || "pain") as any,
-                                bodyZone: bodyZone as any,
-                                bodyHalf: bodyHalf as any,
-                                bodyVertical: bodyVertical as any,
-                                xPercent: Number(m.x) || 0,
-                                yPercent: Number(m.y) || 0,
-                                bilateralSymmetry: !!m.bilateralSymmetry,
-                                notes: m.notes || ""
-                            };
-                          })
+                        ? (markers.length > 0 
+                            ? markers.map((m: any) => {
+                                const bodyHalf = m.x < 33 ? "left" : (m.x > 66 ? "right" : "center");
+                                const bodyVertical = m.y < 33 ? "upper" : (m.y > 66 ? "lower" : "middle");
+                                const bodyZone = bodyHalf === "center" 
+                                    ? (bodyVertical === "lower" ? "center-lower" : "center-upper") 
+                                    : `${bodyHalf}-${bodyVertical}`;
+                                return {
+                                    id: m.id?.toString() || "",
+                                    view: (m.view || "front") as any,
+                                    markerType: (m.type || "pain") as any,
+                                    bodyZone: bodyZone as any,
+                                    bodyHalf: bodyHalf as any,
+                                    bodyVertical: bodyVertical as any,
+                                    xPercent: Number(m.x) || 0,
+                                    yPercent: Number(m.y) || 0,
+                                    bilateralSymmetry: !!m.bilateralSymmetry,
+                                    notes: m.notes || ""
+                                };
+                              })
+                            : (baseObject?.physicalExamination?.painMapping || aiResponse?.physicalExamination?.painMapping || []))
                         : (baseObject?.physicalExamination?.painMapping || aiResponse?.physicalExamination?.painMapping || []),
                     asthaVidhaPariksha: isUpdated
-                        ? { tongue: jihva || "", pulse: nadi || "", eyes: druk || "", nails: nakha || "", vataNotes: vata || "", pittaNotes: pitta || "", kaphaNotes: kapha || "", overallPrakriti: prakriti || "", remarks: "" }
+                        ? { 
+                            tongue: jihva || baseObject?.physicalExamination?.asthaVidhaPariksha?.tongue || aiResponse?.physicalExamination?.asthaVidhaPariksha?.tongue || "", 
+                            pulse: nadi || baseObject?.physicalExamination?.asthaVidhaPariksha?.pulse || aiResponse?.physicalExamination?.asthaVidhaPariksha?.pulse || "", 
+                            eyes: druk || baseObject?.physicalExamination?.asthaVidhaPariksha?.eyes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.eyes || "", 
+                            nails: nakha || baseObject?.physicalExamination?.asthaVidhaPariksha?.nails || aiResponse?.physicalExamination?.asthaVidhaPariksha?.nails || "", 
+                            vataNotes: vata || baseObject?.physicalExamination?.asthaVidhaPariksha?.vataNotes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.vataNotes || "", 
+                            pittaNotes: pitta || baseObject?.physicalExamination?.asthaVidhaPariksha?.pittaNotes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.pittaNotes || "", 
+                            kaphaNotes: kapha || baseObject?.physicalExamination?.asthaVidhaPariksha?.kaphaNotes || aiResponse?.physicalExamination?.asthaVidhaPariksha?.kaphaNotes || "", 
+                            overallPrakriti: prakriti || baseObject?.physicalExamination?.asthaVidhaPariksha?.overallPrakriti || aiResponse?.physicalExamination?.asthaVidhaPariksha?.overallPrakriti || "", 
+                            remarks: baseObject?.physicalExamination?.asthaVidhaPariksha?.remarks || aiResponse?.physicalExamination?.asthaVidhaPariksha?.remarks || "" 
+                          }
                         : { 
                             tongue: baseObject?.physicalExamination?.asthaVidhaPariksha?.tongue || aiResponse?.physicalExamination?.asthaVidhaPariksha?.tongue || "", 
                             pulse: baseObject?.physicalExamination?.asthaVidhaPariksha?.pulse || aiResponse?.physicalExamination?.asthaVidhaPariksha?.pulse || "", 
@@ -438,20 +517,34 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                 const investigations = {
                     radiology: isUpdated
-                        ? { findings: radiologySelected ? [radiologySelected] as any[] : ["Nil"], remarks: radiologyRemarks || "" }
+                        ? { 
+                            findings: radiologySelected ? [radiologySelected] as any[] : (baseObject?.investigations?.radiology?.findings || aiResponse?.investigations?.radiology?.findings || ["Nil"]), 
+                            remarks: radiologyRemarks || baseObject?.investigations?.radiology?.remarks || aiResponse?.investigations?.radiology?.remarks || "" 
+                          }
                         : { 
                             findings: baseObject?.investigations?.radiology?.findings || aiResponse?.investigations?.radiology?.findings || ["Nil"], 
                             remarks: baseObject?.investigations?.radiology?.remarks || aiResponse?.investigations?.radiology?.remarks || "" 
                           },
                     laboratory: isUpdated
-                        ? { tests: pathologySelected ? [pathologySelected] as any[] : ["Nil"], testsPrescribed: prescribedLabTests || "", remarks: "" }
+                        ? { 
+                            tests: pathologySelected ? [pathologySelected] as any[] : (baseObject?.investigations?.laboratory?.tests || aiResponse?.investigations?.laboratory?.tests || ["Nil"]), 
+                            testsPrescribed: prescribedLabTests || baseObject?.investigations?.laboratory?.testsPrescribed || aiResponse?.investigations?.laboratory?.testsPrescribed || "", 
+                            remarks: baseObject?.investigations?.laboratory?.remarks || baseObject?.investigations?.laboratory?.remarks || "" 
+                          }
                         : { 
                             tests: baseObject?.investigations?.laboratory?.tests || aiResponse?.investigations?.laboratory?.tests || ["Nil"], 
                             testsPrescribed: baseObject?.investigations?.laboratory?.testsPrescribed || aiResponse?.investigations?.laboratory?.testsPrescribed || "", 
                             remarks: baseObject?.investigations?.laboratory?.remarks || aiResponse?.investigations?.laboratory?.remarks || "" 
                           },
                     diagnosis: isUpdated
-                        ? { provisional: provisionalDiagnosis || "", provisionalConfidence: 1.0, final: finalDiagnosis || "", finalConfidence: 1.0, remarks: "", stamp: { Std_Code: "", Std_Name: "" } }
+                        ? { 
+                            provisional: provisionalDiagnosis || baseObject?.investigations?.diagnosis?.provisional || aiResponse?.investigations?.diagnosis?.provisional || "", 
+                            provisionalConfidence: 1.0, 
+                            final: finalDiagnosis || baseObject?.investigations?.diagnosis?.final || aiResponse?.investigations?.diagnosis?.final || "", 
+                            finalConfidence: 1.0, 
+                            remarks: baseObject?.investigations?.diagnosis?.remarks || aiResponse?.investigations?.diagnosis?.remarks || "", 
+                            stamp: baseObject?.investigations?.diagnosis?.stamp || aiResponse?.investigations?.diagnosis?.stamp || { Std_Code: "", Std_Name: "" } 
+                          }
                         : { 
                             provisional: baseObject?.investigations?.diagnosis?.provisional || aiResponse?.investigations?.diagnosis?.provisional || "", 
                             provisionalConfidence: Number(baseObject?.investigations?.diagnosis?.provisionalConfidence) || Number(aiResponse?.investigations?.diagnosis?.provisionalConfidence) || 0, 
@@ -464,23 +557,33 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                 const treatmentPlan = {
                     patientEducation: isUpdated
-                        ? (patientInstruction || "")
+                        ? (patientInstruction || baseObject?.treatmentPlan?.patientEducation || aiResponse?.treatmentPlan?.patientEducation || "")
                         : (baseObject?.treatmentPlan?.patientEducation || aiResponse?.treatmentPlan?.patientEducation || ""),
                     prescribedMedicines: isUpdated
-                        ? medicines.map((m: any) => ({
-                            medicineName: m.name || "",
-                            medicineDosage: m.dosage || "",
-                            medicineFrequency: m.frequency || "",
-                            medicineTiming: m.timing || "",
-                            medicineDuration: m.duration || "",
-                            confidence: 1.0,
-                            stamp: { Std_Code: "", Std_Name: "" }
-                          }))
+                        ? (medicines.some(m => m.name)
+                            ? medicines.map((m: any) => ({
+                                medicineName: m.name || "",
+                                medicineDosage: m.dosage || "",
+                                medicineFrequency: m.frequency || "",
+                                medicineTiming: m.timing || "",
+                                medicineDuration: m.duration || "",
+                                confidence: 1.0,
+                                stamp: { Std_Code: "", Std_Name: "" }
+                              }))
+                            : (baseObject?.treatmentPlan?.prescribedMedicines || aiResponse?.treatmentPlan?.prescribedMedicines || []))
                         : (baseObject?.treatmentPlan?.prescribedMedicines || aiResponse?.treatmentPlan?.prescribedMedicines || []),
-                    diet: isUpdated ? (dietAdvice || "") : (baseObject?.treatmentPlan?.diet || aiResponse?.treatmentPlan?.diet || ""),
-                    lifestyle: isUpdated ? (lifestyleChanges || "") : (baseObject?.treatmentPlan?.lifestyle || aiResponse?.treatmentPlan?.lifestyle || ""),
-                    yogaPranayama: isUpdated ? (physicalExercises || "") : (baseObject?.treatmentPlan?.yogaPranayama || aiResponse?.treatmentPlan?.yogaPranayama || ""),
-                    treatmentNotes: isUpdated ? (clinicalRemarks || "") : (baseObject?.treatmentPlan?.treatmentNotes || aiResponse?.treatmentPlan?.treatmentNotes || "")
+                    diet: isUpdated 
+                        ? (dietAdvice || baseObject?.treatmentPlan?.diet || aiResponse?.treatmentPlan?.diet || "") 
+                        : (baseObject?.treatmentPlan?.diet || aiResponse?.treatmentPlan?.diet || ""),
+                    lifestyle: isUpdated 
+                        ? (lifestyleChanges || baseObject?.treatmentPlan?.lifestyle || aiResponse?.treatmentPlan?.lifestyle || "") 
+                        : (baseObject?.treatmentPlan?.lifestyle || aiResponse?.treatmentPlan?.lifestyle || ""),
+                    yogaPranayama: isUpdated 
+                        ? (physicalExercises || baseObject?.treatmentPlan?.yogaPranayama || aiResponse?.treatmentPlan?.yogaPranayama || "") 
+                        : (baseObject?.treatmentPlan?.yogaPranayama || aiResponse?.treatmentPlan?.yogaPranayama || ""),
+                    treatmentNotes: isUpdated 
+                        ? (clinicalRemarks || baseObject?.treatmentPlan?.treatmentNotes || aiResponse?.treatmentPlan?.treatmentNotes || "") 
+                        : (baseObject?.treatmentPlan?.treatmentNotes || aiResponse?.treatmentPlan?.treatmentNotes || "")
                 };
 
                 const getImprovement = () => {
@@ -494,13 +597,17 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 const progressMonitoring = {
                     visitNumber: Number(visitCount) || 1,
                     followUpRequired: isUpdated
-                        ? (followUpDate ? "YES" : "NO")
+                        ? (followUpDate ? "YES" : (baseObject?.progressMonitoring?.followUpRequired || aiResponse?.progressMonitoring?.followUpRequired || "NO"))
                         : (baseObject?.progressMonitoring?.followUpRequired || aiResponse?.progressMonitoring?.followUpRequired || "NO"),
                     followUpDate: isUpdated
-                        ? (followUpDate ? new Date(followUpDate).toISOString() : "")
+                        ? (followUpDate ? new Date(followUpDate).toISOString() : (baseObject?.progressMonitoring?.followUpDate || aiResponse?.progressMonitoring?.followUpDate || ""))
                         : (baseObject?.progressMonitoring?.followUpDate || aiResponse?.progressMonitoring?.followUpDate || ""),
-                    progressNotes: isUpdated ? (clinicalRemarks || "") : (baseObject?.progressMonitoring?.progressNotes || aiResponse?.progressMonitoring?.progressNotes || ""),
-                    comparisonWithPreviousVisit: isUpdated ? (progressStatus || "") : (baseObject?.progressMonitoring?.comparisonWithPreviousVisit || aiResponse?.progressMonitoring?.comparisonWithPreviousVisit || ""),
+                    progressNotes: isUpdated 
+                        ? (clinicalRemarks || baseObject?.progressMonitoring?.progressNotes || aiResponse?.progressMonitoring?.progressNotes || "") 
+                        : (baseObject?.progressMonitoring?.progressNotes || aiResponse?.progressMonitoring?.progressNotes || ""),
+                    comparisonWithPreviousVisit: isUpdated 
+                        ? (progressStatus || baseObject?.progressMonitoring?.comparisonWithPreviousVisit || aiResponse?.progressMonitoring?.comparisonWithPreviousVisit || "") 
+                        : (baseObject?.progressMonitoring?.comparisonWithPreviousVisit || aiResponse?.progressMonitoring?.comparisonWithPreviousVisit || ""),
                     overallImprovement: isUpdated
                         ? (getImprovement() as any)
                         : (baseObject?.progressMonitoring?.overallImprovement || aiResponse?.progressMonitoring?.overallImprovement || "First Visit")
@@ -515,7 +622,10 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 const p7 = getSection7Percent();
                 const p8 = getSection8Percent();
 
-                const overallCompletion = Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8);
+                const p8Val = showProgressMonitoring ? p8 : 100;
+                const overallCompletion = showProgressMonitoring
+                    ? Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8)
+                    : Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7) / 7);
 
                 const getStatus = (p: number) => {
                     if (p === 0) return "Not Started";
@@ -523,7 +633,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     return "In Progress";
                 };
 
-                const completedSections = [p1, p2, p3, p4, p5, p6, p7, p8].filter(p => p === 100).length;
+                const completedSections = showProgressMonitoring
+                    ? [p1, p2, p3, p4, p5, p6, p7, p8].filter(p => p === 100).length
+                    : [p1, p2, p3, p4, p5, p6, p7].filter(p => p === 100).length;
 
                 const progressTracking = {
                     overallCompletion,
@@ -535,7 +647,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         physicalExamination: p5,
                         investigations: p6,
                         treatmentPlan: p7,
-                        progressMonitoring: p8
+                        progressMonitoring: p8Val
                     },
                     completedSections,
                     sectionStatus: {
@@ -546,7 +658,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         physicalExamination: getStatus(p5) as any,
                         investigations: getStatus(p6) as any,
                         treatmentPlan: getStatus(p7) as any,
-                        progressMonitoring: getStatus(p8) as any
+                        progressMonitoring: getStatus(p8Val) as any
                     }
                 };
 
@@ -566,16 +678,22 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 };
             };
 
-            const finalAi = buildResponse(aiResponse, false);
             const updatedResponse = buildResponse(aiResponse, true);
 
             const payload = {
                 appointmentId: Number(appData?.appointmentId) || 101,
                 branchId: Number(branchId) || Number(appData?.branchId) || 2,
+                doctorId: Number(appData?.doctorId) || Number(authDoctorId) || 3,
                 visitType: appData?.visitType || "first",
                 isEdited: true,
-                aiResponse: finalAi,
-                updatedResponse: updatedResponse
+                aiResponse: aiResponse,
+                updatedResponse: updatedResponse,
+                therapies: (therapies || []).map(t => ({
+                    uhid: appData?.uhid || appData?.patientID || "DRBS012026",
+                    appointmentId: Number(appData?.appointmentId) || 2,
+                    therapyId: Number(t.therapyId),
+                    patientType: "opd"
+                }))
             };
 
             const result = await createOpdAssessment(payload).unwrap();
@@ -752,6 +870,155 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
     const section8Ref = useRef<HTMLDivElement>(null);
 
     const [activeTimelineStep, setActiveTimelineStep] = useState(1);
+
+    // Auto-populate local states when aiResponse becomes available
+    useEffect(() => {
+        if (!incomingAiResponse) return;
+        const summaryObj = typeof incomingAiResponse === "string" ? {} : incomingAiResponse;
+
+        // 1. Patient Presentation
+        if (summaryObj.patientPresentation) {
+            const hpiVal = Array.isArray(summaryObj.patientPresentation.hpi)
+                ? summaryObj.patientPresentation.hpi.join("\n")
+                : summaryObj.patientPresentation.hpi || "";
+            if (hpiVal) setHpi(hpiVal);
+
+            const socialVal = Array.isArray(summaryObj.patientPresentation.socialHistory)
+                ? summaryObj.patientPresentation.socialHistory.join("\n")
+                : summaryObj.patientPresentation.socialHistory || "";
+            if (socialVal) setSocialHistory(socialVal);
+
+            const pastMedicalVal = Array.isArray(summaryObj.patientPresentation.pastMedicalHistory)
+                ? summaryObj.patientPresentation.pastMedicalHistory.join("\n")
+                : summaryObj.patientPresentation.pastMedicalHistory || "";
+            if (pastMedicalVal) setPastMedicalHistory(pastMedicalVal);
+
+            const familyVal = Array.isArray(summaryObj.patientPresentation.familyHistory)
+                ? summaryObj.patientPresentation.familyHistory.join("\n")
+                : summaryObj.patientPresentation.familyHistory || "";
+            if (familyVal) setFamilyHistory(familyVal);
+        }
+
+        // 2. Medications & Supplements
+        if (summaryObj.medications) {
+            const rawCurrentMed = summaryObj.medications.currentMedication || summaryObj.medications.currentMedications;
+            if (rawCurrentMed) {
+                const low = String(rawCurrentMed).toLowerCase();
+                if (low === "yes" || low === "true") setCurrentMedications("yes");
+                else if (low === "no" || low === "false") setCurrentMedications("no");
+            }
+            if (summaryObj.medications.doctorNotes) setMedRemarks(summaryObj.medications.doctorNotes);
+            if (summaryObj.medications.surgeryHistory) setSurgeryHistory(summaryObj.medications.surgeryHistory);
+        }
+
+        // 3. Systemic Review & Co-morbidities
+        if (summaryObj.systemicReview) {
+            if (summaryObj.systemicReview.diabetes) {
+                const years = summaryObj.systemicReview.diabetes.yearsIfDiabetic;
+                if (years !== undefined && years !== null) setDiabeticYears(String(years));
+                if (summaryObj.systemicReview.diabetes.notes) setDiabetesNotes(summaryObj.systemicReview.diabetes.notes);
+            }
+            if (summaryObj.systemicReview.bloodPressure?.remarks) setBpRemarks(summaryObj.systemicReview.bloodPressure.remarks);
+            if (summaryObj.systemicReview.thyroid?.remarks) setThyroidRemarks(summaryObj.systemicReview.thyroid.remarks);
+            if (summaryObj.systemicReview.allergy?.details) setAllergyDetails(summaryObj.systemicReview.allergy.details);
+        }
+
+        // 4. Specialized History
+        if (summaryObj.specializedHistory?.gynaecHistory) {
+            const gh = summaryObj.specializedHistory.gynaecHistory;
+            if (gh.cycle) setCycle(gh.cycle);
+            if (gh.flow) setFlow(gh.flow);
+            if (gh.pain) setGynaecPain(gh.pain);
+            if (gh.discharge) setDischarge(gh.discharge);
+            if (gh.pregnancy) setPregnancy(gh.pregnancy);
+            if (gh.miscarriage) setMiscarriage(gh.miscarriage);
+        }
+
+        if (summaryObj.specializedHistory?.mentalHealth) {
+            const mh = summaryObj.specializedHistory.mentalHealth;
+            const symptomsArr = mh.symptoms || [];
+            if (Array.isArray(symptomsArr)) {
+                if (symptomsArr.includes("Anxiety")) setAnxiety("Anxiety");
+                if (symptomsArr.includes("Depression")) setDepression("Depression");
+                if (symptomsArr.includes("Sleep Issues")) setSleepQuality("Sleep Issues");
+            }
+            if (mh.stressLevel) setStressLevel(mh.stressLevel.toLowerCase() as any);
+            if (mh.doctorNotes) setMentalRemarks(mh.doctorNotes);
+        }
+
+        if (summaryObj.specializedHistory?.systemicNotes) {
+            const sn = summaryObj.specializedHistory.systemicNotes;
+            if (sn.gastro) {
+                if (Array.isArray(sn.gastro.symptoms) && sn.gastro.symptoms[0]) setGastricValue(sn.gastro.symptoms[0]);
+                if (sn.gastro.remarks) setGastricRemarks(sn.gastro.remarks);
+            }
+            if (sn.respiratory) {
+                if (Array.isArray(sn.respiratory.symptoms) && sn.respiratory.symptoms[0]) setRespiratoryValue(sn.respiratory.symptoms[0]);
+                if (sn.respiratory.remarks) setRespiratoryRemarks(sn.respiratory.remarks);
+            }
+            if (sn.cardiac) {
+                if (Array.isArray(sn.cardiac.symptoms) && sn.cardiac.symptoms[0]) setCardiacValue(sn.cardiac.symptoms[0]);
+                if (sn.cardiac.remarks) setCardiacRemarks(sn.cardiac.remarks);
+            }
+            if (sn.nervous) {
+                if (Array.isArray(sn.nervous.symptoms) && sn.nervous.symptoms[0]) setNervousValue(sn.nervous.symptoms[0]);
+                if (sn.nervous.remarks) setNervousRemarks(sn.nervous.remarks);
+            }
+            if (sn.urinary) {
+                if (Array.isArray(sn.urinary.symptoms) && sn.urinary.symptoms[0]) setUrinaryValue(sn.urinary.symptoms[0]);
+                if (sn.urinary.remarks) setUrinaryRemarks(sn.urinary.remarks);
+            }
+        }
+
+        // 5. Physical Examination & Disorders
+        if (summaryObj.physicalExamination) {
+            if (summaryObj.physicalExamination.balanceMobility?.remarks) setMobilityRemarks(summaryObj.physicalExamination.balanceMobility.remarks);
+            if (summaryObj.physicalExamination.pain) {
+                const p = summaryObj.physicalExamination.pain;
+                if (p.site) setPainSite(p.site);
+                if (p.scale !== undefined && p.scale !== null) setPainScale(p.scale);
+                if (p.locationNotes) setPainNotes(p.locationNotes);
+            }
+            if (summaryObj.physicalExamination.asthaVidhaPariksha) {
+                const avp = summaryObj.physicalExamination.asthaVidhaPariksha;
+                if (avp.pulse) setNadi(avp.pulse);
+                if (avp.tongue) setJihva(avp.tongue);
+                if (avp.eyes) setDruk(avp.eyes);
+                if (avp.nails) setNakha(avp.nails);
+                if (avp.vataNotes) setVata(avp.vataNotes);
+                if (avp.pittaNotes) setPitta(avp.pittaNotes);
+                if (avp.kaphaNotes) setKapha(avp.kaphaNotes);
+                if (avp.overallPrakriti) setPrakriti(avp.overallPrakriti);
+            }
+        }
+
+        // 6. Investigations
+        if (summaryObj.investigations) {
+            if (summaryObj.investigations.radiology) {
+                const r = summaryObj.investigations.radiology;
+                if (Array.isArray(r.findings) && r.findings[0]) setRadiologySelected(r.findings[0]);
+                if (r.remarks) setRadiologyRemarks(r.remarks);
+            }
+            if (summaryObj.investigations.laboratory) {
+                const l = summaryObj.investigations.laboratory;
+                if (Array.isArray(l.tests) && l.tests[0]) setPathologySelected(l.tests[0]);
+                if (l.testsPrescribed) setPrescribedLabTests(l.testsPrescribed);
+            }
+            if (summaryObj.investigations.diagnosis?.provisional) {
+                setProvisionalDiagnosis(summaryObj.investigations.diagnosis.provisional);
+            }
+        }
+
+        // 7. Treatment Plan & Education
+        if (summaryObj.treatmentPlan) {
+            const tp = summaryObj.treatmentPlan;
+            if (tp.patientEducation) setPatientInstruction(tp.patientEducation);
+            if (tp.diet) setDietAdvice(tp.diet);
+            if (tp.lifestyle) setLifestyleChanges(tp.lifestyle);
+            if (tp.yogaPranayama) setPhysicalExercises(tp.yogaPranayama);
+            if (tp.treatmentNotes) setClinicalRemarks(tp.treatmentNotes);
+        }
+    }, [incomingAiResponse]);
 
     const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
         if (ref.current) {
@@ -936,6 +1203,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const p5 = getSection5Percent();
         const p6 = getSection6Percent();
         const p7 = getSection7Percent();
+        if (!showProgressMonitoring) {
+            return Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7) / 7);
+        }
         const p8 = getSection8Percent();
         return Math.round((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8);
     };
@@ -1032,17 +1302,19 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
             newErrors.dietAdvice = "Diet Advice is required";
             isValid = false;
         }
-        if (!progressStatus) {
-            newErrors.progressStatus = "Progress Status is required";
-            isValid = false;
-        }
-        if (!medicineAdherence) {
-            newErrors.medicineAdherence = "Medicine Adherence is required";
-            isValid = false;
-        }
-        if (!clinicalRemarks.trim()) {
-            newErrors.clinicalRemarks = "Clinical Remarks are required";
-            isValid = false;
+        if (showProgressMonitoring) {
+            if (!progressStatus) {
+                newErrors.progressStatus = "Progress Status is required";
+                isValid = false;
+            }
+            if (!medicineAdherence) {
+                newErrors.medicineAdherence = "Medicine Adherence is required";
+                isValid = false;
+            }
+            if (!clinicalRemarks.trim()) {
+                newErrors.clinicalRemarks = "Clinical Remarks are required";
+                isValid = false;
+            }
         }
 
         // Medicines validation
@@ -1278,16 +1550,28 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     <div className="flex items-center gap-2">
                         <span className="font-inter font-bold text-lg" style={{ color: getProgressColorAndLabel(getCompletionPercent()).color }}>{getCompletionPercent()}%</span>
                         <span className="text-xs font-semibold text-[#7B8089]">
-                            {[
-                                getSection1Percent(),
-                                getSection2Percent(),
-                                getSection3Percent(),
-                                getSection4Percent(),
-                                getSection5Percent(),
-                                getSection6Percent(),
-                                getSection7Percent(),
-                                getSection8Percent()
-                            ].filter(p => p === 100).length} of 8 sections complete
+                            {showProgressMonitoring ? (
+                                `${[
+                                    getSection1Percent(),
+                                    getSection2Percent(),
+                                    getSection3Percent(),
+                                    getSection4Percent(),
+                                    getSection5Percent(),
+                                    getSection6Percent(),
+                                    getSection7Percent(),
+                                    getSection8Percent()
+                                ].filter(p => p === 100).length} of 8 sections complete`
+                            ) : (
+                                `${[
+                                    getSection1Percent(),
+                                    getSection2Percent(),
+                                    getSection3Percent(),
+                                    getSection4Percent(),
+                                    getSection5Percent(),
+                                    getSection6Percent(),
+                                    getSection7Percent()
+                                ].filter(p => p === 100).length} of 7 sections complete`
+                            )}
                         </span>
                     </div>
                 </div>
@@ -1301,7 +1585,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     <div
                         className="absolute left-[6.25%] top-[33px] h-[6px] bg-[#0B8C00] rounded-[10px] -translate-y-1/2 transition-all duration-300"
                         style={{
-                            width: `calc(${(activeTimelineStep - 1) / 7} * 87.5%)`
+                            width: `calc(${(activeTimelineStep - 1) / (showProgressMonitoring ? 7 : 6)} * 87.5%)`
                         }}
                     />
 
@@ -1314,7 +1598,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             { step: 5, label: "Physical Exam", ref: section5Ref },
                             { step: 6, label: "Investigations", ref: section6Ref },
                             { step: 7, label: "Treatment Plan", ref: section7Ref },
-                            { step: 8, label: "Progress", ref: section8Ref },
+                            ...(showProgressMonitoring ? [{ step: 8, label: "Progress", ref: section8Ref }] : []),
                         ].map((item, idx) => {
                             const isActive = activeTimelineStep >= item.step;
                             const isCurrent = activeTimelineStep === item.step;
@@ -1555,7 +1839,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     {/* Blood Pressure */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <PatientTypeButtonGroup
-                            options={["High BP", "High BP", "No"]}
+                            options={["High BP", "Low BP", "No"]}
                             value={bloodPressure}
                             onChange={(val) => {
                                 setBloodPressure(val as any);
@@ -2458,86 +2742,88 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
             </div>
 
             {/* 8. Section Progress Monitoring (Visit [Count]) for revisit ok */}
-            <div ref={section8Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
-                <div className="flex items-center justify-between ">
-                    <div className="flex items-center gap-3">
-                        <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">8</div>
-                        <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Visit {visitCount})</h3>
+            {showProgressMonitoring && (
+                <div ref={section8Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
+                    <div className="flex items-center justify-between ">
+                        <div className="flex items-center gap-3">
+                            <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">8</div>
+                            <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Visit {visitCount})</h3>
+                        </div>
+                        <SectionProgress percent={getSection8Percent()} />
                     </div>
-                    <SectionProgress percent={getSection8Percent()} />
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <PatientTypeButtonGroup
-                        options={["Better", "Same", "Worse", "New Symptoms"]}
-                        value={progressStatus}
-                        onChange={(val) => {
-                            setProgressStatus(val);
-                            if (errors.progressStatus) {
-                                setErrors(prev => {
-                                    const next = { ...prev };
-                                    delete next.progressStatus;
-                                    return next;
-                                });
-                            }
-                        }}
-                        label="Progress Status *"
-                        required
-                        fieldRef={progressStatusRef}
-                        error={errors.progressStatus}
-                    />
-                    <PatientTypeButtonGroup
-                        options={["Regular", "Irregular", "Side Effects"]}
-                        value={medicineAdherence}
-                        onChange={(val) => {
-                            setMedicineAdherence(val);
-                            if (errors.medicineAdherence) {
-                                setErrors(prev => {
-                                    const next = { ...prev };
-                                    delete next.medicineAdherence;
-                                    return next;
-                                });
-                            }
-                        }}
-                        label="Medicine Adherence *"
-                        required
-                        fieldRef={medicineAdherenceRef}
-                        error={errors.medicineAdherence}
-                    />
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <PatientTypeButtonGroup
+                            options={["Better", "Same", "Worse", "New Symptoms"]}
+                            value={progressStatus}
+                            onChange={(val) => {
+                                setProgressStatus(val);
+                                if (errors.progressStatus) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.progressStatus;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Progress Status *"
+                            required
+                            fieldRef={progressStatusRef}
+                            error={errors.progressStatus}
+                        />
+                        <PatientTypeButtonGroup
+                            options={["Regular", "Irregular", "Side Effects"]}
+                            value={medicineAdherence}
+                            onChange={(val) => {
+                                setMedicineAdherence(val);
+                                if (errors.medicineAdherence) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.medicineAdherence;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            label="Medicine Adherence *"
+                            required
+                            fieldRef={medicineAdherenceRef}
+                            error={errors.medicineAdherence}
+                        />
+                    </div>
 
-                {/* Symptom Recovery % */}
-                <div className="space-y-4 pt-2">
-                    <h4 className="font-inter font-semibold text-sm text-[#434956]">Symptom Recovery %</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-                        <Slider label="Pain" value={painRecovery} onChange={setPainRecovery} />
-                        <Slider label="Digestion" value={digestionRecovery} onChange={setDigestionRecovery} />
-                        <Slider label="Energy" value={energyRecovery} onChange={setEnergyRecovery} />
-                        <Slider label="Sleep" value={sleepRecovery} onChange={setSleepRecovery} />
+                    {/* Symptom Recovery % */}
+                    <div className="space-y-4 pt-2">
+                        <h4 className="font-inter font-semibold text-sm text-[#434956]">Symptom Recovery %</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+                            <Slider label="Pain" value={painRecovery} onChange={setPainRecovery} />
+                            <Slider label="Digestion" value={digestionRecovery} onChange={setDigestionRecovery} />
+                            <Slider label="Energy" value={energyRecovery} onChange={setEnergyRecovery} />
+                            <Slider label="Sleep" value={sleepRecovery} onChange={setSleepRecovery} />
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <FormInputField
+                            ref={clinicalRemarksRef}
+                            label="Clinical Remarks *"
+                            placeholder="Detailed clinical observations..."
+                            value={clinicalRemarks}
+                            onChange={(e) => {
+                                setClinicalRemarks(e.target.value);
+                                if (errors.clinicalRemarks) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.clinicalRemarks;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            width="100%"
+                            error={errors.clinicalRemarks}
+                        />
                     </div>
                 </div>
-
-                <div className="space-y-2">
-                    <FormInputField
-                        ref={clinicalRemarksRef}
-                        label="Clinical Remarks *"
-                        placeholder="Detailed clinical observations..."
-                        value={clinicalRemarks}
-                        onChange={(e) => {
-                            setClinicalRemarks(e.target.value);
-                            if (errors.clinicalRemarks) {
-                                setErrors(prev => {
-                                    const next = { ...prev };
-                                    delete next.clinicalRemarks;
-                                    return next;
-                                });
-                            }
-                        }}
-                        width="100%"
-                        error={errors.clinicalRemarks}
-                    />
-                </div>
-            </div>
+            )}
             {/* ACTION BUTTON CONTROLS */}
 
             {/* Confirmation Dialog */}

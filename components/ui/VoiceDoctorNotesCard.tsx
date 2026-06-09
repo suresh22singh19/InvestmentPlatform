@@ -4,23 +4,58 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useAudioRecorder, RecordingState } from "@/hooks/useAudioRecorder";
 import { MessageDialog } from "./MessageDialog";
+import { Dialog } from "./Dialog";
+import { Checkbox } from "./CustomCheckbox";
+import { Button } from "./Button";
+import { SpinnerLoader } from "./SpinnerLoader";
+import { loginJatayu, fetchLanguageFromAPI, saveLanguageToAPI } from "@/store/api/jatayuApi";
+
+const languageGroups = [
+    {
+        label: "Indian Languages",
+        items: [
+            { value: "Bengali", label: "Bengali" },
+            { value: "Kannada", label: "Kannada" },
+            { value: "Malayalam", label: "Malayalam" },
+            { value: "Telugu", label: "Telugu" },
+            { value: "Gujarati", label: "Gujarati" },
+            { value: "Marathi", label: "Marathi" },
+            { value: "Tamil", label: "Tamil" },
+            { value: "Hindi", label: "Hindi" },
+            { value: "English (India)", label: "English (India)" },
+            { value: "Urdu", label: "Urdu" },
+        ],
+    },
+    {
+        label: "Other Languages",
+        items: [
+            { value: "English", label: "English" },
+            { value: "Arabic", label: "Arabic" },
+            { value: "Burmese", label: "Burmese" },
+        ],
+    },
+];
+
+
 
 export interface VoiceDoctorNotesCardProps {
     notes?: string[];
     onSaveNext?: () => void;
     className?: string;
     onAudioBlobChange?: (blob: Blob | null, duration: number) => void;
+    appointment?: any;
+    onTranscriptionComplete?: (summary: any, transcript: string) => void;
 }
 
 export function VoiceDoctorNotesCard({
     notes = [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris dapibus tincidunt dui, bibendum tempus tellus mollis ut. Donec iaculis consectetur est, sed elementum augue venenatis placerat. Morbi lacinia metus vel ligula pretium mattis. Vivamus felis odio, gravida nec sem vitae, laoreet posuere arcu. Fusce dapibus iaculis orci at luctus. Ut posuere odio eu sagittis hendrerit. Morbi a elementum neque, at iaculis justo. Cras nec commodo urna. In at lacus lacinia, semper velit in, eleifend purus. In quis erat eu quam sodales semper. Aenean ultricies, sem at rhoncus condimentum, sapien purus euismod leo, id commodo dolor diam dignissim erat. Quisque non lobortis massa, sed iaculis metus. Quisque libero eros, sodales pulvinar.",
-        "Proin tincidunt odio ac urna convallis, aliquet vulputate nibh molestie. Donec nec libero sed sapien tempor dictum. Vestibulum a molestie ipsum. Nulla facilisi. Phasellus rutrum, lacus ac finibus varius, mauris nibh blandit mi, et efficitur mi purus nec metus. Vivamus justo magna, varius ut consectetur a, porttitor id mauris. Vivamus in elit ultrices, sodales dui vitae, elementum arcu. Ut mattis urna a mauris bibendum, at pretium elit vulputate. Sed convallis mollis mi ut sodales. Fusce eleifend scelerisque volutpat. Maecenas in tortor purus. Vestibulum luctus eros eu sapien laoreet vehicula.",
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris dapibus tincidunt dui, bibendum tempus tellus mollis ut. Donec iaculis consectetur est, sed elementum augue venenatis placerat. Morbi lacinia metus vel ligula pretium mattis. Vivamus felis odio, gravida nec sem vitae, laoreet posuere arcu. Fusce dapibus iaculis orci at luctus. Ut posuere odio eu sagittis hendrerit. Morbi a elementum neque, at iaculis justo. Cras nec commodo urna."
+        "Doctor Notes Not Available!"
     ],
     onSaveNext,
     className = "",
     onAudioBlobChange,
+    appointment,
+    onTranscriptionComplete,
 }: VoiceDoctorNotesCardProps) {
     const {
         recordingState,
@@ -29,6 +64,9 @@ export function VoiceDoctorNotesCard({
         audioBlob,
         permissionStatus,
         errorMessage,
+        transcript,
+        isProcessing,
+        aiSummary,
         startRecording,
         pauseRecording,
         resumeRecording,
@@ -51,6 +89,80 @@ export function VoiceDoctorNotesCard({
     // Collapsible Doctor's Notes state
     const [isNotesCollapsed, setIsNotesCollapsed] = useState(false);
 
+    // Language modal states
+    const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+    const [tempSelectedLanguage, setTempSelectedLanguage] = useState("Auto (Default)");
+    const [selectedLanguage, setSelectedLanguage] = useState("Auto (Default)");
+    const [isDefaultCheckbox, setIsDefaultCheckbox] = useState(false);
+    const [tempDefaultCheckbox, setTempDefaultCheckbox] = useState(false);
+    const [isSavingLanguage, setIsSavingLanguage] = useState(false);
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
+
+    // Load persisted settings and fetch from API on mount
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const savedLang = localStorage.getItem("voiceTranscriptionLanguage");
+            const savedDefault = localStorage.getItem("voiceTranscriptionLanguageDefault");
+            if (savedLang) {
+                setSelectedLanguage(savedLang);
+                setTempSelectedLanguage(savedLang);
+            }
+            if (savedDefault === "true") {
+                setIsDefaultCheckbox(true);
+                setTempDefaultCheckbox(true);
+            }
+        }
+
+        const loadLang = async () => {
+            const apiLang = await fetchLanguageFromAPI();
+            if (apiLang) {
+                setSelectedLanguage(apiLang);
+                setTempSelectedLanguage(apiLang);
+                if (typeof window !== "undefined") {
+                    localStorage.setItem("voiceTranscriptionLanguage", apiLang);
+                }
+            }
+        };
+        loadLang();
+    }, []);
+
+    const handleSaveLanguage = async () => {
+        if (isSavingLanguage) return;
+        setIsSavingLanguage(true);
+
+        try {
+            const success = await saveLanguageToAPI(tempSelectedLanguage);
+            if (success) {
+                setSelectedLanguage(tempSelectedLanguage);
+                setIsDefaultCheckbox(tempDefaultCheckbox);
+                if (typeof window !== "undefined") {
+                    localStorage.setItem("voiceTranscriptionLanguage", tempSelectedLanguage);
+                    localStorage.setItem("voiceTranscriptionLanguageDefault", String(tempDefaultCheckbox));
+                }
+                setSuccessMessage("Language settings saved successfully!");
+                setIsLanguageModalOpen(false);
+                setShowSuccessDialog(true);
+            } else {
+                setSuccessMessage("Failed to save language preference. Please try again.");
+                setShowSuccessDialog(true);
+            }
+        } catch (error) {
+            console.error("Error in handleSaveLanguage:", error);
+            setSuccessMessage("An unexpected error occurred. Please try again.");
+            setShowSuccessDialog(true);
+        } finally {
+            setIsSavingLanguage(false);
+        }
+    };
+
+    const handleCancelLanguage = () => {
+        if (isSavingLanguage) return;
+        setTempSelectedLanguage(selectedLanguage);
+        setTempDefaultCheckbox(isDefaultCheckbox);
+        setIsLanguageModalOpen(false);
+    };
+
     // Reference to audio player element
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
@@ -71,6 +183,13 @@ export function VoiceDoctorNotesCard({
     useEffect(() => {
         onAudioBlobChange?.(audioBlob, displayDuration);
     }, [audioBlob, displayDuration, onAudioBlobChange]);
+
+    // Trigger onTranscriptionComplete when streaming finalizes
+    useEffect(() => {
+        if (recordingState === RecordingState.STOPPED && !isProcessing && aiSummary) {
+            onTranscriptionComplete?.(aiSummary, transcript);
+        }
+    }, [recordingState, isProcessing, aiSummary, transcript, onTranscriptionComplete]);
 
     // Wave tick animation state for the recording visualizer
     const [waveTick, setWaveTick] = useState(0);
@@ -161,7 +280,22 @@ export function VoiceDoctorNotesCard({
     };
 
     return (
-        <div className={`rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 ${className}`}>
+        <div className={`relative rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 ${className}`}>
+
+            {/* Language Settings Button */}
+            {/* <div className="absolute top-6 right-6">
+                <button
+                    type="button"
+                    onClick={() => setIsLanguageModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-semibold shadow-sm transition-all"
+                >
+                    <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Language Options
+                </button>
+            </div> */}
 
             {/* Hidden native audio element */}
             {audioUrl && (
@@ -227,7 +361,7 @@ export function VoiceDoctorNotesCard({
                 {recordingState === RecordingState.IDLE && permissionStatus !== "denied" && permissionStatus !== "unsupported" && (
                     <div className="flex flex-col items-center gap-3 transition-all">
                         <button
-                            onClick={startRecording}
+                            onClick={() => startRecording(appointment, selectedLanguage)}
                             className="flex cursor-pointer items-center gap-3 bg-[#0B8C00] text-white px-7 py-3 rounded-[32px] font-semibold text-sm hover:bg-[#097300] hover:shadow-lg active:scale-95 transition-all"
                         >
                             <span className="w-3.5 h-3.5 rounded-full bg-white relative flex items-center justify-center shadow-sm">
@@ -317,7 +451,7 @@ export function VoiceDoctorNotesCard({
                 )}
 
                 {/* 5. Stopped / Completed State (Custom Player preview) */}
-                {recordingState === RecordingState.STOPPED && audioUrl && (
+                {recordingState === RecordingState.STOPPED && audioUrl && !isProcessing && (
                     <div className="flex flex-col gap-4 p-5 bg-[#F6FAF6] rounded-2xl border border-[#E3EEE1] w-full max-w-lg shadow-sm transition-all">
 
                         <div className="flex items-center justify-between">
@@ -441,6 +575,17 @@ export function VoiceDoctorNotesCard({
 
                     </div>
                 )}
+
+                {/* 6. Processing / Finalizing State */}
+                {isProcessing && (
+                    <div className="flex flex-col items-center gap-3 bg-[#F6FAF6] border border-[#E3EEE1] p-6 rounded-2xl text-center w-full max-w-lg shadow-sm transition-all">
+                        <SpinnerLoader size={32} />
+                        <div className="space-y-1">
+                            <h4 className="font-semibold text-gray-800 text-sm">Processing Audio Stream</h4>
+                            <p className="text-xs text-gray-500">Retrieving final clinical summary and transcribing...</p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Doctor's Notes Section */}
@@ -463,15 +608,21 @@ export function VoiceDoctorNotesCard({
                 </div>
 
                 {!isNotesCollapsed && (
-                    <div className="rounded-xl border border-[#E3EEE1] bg-[#F2F8F2]/30 p-5">
-                        {notes.map((paragraph, idx) => (
-                            <p
-                                key={idx}
-                                className={`font-inter text-sm text-[#434956] leading-relaxed ${idx === notes.length - 1 ? "" : "mb-4"}`}
-                            >
-                                {paragraph}
+                    <div className="rounded-xl border border-[#E3EEE1] bg-[#F2F8F2]/30 p-5 min-h-[100px]">
+                        {transcript ? (
+                            <p className="font-inter text-sm text-[#434956] leading-relaxed whitespace-pre-wrap">
+                                {transcript}
                             </p>
-                        ))}
+                        ) : (
+                            notes.map((paragraph, idx) => (
+                                <p
+                                    key={idx}
+                                    className={`font-inter text-sm text-[#434956] leading-relaxed ${idx === notes.length - 1 ? "" : "mb-4"}`}
+                                >
+                                    {paragraph}
+                                </p>
+                            ))
+                        )}
                     </div>
                 )}
             </div>
@@ -508,6 +659,122 @@ export function VoiceDoctorNotesCard({
                     setShowReRecordDialog(false);
                 }}
                 onCancel={() => setShowReRecordDialog(false)}
+            />
+
+            {/* Language Settings Modal */}
+            <Dialog
+                open={isLanguageModalOpen}
+                onClose={handleCancelLanguage}
+                title="Language Settings"
+                width={620}
+                contentPadding="px-6 py-6"
+            >
+                <div className="space-y-4">
+                    <p className="text-xs text-gray-500 leading-normal">
+                        Select the language for voice transcription:
+                    </p>
+
+                    <div className="space-y-4">
+                        {languageGroups.map((group) => (
+                            <div key={group.label} className="space-y-2">
+                                <h4 className="text-[10px] font-extrabold text-[#626B7F] uppercase tracking-wider">
+                                    {group.label}
+                                </h4>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {group.items.map((item) => {
+                                        const isSelected = tempSelectedLanguage === item.value;
+                                        return (
+                                            <Button
+                                                key={item.value}
+                                                type="button"
+                                                onClick={() => setTempSelectedLanguage(item.value)}
+                                                variant={isSelected ? "primary" : "outline"}
+                                                size="small"
+                                                fullWidth={true}
+                                                style={!isSelected ? { borderColor: '#E5E7EB', color: '#374151', backgroundColor: '#FFFFFF' } : undefined}
+                                                className={isSelected ? "font-extrabold" : ""}
+                                            >
+                                                {item.label}
+                                            </Button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Auto (Default) Button */}
+                    <div className="flex gap-2 justify-end grid grid-cols-2">
+                        <Button
+                            type="button"
+                            onClick={() => setTempSelectedLanguage("Auto (Default)")}
+                            variant={tempSelectedLanguage === "Auto (Default)" ? "primary" : "outline"}
+                            // size="medium"
+                            // fullWidth={true}
+                            style={tempSelectedLanguage !== "Auto (Default)" ? { borderColor: '#E5E7EB', color: '#374151', backgroundColor: '#FFFFFF' } : undefined}
+                        // className="mt-3 font-bold"
+                        >
+                            Auto (Default)
+                        </Button>
+
+                        {/* Selection Preview Box */}
+                        <div className="p-3 bg-[#E8F5E9]/60 border border-[#C8E6C9] px-6 rounded-[24px] text-xs font-bold text-[#0B8C00] flex items-center justify-between">
+                            <span>Selected:</span>
+                            <span>{tempSelectedLanguage}</span>
+                        </div>
+
+                    </div>
+
+                    {/* Checkbox "Set as my default language" */}
+                    <div className="pt-3 border-t border-[#DFE0E2] flex items-center gap-2">
+                        <Checkbox
+                            checked={tempDefaultCheckbox}
+                            onChange={(val) => setTempDefaultCheckbox(val)}
+                        />
+                        <span
+                            onClick={() => setTempDefaultCheckbox(!tempDefaultCheckbox)}
+                            className="text-xs font-semibold text-gray-700 select-none cursor-pointer"
+                        >
+                            Set as my default language
+                        </span>
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <Button
+                            type="button"
+                            onClick={handleSaveLanguage}
+                            variant="primary"
+                            size="small"
+                            isLoading={isSavingLanguage}
+                            disabled={isSavingLanguage}
+                        >
+                            Save
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleCancelLanguage}
+                            variant="outline"
+                            size="small"
+                            disabled={isSavingLanguage}
+                            style={{ borderColor: '#E5E7EB', color: '#374151', backgroundColor: '#FFFFFF' }}
+                        >
+                            Cancel
+                        </Button>
+                    </div>
+                </div>
+            </Dialog>
+
+            {/* Success/Error Message Dialog */}
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => setShowSuccessDialog(false)}
+                icon={successMessage.toLowerCase().includes("fail") || successMessage.toLowerCase().includes("error") ? "/icons/CrossIcon.svg" : "/icons/SuccessCheck.svg"}
+                iconBgColor={successMessage.toLowerCase().includes("fail") || successMessage.toLowerCase().includes("error") ? "#FFEBEE" : "#E8F5E9"}
+                message={successMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowSuccessDialog(false)}
             />
         </div>
     );

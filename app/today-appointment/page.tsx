@@ -145,7 +145,7 @@ export default function DoctorListingPage() {
         { label: "Sr no.", position: "first" as const },
         { label: "Patient" },
         { label: "UHID" },
-        { label: "Patient Per." },
+        // { label: "Patient Per." },
         { label: "OPD ID" },
         { label: "Doctor" },
         { label: "App Date/Time" },
@@ -209,7 +209,7 @@ export default function DoctorListingPage() {
             `${item.patientTitle || item.patientName
                 ? `${item.patientTitle || ""} ${item.patientName || ""}`.trim()
                 : "N/A"}`, uhid,
-            "N/A",
+            // "N/A",
             item.appointmentId?.toString() || "N/A",
             item.doctorName || "N/A",
             item.appointmentDate ? new Date(item.appointmentDate).toLocaleDateString('en-GB') + " " + (item.timeSlot || "") : "N/A",

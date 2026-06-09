@@ -111,4 +111,6 @@ export type { SpecializedPhysicalExamCardProps } from "./SpecializedPhysicalExam
 export { ClinicalAssessmentRecord } from "./ClinicalAssessmentRecord";
 export type { ClinicalAssessmentRecordProps } from "./ClinicalAssessmentRecord";
 export { Slider } from "./Slider";
+export { IafDetailsDialog } from "./IafDetailsDialog";
+
 

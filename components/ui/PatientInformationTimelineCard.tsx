@@ -8,16 +8,31 @@ import {
 } from "@/components/ui";
 
 
+export interface PrescribedMedicine {
+    medicineName: string;
+    medicineDosage: string;
+    medicineFrequency: string;
+    medicineTiming: string;
+    medicineDuration: string;
+}
+
 export interface PatientInformationTimelineDetail {
-    primaryComplaintTitle: string;
-    primaryComplaintText: string;
-    detailsTitle: string;
-    detailsItems: string[];
-    actionsTitle: string;
-    actionItems: string[];
+    // Legacy support
+    primaryComplaintTitle?: string;
+    primaryComplaintText?: string;
+    detailsTitle?: string;
+    detailsItems?: string[];
+    actionsTitle?: string;
+    actionItems?: string[];
+    
+    // Structured support
     branch?: string;
     doctorName?: string;
     iafDate?: string;
+    chiefComplaint?: string;
+    symptoms?: string;
+    prescribedMedicines?: PrescribedMedicine[];
+    opdAssessmentId?: number;
 }
 
 export interface PatientInformationTimelineItem {
@@ -352,10 +367,10 @@ export function PatientInformationTimelineCard({
                                                             <span className="text-sm font-semibold text-[#434956]">{detail.doctorName || "N/A"}</span>
                                                         </div>
                                                     </div>
-                                                    {detail.iafDate && onViewIaf && (
+                                                    {(detail.opdAssessmentId || detail.iafDate) && onViewIaf && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => onViewIaf(detail.iafDate!)}
+                                                            onClick={() => onViewIaf(String(detail.opdAssessmentId || detail.iafDate))}
                                                             className="flex items-center gap-1 px-4 py-1 rounded-full bg-[#E8F5E9] text-[#0B8C00] hover:bg-[#C8E6C9]  text-xs transition-colors"
                                                         >
                                                             <Image src="/icons/Eye.svg" alt="Eye" width={14} height={14} className="mr-1" />
@@ -364,61 +379,116 @@ export function PatientInformationTimelineCard({
                                                     )}
                                                 </div>
 
-                                                <div className="mb-4">
-                                                    <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">{detail.primaryComplaintTitle}</p>
-                                                    <p className="text-sm font-medium text-[#262D3B]">{detail.primaryComplaintText}</p>
-                                                </div>
+                                                {(detail.chiefComplaint || detail.primaryComplaintText) && (
+                                                    <div className="mb-4">
+                                                        <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">
+                                                            {detail.primaryComplaintTitle || "Chief Complaint"}
+                                                        </p>
+                                                        <p className="text-sm font-medium text-[#262D3B]">
+                                                            {detail.chiefComplaint || detail.primaryComplaintText}
+                                                        </p>
+                                                    </div>
+                                                )}
 
-                                                <div className="mb-4">
-                                                    <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-2">{detail.detailsTitle}</p>
-                                                    <ul className="text-sm text-[#434956] list-disc pl-5 space-y-1.5">
-                                                        {detail.detailsItems.map((detailItem, dIdx) => (
-                                                            <li key={dIdx} className="leading-relaxed">{detailItem}</li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
+                                                {detail.symptoms && (
+                                                    <div className="mb-4">
+                                                        <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">Symptoms</p>
+                                                        <p className="text-sm font-medium text-[#262D3B]">{detail.symptoms}</p>
+                                                    </div>
+                                                )}
+
+                                                {detail.detailsItems && detail.detailsItems.length > 0 && (
+                                                    <div className="mb-4">
+                                                        <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-2">
+                                                            {detail.detailsTitle || "Clinical & Assessment Details"}
+                                                        </p>
+                                                        <ul className="text-sm text-[#434956] list-disc pl-5 space-y-1.5">
+                                                            {detail.detailsItems.map((detailItem, dIdx) => (
+                                                                <li key={dIdx} className="leading-relaxed">{detailItem}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
 
                                                 <div>
-                                                    <p className="text-xs font-bold text-[#787E8C] tracking-wider mb-3">{detail.actionsTitle}</p>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        {detail.actionItems.map((actionItem, actIdx) => {
-                                                            const parsed = parseMedicineString(actionItem);
-                                                            const isParsed = parsed.dosage !== "N/A" || parsed.frequency !== "N/A" || parsed.timing !== "N/A";
-
-                                                            if (!isParsed) {
-                                                                return (
-                                                                    <div key={actIdx} className="p-3 border border-[#E2E8F0] bg-white rounded-xl text-sm font-medium text-[#262D3B]">
-                                                                        {actionItem}
-                                                                    </div>
-                                                                );
-                                                            }
-
-                                                            return (
-                                                                <div key={actIdx} className="flex flex-col p-4 border border-[#E2E8F0] bg-[#F5FAF5] rounded-[12px] shadow-sm hover:shadow-md transition-shadow duration-200">
+                                                    <p className="text-xs font-bold text-[#787E8C] tracking-wider mb-3 uppercase">
+                                                        {detail.actionsTitle || "Medicines Prescribed"}
+                                                    </p>
+                                                    
+                                                    {detail.prescribedMedicines && detail.prescribedMedicines.length > 0 ? (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            {detail.prescribedMedicines.map((medicine, medIdx) => (
+                                                                <div key={medIdx} className="flex flex-col p-4 border border-[#E2E8F0] bg-[#F5FAF5] rounded-[12px] shadow-sm hover:shadow-md transition-shadow duration-200">
                                                                     <div className="flex justify-between items-center mb-3">
-                                                                        <span className="font-bold text-sm text-[#262D3B]">{parsed.name}</span>
-                                                                        <span className="inline-flex items-center justify-center rounded-full bg-[#FDF2E9] px-3 py-1 text-[10px] font-bold text-[#E07A5F]">
-                                                                            {parsed.duration}
-                                                                        </span>
+                                                                        <span className="font-bold text-sm text-[#262D3B]">{medicine.medicineName}</span>
+                                                                        {medicine.medicineDuration && (
+                                                                            <span className="inline-flex items-center justify-center rounded-full bg-[#FDF2E9] px-3 py-1 text-[10px] font-bold text-[#E07A5F]">
+                                                                                {medicine.medicineDuration}
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                     <div className="grid grid-cols-3 gap-2 border-t border-[#F1F5F9] pt-3">
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <span className="text-[10px] font-semibold text-[#787E8C] uppercase tracking-wider">Dosage</span>
-                                                                            <span className="text-xs font-bold text-[#262D3B]">{parsed.dosage}</span>
+                                                                            <span className="text-xs font-bold text-[#262D3B]">{medicine.medicineDosage || "N/A"}</span>
                                                                         </div>
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <span className="text-[10px] font-semibold text-[#787E8C] uppercase tracking-wider">Frequency</span>
-                                                                            <span className="text-xs font-bold text-[#262D3B]">{parsed.frequency}</span>
+                                                                            <span className="text-xs font-bold text-[#262D3B]">{medicine.medicineFrequency || "N/A"}</span>
                                                                         </div>
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <span className="text-[10px] font-semibold text-[#787E8C] uppercase tracking-wider">Timing</span>
-                                                                            <span className="text-xs font-bold text-[#262D3B]">{parsed.timing}</span>
+                                                                            <span className="text-xs font-bold text-[#262D3B]">{medicine.medicineTiming || "N/A"}</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                            );
-                                                        })}
-                                                    </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : detail.actionItems && detail.actionItems.length > 0 ? (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            {detail.actionItems.map((actionItem, actIdx) => {
+                                                                const parsed = parseMedicineString(actionItem);
+                                                                const isParsed = parsed.dosage !== "N/A" || parsed.frequency !== "N/A" || parsed.timing !== "N/A";
+
+                                                                if (!isParsed) {
+                                                                    return (
+                                                                        <div key={actIdx} className="p-3 border border-[#E2E8F0] bg-white rounded-xl text-sm font-medium text-[#262D3B]">
+                                                                            {actionItem}
+                                                                        </div>
+                                                                    );
+                                                                }
+
+                                                                return (
+                                                                    <div key={actIdx} className="flex flex-col p-4 border border-[#E2E8F0] bg-[#F5FAF5] rounded-[12px] shadow-sm hover:shadow-md transition-shadow duration-200">
+                                                                        <div className="flex justify-between items-center mb-3">
+                                                                            <span className="font-bold text-sm text-[#262D3B]">{parsed.name}</span>
+                                                                            <span className="inline-flex items-center justify-center rounded-full bg-[#FDF2E9] px-3 py-1 text-[10px] font-bold text-[#E07A5F]">
+                                                                                {parsed.duration}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-3 gap-2 border-t border-[#F1F5F9] pt-3">
+                                                                            <div className="flex flex-col gap-0.5">
+                                                                                <span className="text-[10px] font-semibold text-[#787E8C] uppercase tracking-wider">Dosage</span>
+                                                                                <span className="text-xs font-bold text-[#262D3B]">{parsed.dosage}</span>
+                                                                            </div>
+                                                                            <div className="flex flex-col gap-0.5">
+                                                                                <span className="text-[10px] font-semibold text-[#787E8C] uppercase tracking-wider">Frequency</span>
+                                                                                <span className="text-xs font-bold text-[#262D3B]">{parsed.frequency}</span>
+                                                                            </div>
+                                                                            <div className="flex flex-col gap-0.5">
+                                                                                <span className="text-[10px] font-semibold text-[#787E8C] uppercase tracking-wider">Timing</span>
+                                                                                <span className="text-xs font-bold text-[#262D3B]">{parsed.timing}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-3 border border-[#E2E8F0] bg-white rounded-xl text-sm font-medium text-[#787E8C]">
+                                                            No Medicines Prescribed
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ) : null}

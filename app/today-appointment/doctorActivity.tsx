@@ -101,7 +101,7 @@ export default function DoctorActivity({
     const [showExitConfirmDialog, setShowExitConfirmDialog] = useState(false);
 
     // Therapies state
-    const [therapies, setTherapies] = useState<string[]>([]);
+    const [therapies, setTherapies] = useState<Array<{ therapyId: number; therapyName: string }>>([]);
 
     const { data: referralData } = useGetPatientReferralForDoctorQuery(
         { registrationId: appointment?.registrationId || appointment?.appointmentId || 0 },
@@ -142,9 +142,145 @@ export default function DoctorActivity({
     const consultationFormRef = useRef<{ validate: () => boolean }>(null);
     const clinicalAssessmentRef = useRef<{ submit: () => void }>(null);
 
+    const handleTranscriptionComplete = (summary: any, transcriptText: string) => {
+        if (!summary) return;
+        const summaryObj = typeof summary === "string" ? {} : summary;
+
+        // 1. chiefComplaint
+        let chiefVal = "";
+        if (Array.isArray(summaryObj.patientPresentation?.chiefComplaint)) {
+            chiefVal = summaryObj.patientPresentation.chiefComplaint.map((c: any) => c.complaint || c).join(", ");
+        } else if (typeof summaryObj.patientPresentation?.chiefComplaint === "string") {
+            chiefVal = summaryObj.patientPresentation.chiefComplaint;
+        } else if (summaryObj.chiefComplaints) {
+            chiefVal = summaryObj.chiefComplaints;
+        }
+        if (chiefVal) setChiefComplaint(chiefVal);
+
+        // 2. symptoms
+        let symptomsVal = "";
+        if (Array.isArray(summaryObj.patientPresentation?.symptoms)) {
+            symptomsVal = summaryObj.patientPresentation.symptoms.join(", ");
+        } else if (typeof summaryObj.patientPresentation?.symptoms === "string") {
+            symptomsVal = summaryObj.patientPresentation.symptoms;
+        }
+        if (symptomsVal) setSymptoms(symptomsVal);
+
+        // 3. currentMedication
+        let currentMedVal: "yes" | "no" | "" = "";
+        const rawCurrentMed = summaryObj.medications?.currentMedication || summaryObj.medications?.currentMedications;
+        if (rawCurrentMed) {
+            const low = String(rawCurrentMed).toLowerCase();
+            if (low === "yes" || low === "true") currentMedVal = "yes";
+            else if (low === "no" || low === "false") currentMedVal = "no";
+        }
+        if (currentMedVal) setCurrentMedication(currentMedVal);
+
+        // 4. finalDiagnosis
+        const diagVal = summaryObj.investigations?.diagnosis?.final || summaryObj.investigations?.diagnosis?.provisional || "";
+        if (diagVal) setFinalDiagnosis(diagVal);
+
+        // 5. systemicReview -> diabetes
+        let diabetesVal: "yes" | "no" | "" = "";
+        const rawDiabetes = summaryObj.systemicReview?.diabetes?.status;
+        if (rawDiabetes) {
+            const low = String(rawDiabetes).toLowerCase();
+            if (low === "yes" || low === "true") diabetesVal = "yes";
+            else if (low === "no" || low === "false") diabetesVal = "no";
+        }
+        if (diabetesVal) setDiabetes(diabetesVal);
+
+        // 6. systemicReview -> bloodPressure
+        let bpVal: "high" | "low" | "no" | "" = "";
+        const rawBp = summaryObj.systemicReview?.bloodPressure?.status;
+        if (rawBp) {
+            const low = String(rawBp).toLowerCase();
+            if (low.includes("high")) bpVal = "high";
+            else if (low.includes("low")) bpVal = "low";
+            else if (low.includes("no") || low === "normal") bpVal = "no";
+        }
+        if (bpVal) setBloodPressure(bpVal);
+
+        // 7. systemicReview -> thyroid
+        let thyroidVal: "hypo" | "hyper" | "no" | "" = "";
+        const rawThyroid = summaryObj.systemicReview?.thyroid?.status;
+        if (rawThyroid) {
+            const low = String(rawThyroid).toLowerCase();
+            if (low.includes("hypo")) thyroidVal = "hypo";
+            else if (low.includes("hyper")) thyroidVal = "hyper";
+            else if (low.includes("no")) thyroidVal = "no";
+        }
+        if (thyroidVal) setThyroid(thyroidVal);
+
+        // 8. systemicReview -> allergy
+        let allergyVal: "food" | "drug" | "skin" | "no" | "" = "";
+        const rawAllergyTypes = summaryObj.systemicReview?.allergy?.types;
+        let allergyStr = "";
+        if (Array.isArray(rawAllergyTypes)) {
+            allergyStr = rawAllergyTypes.map((t: any) => t.type || t).join(", ").toLowerCase();
+        } else if (typeof rawAllergyTypes === "string") {
+            allergyStr = rawAllergyTypes.toLowerCase();
+        }
+        if (allergyStr) {
+            if (allergyStr.includes("food")) allergyVal = "food";
+            else if (allergyStr.includes("drug")) allergyVal = "drug";
+            else if (allergyStr.includes("skin")) allergyVal = "skin";
+            else if (allergyStr.includes("nil") || allergyStr.includes("no")) allergyVal = "no";
+        }
+        if (allergyVal) setAllergy(allergyVal);
+
+        // 9. physicalExamination -> balanceMobility
+        let sittingVal: "normal" | "abnormal" | "" = "";
+        const rawSitting = summaryObj.physicalExamination?.balanceMobility?.sitting;
+        if (rawSitting) {
+            const low = String(rawSitting).toLowerCase();
+            if (low.includes("normal")) sittingVal = "normal";
+            else if (low.includes("abnormal")) sittingVal = "abnormal";
+        }
+        if (sittingVal) setSitting(sittingVal);
+
+        let standingVal: "normal" | "abnormal" | "" = "";
+        const rawStanding = summaryObj.physicalExamination?.balanceMobility?.standing;
+        if (rawStanding) {
+            const low = String(rawStanding).toLowerCase();
+            if (low.includes("normal")) standingVal = "normal";
+            else if (low.includes("abnormal")) standingVal = "abnormal";
+        }
+        if (standingVal) setStanding(standingVal);
+
+        let walkingVal: "normal" | "abnormal" | "" = "";
+        const rawWalking = summaryObj.physicalExamination?.balanceMobility?.walking;
+        if (rawWalking) {
+            const low = String(rawWalking).toLowerCase();
+            if (low.includes("normal")) walkingVal = "normal";
+            else if (low.includes("abnormal")) walkingVal = "abnormal";
+        }
+        if (walkingVal) setWalking(walkingVal);
+
+        // 10. medicines
+        const rawMedicines = summaryObj.medications?.currentMedicines || summaryObj.treatmentPlan?.prescribedMedicines;
+        if (Array.isArray(rawMedicines) && rawMedicines.length > 0) {
+            const mappedMeds = rawMedicines.map((m: any) => ({
+                name: m.medicineName || m.name || "",
+                dosage: m.medicineDosage || m.dosage || "",
+                frequency: m.medicineFrequency || m.frequency || "",
+                timing: m.medicineTiming || m.timing || "",
+                duration: m.medicineDuration || m.duration || "",
+            }));
+            setMedicines(mappedMeds);
+        }
+
+        // Set the exact complete summary object under aiResponse in the parent state
+        setAiResponse(summaryObj);
+    };
+
     const handleSaveNextClick = async () => {
         if (step === 1) {
             if (recordedAudio) {
+                if (aiResponse) {
+                    setStep(2);
+                    return;
+                }
                 setIsUploading(true);
                 try {
                     const audioArray = await convertBlobToFloat32Array(recordedAudio);
@@ -520,6 +656,8 @@ export default function DoctorActivity({
                         {step === 1 && (
                             <>
                                 <VoiceDoctorNotesCard
+                                    appointment={appData}
+                                    onTranscriptionComplete={handleTranscriptionComplete}
                                     onAudioBlobChange={(blob, duration) => {
                                         setRecordedAudio(blob);
                                         setRecordedDuration(duration);
@@ -591,6 +729,7 @@ export default function DoctorActivity({
                                     setMedicines={setMedicines}
                                     followUpDate={followUpDate}
                                     aiResponse={aiResponse}
+                                    therapies={therapies}
                                 />
                             </>
                         )}

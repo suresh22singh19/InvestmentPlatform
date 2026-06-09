@@ -9,8 +9,8 @@ import { MessageDialog } from "./MessageDialog";
 import { FormSelectField } from "./FormSelectField";
 
 export interface TherapiesCardProps {
-    therapies: string[];
-    onTherapiesChange?: (therapies: string[]) => void;
+    therapies: Array<{ therapyId: number; therapyName: string }>;
+    onTherapiesChange?: (therapies: Array<{ therapyId: number; therapyName: string }>) => void;
     className?: string;
     branchId?: number | string;
 }
@@ -80,14 +80,27 @@ export function TherapiesCard({
         }
 
         // Check which selected therapies are already added
-        const duplicates = selectedTherapies.filter(t => therapies.includes(t));
-        const newTherapies = selectedTherapies.filter(t => !therapies.includes(t));
+        const duplicateNames = selectedTherapies.filter(name => therapies.some(t => t.therapyName === name));
+        const newTherapyNames = selectedTherapies.filter(name => !therapies.some(t => t.therapyName === name));
 
-        if (newTherapies.length === 0) {
+        if (newTherapyNames.length === 0) {
             setErrorMessage("All selected therapies are already added for this session.");
             setShowErrorDialog(true);
             return;
         }
+
+        const newTherapies = newTherapyNames.map(name => {
+            const match = therapiesData?.data?.find(item => item.therapyName === name);
+            let id = match?.therapyId;
+            if (id === undefined) {
+                const defaultIdx = THERAPY_OPTIONS.findIndex(opt => opt.value === name);
+                id = defaultIdx >= 0 ? defaultIdx + 1 : 5;
+            }
+            return {
+                therapyId: id,
+                therapyName: name
+            };
+        });
 
         // Add the therapies and update the parent
         onTherapiesChange?.([...therapies, ...newTherapies]);
@@ -145,7 +158,7 @@ export function TherapiesCard({
                                 <Image src="/icons/therapies.svg" alt="Therapy" width={18} height={18} />
                             </div>
                             <span className="font-inter font-medium text-[15px] text-[#262D3B]">
-                                {t}
+                                {t.therapyName}
                             </span>
                         </div>
                     ))}
