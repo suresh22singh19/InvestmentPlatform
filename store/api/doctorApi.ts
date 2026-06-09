@@ -219,6 +219,10 @@ export type CreateOpdAssessmentRequest = {
         therapyId: number;
         patientType: string;
     }>;
+    opdFollowUp?: {
+        opdNextFollowupDate: string;
+        opdNextFollowupRemark: string;
+    };
 };
 
 export type CreateOpdAssessmentResponse = {

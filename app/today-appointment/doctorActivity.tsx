@@ -728,6 +728,7 @@ export default function DoctorActivity({
                                     medicines={medicines}
                                     setMedicines={setMedicines}
                                     followUpDate={followUpDate}
+                                    followUpRemarks={followUpRemarks}
                                     aiResponse={aiResponse}
                                     therapies={therapies}
                                 />

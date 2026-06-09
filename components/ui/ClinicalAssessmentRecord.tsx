@@ -50,6 +50,7 @@ export interface ClinicalAssessmentRecordProps {
 
     // Extra fields
     followUpDate?: string;
+    followUpRemarks?: string;
     aiResponse?: any;
     therapies?: Array<{ therapyId: number; therapyName: string }>;
 }
@@ -161,6 +162,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         medicines,
         setMedicines,
         followUpDate,
+        followUpRemarks,
         aiResponse: incomingAiResponse,
         therapies,
     }, ref) {
@@ -693,7 +695,11 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     appointmentId: Number(appData?.appointmentId) || 2,
                     therapyId: Number(t.therapyId),
                     patientType: "opd"
-                }))
+                })),
+                opdFollowUp: {
+                    opdNextFollowupDate: followUpDate || "",
+                    opdNextFollowupRemark: followUpRemarks || ""
+                }
             };
 
             const result = await createOpdAssessment(payload).unwrap();

@@ -47,6 +47,7 @@ const NAV_ICON_SRC: Record<string, string> = {
   nurse: "/icons/UsersDarkIcon.svg",
   ipdreception: "/icons/patientBed.svg",
   "ipdreception-dashboard": "/icons/DashboardDarkIcon.svg",
+  "today-appointment": "/icons/RegistrationDarkIcon.svg",
 };
 
 type TopNavigationBarProps = {
@@ -773,6 +774,7 @@ const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => 
 // Note: Registration will be conditionally added based on login_type
 const BASE_TOP_NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+  { key: "today-appointment", label: "Today Appointment", href: "/today-appointment" },
   { key: "settings", label: "Settings", hasDropdown: true },
   { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
   { key: "patient", label: "Patient", hasDropdown: true },
@@ -804,6 +806,7 @@ const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   nurse: ["nurse", "nurses"],
   ipdreception: ["reception", "ipd-reception", "ipdreception", "dashboard"],
   registration: ["registration"],
+  "today-appointment": ["today-appointment"],
 
 };
 
@@ -1039,7 +1042,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     // Same pattern as Doctor: show full menu when no reception sub-modules match permissions
     return filtered.length > 0 ? filtered : all;
   }, [permissionsMap]);
-      
+
   const preBookingItems = useMemo(() => getPreBookingItems(), []);
   const leadRequestItems = useMemo(() => getLeadRequestItems(), []);
   useEffect(() => {
@@ -1242,7 +1245,11 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                 isActive = pathname === "/doctor" || pathname?.startsWith("/doctor/");
               } else if (item.key === "nurse" && pathname) {
                 isActive = pathname === "/nurse" || pathname?.startsWith("/nurse/");
-              } else if (item.key === "ipdreception" && pathname) {
+              } else if (item.key === "today-appointment" && pathname) {
+                isActive = pathname === "/today-appointment" || pathname?.startsWith("/today-appointment/");
+              }
+
+              else if (item.key === "ipdreception" && pathname) {
                 isActive =
                   pathname === "/ipd-reception/dashboard" ||
                   pathname?.startsWith("/ipd-reception/");

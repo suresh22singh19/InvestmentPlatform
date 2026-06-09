@@ -52,6 +52,7 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     reception: ["/ipd-reception"],
     /** `slugify("IPD Reception")` */
     "ipd-reception": ["/ipd-reception"],
+    "today-appointment": ["/today-appointment"],
 };
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
@@ -122,6 +123,7 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "view-daily-reports": ["/gate/reports"],
     /** Submodule key matches parent name "Discharge Pending" */
     "discharge-pending": ["/discharge-pending"],
+    "today-appointment": ["/today-appointment"],
 };
 
 const RESTRICTED_ROOT_PREFIXES = [
@@ -140,6 +142,7 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/discharge-pending",
     "/nurse",
     "/ipd-reception",
+    "/today-appointment",
 ];
 
 /**
