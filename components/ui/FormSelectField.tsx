@@ -45,6 +45,8 @@ export type FormSelectFieldProps = {
   emptyMessage?: string; // Custom message when no options are available
   hideLabel?: boolean; // When true, do not render label (e.g. for compact header use)
   className?: string;
+  /** Extra content rendered inline after the label text (e.g. an info icon with tooltip). */
+  labelSlot?: ReactNode;
 };
 
 const normalizeSize = (value: SizeValue | undefined) => {
@@ -120,6 +122,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       emptyMessage = "No results found",
       hideLabel = false,
       className="",
+      labelSlot,
       onBlur,
       onOpen,
       ...props
@@ -1290,8 +1293,9 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       style={wrapperStyles}
     >
       {!hideLabel ? (
-        <span className="pointer-events-none absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
-          {renderLabel}
+        <span className="absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089] flex items-center gap-1 pointer-events-none">
+          <span className="pointer-events-none">{renderLabel}</span>
+          {labelSlot ? <span className="pointer-events-auto">{labelSlot}</span> : null}
         </span>
       ) : null}
 

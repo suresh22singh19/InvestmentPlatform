@@ -28,7 +28,7 @@ import {
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
 import type { ApiDoctorListItem } from "@/lib/doctor/mapDoctorApi";
-import { departmentLabelFromApiId } from "@/lib/doctor/mapDoctorApi";
+import { departmentLabelFromApiId, mapApiDoctorListItemToPayload, buildUpdateDoctorBody } from "@/lib/doctor/mapDoctorApi";
 import { DoctorAvatarImage } from "@/components/doctor/DoctorAvatarImage";
 import { useAppSelector } from "@/store/hooks";
 import { selectLoginType, selectSelectedBranch } from "@/store/slices/authSlice";
@@ -37,6 +37,7 @@ import {
     useGetAllDoctorsDetailsQuery,
     useLazyGenerateCsvForDoctorQuery,
     useLazyGeneratePdfForDoctorQuery,
+    useUpdateDoctorDetailsMutation,
 } from "@/store/api/doctorApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -129,6 +130,11 @@ export default function DoctorListPage() {
 
     const [exportError, setExportError] = useState("");
     const [showExportErrorDialog, setShowExportErrorDialog] = useState(false);
+    const [confirmToggleRow, setConfirmToggleRow] = useState<ApiDoctorListItem | null>(null);
+    const [togglingStatusId, setTogglingStatusId] = useState<number | null>(null);
+    const [statusMessage, setStatusMessage] = useState<{ open: boolean; variant: "success" | "error"; message: string }>({ open: false, variant: "success", message: "" });
+
+    const [updateDoctorDetails] = useUpdateDoctorDetailsMutation();
     const loginType = useAppSelector(selectLoginType);
     const checkLoginType = loginType?.toLowerCase() === "doctor" ? true : false;
 
@@ -216,6 +222,25 @@ export default function DoctorListPage() {
 
     const handleRefresh = () => {
         void refetch();
+    };
+
+    const handleStatusToggleConfirm = async () => {
+        if (!confirmToggleRow) return;
+        const row = confirmToggleRow;
+        setConfirmToggleRow(null);
+        setTogglingStatusId(row.id);
+        const isCurrentlyInactive = row.status?.toLowerCase() === "inactive";
+        const newStatusPayload = isCurrentlyInactive ? "Active" : "Inactive";
+        const payload = mapApiDoctorListItemToPayload({ ...row, status: newStatusPayload });
+        const body = buildUpdateDoctorBody(payload, row.roleId);
+        try {
+            await updateDoctorDetails({ id: row.id, body }).unwrap();
+            setStatusMessage({ open: true, variant: "success", message: "Status updated successfully" });
+        } catch (e) {
+            setStatusMessage({ open: true, variant: "error", message: rtkErrorMessage(e) });
+        } finally {
+            setTogglingStatusId(null);
+        }
     };
 
     const goView = (row: ApiDoctorListItem) =>
@@ -406,17 +431,18 @@ export default function DoctorListPage() {
                                                     {row.nabh?.toLowerCase() === "yes" ? "Yes" : "No"}
                                                 </TableData>
                                                 <TableData>
-                                                    <span
-                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => doctorPerm.canEdit ? setConfirmToggleRow(row) : undefined}
+                                                        disabled={togglingStatusId === row.id}
+                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors ${
                                                             row.status?.toLowerCase() === "inactive"
-                                                                ? "border-[#F6776E] bg-white text-[#F6776E]"
-                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                                                        }`}
+                                                                ? "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
+                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:bg-[#E8F5E9]"
+                                                        } ${doctorPerm.canEdit ? "cursor-pointer" : "cursor-default"} ${togglingStatusId === row.id ? "opacity-50 pointer-events-none" : ""}`}
                                                     >
-                                                        {row.status?.toLowerCase() === "inactive"
-                                                            ? "Inactive"
-                                                            : "Active"}
-                                                    </span>
+                                                        {togglingStatusId === row.id ? "..." : row.status?.toLowerCase() === "inactive" ? "Inactive" : "Active"}
+                                                    </button>
                                                 </TableData>
                                                 <TableData>
                                                     <div className="flex items-center gap-2">
@@ -505,6 +531,30 @@ export default function DoctorListPage() {
                 confirmText="OK"
                 showCancel={false}
                 onConfirm={() => setShowExportErrorDialog(false)}
+            />
+
+            <MessageDialog
+                open={confirmToggleRow !== null}
+                onClose={() => setConfirmToggleRow(null)}
+                icon="/icons/questionMark.svg"
+                iconBgColor="#E8F5E9"
+                message={`Are you sure you want to ${confirmToggleRow?.status?.toLowerCase() === "inactive" ? "Activate" : "Inactive"} this doctor?`}
+                confirmText={confirmToggleRow?.status?.toLowerCase() === "inactive" ? "Yes, Activate" : "Yes, Inactive"}
+                cancelText="Cancel"
+                showCancel
+                onConfirm={handleStatusToggleConfirm}
+                onCancel={() => setConfirmToggleRow(null)}
+            />
+
+            <MessageDialog
+                open={statusMessage.open}
+                onClose={() => setStatusMessage((m) => ({ ...m, open: false }))}
+                icon={statusMessage.variant === "success" ? "/icons/SuccessCheck.svg" : "/icons/ErrorIcon.svg"}
+                iconBgColor={statusMessage.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
+                message={statusMessage.message}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setStatusMessage((m) => ({ ...m, open: false }))}
             />
         </AppShell>
     );

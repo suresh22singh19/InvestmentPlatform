@@ -201,7 +201,7 @@ export default function PanelTherapyPage() {
         id: therapy.id,
         branchId: therapy.branches?.[0]?.id,
         branch: therapy.branches?.[0]?.name,
-        therapyName: therapy.medicineName,
+        therapyName: therapy.therapyName ?? "",
         price: priceStr,
         productCode: therapy.productCode,
         hsnCode: therapy.hsnCode,
@@ -247,10 +247,13 @@ export default function PanelTherapyPage() {
     if (!canEdit) return;
     setSelectedTherapy(therapy);
 
-    // When a branch is selected in the page filter, show only that branch in Edit (and it will be non-editable)
+    // When a specific branch is selected in the filter, lock to that branch.
+    // When "All Branches" is selected (selectedBranch = ""), pre-select all available branches.
     const branchIds = selectedBranch
       ? [selectedBranch]
-      : therapy.branches?.map((b) => b.id.toString()) ?? (therapy.branchId && therapy.branchId > 0 ? [therapy.branchId.toString()] : []);
+      : (branchesData?.data ?? []).length > 0
+        ? (branchesData?.data ?? []).map((b) => b.id.toString())
+        : therapy.branches?.map((b) => b.id.toString()) ?? (therapy.branchId && therapy.branchId > 0 ? [therapy.branchId.toString()] : []);
     const toRawPrice = (v: string | undefined) => (v || "").replace(/[₹,\s]/g, "") || "";
     const privatePriceRaw = toRawPrice(therapy.privatePrice ?? therapy.price);
     const panelPriceRaw = toRawPrice(therapy.panelPrice ?? therapy.price);
@@ -294,8 +297,8 @@ export default function PanelTherapyPage() {
     // Price required when corresponding status is Active (only validate visible fields; in edit mode validate by tab)
     const isEdit = dialogMode === "edit";
     if (!isEdit || activeTab === "private" || activeTab === "all") {
-      if (formValues.privateStatus === "active" && !formValues.privatePrice?.trim()) {
-        errors.privatePrice = "Price is required when Private status is Active";
+      if (!formValues.privatePrice?.trim()) {
+        errors.privatePrice = "Private price is required";
       }
     }
     if (!isEdit || activeTab === "panel" || activeTab === "all") {
@@ -333,7 +336,7 @@ export default function PanelTherapyPage() {
 
         const payload = {
           branchIds,
-          medicineName: formValues.therapyName.trim(),
+          therapyName: formValues.therapyName.trim(),
           price: formValues.privatePrice.trim(),
           productCode: formValues.productCode.trim(),
           hsnCode: formValues.hsnCode.trim(),
@@ -348,12 +351,13 @@ export default function PanelTherapyPage() {
         result = await createTherapy(payload).unwrap();
         setSuccessMessage(result?.message || "Therapy created successfully");
       } else if (dialogMode === "edit" && selectedTherapy) {
-        const branchIds = (formValues.branchIds ?? [])
+        const branchIds = (formValues.branchIds || [])
           .map((id) => parseInt(id, 10))
           .filter((id) => !isNaN(id));
         const basePayload: Parameters<typeof updateTherapy>[0] = {
           id: selectedTherapy.id,
-          branchIds,
+          //  branchIds,
+            branchIds: selectedBranch === "" ? [] : branchIds,
         };
         let payload: Parameters<typeof updateTherapy>[0];
         if (activeTab === "private") {
@@ -540,7 +544,7 @@ export default function PanelTherapyPage() {
                     ) : (
                       <>
                         <TableHead position="first" className="whitespace-nowrap">Sr no.</TableHead>
-                        <TableHead sortable sortDirection={getSortDirection("medicineName")} onSort={() => handleSort("medicineName")}>Therapy</TableHead>
+                        <TableHead sortable sortDirection={getSortDirection("therapyName")} onSort={() => handleSort("therapyName")}>Therapy</TableHead>
                         <TableHead sortable sortDirection={getSortDirection("price")} onSort={() => handleSort("price")}>Price</TableHead>
                         <TableHead sortable sortDirection={getSortDirection("productCode")} onSort={() => handleSort("productCode")}>Product Code</TableHead>
                         <TableHead className="whitespace-nowrap" sortable sortDirection={getSortDirection("hsnCode")} onSort={() => handleSort("hsnCode")}>HSN Code</TableHead>
@@ -881,7 +885,7 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <FormInputField
-                    label="Private Price"
+                    label="Private Price *"
                     value={formValues.privatePrice}
                     onChange={(event) => {
                       const v = event.target.value.replace(/[^0-9.]/g, "");

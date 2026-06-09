@@ -37,6 +37,7 @@ import {
     useGetNursesQuery,
     useLazyGenerateNursesCsvQuery,
     useLazyGenerateNursesPdfQuery,
+    useUpdateNurseMutation,
 } from "@/store/api/nurseApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -140,6 +141,11 @@ export default function NurseListPage() {
 
     const [exportError, setExportError] = useState("");
     const [showExportErrorDialog, setShowExportErrorDialog] = useState(false);
+    const [confirmToggleRow, setConfirmToggleRow] = useState<ApiNurseListItem | null>(null);
+    const [togglingStatusId, setTogglingStatusId] = useState<number | null>(null);
+    const [statusMessage, setStatusMessage] = useState<{ open: boolean; variant: "success" | "error"; message: string }>({ open: false, variant: "success", message: "" });
+
+    const [updateNurse] = useUpdateNurseMutation();
 
     const { data, isLoading, isFetching, refetch } = useGetNursesQuery(
         {
@@ -229,6 +235,23 @@ export default function NurseListPage() {
 
     const handleRefresh = () => {
         void refetch();
+    };
+
+    const handleStatusToggleConfirm = async () => {
+        if (!confirmToggleRow) return;
+        const row = confirmToggleRow;
+        setConfirmToggleRow(null);
+        setTogglingStatusId(row.id);
+        const isCurrentlyInactive = nurseIsInactive(row);
+        const newIsActive = isCurrentlyInactive ? true : false;
+        try {
+            await updateNurse({ id: row.id, body: { isActive: newIsActive } }).unwrap();
+            setStatusMessage({ open: true, variant: "success", message: "Status updated successfully" });
+        } catch (e) {
+            setStatusMessage({ open: true, variant: "error", message: rtkErrorMessage(e) });
+        } finally {
+            setTogglingStatusId(null);
+        }
     };
 
     const goView = (row: ApiNurseListItem) =>
@@ -425,14 +448,17 @@ export default function NurseListPage() {
                                                 <TableData>{row.phone}</TableData>
                                                 <TableData>{row.empId}</TableData>
                                                 <TableData className="text-start">
-                                                    <span
-                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] ${nurseIsInactive(row)
-                                                                ? "border-[#F6776E] bg-white text-[#F6776E]"
-                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                                                            }`}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => nursePerm.canEdit ? setConfirmToggleRow(row) : undefined}
+                                                        disabled={togglingStatusId === row.id}
+                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors ${nurseIsInactive(row)
+                                                                ? "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
+                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:bg-[#E8F5E9]"
+                                                            } ${nursePerm.canEdit ? "cursor-pointer" : "cursor-default"} ${togglingStatusId === row.id ? "opacity-50 pointer-events-none" : ""}`}
                                                     >
-                                                        {nurseStatusDisplayLabel(row)}
-                                                    </span>
+                                                        {togglingStatusId === row.id ? "..." : nurseStatusDisplayLabel(row)}
+                                                    </button>
                                                 </TableData>
                                                 <TableData className="text-start">
                                                     <div className="flex items-center justify-start gap-2">
@@ -521,6 +547,30 @@ export default function NurseListPage() {
                 confirmText="OK"
                 showCancel={false}
                 onConfirm={() => setShowExportErrorDialog(false)}
+            />
+
+            <MessageDialog
+                open={confirmToggleRow !== null}
+                onClose={() => setConfirmToggleRow(null)}
+                icon="/icons/questionMark.svg"
+                iconBgColor="#E8F5E9"
+                message={`Are you sure you want to ${nurseIsInactive(confirmToggleRow ?? { IsActive: true }) ? "Activate" : "Inactive"} this nurse?`}
+                confirmText={nurseIsInactive(confirmToggleRow ?? { IsActive: true }) ? "Yes, Activate" : "Yes, Inactive"}
+                cancelText="Cancel"
+                showCancel
+                onConfirm={handleStatusToggleConfirm}
+                onCancel={() => setConfirmToggleRow(null)}
+            />
+
+            <MessageDialog
+                open={statusMessage.open}
+                onClose={() => setStatusMessage((m) => ({ ...m, open: false }))}
+                icon={statusMessage.variant === "success" ? "/icons/SuccessCheck.svg" : "/icons/ErrorIcon.svg"}
+                iconBgColor={statusMessage.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
+                message={statusMessage.message}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setStatusMessage((m) => ({ ...m, open: false }))}
             />
         </AppShell>
     );
