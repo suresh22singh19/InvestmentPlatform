@@ -16,6 +16,8 @@ import "./api/doctorApi";
 import "./api/nurseApi";
 import "./api/v3OldHiimsApis";
 
+import { logoutJatayu } from "./api/jatayuApi";
+
 // Redux Persist config - only persist auth slice
 const persistConfig = {
   key: "root",
@@ -32,6 +34,15 @@ const rootReducer = combineReducers({
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);
 
+const jatayuLogoutMiddleware = () => (next: any) => (action: any) => {
+  if (action.type === "auth/logout") {
+    logoutJatayu().catch((err) => {
+      console.error("Jatayu logout failed in middleware:", err);
+    });
+  }
+  return next(action);
+};
+
 export const store = configureStore({
   reducer: persistedReducer,
   middleware: (getDefaultMiddleware) =>
@@ -39,7 +50,7 @@ export const store = configureStore({
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
       },
-    }).concat(baseApi.middleware, authRefreshApi.middleware),
+    }).concat(baseApi.middleware, authRefreshApi.middleware, jatayuLogoutMiddleware),
   devTools: process.env.NODE_ENV !== "production",
 });
 

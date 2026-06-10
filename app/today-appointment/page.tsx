@@ -12,20 +12,94 @@ import {
     RefreshButton,
     FormSelectField,
     BackToPreviousPageButton,
-    ViewAppointment
+    ViewAppointment,
+    Dialog,
+    MessageDialog
 } from "@/components/ui";
 import DoctorActivity from "./doctorActivity";
 import { useAppSelector } from "@/store/hooks";
 import { selectUserId, selectUserBranchId, selectRoleCategoryType, selectUserBranchName } from "@/store/slices/authSlice";
-import { useGetAppointmentsOfDoctorQuery, useGetPatientReferralForDoctorQuery } from "@/store/api/doctorApi";
+import { useGetAppointmentsOfDoctorQuery, useGetPatientReferralForDoctorQuery, useGetPatientWalletBalanceQuery } from "@/store/api/doctorApi";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { refreshJatayuToken, loginJatayu } from "@/store/api/jatayuApi";
 
 
 
 export default function DoctorListingPage() {
     const router = useRouter();
+
+    const [showSessionExpiredDialog, setShowSessionExpiredDialog] = useState(false);
+    const [showJatayuSuccessDialog, setShowJatayuSuccessDialog] = useState(false);
+    const [showJatayuErrorDialog, setShowJatayuErrorDialog] = useState(false);
+    const [isJatayuActionLoading, setIsJatayuActionLoading] = useState(false);
+    const [pendingConsultationItem, setPendingConsultationItem] = useState<any | null>(null);
+    const [jatayuErrorMessage, setJatayuErrorMessage] = useState("");
+    const [hasJatayuAccess, setHasJatayuAccess] = useState(true);
+
+    const handleCancelJatayuReLogin = () => {
+        setShowSessionExpiredDialog(false);
+        setHasJatayuAccess(false);
+        if (pendingConsultationItem) {
+            setSelectedPatient(pendingConsultationItem);
+            setPendingConsultationItem(null);
+        }
+    };
+
+    const handleConfirmJatayuReLogin = async () => {
+        setIsJatayuActionLoading(true);
+        try {
+            await loginJatayu(true);
+            setHasJatayuAccess(true);
+            setShowSessionExpiredDialog(false);
+            setShowJatayuSuccessDialog(true);
+        } catch (err: any) {
+            console.error("Failed to login Jatayu during session restore:", err);
+            setJatayuErrorMessage(err?.message || "In that Jatayu Login Api facing error so currently this login not work");
+            setHasJatayuAccess(false);
+            setShowSessionExpiredDialog(false);
+            setShowJatayuErrorDialog(true);
+        } finally {
+            setIsJatayuActionLoading(false);
+        }
+    };
+
+    const handleConfirmJatayuSuccess = () => {
+        setShowJatayuSuccessDialog(false);
+        setHasJatayuAccess(true);
+        if (pendingConsultationItem) {
+            setSelectedPatient(pendingConsultationItem);
+            setPendingConsultationItem(null);
+        }
+    };
+
+    const handleConfirmJatayuError = () => {
+        setShowJatayuErrorDialog(false);
+        setHasJatayuAccess(false);
+        if (pendingConsultationItem) {
+            setSelectedPatient(pendingConsultationItem);
+            setPendingConsultationItem(null);
+        }
+    };
+
+    const handleStartConsultation = async (item: any) => {
+        try {
+            await refreshJatayuToken();
+            setHasJatayuAccess(true);
+            setSelectedPatient(item);
+        } catch (err: any) {
+            console.error("Failed to refresh Jatayu token on Start Consultation:", err);
+            if (err?.message === "JATAYU_SESSION_EXPIRED") {
+                setPendingConsultationItem(item);
+                setShowSessionExpiredDialog(true);
+            } else {
+                setHasJatayuAccess(false);
+                setSelectedPatient(item);
+            }
+        }
+    };
+
     const todayAppointmentPermission = usePermission("Today Appointment");
     const todayAppointmentSubPermission = usePermission("Today Appointment", { subModule: "Today Appointment" });
     const canView = todayAppointmentPermission.canView || todayAppointmentSubPermission.canView;
@@ -41,6 +115,11 @@ export default function DoctorListingPage() {
 
     const { data: referralData } = useGetPatientReferralForDoctorQuery(
         { registrationId: selectedItem?.registrationId || selectedItem?.appointmentId || 0 },
+        { skip: !selectedItem }
+    );
+
+    const { data: viewWalletResponse } = useGetPatientWalletBalanceQuery(
+        selectedItem?.uhid || "",
         { skip: !selectedItem }
     );
 
@@ -165,7 +244,8 @@ export default function DoctorListingPage() {
         const uhid = (
             <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline" onClick={() => {
                 if (canAdd) {
-                    setSelectedPatient(item);
+                    setSelectedItem(item); setSelectedPatientView(true);
+                    // handleStartConsultation(item);
                 }
             }}>
                 {item.uhid || "N/A"}
@@ -196,7 +276,7 @@ export default function DoctorListingPage() {
                         variant="outline"
                         size="xsmall"
                         className="whitespace-nowrap"
-                        onClick={() => setSelectedPatient(item)}
+                        onClick={() => handleStartConsultation(item)}
                     >
                         Start Consultation
                     </Button>
@@ -231,6 +311,7 @@ export default function DoctorListingPage() {
                 branchName={resolvedBranchName}
                 branchId={selectedBranchFilter}
                 onBack={() => setSelectedPatient(null)}
+                hasJatayuAccess={hasJatayuAccess}
             />
         );
     }
@@ -374,11 +455,24 @@ export default function DoctorListingPage() {
                                 { label: "Ayush Covered", value: "N/A" },
                             ];
 
-                            const walletDetails = [
-                                { label: "Package", value: "N/A" },
-                                { label: "Start Date", value: "N/A" },
-                                { label: "End Date", value: "N/A" },
-                            ];
+                            const viewWalletInfo = viewWalletResponse?.data;
+                            const walletRemainingAmount = viewWalletInfo?.walletExists && viewWalletInfo.availableBalance !== undefined
+                                ? `Rs. ${viewWalletInfo.availableBalance}`
+                                : "N/A";
+
+                            const walletDetails = viewWalletInfo?.walletExists
+                                ? [
+                                    { label: "Current Balance", value: `Rs. ${viewWalletInfo.currentBalance ?? 0}` },
+                                    { label: "Hold Amount", value: `Rs. ${viewWalletInfo.holdAmount ?? 0}` },
+                                    { label: "Total Credit", value: `Rs. ${viewWalletInfo.totalCredit ?? 0}` },
+                                    { label: "Total Debit", value: `Rs. ${viewWalletInfo.totalDebit ?? 0}` },
+                                    { label: "Last Updated", value: viewWalletInfo.lastUpdated ? new Date(viewWalletInfo.lastUpdated).toLocaleDateString('en-GB') : "N/A" },
+                                ]
+                                : [
+                                    { label: "Package", value: "N/A" },
+                                    { label: "Start Date", value: "N/A" },
+                                    { label: "End Date", value: "N/A" },
+                                ];
 
                             const iafItems = [
                                 { srNo: 1, date: "01-Jun-2026" },
@@ -388,8 +482,9 @@ export default function DoctorListingPage() {
                             return (
                                 <ViewAppointment
                                     appointmentId={selectedItem?.appointmentId}
+                                    uhid={selectedItem?.uhid}
                                     appointmentItems={appointmentItems}
-                                    walletRemainingAmount="N/A"
+                                    walletRemainingAmount={walletRemainingAmount}
                                     walletDetails={walletDetails}
                                     referralItems={referralItems}
                                     showIAF={true}
@@ -513,6 +608,66 @@ export default function DoctorListingPage() {
                     )
                 )}
             </div>
+
+            {/* Jatayu Session Expired Dialog */}
+            <Dialog
+                open={showSessionExpiredDialog}
+                onClose={handleCancelJatayuReLogin}
+                title="Session Expired"
+                width={480}
+                closeOnOutsideClick={false}
+            >
+                <div className="space-y-6">
+                    <p className="text-sm text-[#434956] leading-relaxed">
+                        Your Jatayu session has expired. You need to log in again to restore active voice services. Please confirm if you want to log in to Jatayu again.
+                    </p>
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <Button
+                            variant="outline"
+                            size="medium"
+                            onClick={handleCancelJatayuReLogin}
+                            disabled={isJatayuActionLoading}
+                            className="!border-[#E3EEE1] !text-[#434956] hover:!bg-[#F2F8F2] hover:!border-[#0B8C00]/30 hover:!text-[#0B8C00] !rounded-[24px]"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="primary"
+                            size="medium"
+                            onClick={handleConfirmJatayuReLogin}
+                            isLoading={isJatayuActionLoading}
+                            disabled={isJatayuActionLoading}
+                            className="!rounded-[24px]"
+                        >
+                            Confirm
+                        </Button>
+                    </div>
+                </div>
+            </Dialog>
+
+            {/* Jatayu Success Message Dialog */}
+            <MessageDialog
+                open={showJatayuSuccessDialog}
+                onClose={handleConfirmJatayuSuccess}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message="Jatayu session restored successfully."
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={handleConfirmJatayuSuccess}
+            />
+
+            {/* Jatayu Error Message Dialog */}
+            <MessageDialog
+                open={showJatayuErrorDialog}
+                onClose={handleConfirmJatayuError}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={jatayuErrorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={handleConfirmJatayuError}
+            />
         </AppShell>
     );
 }

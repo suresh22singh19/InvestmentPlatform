@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, forwardRef, useImperativeHandle, useRef } from "react";
+import { useState, forwardRef, useImperativeHandle, useRef, useEffect } from "react";
 import Image from "next/image";
 import { FormInputField } from "./FormInputField";
 import { PatientTypeButtonGroup } from "./PatientTypeButtonGroup";
 import { FormSelectField } from "./FormSelectField";
 import { Button } from "./Button";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
+import { Dialog } from "./Dialog";
 
 export interface DoctorConsultationFormCardProps {
     className?: string;
@@ -34,6 +35,7 @@ export interface DoctorConsultationFormCardProps {
     setWalking: (val: "normal" | "abnormal" | "") => void;
     medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>;
     setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>>>;
+    doctorNotes?: string;
 }
 
 const MEDICINE_OPTIONS = [
@@ -98,11 +100,13 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
         setWalking,
         medicines,
         setMedicines,
+        doctorNotes = "",
     }, ref) => {
 
         // Validation State
         const [errors, setErrors] = useState<Record<string, string>>({});
         const [medicineErrors, setMedicineErrors] = useState<Record<string, string>[]>([{}]);
+        const [isNotesOpen, setIsNotesOpen] = useState(false);
 
         // Refs for scrolling & focusing
         const chiefComplaintRef = useRef<HTMLInputElement>(null);
@@ -123,6 +127,11 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
 
         const containerRef = useRef<HTMLDivElement>(null);
         useArrowKeyNavigation(containerRef, true);
+
+        // Auto scroll to top of this card on mount (when Step 2 is active)
+        useEffect(() => {
+            containerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, []);
 
         // Expose validation function to parent
         useImperativeHandle(ref, () => ({
@@ -185,33 +194,7 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                 let isMedValid = true;
 
                 medicines.forEach((med, idx) => {
-                    const rowErrors: Record<string, string> = {};
-                    if (!med.name) {
-                        rowErrors.name = "Medicine Name is required";
-                        isValid = false;
-                        isMedValid = false;
-                    }
-                    if (!med.dosage) {
-                        rowErrors.dosage = "Dosage is required";
-                        isValid = false;
-                        isMedValid = false;
-                    }
-                    if (!med.frequency) {
-                        rowErrors.frequency = "Frequency is required";
-                        isValid = false;
-                        isMedValid = false;
-                    }
-                    if (!med.timing) {
-                        rowErrors.timing = "Timing is required";
-                        isValid = false;
-                        isMedValid = false;
-                    }
-                    if (!med.duration) {
-                        rowErrors.duration = "Duration is required";
-                        isValid = false;
-                        isMedValid = false;
-                    }
-                    newMedErrors[idx] = rowErrors;
+                    newMedErrors[idx] = {};
                 });
 
                 setErrors(newErrors);
@@ -311,7 +294,24 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
 
                 {/* Section 1: Summary */}
                 <div className="space-y-4">
-                    <h3 className="font-inter font-semibold text-[#262D3B] text-base ">Summary <span className="text-[#F6776E]">*</span></h3>
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-inter font-semibold text-[#262D3B] text-base ">Summary <span className="text-[#F6776E]">*</span></h3>
+                        {doctorNotes && (
+                            <button
+                                type="button"
+                                onClick={() => setIsNotesOpen(true)}
+                                className="px-4 py-1.5 cursor-pointer rounded-[32px] border border-[#0B8C00] text-[#0B8C00] text-xs font-medium hover:bg-[#F2F8F2] transition-colors whitespace-nowrap flex items-center gap-2"
+                            >
+                                <Image
+                                    src="/icons/Eye.svg"
+                                    alt="View Notes"
+                                    width={14}
+                                    height={14}
+                                />
+                                Doctor Notes
+                            </button>
+                        )}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormInputField
                             ref={chiefComplaintRef}
@@ -538,7 +538,7 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
 
                 {/* Section 4: Medicine Prescribed */}
                 <div className="space-y-4 mt-2">
-                    <h3 className="font-inter font-semibold text-[#262D3B] text-base ">Medicine Prescribed <span className="text-[#F6776E]">*</span></h3>
+                    <h3 className="font-inter font-semibold text-[#262D3B] text-base ">Medicine Prescribed</h3>
 
                     {/* Responsive Row Grid Layout */}
                     <div className="space-y-3">
@@ -671,6 +671,19 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                         </Button>
                     </div>
                 </div>
+
+                {isNotesOpen && (
+                    <Dialog
+                        open={isNotesOpen}
+                        onClose={() => setIsNotesOpen(false)}
+                        title="Doctor's Notes (AI Generated)"
+                        width={600}
+                    >
+                        <div className="text-sm text-[#475569] leading-relaxed whitespace-pre-wrap p-2">
+                            {doctorNotes}
+                        </div>
+                    </Dialog>
+                )}
 
             </div>
         );

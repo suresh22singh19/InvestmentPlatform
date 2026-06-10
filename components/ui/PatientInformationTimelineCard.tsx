@@ -215,7 +215,7 @@ export function PatientInformationTimelineCard({
 }: PatientInformationTimelineCardProps) {
     const [cardExpanded, setCardExpanded] = useState(true);
     const [internalTimeframe, setInternalTimeframe] = useState<"6m" | "1y" | "lifetime">("6m");
-    const [expandedDateLabel, setExpandedDateLabel] = useState<string | null>(null);
+    const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [hasInteraction, setHasInteraction] = useState(false);
 
     const timeframe = propTimeframe !== undefined ? propTimeframe : internalTimeframe;
@@ -233,27 +233,40 @@ export function PatientInformationTimelineCard({
         return items.filter(item => isWithinPeriod(item.dateLabel, timeframe));
     }, [items, timeframe, disableClientSideFilter]);
 
+    const filteredItemsWithKeys = useMemo(() => {
+        return filteredItems.map((item) => {
+            const originalIndex = items.indexOf(item);
+            const key = item.detail?.opdAssessmentId
+                ? `id-${item.detail.opdAssessmentId}`
+                : `idx-${originalIndex}`;
+            return {
+                ...item,
+                uniqueKey: key
+            };
+        });
+    }, [filteredItems, items]);
+
     // Reset interaction on timeframe or items change so the first item expands by default
     useEffect(() => {
         setHasInteraction(false);
-        setExpandedDateLabel(null);
+        setExpandedKey(null);
     }, [timeframe, items]);
 
-    const activeExpandedLabel = useMemo(() => {
+    const activeExpandedKey = useMemo(() => {
         if (hasInteraction) {
-            return expandedDateLabel;
+            return expandedKey;
         }
-        const firstWithDetail = filteredItems.find(item => item.detail);
-        return firstWithDetail ? firstWithDetail.dateLabel : null;
-    }, [hasInteraction, expandedDateLabel, filteredItems]);
+        const firstWithDetail = filteredItemsWithKeys.find(item => item.detail);
+        return firstWithDetail ? firstWithDetail.uniqueKey : null;
+    }, [hasInteraction, expandedKey, filteredItemsWithKeys]);
 
-    const isItemExpanded = (item: PatientInformationTimelineItem) => {
-        return activeExpandedLabel === item.dateLabel;
+    const isItemExpanded = (item: PatientInformationTimelineItem & { uniqueKey: string }) => {
+        return activeExpandedKey === item.uniqueKey;
     };
 
-    const toggleItem = (dateLabel: string) => {
+    const toggleItem = (key: string) => {
         setHasInteraction(true);
-        setExpandedDateLabel(prev => (prev === dateLabel ? null : dateLabel));
+        setExpandedKey(prev => (prev === key ? null : key));
     };
 
     const handleTimeframeChange = (value: "6m" | "1y" | "lifetime") => {
@@ -309,7 +322,7 @@ export function PatientInformationTimelineCard({
 
             {cardExpanded && (
                 <div className="mt-6 relative">
-                    {filteredItems.length === 0 ? (
+                    {filteredItemsWithKeys.length === 0 ? (
                         <div className="text-center py-8 text-sm font-semibold text-[#787E8C]">
                             No Data Available
                         </div>
@@ -318,18 +331,18 @@ export function PatientInformationTimelineCard({
                             {/* Vertical Green Timeline Line */}
                             <div className="absolute left-[15px] top-0 h-[calc(100%-16px)] w-[2px] bg-[#0B8C00]"></div>
 
-                            {filteredItems.map((item, index) => {
+                            {filteredItemsWithKeys.map((item, index) => {
                                 const isExpanded = isItemExpanded(item);
                                 const detail = item.detail;
                                 return (
                                     <div
-                                        key={`${item.dateLabel}-${index}`}
-                                        className={`relative pl-12 ${index === filteredItems.length - 1 ? "" : "mb-6"}`}
+                                        key={item.uniqueKey}
+                                        className={`relative pl-12 ${index === filteredItemsWithKeys.length - 1 ? "" : "mb-6"}`}
                                     >
                                         {/* Circle Expand/Collapse toggle */}
                                         <button
                                             type="button"
-                                            onClick={() => toggleItem(item.dateLabel)}
+                                            onClick={() => toggleItem(item.uniqueKey)}
                                             className="absolute left-0 top-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer bg-[#0B8C00] text-white transition-colors duration-200"
                                             aria-label={isExpanded ? "Collapse item" : "Expand item"}
                                             aria-expanded={isExpanded}
@@ -347,7 +360,7 @@ export function PatientInformationTimelineCard({
 
                                         <p
                                             className={`font-semibold text-sm leading-[120%] text-[#262D3B] not-italic cursor-pointer select-none ${detail && isExpanded ? "mb-3" : ""}`}
-                                            onClick={() => toggleItem(item.dateLabel)}
+                                            onClick={() => toggleItem(item.uniqueKey)}
                                         >
                                             {item.dateLabel}
                                         </p>

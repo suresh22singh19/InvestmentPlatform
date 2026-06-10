@@ -8,6 +8,8 @@ import { flushSync } from "react-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableData, TableSearchInput, Pagination, FormSelectField, Button, Dialog, FormInputField, BackToPreviousPageButton, MessageDialog, Tooltip, SpinnerLoader } from "@/components/ui";
+import { FileUploadField } from "@/components/ui/FileUploadField";
+import { FormTextareaField } from "@/components/ui/FormTextareaField";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import {
@@ -15,6 +17,8 @@ import {
     useGetAppointmentsListQuery,
     useUpdateAppointmentDoctorMutation,
     type AppointmentRegistration,
+    useGetAllFileTypesOfPatientListQuery,
+    useCreatePatientFileMutation,
 } from "@/store/api/registrationApi";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -67,6 +71,25 @@ function isWithinInvoiceDownloadWindow(createdAt: string | undefined | null): bo
     const now = Date.now();
     if (now < createdMs) return false;
     return now - createdMs <= INVOICE_DOWNLOAD_WINDOW_MS;
+}
+
+const UPLOAD_FILE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+function validatePatientUploadFile(file: File): Promise<string | null> {
+    const type = (file.type || "").toLowerCase();
+    const base = file.name.split(/[/\\]/).pop() ?? file.name;
+    const n = base.toLowerCase();
+    const isPdf = type === "application/pdf" || n.endsWith(".pdf");
+    const isImageMime = type.startsWith("image/");
+    const looksImageExt = /\.(jpe?g|png|gif|webp|bmp|ico|heic|heif)$/i.test(base);
+
+    if (!isPdf && !isImageMime && !looksImageExt) {
+        return Promise.resolve("Only image or PDF files are allowed.");
+    }
+    if (file.size > UPLOAD_FILE_MAX_BYTES) {
+        return Promise.resolve("File size must be 5 MB or less.");
+    }
+    return Promise.resolve(null);
 }
 
 /**
@@ -484,6 +507,28 @@ export default function RegistrationListPage() {
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
 
+    // Patient File Upload Dialog States
+    const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+    const [selectedUploadPatient, setSelectedUploadPatient] = useState<PatientRegistration | null>(null);
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [uploadFileName, setUploadFileName] = useState("");
+    const [selectedFileName, setSelectedFileName] = useState(""); // display name inside file picker only
+    const [uploadFileType, setUploadFileType] = useState("");
+    const [uploadDescription, setUploadDescription] = useState("");
+    const [uploadFileErrors, setUploadFileErrors] = useState<Record<string, string>>({});
+
+    const { data: fileTypesData } = useGetAllFileTypesOfPatientListQuery();
+    const [createPatientFile, { isLoading: isUploadingFile }] = useCreatePatientFileMutation();
+
+    const fileTypeOptions = useMemo((): SelectOption[] => {
+        const rows = fileTypesData?.data;
+        if (!Array.isArray(rows) || rows.length === 0) return [];
+        return rows.map((item) => ({
+            value: String(item.id),
+            label: String(item.metaValueOne),
+        }));
+    }, [fileTypesData]);
+
     // Debounce search to avoid too many API calls
     const debouncedSearchTerm = useDebounce(filters.searchTerm, 500);
 
@@ -900,6 +945,62 @@ export default function RegistrationListPage() {
         setSelectedDoctor("");
     };
 
+    const handleUploadCancel = () => {
+        setIsUploadDialogOpen(false);
+        setSelectedUploadPatient(null);
+        setUploadFile(null);
+        setUploadFileName("");
+        setSelectedFileName("");
+        setUploadFileType("");
+        setUploadDescription("");
+        setUploadFileErrors({});
+    };
+
+    const handleUploadSubmit = async () => {
+        if (!selectedUploadPatient) return;
+
+        const errors: Record<string, string> = {};
+        if (!uploadFile) {
+            errors.file = "File is required";
+        }
+        if (!uploadFileName.trim()) {
+            errors.fileName = "File name is required";
+        }
+        if (!uploadFileType) {
+            errors.fileType = "File type is required";
+        }
+
+        if (Object.keys(errors).length > 0) {
+            setUploadFileErrors(errors);
+            return;
+        }
+
+        setUploadFileErrors({});
+
+        const formData = new FormData();
+        formData.append("file", uploadFile!);
+        formData.append("masterSettingId", uploadFileType);
+        formData.append("uhid", selectedUploadPatient.uhid);
+        formData.append("description", uploadDescription.trim());
+
+        const appointment = appointmentsData?.data?.find(
+            (apt: AppointmentRegistration) => Number(apt.id) === selectedUploadPatient.id
+        );
+        const branchId = appointment?.branchId || filterBranchId || 1;
+        formData.append("branchId", String(branchId));
+
+        try {
+            await createPatientFile(formData).unwrap();
+            handleUploadCancel();
+            setSuccessMessage("Patient file uploaded successfully");
+            setShowSuccessDialog(true);
+        } catch (error: any) {
+            const errorMsg = error?.data?.message || error?.message || "Failed to upload patient file. Please try again.";
+            setErrorMessage(errorMsg);
+            setShowErrorDialog(true);
+        }
+    };
+
     const handleView = (patient: PatientRegistration) => {
         if (!canView) return;
         // Use appointmentId (patient.id) instead of registrationId
@@ -1209,19 +1310,18 @@ export default function RegistrationListPage() {
                                                         onClick={
                                                             canAdd
                                                                 ? () =>
-                                                                      handleVitalsAction(
-                                                                          patient.id,
-                                                                          patient.vitalsStatus,
-                                                                          patient.patientName,
-                                                                          patient.gender
-                                                                      )
+                                                                    handleVitalsAction(
+                                                                        patient.id,
+                                                                        patient.vitalsStatus,
+                                                                        patient.patientName,
+                                                                        patient.gender
+                                                                    )
                                                                 : undefined
                                                         }
-                                                        className={`flex items-center justify-center h-6 px-5 py-2 rounded-[30px] text-xs font-medium border transition-colors ${
-                                                            canAdd
-                                                                ? "text-[#0B8C00] bg-white border-[#0B8C00]/20 hover:bg-[#F2F8F2]"
-                                                                : "text-[#9CA3AF] bg-[#F9FAFB] border-[#E5E7EB] cursor-not-allowed"
-                                                        }`}
+                                                        className={`flex items-center justify-center h-6 px-5 py-2 rounded-[30px] text-xs font-medium border transition-colors ${canAdd
+                                                            ? "text-[#0B8C00] bg-white border-[#0B8C00]/20 hover:bg-[#F2F8F2]"
+                                                            : "text-[#9CA3AF] bg-[#F9FAFB] border-[#E5E7EB] cursor-not-allowed"
+                                                            }`}
                                                     >
                                                         Done
                                                     </button>
@@ -1263,6 +1363,29 @@ export default function RegistrationListPage() {
                                             {canView || canAdd || canEdit || canDownload ? (
                                                 <TableData className="">
                                                     <div className="flex items-center gap-3">
+                                                        <Tooltip content="Add Patient File" position="top">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedUploadPatient(patient);
+                                                                    setUploadFile(null);
+                                                                    setUploadFileName("");
+                                                                    setUploadFileType("");
+                                                                    setUploadDescription("");
+                                                                    setUploadFileErrors({});
+                                                                    setIsUploadDialogOpen(true);
+                                                                }}
+                                                                className="cursor-pointer flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                                aria-label="Add Patient File"
+                                                            >
+                                                                <Image
+                                                                    src="/icons/UploadIcon.svg"
+                                                                    alt="Add Patient File"
+                                                                    width={20}
+                                                                    height={20}
+                                                                />
+                                                            </button>
+                                                        </Tooltip>
                                                         {canView ? (
                                                             <Tooltip content="View" position="top">
                                                                 <button
@@ -1303,14 +1426,14 @@ export default function RegistrationListPage() {
                                                                         className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-[8px] hover:bg-[#F2F8F2] transition-colors"
                                                                         aria-label="Doctor Action"
                                                                     >
-                                                                    <Image
-                                                                        src="/icons/doctorIcon.svg"
-                                                                        alt="Doctor"
-                                                                        width={20}
-                                                                        height={20}
-                                                                        className="text-[#434956]"
-                                                                    />
-                                                                </button>
+                                                                        <Image
+                                                                            src="/icons/doctorIcon.svg"
+                                                                            alt="Doctor"
+                                                                            width={20}
+                                                                            height={20}
+                                                                            className="text-[#434956]"
+                                                                        />
+                                                                    </button>
                                                                 </Tooltip>
                                                             </>
                                                         ) : null}
@@ -1332,14 +1455,13 @@ export default function RegistrationListPage() {
                                                                             invoiceDownloadingPatientId !== null
                                                                         }
                                                                         onClick={() => handleDownloadPDF(patient)}
-                                                                        className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${
-                                                                            pdfDownloadingPatientId === patient.id
-                                                                                ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
-                                                                                : pdfDownloadingPatientId !== null ||
-                                                                                    invoiceDownloadingPatientId !== null
-                                                                                  ? "cursor-not-allowed opacity-50"
-                                                                                  : "cursor-pointer hover:bg-[#F2F8F2]"
-                                                                        }`}
+                                                                        className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${pdfDownloadingPatientId === patient.id
+                                                                            ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
+                                                                            : pdfDownloadingPatientId !== null ||
+                                                                                invoiceDownloadingPatientId !== null
+                                                                                ? "cursor-not-allowed opacity-50"
+                                                                                : "cursor-pointer hover:bg-[#F2F8F2]"
+                                                                            }`}
                                                                         aria-label={
                                                                             pdfDownloadingPatientId === patient.id
                                                                                 ? "Generating patient form PDF"
@@ -1422,14 +1544,13 @@ export default function RegistrationListPage() {
                                                                                 invoiceDownloadingPatientId !== null
                                                                             }
                                                                             onClick={() => handleDownloadListInvoice(patient)}
-                                                                            className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${
-                                                                                invoiceDownloadingPatientId === patient.id
-                                                                                    ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
-                                                                                    : pdfDownloadingPatientId !== null ||
-                                                                                        invoiceDownloadingPatientId !== null
-                                                                                      ? "cursor-not-allowed opacity-50"
-                                                                                      : "cursor-pointer hover:bg-[#F2F8F2]"
-                                                                            }`}
+                                                                            className={`flex min-h-8 min-w-8 items-center justify-center rounded-[8px] transition-colors disabled:pointer-events-none ${invoiceDownloadingPatientId === patient.id
+                                                                                ? "cursor-wait bg-[#F2F8F2] disabled:opacity-100"
+                                                                                : pdfDownloadingPatientId !== null ||
+                                                                                    invoiceDownloadingPatientId !== null
+                                                                                    ? "cursor-not-allowed opacity-50"
+                                                                                    : "cursor-pointer hover:bg-[#F2F8F2]"
+                                                                                }`}
                                                                             aria-label={
                                                                                 invoiceDownloadingPatientId === patient.id
                                                                                     ? "Generating invoice PDF"
@@ -1526,6 +1647,117 @@ export default function RegistrationListPage() {
                             isLoading={isUpdatingDoctor}
                         >
                             Submit
+                        </Button>
+                    </div>
+                </div>
+            </Dialog>
+
+            {/* Upload Document Dialog */}
+            <Dialog
+                open={isUploadDialogOpen}
+                onClose={handleUploadCancel}
+                title="Upload Document"
+                width={600}
+                closeOnOutsideClick={false}
+            >
+                <div className="flex flex-col gap-6">
+                    {/* File Upload Field */}
+                    <div>
+                        <FileUploadField
+                            label="File *"
+
+                            accept="image/*,.pdf"
+                            validateFile={validatePatientUploadFile}
+                            value={selectedFileName}
+                            onChange={(file, name) => {
+                                setUploadFile(file);
+                                setSelectedFileName(name);
+                                // Do NOT copy name into uploadFileName — user enters their own name
+                                if (file && name) {
+                                    setUploadFileErrors((prev) => {
+                                        const next = { ...prev };
+                                        delete next.file;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            placeholder="Browse File"
+                            icon="/icons/UploadIcon.svg"
+                            error={uploadFileErrors.file}
+                        />
+                    </div>
+
+                    {/* File Name Field */}
+                    <div>
+                        <FormInputField
+                            label="File Name *"
+                            value={uploadFileName}
+                            onChange={(e) => {
+                                setUploadFileName(e.target.value);
+                                if (e.target.value.trim()) {
+                                    setUploadFileErrors((prev) => {
+                                        const next = { ...prev };
+                                        delete next.fileName;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            placeholder="File Name"
+                            type="text"
+                            error={uploadFileErrors.fileName}
+                        />
+                    </div>
+
+                    {/* File Type Field */}
+                    <div>
+                        <FormSelectField
+                            label="File Type *"
+                            options={fileTypeOptions}
+                            value={uploadFileType || null}
+                            onChange={(value) => {
+                                const selectedValue = typeof value === "string" ? value : Array.isArray(value) ? value[0] : "";
+                                setUploadFileType(selectedValue || "");
+                                if (selectedValue) {
+                                    setUploadFileErrors((prev) => {
+                                        const next = { ...prev };
+                                        delete next.fileType;
+                                        return next;
+                                    });
+                                }
+                            }}
+                            placeholder="Select"
+                            mode="single"
+                            background="white"
+                            error={uploadFileErrors.fileType}
+                        />
+                    </div>
+
+                    {/* Description Field */}
+                    <FormTextareaField
+                        label="Description"
+                        placeholder="Description"
+                        height={100}
+                        value={uploadDescription}
+                        onChange={(e) => setUploadDescription(e.target.value)}
+                    />
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-end gap-3 pt-4">
+                        <Button
+                            variant="outline"
+                            onClick={handleUploadCancel}
+                            className="border-[#0B8C00] text-[#0B8C00] hover:bg-[#F2F8F2]"
+                            disabled={isUploadingFile}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="primary"
+                            onClick={handleUploadSubmit}
+                            disabled={isUploadingFile}
+                            isLoading={isUploadingFile}
+                        >
+                            Upload
                         </Button>
                     </div>
                 </div>

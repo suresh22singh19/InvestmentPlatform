@@ -223,6 +223,8 @@ export type CreateOpdAssessmentRequest = {
         opdNextFollowupDate: string;
         opdNextFollowupRemark: string;
     };
+    uhid: string;
+    doctorNotes?: string;
 };
 
 export type CreateOpdAssessmentResponse = {
@@ -236,7 +238,7 @@ export type CreateOpdAssessmentResponse = {
 };
 
 export type GetPatientAssessmentHistoryParams = {
-    appointmentId: number | string;
+    uhid: string;
     filter: "lastSixMonths" | "lastTwelveMonths" | "all";
 };
 
@@ -320,7 +322,7 @@ export const doctorApi = baseApi.injectEndpoints({
 
         getPatientAssessmentHistory: builder.query<GetPatientAssessmentHistoryResponse, GetPatientAssessmentHistoryParams>({
             query: (params) => ({
-                url: `/doctor/GetAllAssessmentHistoryOfPatient?appointmentId=${params.appointmentId}&filter=${params.filter}`,
+                url: `/doctor/GetAllAssessmentHistoryOfPatient?uhid=${params.uhid}&filter=${params.filter}`,
                 method: "GET",
             }),
             providesTags: ["Doctors"],
@@ -500,6 +502,13 @@ export const doctorApi = baseApi.injectEndpoints({
                 },
             }
         ),
+
+        getPatientWalletBalance: builder.query<{ success: boolean; data: any; message?: string }, string>({
+            query: (uhid) => ({
+                url: `/counsellor/wallet-balance/${uhid}`,
+                method: "GET",
+            }),
+        }),
     }),
 });
 
@@ -521,4 +530,5 @@ export const {
     useLazyGetPatientAssessmentHistoryQuery,
     useGetSpecificAssessmentHistoryDetailOfPatientQuery,
     useLazyGetSpecificAssessmentHistoryDetailOfPatientQuery,
+    useGetPatientWalletBalanceQuery,
 } = doctorApi;

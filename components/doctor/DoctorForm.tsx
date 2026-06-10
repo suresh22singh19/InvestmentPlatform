@@ -181,6 +181,14 @@ function selectOptionsExcludingOtherRows(
 }
 
 const NABH_REGISTERED_OPTIONS = ["Yes", "No"] as const;
+const VOICE_AI_OPTIONS: SelectOption[] = [
+    { value: "Active", label: "Active" },
+    { value: "Inactive", label: "Inactive" },
+];
+const CHANGE_PASSWORD_OPTIONS: SelectOption[] = [
+    { value: "Yes", label: "Yes" },
+    { value: "No", label: "No" },
+];
 
 const PROFILE_IMAGE_ACCEPT = "image/png,image/jpeg,.png,.jpg,.jpeg";
 const PROFILE_IMAGE_MAX_PX = 128;
@@ -302,11 +310,10 @@ function AddRowButton({
             onClick={onClick}
             disabled={disabled}
             title={disabled ? `Maximum ${MAX_DYNAMIC_ROWS} rows allowed` : undefined}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl font-semibold leading-none text-white shadow-sm transition ${
-                disabled
-                    ? "cursor-not-allowed bg-[#98A2B3] opacity-60"
-                    : "bg-[#0B8C00] hover:bg-[#0a7a00]"
-            }`}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl font-semibold leading-none text-white shadow-sm transition ${disabled
+                ? "cursor-not-allowed bg-[#98A2B3] opacity-60"
+                : "bg-[#0B8C00] hover:bg-[#0a7a00]"
+                }`}
         >
             +
         </button>
@@ -351,6 +358,8 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
     const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showVoiceAiPassword, setShowVoiceAiPassword] = useState(false);
+    const [showVoiceAiConfirmPassword, setShowVoiceAiConfirmPassword] = useState(false);
     const submitLockRef = useRef(false);
     const roleCategoryType = useAppSelector(selectRoleCategoryType);
     const selectedBranch = useAppSelector(selectSelectedBranch);
@@ -478,6 +487,11 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                 next.branchId = singleBranchFromAuth.value;
             }
             next.nameTitle = "Dr";
+            if (mode === "add" || initial.aiVoiceActivated !== "Active") {
+                if (next.aiVoiceActivated === "Active") {
+                    next.changeVoiceAiPassword = "Yes";
+                }
+            }
             return next;
         });
         setProfileFileName(fileNameFromUrl(initial.profileImageUrl));
@@ -521,18 +535,33 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
     }, [departmentRows, mode]);
 
     const validateFieldWithPayload = async (field: string, payload: DoctorPayload) => {
-        try {
-            await doctorFormSchema.validateAt(field, payload);
-            setFormErrors((prev) => {
-                const next = { ...prev };
-                delete next[field];
-                return next;
-            });
-        } catch (err) {
-            if (err instanceof Yup.ValidationError) {
-                setFormErrors((prev) => ({ ...prev, [field]: err.message }));
+        const fieldsToValidate =
+            field === "aiVoicePassword" || field === "voiceAiConfirmPassword"
+                ? ["aiVoicePassword", "voiceAiConfirmPassword"]
+                : [field];
+
+        const nextErrors: Record<string, string> = {};
+        for (const f of fieldsToValidate) {
+            try {
+                await doctorFormSchema.validateAt(f, payload);
+            } catch (err) {
+                if (err instanceof Yup.ValidationError) {
+                    nextErrors[f] = err.message;
+                }
             }
         }
+
+        setFormErrors((prev) => {
+            const next = { ...prev };
+            for (const f of fieldsToValidate) {
+                if (nextErrors[f]) {
+                    next[f] = nextErrors[f];
+                } else {
+                    delete next[f];
+                }
+            }
+            return next;
+        });
     };
 
     const markTouched = (field: string) => {
@@ -638,8 +667,8 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                                 isFacilityUser && !singleBranchFromAuth
                                     ? "No branch"
                                     : isLoadingBranches
-                                      ? "Loading branches…"
-                                      : "Select"
+                                        ? "Loading branches…"
+                                        : "Select"
                             }
                             mode="single"
                             background="white"
@@ -667,8 +696,8 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                                 isLoadingAssignableRoles
                                     ? "Loading roles..."
                                     : !resolvedBranchIdForRoleDropdown
-                                      ? "Select branch first"
-                                      : "Select role"
+                                        ? "Select branch first"
+                                        : "Select role"
                             }
                             mode="single"
                             background="white"
@@ -740,6 +769,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                     <FormInputField
                         label="Email/Username *"
                         type="email"
+                        autoComplete="new-password"
                         value={values.email}
                         onChange={(e) => setField("email", sanitizeEmailInput(e.target.value))}
                         onBlur={() => blurAndValidate("email")}
@@ -871,19 +901,19 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             </Tooltip>
                         }
                     />
-                     <FormInputField
-                            label="Employee Id *"
-                            type="text"
-                            autoComplete="off"
-                            value={values.employeeId}
-                            onChange={(e) => setField("employeeId", formatEmployeeIdInput(e.target.value))}
-                            onBlur={() => blurAndValidate("employeeId")}
-                            height={44}
-                            placeholder="Employee Id"
-                            maxLength={MAX_EMPLOYEE_ID_LEN}
-                            error={formErrors.employeeId}
-                            disabled={mode === "edit"}
-                        />
+                    <FormInputField
+                        label="Employee Id *"
+                        type="text"
+                        autoComplete="off"
+                        value={values.employeeId}
+                        onChange={(e) => setField("employeeId", formatEmployeeIdInput(e.target.value))}
+                        onBlur={() => blurAndValidate("employeeId")}
+                        height={44}
+                        placeholder="Employee Id"
+                        maxLength={MAX_EMPLOYEE_ID_LEN}
+                        error={formErrors.employeeId}
+                        disabled={mode === "edit"}
+                    />
                     {/* <FormSelectField
                         label="Doctor Type *"
                         value={values.doctorType}
@@ -941,6 +971,102 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             background="white"
                             error={formErrors.status}
                         />
+                    ) : null}
+                    <FormSelectField
+                        label="Voice AI *"
+                        value={values.aiVoiceActivated || "Inactive"}
+                        onChange={(v) => {
+                            const selected = pickSingle(v) as "Active" | "Inactive";
+                            markTouched("aiVoiceActivated");
+                            setValues((prev) => {
+                                const next = {
+                                    ...prev,
+                                    aiVoiceActivated: selected,
+                                    changeVoiceAiPassword: (selected === "Active" &&
+                                        (mode === "add" || initial.aiVoiceActivated !== "Active")
+                                            ? "Yes"
+                                            : "No") as "Yes" | "No",
+                                    ...(selected === "Inactive"
+                                        ? { aiVoicePassword: "", voiceAiConfirmPassword: "" }
+                                        : {}),
+                                };
+                                queueMicrotask(() => {
+                                    void validateFieldWithPayload("aiVoiceActivated", next);
+                                    void validateFieldWithPayload("aiVoicePassword", next);
+                                    void validateFieldWithPayload("voiceAiConfirmPassword", next);
+                                    void validateFieldWithPayload("changeVoiceAiPassword", next);
+                                });
+                                return next;
+                            });
+                        }}
+                        options={VOICE_AI_OPTIONS}
+                        placeholder="Select"
+                        mode="single"
+                        background="white"
+                        error={formErrors.aiVoiceActivated}
+                    />
+                    {values.aiVoiceActivated === "Active" &&
+                    values.changeVoiceAiPassword === "Yes" ? (
+                        <>
+                            <FormInputField
+                                label={values.aiVoiceActivated === "Active" ? "Set password for Voice AI *" : "Set password for Voice AI"}
+                                type={showVoiceAiPassword ? "text" : "password"}
+                                autoComplete="new-password"
+                                value={values.aiVoicePassword || ""}
+                                onChange={(e) => setField("aiVoicePassword", e.target.value)}
+                                onBlur={() => blurAndValidate("aiVoicePassword")}
+                                height={44}
+                                placeholder="Password"
+                                error={formErrors.aiVoicePassword}
+                                disabled={values.aiVoiceActivated !== "Active"}
+                                suffix={
+                                    <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        className="text-[#7B8089] transition-colors hover:text-[#434956] disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={() => setShowVoiceAiPassword((p) => !p)}
+                                        disabled={values.aiVoiceActivated !== "Active"}
+                                        aria-label={showVoiceAiPassword ? "Hide password" : "Show password"}
+                                    >
+                                        <Image
+                                            src={showVoiceAiPassword ? "/icons/openEye.svg" : "/icons/closeEye.svg"}
+                                            alt={showVoiceAiPassword ? "Hide" : "Show"}
+                                            width={20}
+                                            height={20}
+                                        />
+                                    </button>
+                                }
+                            />
+                            <FormInputField
+                                label={values.aiVoiceActivated === "Active" ? "Confirm Password for Voice AI *" : "Confirm Password for Voice AI"}
+                                type={showVoiceAiConfirmPassword ? "text" : "password"}
+                                autoComplete="new-password"
+                                value={values.voiceAiConfirmPassword || ""}
+                                onChange={(e) => setField("voiceAiConfirmPassword", e.target.value)}
+                                onBlur={() => blurAndValidate("voiceAiConfirmPassword")}
+                                height={44}
+                                placeholder="Confirm Password"
+                                error={formErrors.voiceAiConfirmPassword}
+                                disabled={values.aiVoiceActivated !== "Active"}
+                                suffix={
+                                    <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        className="text-[#7B8089] transition-colors hover:text-[#434956] disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={() => setShowVoiceAiConfirmPassword((p) => !p)}
+                                        disabled={values.aiVoiceActivated !== "Active"}
+                                        aria-label={showVoiceAiConfirmPassword ? "Hide password" : "Show password"}
+                                    >
+                                        <Image
+                                            src={showVoiceAiConfirmPassword ? "/icons/openEye.svg" : "/icons/closeEye.svg"}
+                                            alt={showVoiceAiConfirmPassword ? "Hide" : "Show"}
+                                            width={20}
+                                            height={20}
+                                        />
+                                    </button>
+                                }
+                            />
+                        </>
                     ) : null}
                 </div>
             </SectionCard>

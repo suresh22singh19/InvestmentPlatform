@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import Image from "next/image";
 
 type FileUploadFieldProps = {
@@ -30,6 +30,20 @@ export const FileUploadField = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>(value || "");
   const [validationError, setValidationError] = useState("");
+
+  const renderLabel = useMemo(() => {
+    if (label.includes("*")) {
+      const parts = label.split("*");
+      return (
+        <>
+          {parts[0]}
+          <span className="text-[#F6776E]">*</span>
+          {parts.slice(1).join("*")}
+        </>
+      );
+    }
+    return label;
+  }, [label]);
 
   useEffect(() => {
     setFileName(value || "");
@@ -97,7 +111,7 @@ export const FileUploadField = ({
     <div className={`inline-flex w-full flex-col gap-2 ${className}`}>
       <div className="group relative inline-flex w-full">
         <span className="pointer-events-none absolute left-6 top-0 z-10 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089]">
-          {label}
+          {renderLabel}
         </span>
 
         <div className="relative w-full z-0">

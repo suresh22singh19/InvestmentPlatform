@@ -1777,6 +1777,49 @@ export const registrationApi = baseApi.injectEndpoints({
         method: "GET",
       }),
     }),
+    getAllFileTypesOfPatientList: builder.query<
+      {
+        message: string;
+        statusCode: number;
+        timestamp: string;
+        data: Array<{ id: number; metaValueOne: string }>;
+      },
+      void
+    >({
+      query: () => ({
+        url: "/common/GetAllFileTypesOfPatientList",
+        method: "GET",
+      }),
+    }),
+    createPatientFile: builder.mutation<
+      {
+        message: string;
+        statusCode: number;
+        timestamp: string;
+        data: {
+          success: boolean;
+          message: string;
+          timestamp: string;
+        };
+      },
+      FormData
+    >({
+      query: (formData) => ({
+        url: "/patient/createPatientFile",
+        method: "POST",
+        body: formData,
+        // Tell fetchBaseQuery not to set Content-Type: application/json.
+        // The browser's fetch() will replace this with multipart/form-data + boundary.
+        headers: { "Content-Type": "multipart/form-data" },
+      }),
+      // Invalidate the PatientFiles cache for the uploaded UHID so the view page refetches
+      invalidatesTags: (_result, _error, formData) => {
+        const uhid = formData instanceof FormData ? formData.get("uhid") : null;
+        return uhid ? [{ type: "PatientFiles" as const, id: String(uhid) }] : ["PatientFiles"];
+      },
+    }),
+
+
   }),
 });
 
@@ -1850,6 +1893,8 @@ export const {
   useLazyCheckJsHealthCardAssignmentQuery,
   useLazyGetArogyaCardSeriesQuery,
   useGetArogyaCardSeriesQuery,
+  useGetAllFileTypesOfPatientListQuery,
+  useCreatePatientFileMutation,
 } = registrationApi;
 
 

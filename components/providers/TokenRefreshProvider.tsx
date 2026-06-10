@@ -54,13 +54,13 @@ export function TokenRefreshProvider() {
     }
     if (!issuedAt) issuedAt = Date.now();
 
-    // Schedule the refresh 30 s before the token expires.
-    const refreshAtMs = issuedAt + (expiresIn - 30) * 1_000;
+    // Schedule the refresh when 90% of the token's lifetime is completed.
+    const refreshAtMs = issuedAt + (expiresIn * 0.9) * 1_000;
     const delay = Math.max(refreshAtMs - Date.now(), MIN_RETRY_DELAY_MS);
 
     console.info(
       `[TokenRefresh] next refresh in ${Math.round(delay / 1000)}s` +
-      ` (expires_in=${expiresIn}s, 30s buffer applied)`
+      ` (expires_in=${expiresIn}s, 90% lifetime threshold applied)`
     );
 
     timerRef.current = setTimeout(async () => {

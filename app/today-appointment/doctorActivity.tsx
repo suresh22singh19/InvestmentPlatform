@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { uploadAudioReturn } from "@/store/api/jatayuApi";
-import { useGetPatientReferralForDoctorQuery } from "@/store/api/doctorApi";
+import {
+    useGetPatientReferralForDoctorQuery,
+    useGetPatientAssessmentHistoryQuery,
+    useGetPatientWalletBalanceQuery,
+} from "@/store/api/doctorApi";
+import { useGetPatientFilesQuery, useLazyGetPresignedUrlQuery } from "@/store/api/commonApi";
 import {
     AppointmentDetailCard,
     type AppointmentDetailItem,
@@ -37,6 +42,9 @@ import {
     ClinicalAssessmentRecord,
     SpinnerLoader,
     MessageDialog,
+    PatientInformationTimelineCard,
+    IafDetailsDialog,
+    ScrollableContainer,
 } from "@/components/ui";
 
 async function convertBlobToFloat32Array(blob: Blob): Promise<number[]> {
@@ -76,6 +84,7 @@ export interface DoctorActivityProps {
     onBack: () => void;
     branchName?: string;
     branchId?: number | string;
+    hasJatayuAccess?: boolean;
 }
 
 export default function DoctorActivity({
@@ -83,12 +92,55 @@ export default function DoctorActivity({
     onBack,
     branchName,
     branchId,
+    hasJatayuAccess = true,
 }: DoctorActivityProps) {
     const router = useRouter();
     const appData = appointment || {};
 
+    const { data: walletResponse } = useGetPatientWalletBalanceQuery(
+        appData.uhid || "",
+        { skip: !appData.uhid }
+    );
+
+    const { data: patientFilesResponse } = useGetPatientFilesQuery(
+        { uhid: appData.uhid || "" },
+        { skip: !appData.uhid, refetchOnMountOrArgChange: true }
+    );
+    const [getPresignedUrl] = useLazyGetPresignedUrlQuery();
+
+    const handleViewFile = async (filePath: string) => {
+        try {
+            const result = await getPresignedUrl({ key: filePath }).unwrap();
+            const signedUrl = result?.data?.signedUrl;
+            if (signedUrl) {
+                window.open(signedUrl, "_blank", "noopener,noreferrer");
+            }
+        } catch (err) {
+            console.error("Failed to get presigned URL:", err);
+            alert("Failed to open file. Please try again.");
+        }
+    };
+
+    const patientFilesItems = useMemo(() => {
+        const files = patientFilesResponse?.data;
+        if (!Array.isArray(files)) return [];
+        return files.map((file) => {
+            const formattedDate = file.createdAt
+                ? new Date(file.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                : "";
+            return {
+                name: file.fileName || "File",
+                size: `${file.fileType || "Document"} • ${formattedDate}`,
+                onClick: () => handleViewFile(file.path),
+                actionIconSrc: "/icons/ViewEyeIcon.svg",
+                actionIconAlt: "View File",
+            };
+        });
+    }, [patientFilesResponse, getPresignedUrl]);
+
     // Consultation view step (1: Voice Record & Notes, 2: Diagnosis & Medicines, 3: Specialized & Physical Exam)
     const [step, setStep] = useState<1 | 2 | 3>(1);
+    const [isSkipped, setIsSkipped] = useState(false);
 
     // Audio recording lifted state
     const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
@@ -97,11 +149,221 @@ export default function DoctorActivity({
     // API Upload state
     const [isUploading, setIsUploading] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
+    const [showStartRecordingDialog, setShowStartRecordingDialog] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [showBusyDialog, setShowBusyDialog] = useState(false);
     const [apiErrorMessage, setApiErrorMessage] = useState("");
     const [showExitConfirmDialog, setShowExitConfirmDialog] = useState(false);
 
     // Therapies state
     const [therapies, setTherapies] = useState<Array<{ therapyId: number; therapyName: string }>>([]);
+
+    // Patient History Timeline state & queries
+    const [timeframe, setTimeframe] = useState<"6m" | "1y" | "lifetime">("6m");
+    const [selectedIafId, setSelectedIafId] = useState<string | null>(null);
+
+    const isPatientOld = (data: any): boolean => {
+        if (!data) return false;
+        const appTimeStr = data.appointmentCreatedAt || data.createdAt;
+        const regTimeStr = data.registrationCreatedAt;
+        if (!appTimeStr || !regTimeStr) return false;
+
+        const appTime = new Date(appTimeStr).getTime();
+        const regTime = new Date(regTimeStr).getTime();
+        if (isNaN(appTime) || isNaN(regTime)) return false;
+
+        const oneHourInMs = 60 * 60 * 1000;
+        return (appTime - regTime) > oneHourInMs;
+    };
+
+    const isOldPatient = isPatientOld(appData);
+
+    const apiFilter = useMemo(() => {
+        if (timeframe === "6m") return "lastSixMonths";
+        if (timeframe === "1y") return "lastTwelveMonths";
+        return "all";
+    }, [timeframe]);
+
+    const { data: assessmentHistoryRes } = useGetPatientAssessmentHistoryQuery(
+        { uhid: appData.uhid || "", filter: apiFilter },
+        { skip: !appData.uhid }
+    );
+
+    const formattedTimelineItems = useMemo(() => {
+        const uhid = appData.uhid;
+        if (!uhid) {
+            return [];
+        }
+
+        const historyData = assessmentHistoryRes?.data;
+        if (!historyData || historyData.length === 0) {
+            return [];
+        }
+
+        const formatDate = (dateStr?: string) => {
+            if (!dateStr) return "N/A";
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const day = String(d.getDate()).padStart(2, "0");
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = months[d.getMonth()];
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
+        };
+
+        const parseMedicineString = (itemStr: string) => {
+            const detailsMatch = itemStr.match(/^(.*?)\s*-\s*(.*?)\s*\((Dosage|dosage):\s*(.*?),\s*(Frequency|frequency):\s*(.*?),\s*(Timing|timing):\s*(.*?)\)$/i);
+            if (detailsMatch) {
+                return {
+                    medicineName: detailsMatch[1].trim(),
+                    medicineDuration: detailsMatch[2].trim(),
+                    medicineDosage: detailsMatch[4].trim(),
+                    medicineFrequency: detailsMatch[6].trim(),
+                    medicineTiming: detailsMatch[8].trim()
+                };
+            }
+
+            const nameMatch = itemStr.split(" - ");
+            const name = nameMatch[0]?.trim() || itemStr;
+            let duration = "N/A";
+            let dosage = "N/A";
+            let frequency = "N/A";
+            let timing = "N/A";
+
+            const durationMatch = itemStr.match(/-\s*([^(]+)/);
+            if (durationMatch) {
+                duration = durationMatch[1].trim();
+            }
+            const dosageMatch = itemStr.match(/Dosage:\s*([^,)]+)/i);
+            if (dosageMatch) {
+                dosage = dosageMatch[1].trim();
+            }
+            const freqMatch = itemStr.match(/Frequency:\s*([^,)]+)/i);
+            if (freqMatch) {
+                frequency = freqMatch[1].trim();
+            }
+            const timingMatch = itemStr.match(/Timing:\s*([^,)]+)/i);
+            if (timingMatch) {
+                timing = timingMatch[1].trim();
+            }
+
+            return {
+                medicineName: name,
+                medicineDuration: duration,
+                medicineDosage: dosage,
+                medicineFrequency: frequency,
+                medicineTiming: timing
+            };
+        };
+
+        return historyData.map((h, index) => {
+            const dateStr = formatDate(h.createdAt);
+            const visitTypeSuffix = index === 0 ? " - First Visit" : " - Follow-up Visit";
+            const dateLabel = `${dateStr}${visitTypeSuffix}`;
+
+            let chiefComplaintText = "N/A";
+            if (h.patientPresentation?.chiefComplaint) {
+                if (Array.isArray(h.patientPresentation.chiefComplaint)) {
+                    chiefComplaintText = h.patientPresentation.chiefComplaint
+                        .map((cc: any) => cc?.complaint || "")
+                        .filter(Boolean)
+                        .join(", ");
+                } else if (typeof h.patientPresentation.chiefComplaint === "string") {
+                    chiefComplaintText = h.patientPresentation.chiefComplaint;
+                }
+            }
+
+            let symptomsText = "";
+            if (h.patientPresentation?.symptoms) {
+                if (Array.isArray(h.patientPresentation.symptoms)) {
+                    symptomsText = h.patientPresentation.symptoms.filter(Boolean).join(", ");
+                } else if (typeof h.patientPresentation.symptoms === "string") {
+                    symptomsText = h.patientPresentation.symptoms;
+                }
+            }
+
+            const detailsItems: string[] = [];
+
+            if (h.medications?.allergies && h.medications.allergies.length > 0) {
+                const nonNilAllergies = h.medications.allergies.filter((x: string) => x && x.trim().toLowerCase() !== "nil" && x.trim() !== "");
+                if (nonNilAllergies.length > 0) {
+                    detailsItems.push(`Allergies: ${nonNilAllergies.join(", ")}`);
+                }
+            }
+
+            if (h.physicalExamination) {
+                const parts: string[] = [];
+                if (h.physicalExamination.bp && h.physicalExamination.bp !== "N/A") parts.push(`BP: ${h.physicalExamination.bp}`);
+                if (h.physicalExamination.pulse && h.physicalExamination.pulse !== "N/A") parts.push(`Pulse: ${h.physicalExamination.pulse}`);
+                if (h.physicalExamination.temperature && h.physicalExamination.temperature !== "N/A") parts.push(`Temp: ${h.physicalExamination.temperature}`);
+                if (parts.length > 0) detailsItems.push(`Physical Exam: ${parts.join(" | ")}`);
+            }
+
+            if (h.systemicReview) {
+                const parts: string[] = [];
+                if (h.systemicReview.respiratory && h.systemicReview.respiratory.toLowerCase() !== "nil") parts.push(`Respiratory: ${h.systemicReview.respiratory}`);
+                if (h.systemicReview.cardiovascular && h.systemicReview.cardiovascular.toLowerCase() !== "nil") parts.push(`Cardiovascular: ${h.systemicReview.cardiovascular}`);
+                if (parts.length > 0) detailsItems.push(`Systemic Review: ${parts.join(" | ")}`);
+            }
+
+            if (h.specializedHistory) {
+                const parts: string[] = [];
+                if (h.specializedHistory.pastHistory && h.specializedHistory.pastHistory.toLowerCase() !== "nil") parts.push(`Past History: ${h.specializedHistory.pastHistory}`);
+                if (h.specializedHistory.familyHistory && h.specializedHistory.familyHistory.toLowerCase() !== "nil") parts.push(`Family History: ${h.specializedHistory.familyHistory}`);
+                if (parts.length > 0) detailsItems.push(`Specialized History: ${parts.join(" | ")}`);
+            }
+
+            if (h.investigations?.recommended && h.investigations.recommended.length > 0) {
+                const nonNilInvest = h.investigations.recommended.filter((x: string) => x && x.trim().toLowerCase() !== "nil" && x.trim() !== "");
+                if (nonNilInvest.length > 0) {
+                    detailsItems.push(`Recommended Investigations: ${nonNilInvest.join(", ")}`);
+                }
+            }
+
+            if (h.treatmentPlan) {
+                const parts: string[] = [];
+                if (h.treatmentPlan.advice && h.treatmentPlan.advice.toLowerCase() !== "nil") parts.push(`Advice: ${h.treatmentPlan.advice}`);
+                if (h.treatmentPlan.followUp && h.treatmentPlan.followUp.toLowerCase() !== "nil") parts.push(`Follow-up: ${h.treatmentPlan.followUp}`);
+                if (parts.length > 0) detailsItems.push(`Treatment Plan: ${parts.join(" | ")}`);
+            }
+
+            if (h.progressMonitoring?.notes && h.progressMonitoring.notes.toLowerCase() !== "nil") {
+                detailsItems.push(`Progress Notes: ${h.progressMonitoring.notes}`);
+            }
+
+            let prescribedMedicines: any[] = [];
+            if (h.treatmentPlan?.prescribedMedicines && h.treatmentPlan.prescribedMedicines.length > 0) {
+                prescribedMedicines = h.treatmentPlan.prescribedMedicines.map((m: any) => ({
+                    medicineName: m.medicineName || "N/A",
+                    medicineDosage: m.medicineDosage || "N/A",
+                    medicineFrequency: m.medicineFrequency || "N/A",
+                    medicineTiming: m.timing || m.medicineTiming || "N/A",
+                    medicineDuration: m.medicineDuration || "N/A"
+                }));
+            } else if (Array.isArray(h.medications?.current) && h.medications.current.length > 0) {
+                prescribedMedicines = h.medications.current.map((medStr: string) => parseMedicineString(medStr));
+            }
+
+            return {
+                dateLabel,
+                detail: {
+                    primaryComplaintTitle: "Chief Complaint",
+                    primaryComplaintText: chiefComplaintText,
+                    detailsTitle: "Clinical & Assessment Details",
+                    detailsItems: detailsItems.length > 0 ? detailsItems : undefined,
+                    actionsTitle: "Medicines Prescribed",
+                    branch: h.branchName || "N/A",
+                    doctorName: h.doctorName || "N/A",
+                    iafDate: h.createdAt,
+                    chiefComplaint: chiefComplaintText,
+                    symptoms: symptomsText || undefined,
+                    prescribedMedicines,
+                    opdAssessmentId: h.id
+                }
+            };
+        });
+    }, [assessmentHistoryRes, appData.appointmentId]);
 
     const { data: referralData } = useGetPatientReferralForDoctorQuery(
         { registrationId: appointment?.registrationId || appointment?.appointmentId || 0 },
@@ -119,6 +381,7 @@ export default function DoctorActivity({
     const [symptoms, setSymptoms] = useState("");
     const [currentMedication, setCurrentMedication] = useState("");
     const [finalDiagnosis, setFinalDiagnosis] = useState("");
+    const [doctorNotes, setDoctorNotes] = useState("");
 
     // Section 2 State (Systemic Review)
     const [diabetes, setDiabetes] = useState<"yes" | "no" | "">("");
@@ -143,6 +406,9 @@ export default function DoctorActivity({
     const clinicalAssessmentRef = useRef<{ submit: () => void }>(null);
 
     const handleTranscriptionComplete = (summary: any, transcriptText: string) => {
+        if (transcriptText) {
+            setDoctorNotes(transcriptText);
+        }
         if (!summary) return;
         const summaryObj = typeof summary === "string" ? {} : summary;
 
@@ -276,6 +542,11 @@ export default function DoctorActivity({
 
     const handleSaveNextClick = async () => {
         if (step === 1) {
+            if (!hasJatayuAccess) {
+                setIsSkipped(true);
+                setStep(3);
+                return;
+            }
             if (recordedAudio) {
                 if (aiResponse) {
                     setStep(2);
@@ -351,6 +622,7 @@ export default function DoctorActivity({
                         const meds = summaryObj.medicines || "";
                         if (chief) setChiefComplaint(chief);
                         if (meds) setCurrentMedication(meds);
+                        if (res.transcript) setDoctorNotes(res.transcript);
 
                         setAiResponse({
                             metadata: {
@@ -399,7 +671,7 @@ export default function DoctorActivity({
                     setIsUploading(false);
                 }
             } else {
-                setStep(2);
+                setShowStartRecordingDialog(true);
             }
         } else if (step === 2) {
             if (consultationFormRef.current) {
@@ -601,12 +873,25 @@ export default function DoctorActivity({
     ];
 
     // 7. Patient Wallet Information Card
-    const walletDetails: PatientWalletDetailItem[] = [
-        { label: "Package", value: "N/A" },
-        { label: "Amount", value: "N/A" },
-        { label: "Discount", value: "N/A" },
-        { label: "Expire", value: "N/A" },
-    ];
+    const walletInfo = walletResponse?.data;
+    const remainingAmount = walletInfo?.walletExists && walletInfo.availableBalance !== undefined
+        ? `Rs. ${walletInfo.availableBalance}`
+        : "N/A";
+
+    const walletDetails: PatientWalletDetailItem[] = walletInfo?.walletExists
+        ? [
+            { label: "Current Balance", value: `Rs. ${walletInfo.currentBalance ?? 0}` },
+            { label: "Hold Amount", value: `Rs. ${walletInfo.holdAmount ?? 0}` },
+            { label: "Total Credit", value: `Rs. ${walletInfo.totalCredit ?? 0}` },
+            { label: "Total Debit", value: `Rs. ${walletInfo.totalDebit ?? 0}` },
+            { label: "Last Updated", value: walletInfo.lastUpdated ? new Date(walletInfo.lastUpdated).toLocaleDateString('en-GB') : "N/A" },
+        ]
+        : [
+            { label: "Package", value: "N/A" },
+            { label: "Amount", value: "N/A" },
+            { label: "Discount", value: "N/A" },
+            { label: "Expire", value: "N/A" },
+        ];
 
     // 8. Referral Detail Card
     const referralInfo = referralData?.data;
@@ -638,104 +923,133 @@ export default function DoctorActivity({
 
                     {/* Left Column (col-span-8) */}
                     <div className="lg:col-span-8 space-y-0">
-
-                        <div className="grid grid-cols-2 gap-4">
-
-                            <PatientDetailsCard
-                                name={patientName}
-                                subtitle={patientSubtitle}
-                                badges={patientBadges}
-                                infoItems={patientInfoItems}
-                            />
-
-                            {/* Vitals Card */}
-                            <VitalsCard items={vitalsItems} />
-                        </div>
-
-                        {/* Dynamic Step View Container */}
-                        {step === 1 && (
-                            <>
-                                <VoiceDoctorNotesCard
-                                    appointment={appData}
-                                    onTranscriptionComplete={handleTranscriptionComplete}
-                                    onAudioBlobChange={(blob, duration) => {
-                                        setRecordedAudio(blob);
-                                        setRecordedDuration(duration);
-                                    }}
-                                />
-                            </>
-                        )}
-                        {step === 2 && (
-                            <>
-                                <DoctorConsultationFormCard
-                                    ref={consultationFormRef}
-                                    chiefComplaint={chiefComplaint}
-                                    setChiefComplaint={setChiefComplaint}
-                                    symptoms={symptoms}
-                                    setSymptoms={setSymptoms}
-                                    currentMedication={currentMedication}
-                                    setCurrentMedication={setCurrentMedication}
-                                    finalDiagnosis={finalDiagnosis}
-                                    setFinalDiagnosis={setFinalDiagnosis}
-                                    diabetes={diabetes}
-                                    setDiabetes={setDiabetes}
-                                    bloodPressure={bloodPressure}
-                                    setBloodPressure={setBloodPressure}
-                                    thyroid={thyroid}
-                                    setThyroid={setThyroid}
-                                    allergy={allergy}
-                                    setAllergy={setAllergy}
-                                    sitting={sitting}
-                                    setSitting={setSitting}
-                                    standing={standing}
-                                    setStanding={setStanding}
-                                    walking={walking}
-                                    setWalking={setWalking}
-                                    medicines={medicines}
-                                    setMedicines={setMedicines}
-                                />
-                            </>
-                        )}
-                        {step === 3 && (
-                            <>
-                                <ClinicalAssessmentRecord
-                                    ref={clinicalAssessmentRef}
-                                    onComplete={handleSaveNextClick}
-                                    initialGender={appData.gender ? (appData.gender.charAt(0).toUpperCase() + appData.gender.slice(1).toLowerCase()) : "Male"}
-                                    appData={appData}
-                                    branchId={resolvedBranchId}
-                                    branchName={branchName}
-                                    chiefComplaint={chiefComplaint}
-                                    setChiefComplaint={setChiefComplaint}
-                                    symptoms={symptoms}
-                                    setSymptoms={setSymptoms}
-                                    finalDiagnosis={finalDiagnosis}
-                                    setFinalDiagnosis={setFinalDiagnosis}
-                                    diabetes={diabetes}
-                                    setDiabetes={setDiabetes}
-                                    bloodPressure={bloodPressure}
-                                    setBloodPressure={setBloodPressure}
-                                    thyroid={thyroid}
-                                    setThyroid={setThyroid}
-                                    allergy={allergy}
-                                    setAllergy={setAllergy}
-                                    sitting={sitting}
-                                    setSitting={setSitting}
-                                    standing={standing}
-                                    setStanding={setStanding}
-                                    walking={walking}
-                                    setWalking={setWalking}
-                                    medicines={medicines}
-                                    setMedicines={setMedicines}
-                                    followUpDate={followUpDate}
-                                    followUpRemarks={followUpRemarks}
-                                    aiResponse={aiResponse}
-                                    therapies={therapies}
-                                />
-                            </>
-                        )}
+                        <ScrollableContainer maxHeight="none" className="lg:max-h-[calc(100vh-270px)] max-h-none pr-2">
+                            <div className="space-y-4 pt-1 pb-1">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <PatientDetailsCard
+                                        name={patientName}
+                                        subtitle={patientSubtitle}
+                                        badges={patientBadges}
+                                        infoItems={patientInfoItems}
+                                    />
+                                    {/* Vitals Card */}
+                                    <VitalsCard items={vitalsItems} />
+                                </div>
+                                {/* Add here that Patient history card view only for old patient ok if the patient is new then its hide  */}
+                                {isOldPatient && (
+                                    <div className="mt-4 mb-4">
+                                        <PatientInformationTimelineCard
+                                            title="Patient History"
+                                            items={formattedTimelineItems}
+                                            onViewIaf={(iafId) => {
+                                                const isNumeric = /^\d+$/.test(iafId);
+                                                if (isNumeric) {
+                                                    setSelectedIafId(iafId);
+                                                }
+                                            }}
+                                            timeframe={timeframe}
+                                            onTimeframeChange={setTimeframe}
+                                            disableClientSideFilter={!!appData.appointmentId}
+                                        />
+                                    </div>
+                                )}
+                                {/* Dynamic Step View Container */}
+                                {step === 1 && (
+                                    <>
+                                        <VoiceDoctorNotesCard
+                                            appointment={appData}
+                                            onTranscriptionComplete={handleTranscriptionComplete}
+                                            onAudioBlobChange={(blob, duration) => {
+                                                setRecordedAudio(blob);
+                                                setRecordedDuration(duration);
+                                            }}
+                                            onSkip={() => {
+                                                setIsSkipped(true);
+                                                setStep(3);
+                                            }}
+                                            onStateChange={({ isRecording, isProcessing }) => {
+                                                setIsRecording(isRecording);
+                                                setIsProcessing(isProcessing);
+                                            }}
+                                            hasJatayuAccess={hasJatayuAccess}
+                                        />
+                                    </>
+                                )}
+                                {step === 2 && (
+                                    <>
+                                        <DoctorConsultationFormCard
+                                            ref={consultationFormRef}
+                                            chiefComplaint={chiefComplaint}
+                                            setChiefComplaint={setChiefComplaint}
+                                            symptoms={symptoms}
+                                            setSymptoms={setSymptoms}
+                                            currentMedication={currentMedication}
+                                            setCurrentMedication={setCurrentMedication}
+                                            finalDiagnosis={finalDiagnosis}
+                                            setFinalDiagnosis={setFinalDiagnosis}
+                                            diabetes={diabetes}
+                                            setDiabetes={setDiabetes}
+                                            bloodPressure={bloodPressure}
+                                            setBloodPressure={setBloodPressure}
+                                            thyroid={thyroid}
+                                            setThyroid={setThyroid}
+                                            allergy={allergy}
+                                            setAllergy={setAllergy}
+                                            sitting={sitting}
+                                            setSitting={setSitting}
+                                            standing={standing}
+                                            setStanding={setStanding}
+                                            walking={walking}
+                                            setWalking={setWalking}
+                                            medicines={medicines}
+                                            setMedicines={setMedicines}
+                                            doctorNotes={doctorNotes}
+                                        />
+                                    </>
+                                )}
+                                {step === 3 && (
+                                    <>
+                                        <ClinicalAssessmentRecord
+                                            ref={clinicalAssessmentRef}
+                                            onComplete={handleSaveNextClick}
+                                            initialGender={appData.gender ? (appData.gender.charAt(0).toUpperCase() + appData.gender.slice(1).toLowerCase()) : "Male"}
+                                            appData={appData}
+                                            branchId={resolvedBranchId}
+                                            branchName={branchName}
+                                            chiefComplaint={chiefComplaint}
+                                            setChiefComplaint={setChiefComplaint}
+                                            symptoms={symptoms}
+                                            setSymptoms={setSymptoms}
+                                            finalDiagnosis={finalDiagnosis}
+                                            setFinalDiagnosis={setFinalDiagnosis}
+                                            diabetes={diabetes}
+                                            setDiabetes={setDiabetes}
+                                            bloodPressure={bloodPressure}
+                                            setBloodPressure={setBloodPressure}
+                                            thyroid={thyroid}
+                                            setThyroid={setThyroid}
+                                            allergy={allergy}
+                                            setAllergy={setAllergy}
+                                            sitting={sitting}
+                                            setSitting={setSitting}
+                                            standing={standing}
+                                            setStanding={setStanding}
+                                            walking={walking}
+                                            setWalking={setWalking}
+                                            medicines={medicines}
+                                            setMedicines={setMedicines}
+                                            followUpDate={followUpDate}
+                                            followUpRemarks={followUpRemarks}
+                                            aiResponse={aiResponse}
+                                            therapies={therapies}
+                                            doctorNotes={doctorNotes}
+                                        />
+                                    </>
+                                )}
+                            </div>
+                        </ScrollableContainer>
                         <div className="flex justify-end gap-3 pt-5 items-center">
-                            {step === 3 && (
+                            {step === 3 && !isSkipped && (
                                 <BackToPreviousPageButton
                                     text="Back"
                                     onClick={() => setStep(2)}
@@ -746,14 +1060,18 @@ export default function DoctorActivity({
                                 size="large"
                                 onClick={() => {
                                     if (step === 1) {
-                                        handleSaveNextClick();
+                                        if (isRecording || isProcessing || isUploading) {
+                                            setShowBusyDialog(true);
+                                        } else {
+                                            handleSaveNextClick();
+                                        }
                                     } else if (step === 2) {
                                         handleSaveNextClick();
                                     } else if (step === 3) {
                                         clinicalAssessmentRef.current?.submit();
                                     }
                                 }}
-                                disabled={isUploading}
+                                disabled={step === 1 ? false : isUploading}
                                 className="flex items-center gap-2"
                             >
                                 {isUploading ? (
@@ -770,49 +1088,50 @@ export default function DoctorActivity({
                     </div>
 
                     {/* Right Column (col-span-4) */}
-                    <div className="lg:col-span-4 space-y-6">
+                    <div className="lg:col-span-4">
+                        <ScrollableContainer maxHeight="none" className="lg:max-h-[calc(100vh-200px)] max-h-none pr-2">
+                            <div className="space-y-6 pt-1 pb-1">
+                                {/* Health Card Preview */}
+                                <HealthCardPreview cardNumber={appData.jsHealthCardNo || "N/A"} />
 
-                        {/* Health Card Preview */}
-                        <HealthCardPreview cardNumber={appData.jsHealthCardNo || "N/A"} />
+                                {/* Medical Information */}
+                                <MedicalInformationCard items={medicalItems} />
 
-                        {/* Medical Information */}
-                        <MedicalInformationCard items={medicalItems} />
+                                {/* Patient Files */}
+                                <PatientFilesCard items={patientFilesItems} plainEmptyState={true} />
 
-                        {/* Patient Files (Empty state) */}
-                        <PatientFilesCard items={[]} plainEmptyState={true} />
+                                {/* Other Information */}
+                                <OtherInformationCard items={otherInfoItems} />
 
-                        {/* Other Information */}
-                        <OtherInformationCard items={otherInfoItems} />
+                                {/* Appointment Detail */}
+                                <AppointmentDetailCard items={appointmentItems} />
 
+                                {/* Patient Wallet Information */}
+                                <PatientWalletInformationCard
+                                    remainingAmount={remainingAmount}
+                                    details={walletDetails}
+                                    onActionClick={() => alert("Wallet details click (Demo Only)")}
+                                />
 
-                        {/* Appointment Detail */}
-                        <AppointmentDetailCard items={appointmentItems} />
+                                {/* Referral Detail */}
+                                <ReferralPatientInfoCard items={referralItems} />
 
-                        {/* Patient Wallet Information */}
-                        <PatientWalletInformationCard
-                            remainingAmount="N/A"
-                            details={walletDetails}
-                            onActionClick={() => alert("Wallet details click (Demo Only)")}
-                        />
+                                {/* Custom Follow-Up Card */}
+                                <FollowUpCard
+                                    followUpDate={followUpDate}
+                                    onFollowUpDateChange={setFollowUpDate}
+                                    followUpRemarks={followUpRemarks}
+                                    onFollowUpRemarksChange={setFollowUpRemarks}
+                                />
 
-                        {/* Referral Detail */}
-                        <ReferralPatientInfoCard items={referralItems} />
-
-                        {/* Custom Follow-Up Card */}
-                        <FollowUpCard
-                            followUpDate={followUpDate}
-                            onFollowUpDateChange={setFollowUpDate}
-                            followUpRemarks={followUpRemarks}
-                            onFollowUpRemarksChange={setFollowUpRemarks}
-                        />
-
-                        {/* Custom Therapies Card */}
-                        <TherapiesCard
-                            therapies={therapies}
-                            onTherapiesChange={setTherapies}
-                            branchId={resolvedBranchId}
-                        />
-
+                                {/* Custom Therapies Card */}
+                                <TherapiesCard
+                                    therapies={therapies}
+                                    onTherapiesChange={setTherapies}
+                                    branchId={resolvedBranchId}
+                                />
+                            </div>
+                        </ScrollableContainer>
                     </div>
 
                 </div>
@@ -844,6 +1163,32 @@ export default function DoctorActivity({
                 }}
                 onCancel={() => setShowExitConfirmDialog(false)}
             />
+            {/* Start Recording Reminder Dialog */}
+            <MessageDialog
+                open={showStartRecordingDialog}
+                onClose={() => setShowStartRecordingDialog(false)}
+                icon="/icons/questionMark.svg"
+                message="Please start the ai voice recording"
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowStartRecordingDialog(false)}
+            />
+            {/* Busy / Processing Dialog */}
+            <MessageDialog
+                open={showBusyDialog}
+                onClose={() => setShowBusyDialog(false)}
+                icon="/icons/questionMark.svg"
+                message="please wait unitl the processing of the recorded audio then u are able to move on next step"
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowBusyDialog(false)}
+            />
+            {selectedIafId && (
+                <IafDetailsDialog
+                    opdAssessmentId={Number(selectedIafId)}
+                    onClose={() => setSelectedIafId(null)}
+                />
+            )}
         </AppShell>
     );
 }

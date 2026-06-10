@@ -20,6 +20,7 @@ const ScrollableContainer = React.forwardRef<HTMLDivElement, ScrollableContainer
     overflowX = "auto",
 }, ref) => {
     const heightStyle = typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight;
+    const styleObj = maxHeight && maxHeight !== "none" ? { maxHeight: heightStyle } : {};
     const overflowYClass =
         overflowY === "hidden" ? "overflow-y-hidden" : overflowY === "visible" ? "overflow-y-visible" : "overflow-y-auto";
     const overflowXClass =
@@ -56,9 +57,7 @@ const ScrollableContainer = React.forwardRef<HTMLDivElement, ScrollableContainer
             <div
                 ref={ref}
                 className={`${overflowYClass} ${overflowXClass} ${showScrollbar ? "custom-scrollbar cstm-hidden" : "scrollbar-hide"} ${className}`}
-                style={{
-                    maxHeight: heightStyle,
-                }}
+                style={styleObj}
             >
                 {children}
             </div>

@@ -9,6 +9,7 @@ import { Checkbox } from "./CustomCheckbox";
 import { Button } from "./Button";
 import { SpinnerLoader } from "./SpinnerLoader";
 import { loginJatayu, fetchLanguageFromAPI, saveLanguageToAPI } from "@/store/api/jatayuApi";
+import { Tooltip } from "./Tooltip";
 
 const languageGroups = [
     {
@@ -45,6 +46,9 @@ export interface VoiceDoctorNotesCardProps {
     onAudioBlobChange?: (blob: Blob | null, duration: number) => void;
     appointment?: any;
     onTranscriptionComplete?: (summary: any, transcript: string) => void;
+    onSkip?: () => void;
+    onStateChange?: (states: { isRecording: boolean; isProcessing: boolean }) => void;
+    hasJatayuAccess?: boolean;
 }
 
 export function VoiceDoctorNotesCard({
@@ -56,6 +60,9 @@ export function VoiceDoctorNotesCard({
     onAudioBlobChange,
     appointment,
     onTranscriptionComplete,
+    onSkip,
+    onStateChange,
+    hasJatayuAccess = true,
 }: VoiceDoctorNotesCardProps) {
     const {
         recordingState,
@@ -124,7 +131,7 @@ export function VoiceDoctorNotesCard({
                 }
             }
         };
-        loadLang();
+        // loadLang();
     }, []);
 
     const handleSaveLanguage = async () => {
@@ -165,6 +172,12 @@ export function VoiceDoctorNotesCard({
 
     // Reference to audio player element
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
+    // Auto scroll to top of this card on mount (when Step 1 is active)
+    useEffect(() => {
+        containerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, []);
 
     // Fallback display duration using recorded duration if metadata is invalid, 0, Infinity, or NaN
     const displayDuration = (audioDuration && isFinite(audioDuration) && !isNaN(audioDuration))
@@ -190,6 +203,19 @@ export function VoiceDoctorNotesCard({
             onTranscriptionComplete?.(aiSummary, transcript);
         }
     }, [recordingState, isProcessing, aiSummary, transcript, onTranscriptionComplete]);
+
+    // Bubble up active recording and processing states to the parent
+    const isRecordingActive =
+        recordingState === RecordingState.RECORDING ||
+        recordingState === RecordingState.PAUSED ||
+        recordingState === RecordingState.REQUESTING_PERMISSION;
+
+    useEffect(() => {
+        onStateChange?.({
+            isRecording: isRecordingActive,
+            isProcessing: isProcessing,
+        });
+    }, [isRecordingActive, isProcessing, onStateChange]);
 
     // Wave tick animation state for the recording visualizer
     const [waveTick, setWaveTick] = useState(0);
@@ -280,7 +306,7 @@ export function VoiceDoctorNotesCard({
     };
 
     return (
-        <div className={`relative rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 ${className}`}>
+        <div ref={containerRef} className={`relative rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 ${className}`}>
 
             {/* Language Settings Button */}
             {/* <div className="absolute top-6 right-6">
@@ -296,7 +322,7 @@ export function VoiceDoctorNotesCard({
                     Language Options
                 </button>
             </div> */}
-
+            {/*  add here Skip button audio option when Start Recording is  */}
             {/* Hidden native audio element */}
             {audioUrl && (
                 <audio
@@ -360,16 +386,55 @@ export function VoiceDoctorNotesCard({
                 {/* 3. Idle / Initial State */}
                 {recordingState === RecordingState.IDLE && permissionStatus !== "denied" && permissionStatus !== "unsupported" && (
                     <div className="flex flex-col items-center gap-3 transition-all">
-                        <button
-                            onClick={() => startRecording(appointment, selectedLanguage)}
-                            className="flex cursor-pointer items-center gap-3 bg-[#0B8C00] text-white px-7 py-3 rounded-[32px] font-semibold text-sm hover:bg-[#097300] hover:shadow-lg active:scale-95 transition-all"
-                        >
-                            <span className="w-3.5 h-3.5 rounded-full bg-white relative flex items-center justify-center shadow-sm">
-                                <span className="absolute w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                <span className="absolute w-2 h-2 rounded-full bg-red-500" />
-                            </span>
-                            Start Recording
-                        </button>
+                        <div className="flex flex-col sm:flex-row items-center gap-4">
+                            {!hasJatayuAccess ? (
+                                <Tooltip content="Jatayu AI Access is not active. Please re-login or restore your session to start recording.">
+                                    <span className="inline-block cursor-not-allowed">
+                                        <Button
+                                            variant="primary"
+                                            disabled={true}
+                                            className="!rounded-[32px] !font-semibold !text-sm !shadow-md flex items-center gap-3 pointer-events-none opacity-60"
+                                            leftIcon={
+                                                <span className="w-3.5 h-3.5 rounded-full bg-white relative flex items-center justify-center shadow-sm">
+                                                    <span className="absolute w-2 h-2 rounded-full bg-red-500" />
+                                                </span>
+                                            }
+                                        >
+                                            Start Recording
+                                        </Button>
+                                    </span>
+                                </Tooltip>
+                            ) : (
+                                <Button
+                                    variant="primary"
+                                    onClick={() => startRecording(appointment, selectedLanguage)}
+                                    className="!rounded-[32px] !font-semibold !text-sm !shadow-md hover:!shadow-lg flex items-center gap-3"
+                                    leftIcon={
+                                        <span className="w-3.5 h-3.5 rounded-full bg-white relative flex items-center justify-center shadow-sm">
+                                            <span className="absolute w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                            <span className="absolute w-2 h-2 rounded-full bg-red-500" />
+                                        </span>
+                                    }
+                                >
+                                    Start Recording
+                                </Button>
+                            )}
+
+                            {onSkip && (
+                                <Button
+                                    variant="outline"
+                                    onClick={onSkip}
+                                    className="!border-[#E3EEE1] !text-[#434956] hover:!bg-[#F2F8F2] hover:!border-[#0B8C00]/30 hover:!text-[#0B8C00] !rounded-[32px] !shadow-[0px_4px_12px_rgba(0,0,0,0.02)]"
+                                    leftIcon={
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                                        </svg>
+                                    }
+                                >
+                                    Skip AI Recording
+                                </Button>
+                            )}
+                        </div>
                         <span className="text-xs text-gray-400 font-medium">Click to request microphone access and start recording</span>
                     </div>
                 )}

@@ -4,26 +4,20 @@ import type { RefreshTokenResponse } from "./authApi";
 export type { RefreshTokenResponse };
 
 const refreshBaseQuery = fetchBaseQuery({
-  // baseUrl: "https://newhiims.dikonia.in/api/v2",
   baseUrl: "https://hiims.dikonia.in/api/v2",
-  // NOTE: credentials: "include" removed — the refresh_token cookie is
-  // SameSite=Strict so the browser blocks it on cross-origin requests anyway,
-  // and it was causing a CORS preflight failure.
-  // Sending the current access_token as Bearer instead so the server can
-  // identify the session. Backend should fix Set-Cookie to SameSite=None
-  // when cookie-based refresh is needed.
+  credentials: "include",
   prepareHeaders: (headers) => {
-    const accessToken =
-      typeof window !== "undefined"
-        ? localStorage.getItem("authToken") || sessionStorage.getItem("authToken")
-        : null;
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
-
     headers.set("Content-Type", "application/json");
     headers.set("Accept", "application/json");
+
+    // Get the refresh_token from browser cookies
+    if (typeof document !== "undefined") {
+      const match = document.cookie.match(new RegExp('(^| )refresh_token=([^;]*)'));
+      const refreshToken = match ? decodeURIComponent(match[2]) : null;
+      if (refreshToken) {
+        headers.set("Authorization", `Bearer ${refreshToken}`);
+      }
+    }
 
     return headers;
   },

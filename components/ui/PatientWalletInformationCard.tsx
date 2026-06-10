@@ -65,7 +65,7 @@ export function PatientWalletInformationCard({
                                 ))}
                             </div>
                         )}
-                        {onActionClick && (
+                        {/* {onActionClick && (
                             <div className="flex justify-center mt-4">
                                 <button
                                     type="button"
@@ -76,7 +76,7 @@ export function PatientWalletInformationCard({
                                     {actionLabel}
                                 </button>
                             </div>
-                        )}
+                        )} */}
                     </>
                 )}
             </div>

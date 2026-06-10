@@ -88,6 +88,58 @@ export const commonApi = baseApi.injectEndpoints({
         params: params || undefined,
       }),
     }),
+    getPresignedUrl: builder.query<
+      {
+        success: boolean;
+        data: { signedUrl: string };
+        message: string;
+        timestamp: string;
+        statusCode: number;
+      },
+      { key: string }
+    >({
+      query: (params) => ({
+        url: `/common/getPresignedUrl?key=${encodeURIComponent(params.key)}`,
+        method: "GET",
+      }),
+      // Presigned URLs expire in ~1 hour; don't cache beyond 55 minutes
+      keepUnusedDataFor: 55 * 60,
+    }),
+    getPatientFiles: builder.query<
+      {
+        success: boolean;
+        data: Array<{
+          id: number;
+          uhid: string;
+          fileName: string;
+          description: string | null;
+          path: string;
+          uploadedBy: string | null;
+          branchId: number;
+          masterSettingId: number;
+          createdBy: number;
+          createdAt: string;
+          updatedAt: string;
+          fileType: string | null;
+          createdByName: string | null;
+        }>;
+        message: string;
+        timestamp: string;
+        statusCode: number;
+      },
+      { uhid: string }
+    >({
+      query: (params) => ({
+        url: `/common/getPatientFiles?uhid=${encodeURIComponent(params.uhid)}`,
+        method: "GET",
+      }),
+      // Provide a per-UHID tag so createPatientFile can invalidate only this patient's files
+      providesTags: (_result, _error, { uhid }) => [
+        { type: "PatientFiles" as const, id: uhid },
+      ],
+      // Cache data for 5 minutes after component unmounts
+      keepUnusedDataFor: 300,
+    }),
   }),
 });
 
@@ -96,4 +148,8 @@ export const {
   useGetFloorDropdownQuery,
   useGetDoctorDropdownQuery,
   useGetRoomTypeDropdownQuery,
+  useGetPresignedUrlQuery,
+  useLazyGetPresignedUrlQuery,
+  useGetPatientFilesQuery,
+  useLazyGetPatientFilesQuery,
 } = commonApi;

@@ -32,6 +32,7 @@ import { useGetPatientAssessmentHistoryQuery } from "@/store/api/doctorApi";
 
 export interface ViewAppointmentProps {
     appointmentId?: number;
+    uhid?: string;
     // Left column
     appointmentItems?: AppointmentDetailItem[];
     walletRemainingAmount?: string;
@@ -67,6 +68,7 @@ export interface ViewAppointmentProps {
 
 export function ViewAppointment({
     appointmentId,
+    uhid,
     // Left column
     appointmentItems,
     walletRemainingAmount = "Rs. 0",
@@ -108,13 +110,16 @@ export function ViewAppointment({
         return "all";
     }, [timeframe]);
 
+    const resolvedUhid = (uhid || appointmentItems?.find(item => item.label === "UHID")?.value || "").trim();
+    const isUhidValid = resolvedUhid !== "" && resolvedUhid !== "N/A";
+
     const { data: assessmentHistoryRes } = useGetPatientAssessmentHistoryQuery(
-        { appointmentId: appointmentId || 0, filter: apiFilter },
-        { skip: !appointmentId }
+        { uhid: resolvedUhid, filter: apiFilter },
+        { skip: !isUhidValid }
     );
 
     const formattedTimelineItems = useMemo(() => {
-        if (!appointmentId) {
+        if (!isUhidValid) {
             return timelineItems || [];
         }
 

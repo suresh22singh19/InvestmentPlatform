@@ -4,10 +4,12 @@ import { useParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { BackToPreviousPageButton } from "@/components/ui";
+import { TableListingCard } from "@/components/ui/TableListingCard";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useGetAppointmentWithRegistrationQuery } from "@/store/api/registrationApi";
-import { useMemo } from "react";
+import { useLazyGetPresignedUrlQuery, useGetPatientFilesQuery } from "@/store/api/commonApi";
+import { useMemo, useState, useCallback } from "react";
 
 // Helper function to format date
 const formatDate = (dateString: string | undefined | null): string => {
@@ -116,6 +118,73 @@ export default function ViewRegistrationFormPage() {
         if (!appointment) return false;
         return appointment.isVitalMedicalAdded === true;
     }, [appointment]);
+
+    const uhid = patientData?.uhid ?? "";
+
+    // Fetch patient files — tag-based invalidation ensures fresh data after upload
+    const { data: patientFilesData, isLoading: isLoadingFiles } = useGetPatientFilesQuery(
+        { uhid },
+        { skip: !uhid, refetchOnMountOrArgChange: true }
+    );
+
+    const [getPresignedUrl] = useLazyGetPresignedUrlQuery();
+    const [loadingFileId, setLoadingFileId] = useState<number | null>(null);
+
+    const handleViewFile = useCallback(async (fileId: number, filePath: string) => {
+        if (loadingFileId !== null) return; // prevent concurrent clicks
+        setLoadingFileId(fileId);
+        try {
+            const result = await getPresignedUrl({ key: filePath }).unwrap();
+            const signedUrl = result?.data?.signedUrl;
+            if (signedUrl) {
+                window.open(signedUrl, "_blank", "noopener,noreferrer");
+            }
+        } catch (err) {
+            console.error("Failed to get presigned URL:", err);
+        } finally {
+            setLoadingFileId(null);
+        }
+    }, [getPresignedUrl, loadingFileId]);
+
+    const patientFileRows = useMemo(() => {
+        const files = patientFilesData?.data;
+        if (!Array.isArray(files) || files.length === 0) return [];
+        return files.map((file, index) => [
+            <span key={`sr-${file.id}`} className="text-sm font-medium text-[#262D3B]">{index + 1}</span>,
+            <span key={`fn-${file.id}`} className="text-sm font-medium text-[#262D3B]">{file.fileName || "—"}</span>,
+            <span key={`ft-${file.id}`} className="text-sm font-medium text-[#262D3B]">{file.fileType || "—"}</span>,
+            <span key={`ab-${file.id}`} className="text-sm font-medium text-[#262D3B]">{file.createdByName || "—"}</span>,
+            <span key={`dt-${file.id}`} className="text-sm font-medium text-[#262D3B]">
+                {file.createdAt
+                    ? new Date(file.createdAt).toLocaleString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: true,
+                    })
+                    : "—"}
+            </span>,
+            <button
+                key={`view-${file.id}`}
+                type="button"
+                disabled={loadingFileId !== null}
+                onClick={() => handleViewFile(file.id, file.path)}
+                className="inline-flex min-w-[60px] items-center justify-center rounded-[30px] bg-[#0B8C00] px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#096e00] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+                {loadingFileId === file.id ? (
+                    <span className="inline-flex items-center gap-[3px]">
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white [animation-delay:-0.3s]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white [animation-delay:-0.15s]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white" />
+                    </span>
+                ) : (
+                    "View"
+                )}
+            </button>,
+        ]);
+    }, [patientFilesData, loadingFileId, handleViewFile]);
 
     if (isLoading) {
         return (
@@ -415,7 +484,7 @@ export default function ViewRegistrationFormPage() {
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                         <p className="text-xs font-medium text-[#7B8089]">Doctor </p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctor?.name ||appointment.doctor?.userName || appointment.doctor?.email || "N/A"}</p>
+                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctor?.name || appointment.doctor?.userName || appointment.doctor?.email || "N/A"}</p>
                                     </div>
 
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
@@ -458,8 +527,8 @@ export default function ViewRegistrationFormPage() {
                                             {String(appointment?.isConsultancyVoucherApplied ?? "").toLowerCase() === "yes"
                                                 ? "OPD Voucher Applied"
                                                 : Number(appointment?.doctorFee ?? patientData.payment?.doctorFee ?? 0) === 0
-                                                  ? "0"
-                                                  : capitalizeWords(patientData.payment?.paymentMode || patientData.schemeType || "Cash") +
+                                                    ? "0"
+                                                    : capitalizeWords(patientData.payment?.paymentMode || patientData.schemeType || "Cash") +
                                                     (patientData.payment?.paymentMode === "credit" ? " (Online Payment)" : "")}
                                         </p>
                                     </div>
@@ -718,6 +787,31 @@ export default function ViewRegistrationFormPage() {
                         </div>
                     )}
                     {/* Medical details  */}
+
+                    {/* Patient Files Details */}
+                    <div className="w-full overflow-hidden lg:rounded-[20px] lg:border lg:border-[#E3EEE1] lg:p-4 mb-4">
+                        <h3 className="font-inter font-semibold text-[18px] md:text-[20px] lg:text-[24px] leading-[120%] text-[#262D3B] mb-4">Patient Files Details</h3>
+                        <TableListingCard
+                            sections={[
+                                {
+                                    id: "patient-files",
+                                    isLoading: isLoadingFiles,
+                                    columns: [
+                                        { label: "Sr. No." },
+                                        { label: "File Name" },
+                                        { label: "File Type" },
+                                        { label: "Added By" },
+                                        { label: "Date" },
+                                        { label: "File" },
+                                    ],
+                                    rows: patientFileRows,
+                                    emptyMessage: "No patient files found.",
+                                },
+                            ]}
+                        />
+                    </div>
+                    {/* Patient Files Details */}
+
 
                 </div>
 

@@ -26,20 +26,20 @@ function getJwtExpiration(token: string): number | null {
     try {
         const parts = token.split(".");
         if (parts.length !== 3) return null;
-        
+
         let payloadString = parts[1];
         payloadString = payloadString.replace(/-/g, "+").replace(/_/g, "/");
         while (payloadString.length % 4) {
             payloadString += "=";
         }
-        
+
         let decoded = "";
         if (typeof window !== "undefined") {
             decoded = window.atob(payloadString);
         } else {
             decoded = Buffer.from(payloadString, "base64").toString("utf-8");
         }
-        
+
         const payload = JSON.parse(decoded);
         if (payload && typeof payload.exp === "number") {
             return payload.exp;
@@ -95,7 +95,25 @@ if (typeof window !== "undefined") {
     }, 1000);
 }
 
-export async function loginJatayu(): Promise<{ token: string;[key: string]: any }> {
+export async function forceLogoutJatayu(): Promise<void> {
+    const tempToken = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
+    try {
+        await fetch(`${AUTH_BASE_URL}/logout`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(tempToken ? { "Authorization": `Bearer ${tempToken}` } : {})
+            },
+            body: JSON.stringify({
+                emailid: "jeena1sikho@gmail.com"
+            })
+        });
+    } catch (logoutErr) {
+        console.error("Force logout Jatayu failed:", logoutErr);
+    }
+}
+
+export async function loginJatayu(allowAutoLogout: boolean = true): Promise<{ token: string;[key: string]: any }> {
     let response = await fetch(`${AUTH_BASE_URL}/login`, {
         method: "POST",
         headers: {
@@ -109,23 +127,12 @@ export async function loginJatayu(): Promise<{ token: string;[key: string]: any 
 
     if (!response.ok) {
         const errorText = await response.text();
-        if (errorText.includes("already logged in")) {
-            console.warn("User is already logged in on Jatayu server. Attempting logout fallback to clear session...");
-            const tempToken = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
-            try {
-                await fetch(`${AUTH_BASE_URL}/logout`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        ...(tempToken ? { "Authorization": `Bearer ${tempToken}` } : {})
-                    },
-                    body: JSON.stringify({
-                        emailid: "jeena1sikho@gmail.com"
-                    })
-                });
-            } catch (logoutErr) {
-                console.error("Auto logout fallback failed:", logoutErr);
+        if (errorText.toLowerCase().includes("already logged in")) {
+            if (!allowAutoLogout) {
+                throw new Error("JATAYU_ALREADY_LOGGED_IN");
             }
+            console.warn("User is already logged in on Jatayu server. Attempting logout fallback to clear session...");
+            await forceLogoutJatayu();
 
             console.log("Retrying Jatayu login...");
             response = await fetch(`${AUTH_BASE_URL}/login`, {
@@ -241,6 +248,10 @@ export async function refreshJatayuToken(): Promise<string> {
             });
 
             if (!response.ok) {
+                const errorText = await response.text().catch(() => "");
+                if (response.status === 401 || errorText.toLowerCase().includes("session_expired")) {
+                    throw new Error("JATAYU_SESSION_EXPIRED");
+                }
                 console.error(`Token refresh failed with status ${response.status}, attempting full login`);
                 const loginRes = await loginJatayu();
                 return loginRes.token;

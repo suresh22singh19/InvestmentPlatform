@@ -69,6 +69,28 @@ export const doctorFormSchema = Yup.object({
     .max(MAX_LEN, `Employee Id cannot exceed ${MAX_LEN} characters`)
     .matches(/^[a-zA-Z0-9\-]+$/, "Only letters, numbers, and hyphens are allowed"),
   status: Yup.mixed<"Active" | "Inactive">().oneOf(["Active", "Inactive"]).required(),
+  aiVoiceActivated: Yup.mixed<"Active" | "Inactive">().oneOf(["Active", "Inactive"]).required("Voice AI is required"),
+  changeVoiceAiPassword: Yup.string().oneOf(["Yes", "No"]).optional(),
+  aiVoicePassword: Yup.string()
+    .trim()
+    .when(["aiVoiceActivated", "changeVoiceAiPassword"], ([aiVoiceActivated, changeVoiceAiPassword], schema) => {
+      if (aiVoiceActivated === "Active" && changeVoiceAiPassword !== "No") {
+        return schema
+          .required("Password for Voice AI is required")
+          .min(6, "Password must be at least 6 characters");
+      }
+      return schema.optional();
+    }),
+  voiceAiConfirmPassword: Yup.string()
+    .trim()
+    .when(["aiVoiceActivated", "changeVoiceAiPassword"], ([aiVoiceActivated, changeVoiceAiPassword], schema) => {
+      if (aiVoiceActivated === "Active" && changeVoiceAiPassword !== "No") {
+        return schema
+          .required("Confirm Password for Voice AI is required")
+          .oneOf([Yup.ref("aiVoicePassword")], "Passwords must match");
+      }
+      return schema.optional();
+    }),
   address: Yup.string()
     .trim()
     .required("Address is required")

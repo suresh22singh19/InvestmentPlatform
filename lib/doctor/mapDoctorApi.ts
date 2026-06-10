@@ -84,6 +84,8 @@ export type ApiDoctorListItem = {
     createdAt?: string;
     /** Optional document / certificate URL or filename from API */
     attachment?: string | null;
+    aiVoiceActivated?: boolean | string | null;
+    aiVoicePassword?: string | null;
 };
 
 type ApiEducationJsonRow = {
@@ -315,6 +317,10 @@ export function mapApiDoctorListItemToPayload(row: ApiDoctorListItem): DoctorPay
         education: mapEducationRowsFromApi(row.education, row.id),
         specializations: mapSpecializationsFromApi(row.specialization, row.id),
         registrations: mapRegistrationsFromApi(row.registeration, row.id),
+        aiVoiceActivated: row.aiVoiceActivated === true || row.aiVoiceActivated === "true" || row.aiVoiceActivated === "Active" ? "Active" : "Inactive",
+        changeVoiceAiPassword: "No",
+        aiVoicePassword: row.aiVoicePassword || "",
+        voiceAiConfirmPassword: row.aiVoicePassword || "",
     };
 }
 
@@ -353,6 +359,8 @@ export function buildCreateDoctorBody(payload: DoctorPayload) {
         accountNumber: payload.accountNumber?.trim() || "",
         ifscCode: payload.ifscCode?.trim() || "",
         city: payload.city?.trim() || "",
+        aiVoiceActivated: payload.aiVoiceActivated === "Active",
+        ...(payload.aiVoiceActivated === "Active" ? { aiVoicePassword: payload.aiVoicePassword?.trim() } : {}),
     };
 }
 
@@ -410,6 +418,8 @@ export function buildUpdateDoctorBody(
         nabh: payload.nabhRegistered ? "yes" : "no",
         loginType: payload.loginType,
         status: payload.status === "Inactive" ? "inactive" : "active",
+        aiVoiceActivated: payload.aiVoiceActivated === "Active",
+        ...(payload.aiVoiceActivated === "Active" && payload.changeVoiceAiPassword !== "No" ? { aiVoicePassword: payload.aiVoicePassword?.trim() } : {}),
     };
 }
 

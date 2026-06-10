@@ -11,6 +11,8 @@ export interface PatientFileItem {
     actionIconAlt?: string;
     /** When set, the download action opens this URL (e.g. legacy file path) */
     downloadUrl?: string;
+    /** Callback for action button click */
+    onClick?: () => void;
 }
 
 interface PatientFilesCardProps {
@@ -77,7 +79,21 @@ export function PatientFilesCard({
                                     </div>
                                 </div>
                                 <div>
-                                    {item.downloadUrl ? (
+                                    {item.onClick ? (
+                                        <button
+                                            type="button"
+                                            onClick={item.onClick}
+                                            className="flex justify-center items-center w-9 h-9 bg-[rgba(11,140,0,0.05)] shadow-[0px_6px_30px_rgba(0,0,0,0.08)] rounded-full transition-colors hover:bg-[rgba(11,140,0,0.12)] cursor-pointer border-none"
+                                            aria-label={`View ${item.name}`}
+                                        >
+                                            <Image
+                                                src={item.actionIconSrc ?? "/icons/filedownload.svg"}
+                                                alt={item.actionIconAlt ?? "File View"}
+                                                width={20}
+                                                height={20}
+                                            />
+                                        </button>
+                                    ) : item.downloadUrl ? (
                                         <a
                                             href={item.downloadUrl}
                                             target="_blank"

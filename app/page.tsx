@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
-import { MessageDialog } from "@/components/ui";
+import { MessageDialog, Dialog, Button } from "@/components/ui";
 import { LoginForm } from "@/components/forms/LoginForm";
 import { LoginOtpForm } from "@/components/forms/LoginOtpForm";
 import {
   useLoginMutation,
+  useLogoutMutation,
   isLoginSuccessData,
   isLoginOtpRequiredData,
   type LoginResponse,
 } from "@/store/api/authApi";
-import { useAppDispatch } from "@/store/hooks";
-import { setCredentials } from "@/store/slices/authSlice";
-import { loginJatayu } from "@/store/api/jatayuApi";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { setCredentials, logout, selectIsAuthenticated, selectLoginData } from "@/store/slices/authSlice";
+import { loginJatayu, forceLogoutJatayu } from "@/store/api/jatayuApi";
 import { LoginFormValues } from "@/lib/validation/schemas";
 import { encrypt, decrypt } from "@/lib/utils/encryption";
 import type { LoginPermissionModule } from "@/store/api/authApi";
@@ -69,7 +70,7 @@ const SUB_MODULE_ROUTE_MAP: Record<string, string> = {
   "view daily reports": "/gate/reports",
 };
 
-const getPermissionLandingRoute = (permissions?: LoginPermissionModule[]): string | null => {
+const getPermissionLandingRoute = (permissions?: any[]): string | null => {
   if (!permissions?.length) return null;
 
   /** Prefer Dashboard when visible so mixed roles (e.g. Doctor + Role Master) land on home, not admin. */
@@ -99,7 +100,10 @@ const getPermissionLandingRoute = (permissions?: LoginPermissionModule[]): strin
 export default function LoginPage() {
   const router = useRouter();
   const [login, { isLoading }] = useLoginMutation();
+  const [logoutHIIMS] = useLogoutMutation();
   const dispatch = useAppDispatch();
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const loginData = useAppSelector(selectLoginData);
   const [authPhase, setAuthPhase] = useState<"credentials" | "otp">("credentials");
   const [pendingLogin, setPendingLogin] = useState<PendingLogin | null>(null);
   const [otpInfoMessage, setOtpInfoMessage] = useState("");
@@ -107,7 +111,16 @@ export default function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
-  
+  const [showJatayuForceLogoutDialog, setShowJatayuForceLogoutDialog] = useState(false);
+  const [showJatayuSuccessDialog, setShowJatayuSuccessDialog] = useState(false);
+  const [showJatayuErrorDialog, setShowJatayuErrorDialog] = useState(false);
+  const [isJatayuActionLoading, setIsJatayuActionLoading] = useState(false);
+  const [deferredRedirect, setDeferredRedirect] = useState<{
+    result: LoginResponse;
+    values: LoginFormValues;
+  } | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   // Load saved credentials and rememberMe state from localStorage synchronously
   const getSavedCredentials = (): {
     email: string;
@@ -115,25 +128,25 @@ export default function LoginPage() {
     rememberMe: boolean;
   } | null => {
     if (typeof window === "undefined") return null;
-    
+
     const savedEmail = localStorage.getItem("rememberedEmail");
     const savedPasswordEncrypted = localStorage.getItem("rememberedPassword");
     const savedRememberMe = localStorage.getItem("rememberMe") === "true";
-    
+
     // Get last rememberMe checkbox state (even if credentials don't exist)
     const lastRememberMeState = localStorage.getItem("lastRememberMeState") === "true";
 
     if (savedEmail && savedPasswordEncrypted && savedRememberMe) {
       // Decrypt the password
       const savedPassword = decrypt(savedPasswordEncrypted);
-      
+
       return {
         email: savedEmail,
         password: savedPassword,
         rememberMe: savedRememberMe,
       };
     }
-    
+
     // Return null but we'll use lastRememberMeState for the checkbox
     return null;
   };
@@ -149,7 +162,7 @@ export default function LoginPage() {
     password: string;
     rememberMe: boolean;
   } | null>(getSavedCredentials());
-  
+
   const [lastRememberMeState, setLastRememberMeState] = useState<boolean>(getLastRememberMeState());
 
   const clearFieldError = (field: "email" | "password") => {
@@ -160,6 +173,52 @@ export default function LoginPage() {
       return next;
     });
   };
+
+  const routeUser = useCallback((loginType: string | undefined, permissions: any[] | undefined) => {
+    const type = loginType?.toLowerCase();
+    const permissionsMap = formatPermissions(permissions ?? []);
+
+    if (type === "clinic user") {
+      router.push("/registration");
+    } else if (type === "hospital user") {
+      router.push("/registration/hospital");
+    } else if (type === "nurse") {
+      router.push("/registration/registrationList");
+    } else if (hasOnlyGateModuleViewAccess(permissionsMap)) {
+      router.push("/gate");
+    } else if (type?.includes("gate")) {
+      router.push("/gate");
+    } else {
+      router.push(getPermissionLandingRoute(permissions) ?? "/dashboard");
+    }
+  }, [router]);
+
+  const performRedirect = useCallback((result: LoginResponse, values: LoginFormValues) => {
+    if (!isLoginSuccessData(result.data)) return;
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("lastRememberMeState", values.rememberMe ? "true" : "false");
+      setLastRememberMeState(values.rememberMe);
+
+      if (values.rememberMe) {
+        localStorage.setItem("rememberedEmail", values.email);
+        localStorage.setItem("rememberedPassword", encrypt(values.password));
+        localStorage.setItem("rememberMe", "true");
+        setSavedCredentials({
+          email: values.email,
+          password: values.password,
+          rememberMe: true,
+        });
+      } else {
+        localStorage.removeItem("rememberedEmail");
+        localStorage.removeItem("rememberedPassword");
+        localStorage.removeItem("rememberMe");
+        setSavedCredentials(null);
+      }
+    }
+
+    routeUser(result.data.login_type, result.data.permissions);
+  }, [routeUser]);
 
   const finalizeSuccessfulLogin = useCallback(
     async (result: LoginResponse, values: LoginFormValues) => {
@@ -183,48 +242,78 @@ export default function LoginPage() {
 
       // Asynchronously log in to Jatayu and store the token if not a gate user
       if (!isGateUser) {
-        loginJatayu().catch((err) => {
-          console.error("Jatayu login failed:", err);
-        });
-      }
-
-      if (typeof window !== "undefined") {
-        localStorage.setItem("lastRememberMeState", values.rememberMe ? "true" : "false");
-        setLastRememberMeState(values.rememberMe);
-
-        if (values.rememberMe) {
-          localStorage.setItem("rememberedEmail", values.email);
-          localStorage.setItem("rememberedPassword", encrypt(values.password));
-          localStorage.setItem("rememberMe", "true");
-          setSavedCredentials({
-            email: values.email,
-            password: values.password,
-            rememberMe: true,
-          });
-        } else {
-          localStorage.removeItem("rememberedEmail");
-          localStorage.removeItem("rememberedPassword");
-          localStorage.removeItem("rememberMe");
-          setSavedCredentials(null);
+        try {
+          await loginJatayu(false);
+          performRedirect(result, values);
+        } catch (err: any) {
+          if (err.message === "JATAYU_ALREADY_LOGGED_IN") {
+            setDeferredRedirect({ result, values });
+            setShowJatayuForceLogoutDialog(true);
+          } else {
+            console.error("Jatayu login failed:", err);
+            setDeferredRedirect({ result, values });
+            setShowJatayuErrorDialog(true);
+          }
         }
-      }
-
-      if (loginType === "clinic user") {
-        router.push("/registration");
-      } else if (loginType === "hospital user") {
-        router.push("/registration/hospital");
-      } else if (loginType === "nurse") {
-        router.push("/registration/registrationList");
-      } else if (hasOnlyGateModuleViewAccess(permissionsMap)) {
-        router.push("/gate");
-      } else if (loginType?.includes("gate")) {
-        router.push("/gate");
       } else {
-        router.push(getPermissionLandingRoute(result.data.permissions) ?? "/dashboard");
+        performRedirect(result, values);
       }
     },
-    [dispatch, router]
+    [dispatch, performRedirect]
   );
+
+  // Redirect already logged-in users away from the login page
+  useEffect(() => {
+    if (isAuthenticated && loginData && !isLoggingIn) {
+      routeUser(loginData.login_type, loginData.permissions);
+    }
+  }, [isAuthenticated, loginData, routeUser, isLoggingIn]);
+
+  const handleConfirmJatayuForceLogout = async () => {
+    if (!deferredRedirect) return;
+    setIsJatayuActionLoading(true);
+    try {
+      await forceLogoutJatayu();
+      await loginJatayu(true);
+      setShowJatayuForceLogoutDialog(false);
+      setShowJatayuSuccessDialog(true);
+    } catch (err) {
+      console.error("Force logout & login retry failed:", err);
+      setShowJatayuForceLogoutDialog(false);
+      performRedirect(deferredRedirect.result, deferredRedirect.values);
+    } finally {
+      setIsJatayuActionLoading(false);
+    }
+  };
+
+  const handleCancelJatayuForceLogout = async () => {
+    setShowJatayuForceLogoutDialog(false);
+    setIsJatayuActionLoading(true);
+    try {
+      await logoutHIIMS().unwrap();
+    } catch (err) {
+      console.error("HIIMS logout API error on cancel:", err);
+    } finally {
+      setIsJatayuActionLoading(false);
+      dispatch(logout());
+      setDeferredRedirect(null);
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleConfirmJatayuSuccess = () => {
+    setShowJatayuSuccessDialog(false);
+    if (deferredRedirect) {
+      performRedirect(deferredRedirect.result, deferredRedirect.values);
+    }
+  };
+
+  const handleConfirmJatayuError = () => {
+    setShowJatayuErrorDialog(false);
+    if (deferredRedirect) {
+      performRedirect(deferredRedirect.result, deferredRedirect.values);
+    }
+  };
 
   const parseApiErrorMessage = (error: unknown): string | undefined => {
     const err = error as {
@@ -243,6 +332,7 @@ export default function LoginPage() {
     setFieldErrors({});
     setShowErrorDialog(false);
     setErrorMessage("");
+    setIsLoggingIn(true);
 
     try {
       const result = await login({
@@ -266,6 +356,7 @@ export default function LoginPage() {
         await finalizeSuccessfulLogin(result, values);
       }
     } catch (error: unknown) {
+      setIsLoggingIn(false);
       console.error("Login error:", error);
 
       const apiMessage = parseApiErrorMessage(error);
@@ -308,6 +399,7 @@ export default function LoginPage() {
     setOtpFieldError(undefined);
     setShowErrorDialog(false);
     setErrorMessage("");
+    setIsLoggingIn(true);
 
     try {
       const result = await login({
@@ -337,6 +429,7 @@ export default function LoginPage() {
       setShowErrorDialog(true);
       throw new Error(errorMsg);
     } catch (error: unknown) {
+      setIsLoggingIn(false);
       console.error("OTP login error:", error);
 
       const apiMessage = parseApiErrorMessage(error);
@@ -368,6 +461,7 @@ export default function LoginPage() {
     setPendingLogin(null);
     setOtpInfoMessage("");
     setOtpFieldError(undefined);
+    setIsLoggingIn(false);
   };
 
   const handleForgotPassword = () => {
@@ -407,15 +501,15 @@ export default function LoginPage() {
                 initialValues={
                   savedCredentials
                     ? {
-                        email: savedCredentials.email,
-                        password: savedCredentials.password,
-                        rememberMe: savedCredentials.rememberMe,
-                      }
+                      email: savedCredentials.email,
+                      password: savedCredentials.password,
+                      rememberMe: savedCredentials.rememberMe,
+                    }
                     : {
-                        email: "",
-                        password: "",
-                        rememberMe: lastRememberMeState,
-                      }
+                      email: "",
+                      password: "",
+                      rememberMe: lastRememberMeState,
+                    }
                 }
               />
             </>
@@ -454,6 +548,66 @@ export default function LoginPage() {
         onConfirm={() => {
           setShowErrorDialog(false);
         }}
+      />
+
+      {/* Jatayu Force Logout Confirmation Dialog */}
+      <Dialog
+        open={showJatayuForceLogoutDialog}
+        onClose={handleCancelJatayuForceLogout}
+        title="Jatayu Session Active"
+        width={480}
+        closeOnOutsideClick={false}
+      >
+        <div className="space-y-6">
+          <p className="text-sm text-[#434956] leading-relaxed">
+            This account is already logged in on another system. Do you want to log out from the other session and log in here?
+          </p>
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <Button
+              variant="outline"
+              size="medium"
+              onClick={handleCancelJatayuForceLogout}
+              disabled={isJatayuActionLoading}
+              className="!border-[#E3EEE1] !text-[#434956] hover:!bg-[#F2F8F2] hover:!border-[#0B8C00]/30 hover:!text-[#0B8C00] !rounded-[24px]"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="medium"
+              onClick={handleConfirmJatayuForceLogout}
+              isLoading={isJatayuActionLoading}
+              disabled={isJatayuActionLoading}
+              className="!rounded-[24px]"
+            >
+              Confirm
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Jatayu Success Message Dialog */}
+      <MessageDialog
+        open={showJatayuSuccessDialog}
+        onClose={handleConfirmJatayuSuccess}
+        icon="/icons/SuccessCheck.svg"
+        iconBgColor="#E8F5E9"
+        message="User logged out successfully from another system and logged in in the current system"
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={handleConfirmJatayuSuccess}
+      />
+
+      {/* Jatayu Technical Error Dialog */}
+      <MessageDialog
+        open={showJatayuErrorDialog}
+        onClose={handleConfirmJatayuError}
+        icon="/icons/CrossIcon.svg"
+        iconBgColor="#FFEBEE"
+        message="In that Jatayu Login Api facing error so currently this login not work"
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={handleConfirmJatayuError}
       />
     </div>
   );

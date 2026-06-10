@@ -49,6 +49,10 @@ export type DoctorRecord = {
     selectTeam: string;
     employeeId: string;
     status: "Active" | "Inactive";
+    aiVoiceActivated: "Active" | "Inactive";
+    changeVoiceAiPassword?: "Yes" | "No";
+    aiVoicePassword?: string;
+    voiceAiConfirmPassword?: string;
     createdAt?: string;
     address: string;
     city: string;
@@ -83,6 +87,7 @@ export const BRANCH_OPTIONS_FORM: SelectOption[] = STATIC_BRANCH_FILTER_OPTIONS.
 
 export const DEPARTMENT_OPTIONS: SelectOption[] = [
     { value: "", label: "--Select--" },
+    { value: "opd", label: "OPD" },
     { value: "opd-ipd", label: "OPD/IPD" },
     { value: "dietitian", label: "Dietitian" },
     { value: "ac-fan-service", label: "Ac/Fan Service" },
@@ -93,7 +98,7 @@ export const DEPARTMENT_OPTIONS: SelectOption[] = [
     { value: "naturopathy", label: "Naturopathy" },
     { value: "panchkarma", label: "Panchkarma" },
     { value: "ipd", label: "IPD" },
-    { value: "opd", label: "OPD" },
+
 ];
 
 /** Values allowed for `department` (matches `DEPARTMENT_OPTIONS`). */
@@ -168,6 +173,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
         selectTeam: "dr-neha",
         employeeId: "JS20752",
         status: "Active",
+        aiVoiceActivated: "Inactive",
         createdAt: "19-03-2026 01:01 PM",
         address: "Ahmedabad",
         city: "Ahmedabad",
@@ -198,6 +204,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
         selectTeam: "",
         employeeId: "JS30102",
         status: "Active",
+        aiVoiceActivated: "Inactive",
         createdAt: "10-03-2026 10:00 AM",
         address: "Navi Mumbai",
         city: "Mumbai",
@@ -228,6 +235,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
         selectTeam: "dr-raj",
         employeeId: "JS40111",
         status: "Active",
+        aiVoiceActivated: "Inactive",
         createdAt: "05-02-2026 03:15 PM",
         address: "Sector 29",
         city: "Gurugram",
@@ -258,6 +266,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
         selectTeam: "dr-neha",
         employeeId: "JS51200",
         status: "Inactive",
+        aiVoiceActivated: "Inactive",
         createdAt: "01-01-2026 09:00 AM",
         address: "Thane",
         city: "Mumbai",
@@ -288,6 +297,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
         selectTeam: "",
         employeeId: "JS62001",
         status: "Active",
+        aiVoiceActivated: "Inactive",
         createdAt: "12-12-2025 11:30 AM",
         address: "Bopal",
         city: "Ahmedabad",
@@ -318,6 +328,7 @@ export const SEED_DOCTORS: DoctorRecord[] = [
         selectTeam: "dr-raj",
         employeeId: "JS73055",
         status: "Active",
+        aiVoiceActivated: "Inactive",
         createdAt: "20-04-2026 08:45 AM",
         address: "DLF Phase 3",
         city: "Gurugram",
@@ -366,6 +377,10 @@ export function createEmptyDoctorPayload(): DoctorPayload {
         selectTeam: "",
         employeeId: "",
         status: "Active",
+        aiVoiceActivated: "Inactive",
+        changeVoiceAiPassword: "No",
+        aiVoicePassword: "",
+        voiceAiConfirmPassword: "",
         address: "",
         city: "",
         bankName: "",
