@@ -672,7 +672,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             }
                             mode="single"
                             background="white"
-                            disabled={branchFieldDisabled}
+                            // disabled={branchFieldDisabled}
                             error={formErrors.branchId}
                         />
                     </div>
@@ -984,8 +984,8 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                                     aiVoiceActivated: selected,
                                     changeVoiceAiPassword: (selected === "Active" &&
                                         (mode === "add" || initial.aiVoiceActivated !== "Active")
-                                            ? "Yes"
-                                            : "No") as "Yes" | "No",
+                                        ? "Yes"
+                                        : "No") as "Yes" | "No",
                                     ...(selected === "Inactive"
                                         ? { aiVoicePassword: "", voiceAiConfirmPassword: "" }
                                         : {}),
@@ -1006,7 +1006,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                         error={formErrors.aiVoiceActivated}
                     />
                     {values.aiVoiceActivated === "Active" &&
-                    values.changeVoiceAiPassword === "Yes" ? (
+                        values.changeVoiceAiPassword === "Yes" ? (
                         <>
                             <FormInputField
                                 label={values.aiVoiceActivated === "Active" ? "Set password for Voice AI *" : "Set password for Voice AI"}

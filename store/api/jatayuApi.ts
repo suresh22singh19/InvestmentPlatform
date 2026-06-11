@@ -114,113 +114,13 @@ export async function forceLogoutJatayu(): Promise<void> {
 }
 
 export async function loginJatayu(allowAutoLogout: boolean = true): Promise<{ token: string;[key: string]: any }> {
-    let response = await fetch(`${AUTH_BASE_URL}/login`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            email: "jeena1sikho@gmail.com",
-            password: "BlueSky@47"
-        })
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        if (errorText.toLowerCase().includes("already logged in")) {
-            if (!allowAutoLogout) {
-                throw new Error("JATAYU_ALREADY_LOGGED_IN");
-            }
-            console.warn("User is already logged in on Jatayu server. Attempting logout fallback to clear session...");
-            await forceLogoutJatayu();
-
-            console.log("Retrying Jatayu login...");
-            response = await fetch(`${AUTH_BASE_URL}/login`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    email: "jeena1sikho@gmail.com",
-                    password: "BlueSky@47"
-                })
-            });
-
-            if (!response.ok) {
-                const retryErrorText = await response.text();
-                throw new Error(retryErrorText || `Jatayu Login retry failed with status ${response.status}`);
-            }
-        } else {
-            throw new Error(errorText || `Jatayu Login failed with status ${response.status}`);
-        }
-    }
-
-    let data = await response.json();
-    if (typeof data === "string") {
-        try {
-            data = JSON.parse(data);
-        } catch (e) {
-            console.error("Failed to parse double-stringified login response", e);
-        }
-    }
-
-    const token = data.token;
-    const refreshToken = data.refreshtoken || data.refreshToken;
+    console.warn("loginJatayu is deprecated. Login is now handled through the unified HIIMS login flow.");
+    const token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
+    const refreshToken = typeof window !== "undefined" ? localStorage.getItem("jatayuRefreshToken") : null;
     if (token) {
-        if (typeof window !== "undefined") {
-            localStorage.setItem("jatayuToken", token);
-            if (refreshToken) {
-                localStorage.setItem("jatayuRefreshToken", refreshToken);
-            }
-        }
-
-        // Schedule token refresh
-        scheduleTokenRefresh(data.expiresIn ? Number(data.expiresIn) : 3600);
-
-        try {
-            const email = "jeena1sikho@gmail.com";
-            const curTime = new Date()
-                .toLocaleTimeString()
-                .replace(" ", "-")
-                .replace(/:/g, "-");
-
-            const curDate = new Date().toLocaleDateString().replace(/\//g, "-");
-
-            const rawSessionIdString = `${email}${curDate}${curTime}`;
-            let session_id = "";
-            if (typeof window !== "undefined") {
-                session_id = window.btoa(rawSessionIdString);
-            } else {
-                session_id = Buffer.from(rawSessionIdString).toString("base64");
-            }
-
-            const sessionResponse = await fetch(
-                `${HELPER_BASE_URL}/registerSession`,
-                {
-                    method: "PUT",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        Accept: "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ session_id }),
-                }
-            );
-
-            if (!sessionResponse.ok) {
-                console.warn(`Jatayu registerSession API returned status ${sessionResponse.status}`);
-            } else {
-                const regData = await sessionResponse.json();
-                console.log("Jatayu registerSession success:", regData);
-                if (typeof window !== "undefined") {
-                    localStorage.setItem("jatayuSessionId", session_id);
-                }
-            }
-        } catch (sessionErr) {
-            console.error("Failed to register session:", sessionErr);
-        }
+        return { token, refreshtoken: refreshToken, refreshToken };
     }
-    return data;
+    throw new Error("Jatayu session not found. Please log in through HIIMS.");
 }
 
 export async function refreshJatayuToken(): Promise<string> {
@@ -232,9 +132,8 @@ export async function refreshJatayuToken(): Promise<string> {
         try {
             const refreshToken = typeof window !== "undefined" ? localStorage.getItem("jatayuRefreshToken") : null;
             if (!refreshToken) {
-                console.warn("No refresh token found, fallback to loginJatayu");
-                const loginRes = await loginJatayu();
-                return loginRes.token;
+                console.warn("No refresh token found, throwing JATAYU_SESSION_EXPIRED");
+                throw new Error("JATAYU_SESSION_EXPIRED");
             }
 
             const response = await fetch(`${AUTH_BASE_URL}/refreshtoken`, {
@@ -249,12 +148,8 @@ export async function refreshJatayuToken(): Promise<string> {
 
             if (!response.ok) {
                 const errorText = await response.text().catch(() => "");
-                if (response.status === 401 || errorText.toLowerCase().includes("session_expired")) {
-                    throw new Error("JATAYU_SESSION_EXPIRED");
-                }
-                console.error(`Token refresh failed with status ${response.status}, attempting full login`);
-                const loginRes = await loginJatayu();
-                return loginRes.token;
+                console.error(`Token refresh failed with status ${response.status}: ${errorText}`);
+                throw new Error("JATAYU_SESSION_EXPIRED");
             }
 
             let data = await response.json();

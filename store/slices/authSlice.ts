@@ -41,6 +41,7 @@ export interface User {
   roleId?: number;
   role?: { id: number; name: string };
   imgUrl?: string | null;
+  aiVoiceActivated?: boolean | string;
 }
 
 /** Login API user shape: `groupName` / `groups` may be absent. Normalized in `setCredentials`. */
@@ -114,8 +115,13 @@ function readPersistedSelectedBranch(): BranchAccess | null {
  */
 function ensureUserBranchInAccess(
   branchAccess: BranchAccess[],
-  user: SetCredentialsUser
+  user: SetCredentialsUser,
+  loginType?: string
 ): BranchAccess[] {
+  const isDoctor = loginType?.toLowerCase() === "doctor" || user?.loginType?.toLowerCase() === "doctor";
+  if (isDoctor) {
+    return branchAccess;
+  }
   const raw = user?.branchId as number | string | null | undefined;
   if (raw == null || raw === "") return branchAccess;
   const id = Number(raw);
@@ -178,7 +184,8 @@ const authSlice = createSlice({
       const normalizedPermissions = formatPermissions(action.payload.permissions ?? []);
       const branchAccess = ensureUserBranchInAccess(
         action.payload.branch_access ?? [],
-        action.payload.user
+        action.payload.user,
+        action.payload.login_type
       );
       const persisted = readPersistedSelectedBranch();
       const selectedBranch = resolveSelectedBranch(
@@ -288,7 +295,7 @@ const authSlice = createSlice({
     ) => {
       const normalizedPermissions = formatPermissions(action.payload.permissions ?? []);
       const branchAccess = state.loginData?.user
-        ? ensureUserBranchInAccess(action.payload.branch_access ?? [], state.loginData.user)
+        ? ensureUserBranchInAccess(action.payload.branch_access ?? [], state.loginData.user, state.loginData.login_type)
         : (action.payload.branch_access ?? []);
 
       const persisted = readPersistedSelectedBranch();

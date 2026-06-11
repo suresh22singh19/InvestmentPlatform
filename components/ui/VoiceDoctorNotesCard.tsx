@@ -8,7 +8,7 @@ import { Dialog } from "./Dialog";
 import { Checkbox } from "./CustomCheckbox";
 import { Button } from "./Button";
 import { SpinnerLoader } from "./SpinnerLoader";
-import { loginJatayu, fetchLanguageFromAPI, saveLanguageToAPI } from "@/store/api/jatayuApi";
+import { fetchLanguageFromAPI, saveLanguageToAPI } from "@/store/api/jatayuApi";
 import { Tooltip } from "./Tooltip";
 
 const languageGroups = [
@@ -388,7 +388,7 @@ export function VoiceDoctorNotesCard({
                     <div className="flex flex-col items-center gap-3 transition-all">
                         <div className="flex flex-col sm:flex-row items-center gap-4">
                             {!hasJatayuAccess ? (
-                                <Tooltip content="Jatayu AI Access is not active. Please re-login or restore your session to start recording.">
+                                <Tooltip content="Voice AI Access is not active">
                                     <span className="inline-block cursor-not-allowed">
                                         <Button
                                             variant="primary"

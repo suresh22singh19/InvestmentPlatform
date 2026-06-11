@@ -4,10 +4,10 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { uploadAudioReturn, refreshJatayuToken, loginJatayu, forceLogoutJatayu } from "@/store/api/jatayuApi";
+import { uploadAudioReturn, refreshJatayuToken, forceLogoutJatayu } from "@/store/api/jatayuApi";
 import { useLogoutMutation } from "@/store/api/authApi";
-import { useAppDispatch } from "@/store/hooks";
-import { logout } from "@/store/slices/authSlice";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { logout, selectUser, selectLoginType } from "@/store/slices/authSlice";
 import {
     useGetPatientReferralForDoctorQuery,
     useGetPatientAssessmentHistoryQuery,
@@ -104,6 +104,12 @@ export default function DoctorActivity({
     const dispatch = useAppDispatch();
     const [logoutHIIMS] = useLogoutMutation();
 
+    const user = useAppSelector(selectUser);
+    const loginType = useAppSelector(selectLoginType);
+
+    const isDoctor = loginType?.toLowerCase() === "doctor";
+    const aiVoiceActivated = user?.aiVoiceActivated === true || user?.aiVoiceActivated === "true";
+
     const [hasJatayuAccess, setHasJatayuAccess] = useState(propHasJatayuAccess);
     const [showSessionExpiredDialog, setShowSessionExpiredDialog] = useState(false);
     const [showJatayuSuccessDialog, setShowJatayuSuccessDialog] = useState(false);
@@ -117,6 +123,10 @@ export default function DoctorActivity({
 
     useEffect(() => {
         const checkToken = async () => {
+            if (!isDoctor || !aiVoiceActivated) {
+                setHasJatayuAccess(false);
+                return;
+            }
             try {
                 await refreshJatayuToken();
                 setHasJatayuAccess(true);
@@ -130,7 +140,7 @@ export default function DoctorActivity({
             }
         };
         checkToken();
-    }, []);
+    }, [isDoctor, aiVoiceActivated]);
 
     const handleCancelJatayuReLogin = () => {
         setShowSessionExpiredDialog(false);

@@ -54,6 +54,7 @@ export interface LoginUser {
   roleId?: number;
   /** Present in current login payload, e.g. `{ id, name }`. */
   role?: { id: number; name: string };
+  aiVoiceActivated?: boolean | string;
 }
 
 export interface LoginPermissionSubModule {
@@ -104,6 +105,7 @@ export interface LoginSuccessData {
   access_token: string;
   token_type: string;
   expires_in: number;
+  jatayu_auth?: string | any;
 }
 
 /** First-step response: user must enter OTP, then call login again with `otp`. */

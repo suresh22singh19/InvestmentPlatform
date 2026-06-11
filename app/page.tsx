@@ -15,7 +15,7 @@ import {
 } from "@/store/api/authApi";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setCredentials, logout, selectIsAuthenticated, selectLoginData } from "@/store/slices/authSlice";
-import { loginJatayu, forceLogoutJatayu } from "@/store/api/jatayuApi";
+import { forceLogoutJatayu } from "@/store/api/jatayuApi";
 import { LoginFormValues } from "@/lib/validation/schemas";
 import { encrypt, decrypt } from "@/lib/utils/encryption";
 import type { LoginPermissionModule } from "@/store/api/authApi";
@@ -224,38 +224,57 @@ export default function LoginPage() {
     async (result: LoginResponse, values: LoginFormValues) => {
       if (!isLoginSuccessData(result.data)) return;
 
-      dispatch(
-        setCredentials({
-          user: result.data.user,
-          permissions: result.data.permissions ?? [],
-          branch_access: result.data.branch_access ?? [],
-          login_type: result.data.login_type,
-          access_token: result.data.access_token,
-          token_type: result.data.token_type,
-          expires_in: result.data.expires_in,
-        })
-      );
+      const user = result.data.user;
+      const aiVoiceActivated = user?.aiVoiceActivated === true || user?.aiVoiceActivated === "true";
 
-      const loginType = result.data.login_type?.toLowerCase();
-      const permissionsMap = formatPermissions(result.data.permissions ?? []);
-      const isGateUser = loginType?.includes("gate") || hasOnlyGateModuleViewAccess(permissionsMap);
-
-      // Asynchronously log in to Jatayu and store the token if not a gate user
-      if (!isGateUser) {
-        try {
-          await loginJatayu(false);
-          performRedirect(result, values);
-        } catch (err: any) {
-          if (err.message === "JATAYU_ALREADY_LOGGED_IN") {
-            setDeferredRedirect({ result, values });
-            setShowJatayuForceLogoutDialog(true);
-          } else {
-            console.error("Jatayu login failed:", err);
-            setDeferredRedirect({ result, values });
-            setShowJatayuErrorDialog(true);
+      let jatayuAuthObj: any = null;
+      if (result.data.jatayu_auth) {
+        if (typeof result.data.jatayu_auth === "string") {
+          try {
+            jatayuAuthObj = JSON.parse(result.data.jatayu_auth);
+          } catch (e) {
+            console.error("Failed to parse jatayu_auth:", e);
           }
+        } else {
+          jatayuAuthObj = result.data.jatayu_auth;
         }
+      }
+
+      const isAlreadyLoggedIn =
+        jatayuAuthObj?.detail?.includes("already logged in") ||
+        (Array.isArray(jatayuAuthObj?.detail) &&
+          jatayuAuthObj.detail.some((d: string) => d.toLowerCase().includes("already logged in"))) ||
+        (typeof jatayuAuthObj?.detail === "string" && jatayuAuthObj.detail.toLowerCase().includes("already logged in")) ||
+        jatayuAuthObj?.message?.toLowerCase().includes("already logged in");
+
+      if (aiVoiceActivated && isAlreadyLoggedIn) {
+        // Defer routing and show force logout dialog
+        setDeferredRedirect({ result, values });
+        setShowJatayuForceLogoutDialog(true);
       } else {
+        // Save token to localStorage if successful
+        if (aiVoiceActivated && jatayuAuthObj?.token) {
+          localStorage.setItem("jatayuToken", jatayuAuthObj.token);
+          if (jatayuAuthObj.refreshtoken) {
+            localStorage.setItem("jatayuRefreshToken", jatayuAuthObj.refreshtoken);
+          }
+        } else {
+          localStorage.removeItem("jatayuToken");
+          localStorage.removeItem("jatayuRefreshToken");
+        }
+
+        // Proceed normally
+        dispatch(
+          setCredentials({
+            user: result.data.user,
+            permissions: result.data.permissions ?? [],
+            branch_access: result.data.branch_access ?? [],
+            login_type: result.data.login_type,
+            access_token: result.data.access_token,
+            token_type: result.data.token_type,
+            expires_in: result.data.expires_in,
+          })
+        );
         performRedirect(result, values);
       }
     },
@@ -273,22 +292,102 @@ export default function LoginPage() {
     if (!deferredRedirect) return;
     setIsJatayuActionLoading(true);
     try {
+      // 1. Call forceLogoutJatayu() to logout Jatayu
       await forceLogoutJatayu();
-      await loginJatayu(true);
+
+      // 2. Call the HIIMS login API again
+      const result = await login({
+        email: deferredRedirect.values.email,
+        password: deferredRedirect.values.password,
+      }).unwrap();
+
+      if (isLoginSuccessData(result.data)) {
+        let newJatayuAuthObj: any = null;
+        if (result.data.jatayu_auth) {
+          if (typeof result.data.jatayu_auth === "string") {
+            try {
+              newJatayuAuthObj = JSON.parse(result.data.jatayu_auth);
+            } catch (e) {
+              console.error("Failed to parse jatayu_auth string:", e);
+            }
+          } else {
+            newJatayuAuthObj = result.data.jatayu_auth;
+          }
+        }
+
+        // Store new tokens in localStorage
+        if (newJatayuAuthObj?.token) {
+          localStorage.setItem("jatayuToken", newJatayuAuthObj.token);
+          if (newJatayuAuthObj.refreshtoken) {
+            localStorage.setItem("jatayuRefreshToken", newJatayuAuthObj.refreshtoken);
+          }
+        }
+
+        // Finalize login (dispatch credentials and perform redirect)
+        dispatch(
+          setCredentials({
+            user: result.data.user,
+            permissions: result.data.permissions ?? [],
+            branch_access: result.data.branch_access ?? [],
+            login_type: result.data.login_type,
+            access_token: result.data.access_token,
+            token_type: result.data.token_type,
+            expires_in: result.data.expires_in,
+          })
+        );
+        performRedirect(result, deferredRedirect.values);
+      }
       setShowJatayuForceLogoutDialog(false);
-      setShowJatayuSuccessDialog(true);
     } catch (err) {
-      console.error("Force logout & login retry failed:", err);
+      console.error("Force logout and HIIMS login retry failed:", err);
+      // Fallback: login normally without AI voice
       setShowJatayuForceLogoutDialog(false);
+      localStorage.removeItem("jatayuToken");
+      localStorage.removeItem("jatayuRefreshToken");
+
+      const data = deferredRedirect.result.data;
+      if (isLoginSuccessData(data)) {
+        dispatch(
+          setCredentials({
+            user: data.user,
+            permissions: data.permissions ?? [],
+            branch_access: data.branch_access ?? [],
+            login_type: data.login_type,
+            access_token: data.access_token,
+            token_type: data.token_type,
+            expires_in: data.expires_in,
+          })
+        );
+      }
       performRedirect(deferredRedirect.result, deferredRedirect.values);
     } finally {
       setIsJatayuActionLoading(false);
+      setDeferredRedirect(null);
+      setIsLoggingIn(false);
     }
   };
 
   const handleCancelJatayuForceLogout = () => {
     setShowJatayuForceLogoutDialog(false);
     if (deferredRedirect) {
+      // Cancel means: proceed normally to HIIMS login without Jatayu voice AI
+      localStorage.removeItem("jatayuToken");
+      localStorage.removeItem("jatayuRefreshToken");
+
+      const data = deferredRedirect.result.data;
+      if (isLoginSuccessData(data)) {
+        dispatch(
+          setCredentials({
+            user: data.user,
+            permissions: data.permissions ?? [],
+            branch_access: data.branch_access ?? [],
+            login_type: data.login_type,
+            access_token: data.access_token,
+            token_type: data.token_type,
+            expires_in: data.expires_in,
+          })
+        );
+      }
       performRedirect(deferredRedirect.result, deferredRedirect.values);
     }
     setDeferredRedirect(null);
