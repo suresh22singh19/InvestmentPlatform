@@ -939,7 +939,7 @@ interface UpdateDietCategoryRequest {
   remark: string;
   status: "active" | "inactive";
   dietFoods: DietFood[];
-  branchId: number;
+  // branchId: number;
 }
 
 interface UpdateDietCategoryResponse {
@@ -3291,7 +3291,7 @@ export const settingsApi = baseApi.injectEndpoints({
           remark: payload.remark,
           status: payload.status,
           dietFoods: payload.dietFoods,
-          branchId: payload.branchId,
+          // branchId: payload.branchId,
         },
       }),
       invalidatesTags: ["Settings"],

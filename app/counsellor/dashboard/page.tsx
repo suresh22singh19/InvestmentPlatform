@@ -592,6 +592,7 @@ export default function CounsellorDashboardPage() {
                 variant="primary"
                 size="xsmall"
                 className="whitespace-nowrap"
+                onClick={() => router.push(`/counsellor/start-counselling?patientID=${item.patientId ?? item.id}`)}
               >
                 Start Counselling
               </Button>
