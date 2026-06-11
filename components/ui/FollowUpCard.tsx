@@ -33,6 +33,7 @@ export function FollowUpCard({
                     onChange={onFollowUpDateChange}
                     background="white"
                     width="100%"
+                    disablePastDates={true}
                 />
                 <FormTextareaField
                     label="Remarks"

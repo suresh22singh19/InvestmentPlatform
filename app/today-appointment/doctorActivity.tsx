@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { uploadAudioReturn } from "@/store/api/jatayuApi";
+import { uploadAudioReturn, refreshJatayuToken, loginJatayu, forceLogoutJatayu } from "@/store/api/jatayuApi";
+import { useLogoutMutation } from "@/store/api/authApi";
+import { useAppDispatch } from "@/store/hooks";
+import { logout } from "@/store/slices/authSlice";
 import {
     useGetPatientReferralForDoctorQuery,
     useGetPatientAssessmentHistoryQuery,
@@ -42,6 +45,7 @@ import {
     ClinicalAssessmentRecord,
     SpinnerLoader,
     MessageDialog,
+    Dialog,
     PatientInformationTimelineCard,
     IafDetailsDialog,
     ScrollableContainer,
@@ -92,10 +96,74 @@ export default function DoctorActivity({
     onBack,
     branchName,
     branchId,
-    hasJatayuAccess = true,
+    hasJatayuAccess: propHasJatayuAccess = true,
 }: DoctorActivityProps) {
     const router = useRouter();
     const appData = appointment || {};
+
+    const dispatch = useAppDispatch();
+    const [logoutHIIMS] = useLogoutMutation();
+
+    const [hasJatayuAccess, setHasJatayuAccess] = useState(propHasJatayuAccess);
+    const [showSessionExpiredDialog, setShowSessionExpiredDialog] = useState(false);
+    const [showJatayuSuccessDialog, setShowJatayuSuccessDialog] = useState(false);
+    const [showJatayuErrorDialog, setShowJatayuErrorDialog] = useState(false);
+    const [isJatayuActionLoading, setIsJatayuActionLoading] = useState(false);
+    const [jatayuErrorMessage, setJatayuErrorMessage] = useState("");
+
+    useEffect(() => {
+        setHasJatayuAccess(propHasJatayuAccess);
+    }, [propHasJatayuAccess]);
+
+    useEffect(() => {
+        const checkToken = async () => {
+            try {
+                await refreshJatayuToken();
+                setHasJatayuAccess(true);
+            } catch (err: any) {
+                console.error("Failed to refresh Jatayu token on start:", err);
+                if (err?.message === "JATAYU_SESSION_EXPIRED") {
+                    setShowSessionExpiredDialog(true);
+                } else {
+                    setHasJatayuAccess(false);
+                }
+            }
+        };
+        checkToken();
+    }, []);
+
+    const handleCancelJatayuReLogin = () => {
+        setShowSessionExpiredDialog(false);
+        setHasJatayuAccess(false);
+    };
+
+    const handleConfirmJatayuReLogin = async () => {
+        setIsJatayuActionLoading(true);
+        try {
+            await forceLogoutJatayu();
+        } catch (err) {
+            console.error("Jatayu logout failed on confirm:", err);
+        }
+
+        try {
+            await logoutHIIMS().unwrap();
+        } catch (err) {
+            console.error("HIIMS logout failed on confirm:", err);
+        } finally {
+            setIsJatayuActionLoading(false);
+            setShowSessionExpiredDialog(false);
+            dispatch(logout());
+            router.push("/");
+        }
+    };
+
+    const handleConfirmJatayuSuccess = () => {
+        setShowJatayuSuccessDialog(false);
+    };
+
+    const handleConfirmJatayuError = () => {
+        setShowJatayuErrorDialog(false);
+    };
 
     const { data: walletResponse } = useGetPatientWalletBalanceQuery(
         appData.uhid || "",
@@ -1189,6 +1257,65 @@ export default function DoctorActivity({
                     onClose={() => setSelectedIafId(null)}
                 />
             )}
+            {/* Jatayu Session Expired Dialog */}
+            <Dialog
+                open={showSessionExpiredDialog}
+                onClose={handleCancelJatayuReLogin}
+                title="Session Expired"
+                width={480}
+                closeOnOutsideClick={false}
+            >
+                <div className="space-y-6">
+                    <p className="text-sm text-[#434956] leading-relaxed">
+                        Your Jatayu session has expired. You need to log in again to restore active voice services. Please confirm if you want to log in to Jatayu again.
+                    </p>
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <Button
+                            variant="outline"
+                            size="medium"
+                            onClick={handleCancelJatayuReLogin}
+                            disabled={isJatayuActionLoading}
+                            className="!border-[#E3EEE1] !text-[#434956] hover:!bg-[#F2F8F2] hover:!border-[#0B8C00]/30 hover:!text-[#0B8C00] !rounded-[24px]"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="primary"
+                            size="medium"
+                            onClick={handleConfirmJatayuReLogin}
+                            isLoading={isJatayuActionLoading}
+                            disabled={isJatayuActionLoading}
+                            className="!rounded-[24px]"
+                        >
+                            Confirm
+                        </Button>
+                    </div>
+                </div>
+            </Dialog>
+
+            {/* Jatayu Success Message Dialog */}
+            <MessageDialog
+                open={showJatayuSuccessDialog}
+                onClose={handleConfirmJatayuSuccess}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message="Jatayu session restored successfully."
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={handleConfirmJatayuSuccess}
+            />
+
+            {/* Jatayu Error Message Dialog */}
+            <MessageDialog
+                open={showJatayuErrorDialog}
+                onClose={handleConfirmJatayuError}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={jatayuErrorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={handleConfirmJatayuError}
+            />
         </AppShell>
     );
 }

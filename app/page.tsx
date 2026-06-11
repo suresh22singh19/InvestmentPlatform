@@ -286,19 +286,13 @@ export default function LoginPage() {
     }
   };
 
-  const handleCancelJatayuForceLogout = async () => {
+  const handleCancelJatayuForceLogout = () => {
     setShowJatayuForceLogoutDialog(false);
-    setIsJatayuActionLoading(true);
-    try {
-      await logoutHIIMS().unwrap();
-    } catch (err) {
-      console.error("HIIMS logout API error on cancel:", err);
-    } finally {
-      setIsJatayuActionLoading(false);
-      dispatch(logout());
-      setDeferredRedirect(null);
-      setIsLoggingIn(false);
+    if (deferredRedirect) {
+      performRedirect(deferredRedirect.result, deferredRedirect.values);
     }
+    setDeferredRedirect(null);
+    setIsLoggingIn(false);
   };
 
   const handleConfirmJatayuSuccess = () => {
