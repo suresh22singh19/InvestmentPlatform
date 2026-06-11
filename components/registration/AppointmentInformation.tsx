@@ -25,7 +25,17 @@ interface AppointmentInformationProps {
 }
 
 // All available time slots (value sent to API as-is, e.g. "10:00am - 12:00pm")
-const ALL_TIME_SLOTS: SelectOption[] = [
+ const ALL_TIME_SLOTS: SelectOption[] = [
+    { value: "12:00am - 02:00am", label: "12:00am - 02:00am" },
+    { value: "01:00am - 03:00am", label: "01:00am - 03:00am" },
+    { value: "02:00am - 04:00am", label: "02:00am - 04:00am" },
+    { value: "03:00am - 05:00am", label: "03:00am - 05:00am" },
+    { value: "04:00am - 06:00am", label: "04:00am - 06:00am" },
+    { value: "05:00am - 07:00am", label: "05:00am - 07:00am" },
+    { value: "06:00am - 08:00am", label: "06:00am - 08:00am" },
+    { value: "07:00am - 09:00am", label: "07:00am - 09:00am" },
+    { value: "08:00am - 10:00am", label: "08:00am - 10:00am" },
+    { value: "09:00am - 11:00am", label: "09:00am - 11:00am" },
     { value: "10:00am - 12:00pm", label: "10:00am - 12:00pm" },
     { value: "11:00am - 01:00pm", label: "11:00am - 01:00pm" },
     { value: "12:00pm - 02:00pm", label: "12:00pm - 02:00pm" },
@@ -33,6 +43,13 @@ const ALL_TIME_SLOTS: SelectOption[] = [
     { value: "02:00pm - 04:00pm", label: "02:00pm - 04:00pm" },
     { value: "03:00pm - 05:00pm", label: "03:00pm - 05:00pm" },
     { value: "04:00pm - 06:00pm", label: "04:00pm - 06:00pm" },
+    { value: "05:00pm - 07:00pm", label: "05:00pm - 07:00pm" },
+    { value: "06:00pm - 08:00pm", label: "06:00pm - 08:00pm" },
+    { value: "07:00pm - 09:00pm", label: "07:00pm - 09:00pm" },
+    { value: "08:00pm - 10:00pm", label: "08:00pm - 10:00pm" },
+    { value: "09:00pm - 11:00pm", label: "09:00pm - 11:00pm" },
+    { value: "10:00pm - 12:00am", label: "10:00pm - 12:00am" },
+    { value: "11:00pm - 01:00am", label: "11:00pm - 01:00am" },
 ];
 
 // Parse time string like "12:00pm" or "01:00pm" to 24h hour (12 -> 12, 01:00pm -> 13)
