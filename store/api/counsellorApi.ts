@@ -4,7 +4,48 @@
  */
 
 import { baseApi } from "./baseApi";
-import type { GetAllPackagesParams, GetAllPackagesResponse } from "./settingsApi";
+import type { GetAllPackagesParams, GetAllPackagesResponse, OfferPromotionType } from "./settingsApi";
+
+export interface GetActiveOfferListParams {
+  branchId?: string | number;
+  promotionType?: OfferPromotionType;
+  panelName?: string;
+  search?: string;
+  page?: number | string;
+  limit?: number | string;
+  sortBy?: string;
+  order?: "ASC" | "DESC" | "asc" | "desc" | "";
+}
+
+export interface ActiveOfferItem {
+  id: number;
+  branchId: number;
+  panelId: number | null;
+  offerName: string;
+  promotionType: OfferPromotionType;
+  bundledStayDuration: number | null;
+  bundledFreeDays: number | null;
+  flatDiscountPercentage: number | null;
+  condMinBillingAmount: number | null;
+  condDiscountValue: number | null;
+  condMaxDiscountCap: number | null;
+  validFrom: string;
+  validTo: string;
+  isActive: boolean;
+  branchName: string;
+  panelName: string | null;
+}
+
+export interface GetActiveOfferListResponse {
+  success: boolean;
+  data: ActiveOfferItem[];
+  total: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
 
 export interface CounsellorDashboardStatsResponse {
   success: boolean;
@@ -32,9 +73,13 @@ export interface CounsellorPatientListItem {
   id: number | string;
   patientName: string;
   patientUhid: string;
+  patientId?: number | string;
+  appointmentId?: number | string;
   contactNumber: string;
   diagnosisSymptoms?: string | null;
   doctorName?: string | null;
+  branchId?: number | string;
+  status?: string | null;
 }
 
 export interface CounsellorPatientListResponse {
@@ -377,6 +422,17 @@ export const counsellorApi = baseApi.injectEndpoints({
     }),
 
     /**
+     * Get active offer list for start counselling
+     */
+    getActiveOfferList: builder.query<GetActiveOfferListResponse, GetActiveOfferListParams | void>({
+      query: (params) => ({
+        url: "/counsellor/get-active-offer-list",
+        method: "GET",
+        params: params ? (params as any) : undefined,
+      }),
+    }),
+
+    /**
      * Get counsellor tentative or archived patients list
      */
     getTentativeOrArchivedList: builder.query<CounsellorTentativeOrArchivedResponse, CounsellorTentativeOrArchivedParams>({
@@ -519,6 +575,16 @@ export const counsellorApi = baseApi.injectEndpoints({
     getPatientDetail: builder.query<any, number | string>({
       query: (patientId) => ({
         url: `/counsellor/view-patient-detail/${patientId}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
+     * Get patient details by appointment id (start counselling referred flow)
+     */
+    getPatientDetailByAppointment: builder.query<any, number | string>({
+      query: (appointmentId) => ({
+        url: `/counsellor/view-patient-detail-by-appointment/${appointmentId}`,
         method: "GET",
       }),
     }),
@@ -688,6 +754,7 @@ export const {
   useGetTodayAdmissionsQuery,
   useGetTodayAvailableRoomsQuery,
   useGetCounsellorAllPackagesQuery,
+  useGetActiveOfferListQuery,
   useGetTentativeOrArchivedListQuery,
   useGetAdvanceBookingListQuery,
   useGetFutureAdmissionsQuery,
@@ -703,6 +770,8 @@ export const {
   useUpdateSchedulePatientMutation,
   useGetPatientDetailQuery,
   useLazyGetPatientDetailQuery,
+  useGetPatientDetailByAppointmentQuery,
+  useLazyGetPatientDetailByAppointmentQuery,
   useGetAdvanceBookingDetailQuery,
   useLazyGetAdvanceBookingDetailQuery,
   useGetPackageDetailQuery,

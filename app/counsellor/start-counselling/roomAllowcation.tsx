@@ -9,11 +9,44 @@ import {
     TableListingCard,
     Tooltip,
     MessageDialog,
+    Dialog,
 } from "@/components/ui";
 import { useAppSelector } from "@/store/hooks";
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
-import { useGetRoomListQuery, useGetRoomBedDetailQuery, useAllocateRoomMutation } from "@/store/api/counsellorApi";
+import { useGetRoomListQuery, useGetRoomBedDetailQuery, type BedLayoutItem } from "@/store/api/counsellorApi";
 import { useGetBuildingDropdownQuery, useGetFloorDropdownQuery, useGetRoomTypeDropdownQuery } from "@/store/api/commonApi";
+
+interface CounsellingSummary {
+    patientCategory: string;
+    diseaseType: string;
+    packageAdmissionType: string;
+    applyOfferLabel: string;
+    numberOfDays: number;
+    finalAmountPayable: number;
+}
+
+function BedDetailRow({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="flex justify-between items-center gap-4 py-3 border-b border-[#DFE0E2] text-sm">
+            <span className="text-[#787E8C] font-medium shrink-0">{label}</span>
+            <span className="text-[#262D3B] font-semibold text-right">{value}</span>
+        </div>
+    );
+}
+
+function getBedStatusMeta(status: string) {
+    const statusLower = status?.toLowerCase() || "";
+    if (statusLower === "available" || statusLower === "free") {
+        return { label: "Available", variant: "success" as const };
+    }
+    if (statusLower === "occupied" || statusLower === "fully occupied") {
+        return { label: "Occupied", variant: "occupied" as const };
+    }
+    if (statusLower === "reserved") {
+        return { label: "Reserved", variant: "checkout" as const };
+    }
+    return { label: status || "N/A", variant: "neutral" as const };
+}
 
 interface StatCardProps {
     label: string;
@@ -193,20 +226,48 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
     let styleClass = "";
     if (isAvailable) {
         styleClass = isBedSelected
-            ? "border-[#0B8C00] bg-[#E3EEE1]/40 ring-2 ring-[#0B8C00]/10"
-            : "border-[#0B8C00] bg-[#F7FAF7] hover:bg-[#F2FAF2]";
+            ? "border-2 border-[#0B8C00] bg-[#0B8C00]/30 ring-2 ring-[#0B8C00]/25 shadow-sm"
+            : "border border-[#0B8C00] bg-[#F7FAF7] hover:bg-[#E3EEE1]";
     } else if (isOccupied) {
-        styleClass = "border-[#FCA5A5] bg-[#FEF2F2]";
+        styleClass = isBedSelected
+            ? "border-2 border-[#EF4444] bg-[#EF4444]/25 ring-2 ring-[#EF4444]/20 shadow-sm"
+            : "border border-[#FCA5A5] bg-[#FEF2F2] hover:bg-[#FEE2E2]";
     } else if (isReserved) {
-        styleClass = "border-[#E8D7CA] bg-[#FFFBEB]";
+        styleClass = isBedSelected
+            ? "border-2 border-[#D97706] bg-[#D97706]/30 ring-2 ring-[#D97706]/20 shadow-sm"
+            : "border border-[#E8D7CA] bg-[#FFFBEB] hover:bg-[#FEF3C7]";
     } else {
-        styleClass = "border-[#DFE0E2] bg-gray-50";
+        styleClass = isBedSelected
+            ? "border-2 border-[#787E8C] bg-[#787E8C]/15 ring-2 ring-[#787E8C]/15"
+            : "border border-[#DFE0E2] bg-gray-50";
     }
+
+    const iconFilter = isOccupied
+        ? "invert(31%) sepia(94%) saturate(4633%) hue-rotate(349deg) brightness(97%) contrast(93%)"
+        : isReserved
+            ? "invert(53%) sepia(87%) saturate(583%) hue-rotate(5deg) brightness(94%) contrast(95%)"
+            : "invert(36%) sepia(90%) saturate(1814%) hue-rotate(86deg) brightness(95%) contrast(101%)";
+
+    const labelClass = isOccupied
+        ? "text-[#EF4444]"
+        : isReserved
+            ? "text-[#D97706]"
+            : isAvailable
+                ? "text-[#0B8C00]"
+                : "text-[#262D3B]";
+
+    const statusClass = isOccupied
+        ? "text-[#EF4444]"
+        : isReserved
+            ? "text-[#D97706]"
+            : isAvailable
+                ? "text-[#0B8C00]"
+                : "text-[#434956]";
 
     return (
         <div
             onClick={onClick}
-            className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 text-center cursor-pointer transition-all duration-200 min-h-[96px] justify-center ${styleClass}`}
+            className={`p-3 rounded-xl flex flex-col items-center gap-1.5 text-center cursor-pointer transition-all duration-200 min-h-[96px] justify-center ${styleClass}`}
         >
             <div className="w-5 h-5 flex items-center justify-center">
                 <Image
@@ -215,26 +276,15 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
                     width={16}
                     height={16}
                     className="shrink-0"
-                    style={{
-                        filter: isOccupied
-                            ? "invert(31%) sepia(94%) saturate(4633%) hue-rotate(349deg) brightness(97%) contrast(93%)"
-                            : isReserved
-                                ? "invert(53%) sepia(87%) saturate(583%) hue-rotate(5deg) brightness(94%) contrast(95%)"
-                                : "invert(36%) sepia(90%) saturate(1814%) hue-rotate(86deg) brightness(95%) contrast(101%)"
-                    }}
+                    style={{ filter: iconFilter }}
                 />
             </div>
 
-            <span className={`font-semibold text-xs ${isOccupied ? "text-[#EF4444]" : "text-[#262D3B]"}`}>
+            <span className={`font-semibold text-xs ${labelClass}`}>
                 {bed.label}
             </span>
 
-            <span className={`text-[10px] font-medium leading-tight ${isOccupied
-                ? "text-[#EF4444]"
-                : isReserved
-                    ? "text-[#D97706]"
-                    : "text-[#434956]"
-                }`}>
+            <span className={`text-[10px] font-medium leading-tight ${statusClass}`}>
                 {isReserved ? "Reserved" : isOccupied ? "Occupied" : "Available"}
             </span>
 
@@ -284,12 +334,11 @@ interface RoomAllocationProps {
     selectedBed?: string | null;
     setSelectedBed?: (bed: string | null) => void;
     setSelectedRoom?: (room: any) => void;
+    counsellingSummary?: CounsellingSummary;
 }
 
 export default function RoomAllocation({
     activePackage,
-    patientId,
-    patientPackageId,
     patientDetails,
     onSuccess,
     onConfirmAllocation,
@@ -298,7 +347,8 @@ export default function RoomAllocation({
     setSelectedRoomId: controlledSetRoomId,
     selectedBed: controlledBed,
     setSelectedBed: controlledSetBed,
-    setSelectedRoom
+    setSelectedRoom,
+    counsellingSummary,
 }: RoomAllocationProps) {
     const selectedBranch = useAppSelector(selectSelectedBranch);
     const userBranchId = useAppSelector(selectUserBranchId);
@@ -308,10 +358,11 @@ export default function RoomAllocation({
     const [localBed, setLocalBed] = useState<string | null>(null);
 
     const [remark, setRemark] = useState("");
-    const [allocateRoom, { isLoading: isAllocating }] = useAllocateRoomMutation();
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+    const [bedDetailsModalBed, setBedDetailsModalBed] = useState<BedLayoutItem | null>(null);
+    const [showBedDetailsDialog, setShowBedDetailsDialog] = useState(false);
 
     const isControlledRoom = controlledRoomId !== undefined && controlledSetRoomId !== undefined;
     const selectedRoomId = isControlledRoom ? controlledRoomId : localRoomId;
@@ -426,6 +477,47 @@ export default function RoomAllocation({
         }
     }, [selectedRoom, setSelectedRoom]);
 
+    const packagePriceLabel = useMemo(() => {
+        const roomRent = activePackage?.branchRoomType?.roomRentPrice
+            ? Number(activePackage.branchRoomType.roomRentPrice)
+            : 0;
+        if (roomRent > 0) {
+            return `₹${roomRent.toLocaleString("en-IN")}/days`;
+        }
+        if (counsellingSummary?.finalAmountPayable) {
+            return `₹${counsellingSummary.finalAmountPayable.toLocaleString("en-IN")}`;
+        }
+        return "N/A";
+    }, [activePackage, counsellingSummary?.finalAmountPayable]);
+
+    const bedModalRoomSubtitle = useMemo(() => {
+        if (!selectedRoom) return "";
+        const bedCount = bedDetailRes?.data?.room?.totalBeds ?? selectedRoom.totalBeds;
+        const bedLabel = bedCount === 1 ? "1 bed" : `${bedCount} beds`;
+        return `${selectedRoom.floor || "N/A"} • ${selectedRoom.roomType} • ${bedLabel}`;
+    }, [selectedRoom, bedDetailRes?.data?.room?.totalBeds]);
+
+    console.log("counsellingSummaryhdgshd", counsellingSummary);
+
+    const handleBedClick = (bed: BedLayoutItem) => {
+        const statusLower = bed.status?.toLowerCase() || "";
+        const isAvailable = statusLower === "available" || statusLower === "free";
+        const bedIdStr = bed.bedId.toString();
+
+        if (isAvailable) {
+            if (selectedBed === bedIdStr) {
+                setSelectedBed(null);
+                setBedDetailsModalBed(null);
+                setShowBedDetailsDialog(false);
+                return;
+            }
+            setSelectedBed(bedIdStr);
+        }
+
+        setBedDetailsModalBed(bed);
+        setShowBedDetailsDialog(true);
+    };
+
     const handleConfirm = async () => {
         if (!selectedRoom || !selectedBed) return;
 
@@ -433,54 +525,29 @@ export default function RoomAllocation({
         const selectedBedObj = bedDetailRes?.data?.bedLayout?.find(b => b.bedId.toString() === selectedBed);
         const bedNumber = selectedBedObj?.bedNumber || selectedBed;
 
-        if (patientId) {
-            // Dynamically resolve buildingId and floorId
-            const roomBuildingName = selectedRoom.building || "";
-            const foundBuilding = buildingData?.data?.find(b => b.name?.toLowerCase() === roomBuildingName.toLowerCase());
-            const buildingId = foundBuilding ? foundBuilding.id : (selectedBuilding ? parseInt(selectedBuilding, 10) : 1);
-
-            const roomFloorName = selectedRoom.floor || "";
-            const foundFloor = floorData?.data?.find(f => {
-                const rawName = (f as any).floor || f.name || "";
-                return rawName.toLowerCase() === roomFloorName.toLowerCase();
-            });
-            const floorId = foundFloor ? foundFloor.id : (selectedFloor ? parseInt(selectedFloor, 10) : 1);
-
-            try {
-                const payload = {
-                    patientId: Number(patientId),
-                    id: Number(patientPackageId || activePackage.id || 0),
-                    buildingId: Number(buildingId),
-                    floorId: Number(floorId),
-                    roomId: Number(selectedRoom.id),
-                    bedId: Number(selectedBed),
-                    remark: remark.trim() || undefined,
-                };
-                const res = await allocateRoom(payload).unwrap();
-                if (res.success) {
-                    setShowSuccessDialog(true);
-                } else {
-                    setErrorMessage(res.message || "Failed to allocate room & bed.");
-                    setShowErrorDialog(true);
-                }
-            } catch (err: any) {
-                console.error("Error during room allocation:", err);
-                setErrorMessage(err?.data?.message || err?.message || "An error occurred during bed allocation.");
-                setShowErrorDialog(true);
-            }
-        } else {
-            if (onConfirmAllocation) {
-                onConfirmAllocation({
-                    roomId: selectedRoom.id,
-                    roomNumber: selectedRoom.roomNumber,
-                    bedId: selectedBed,
-                    bedNumber: bedNumber,
-                });
-            } else {
-                setShowSuccessDialog(true);
-            }
-        }
+        onConfirmAllocation?.({
+            roomId: selectedRoom.id,
+            roomNumber: selectedRoom.roomNumber,
+            bedId: selectedBed,
+            bedNumber: bedNumber,
+        });
+        onSuccess?.();
     };
+
+    const bedModalStatusMeta = bedDetailsModalBed
+        ? getBedStatusMeta(bedDetailsModalBed.status)
+        : null;
+    const isAvailableBedModal = bedModalStatusMeta?.label === "Available";
+    const bedModalPatientName = bedDetailsModalBed
+        ? isAvailableBedModal
+            ? patientDetails?.patientName || "N/A"
+            : bedDetailsModalBed.patientName || "N/A"
+        : "N/A";
+    const bedModalPatientUhid = bedDetailsModalBed
+        ? isAvailableBedModal
+            ? patientDetails?.patientUhid || "N/A"
+            : bedDetailsModalBed.patientUhid || "N/A"
+        : "N/A";
 
     // Helper to calculate initials
     const getInitials = (name: string) => {
@@ -767,20 +834,12 @@ export default function RoomAllocation({
                                                 patientName: bed.patientName,
                                                 patientUhid: bed.patientUhid,
                                             }}
-                                            isBedSelected={selectedBed === bed.bedId.toString()}
-                                            onClick={() => {
-                                                const statusLower = bed.status?.toLowerCase() || "";
-                                                if (statusLower === "available" || statusLower === "free") {
-                                                    const bedIdStr = bed.bedId.toString();
-                                                    if (selectedBed === bedIdStr) {
-                                                        setSelectedBed(null);
-                                                    } else {
-                                                        setSelectedBed(bedIdStr);
-                                                    }
-                                                } else {
-                                                    alert(`Bed ${bed.bedNumber} is currently ${statusLower === "occupied" || statusLower === "fully occupied" ? "Occupied by " + bed.patientName : "Reserved"}.`);
-                                                }
-                                            }}
+                                            isBedSelected={
+                                                selectedBed === bed.bedId.toString() ||
+                                                (showBedDetailsDialog &&
+                                                    bedDetailsModalBed?.bedId === bed.bedId)
+                                            }
+                                            onClick={() => handleBedClick(bed)}
                                         />
                                     ))}
                                 </div>
@@ -840,10 +899,10 @@ export default function RoomAllocation({
                         type="button"
                         variant="primary"
                         className="px-6 h-11 rounded-full font-bold"
-                        disabled={!selectedRoomId || isAllocating}
+                        disabled={!selectedRoomId || !selectedBed}
                         onClick={handleConfirm}
                     >
-                        {isAllocating ? "Allocating..." : "Confirm Allocation"}
+                        Confirm Allocation
                     </Button>
                 </div>
             </div>
@@ -872,6 +931,74 @@ export default function RoomAllocation({
                     if (onSuccess) onSuccess();
                 }}
             />
+
+            {bedDetailsModalBed && bedModalStatusMeta && (
+                <Dialog
+                    open={showBedDetailsDialog}
+                    onClose={() => setShowBedDetailsDialog(false)}
+                    title=""
+                    width={520}
+                    contentPadding="px-6 pb-6 pt-2"
+                    customHeader={
+                        <div className="flex items-start justify-between px-6 pt-5 pb-2">
+                            <div className="flex flex-col gap-1.5 pr-4">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                    <h2 className="text-lg font-bold text-[#262D3B]">
+                                        Bed Allocation - {bedDetailsModalBed.bedNumber}
+                                    </h2>
+                                    <Badge
+                                        variant={bedModalStatusMeta.variant}
+                                        className={`text-[10px] font-semibold px-2.5 py-0.5 bg-transparent border ${
+                                            bedModalStatusMeta.label === "Occupied"
+                                                ? "border-[#EF444433] text-[#EF4444]"
+                                                : bedModalStatusMeta.label === "Available"
+                                                    ? "border-[#0B8C0033] text-[#0B8C00]"
+                                                    : bedModalStatusMeta.label === "Reserved"
+                                                        ? "border-[#F59E0B33] text-[#F59E0B]"
+                                                        : ""
+                                        }`}
+                                    >
+                                        {bedModalStatusMeta.label}
+                                    </Badge>
+                                </div>
+                                {bedModalRoomSubtitle && (
+                                    <p className="text-xs font-semibold text-[#787E8C]">{bedModalRoomSubtitle}</p>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowBedDetailsDialog(false)}
+                                className="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-[#F2F8F2] shrink-0"
+                                aria-label="Close dialog"
+                            >
+                                <Image src="/icons/CrossIcon.svg" alt="" width={20} height={20} />
+                            </button>
+                        </div>
+                    }
+                >
+                    <div className="flex flex-col">
+                        <BedDetailRow label="Patient Name" value={bedModalPatientName} />
+                        <BedDetailRow label="Patient UHID" value={bedModalPatientUhid} />
+                        <BedDetailRow label="Package Name" value={activePackage?.packageName || "N/A"} />
+                        <BedDetailRow label="Package Price" value={packagePriceLabel || "N/A"} />
+                        <BedDetailRow label="Patient Category" value={counsellingSummary?.patientCategory || "N/A"} />
+                        <BedDetailRow label="Disease Type" value={counsellingSummary?.diseaseType || "N/A"} />
+                        <BedDetailRow label="Admission Type" value={counsellingSummary?.packageAdmissionType || "N/A"} />
+                        <BedDetailRow label="Apply Offer" value={counsellingSummary?.applyOfferLabel || "Not Applied"} />
+                    </div>
+
+                    <div className="flex justify-center pt-6">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="!border-[#0B8C00] !text-[#0B8C00] hover:!bg-[#F2FAF2] min-w-[160px] h-11 rounded-full font-bold"
+                            onClick={() => setShowBedDetailsDialog(false)}
+                        >
+                            Close
+                        </Button>
+                    </div>
+                </Dialog>
+            )}
 
             {/* Error Feedback Dialog */}
             <MessageDialog

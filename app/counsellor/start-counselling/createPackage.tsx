@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import {
     Tabs,
@@ -10,29 +10,86 @@ import {
     FormSelectField,
     Button,
     Badge,
+    Pagination,
+    SpinnerLoader,
+    Dialog,
 } from "@/components/ui";
+import {
+    useGetCounsellorAllPackagesQuery,
+    useGetActiveOfferListQuery,
+    type ActiveOfferItem,
+} from "@/store/api/counsellorApi";
+import { useBranchFilter } from "@/hooks/useBranchFilter";
+import type { OfferPromotionType, PackageItem } from "@/store/api/settingsApi";
+import AddressDetails, { type AddressFormData } from "@/components/forms/AddressDetails";
+
+export interface AttendantDetailsFormData {
+    attendantName: string;
+    gender: string;
+    phoneNumber: string;
+    emailId: string;
+    relationWithPatient: string;
+    address: AddressFormData;
+}
+
+const EMPTY_ATTENDANT_ADDRESS: AddressFormData = {
+    pinCode: "",
+    country: "",
+    state: "",
+    city: "",
+    tehsil: "",
+    area: "",
+    address: "",
+};
+
+const EMPTY_ATTENDANT_FORM: AttendantDetailsFormData = {
+    attendantName: "",
+    gender: "",
+    phoneNumber: "",
+    emailId: "",
+    relationWithPatient: "",
+    address: { ...EMPTY_ATTENDANT_ADDRESS },
+};
+
+const ATTENDANT_GENDER_OPTIONS = [
+    { label: "Male", value: "Male" },
+    { label: "Female", value: "Female" },
+    { label: "Other", value: "Other" },
+];
+
+const ATTENDANT_RELATION_OPTIONS = [
+    { label: "Father", value: "Father" },
+    { label: "Mother", value: "Mother" },
+    { label: "Spouse", value: "Spouse" },
+    { label: "Son", value: "Son" },
+    { label: "Daughter", value: "Daughter" },
+    { label: "Brother", value: "Brother" },
+    { label: "Sister", value: "Sister" },
+    { label: "Other", value: "Other" },
+];
 
 // ─── CONSTANTS & TYPES ────────────────────────────────────────────────────────
-interface PackageItem {
-    id: string;
-    packageName: string;
-    diseaseCategoryType: string;
-    packageType: string;
-    branchName: string;
-    remark: string;
-    medicineEnabled: boolean;
-    medicinePrice: number;
-    mealsEnabled: boolean;
-    mealsPrice: number;
-    doctorFeeEnabled: boolean;
-    doctorFeePrice: number;
-    nurseFeeEnabled: boolean;
-    nurseFeePrice: number;
-    attendantFeeEnabled: boolean;
-    attendantFeePrice: number;
-    therapyEnabled: boolean;
-    therapyPrice: number;
-    branchRoomType: { roomRentPrice: number };
+function mapDiseaseTypeToApi(tab: string): string | undefined {
+    if (tab === "ckd") return "ckd";
+    if (tab === "other") return "others";
+    return undefined;
+}
+
+function mapAdmissionTypeToApi(tab: string): string | undefined {
+    if (tab === "ipd") return "ipd";
+    if (tab === "day_care") return "daycare";
+    return undefined;
+}
+
+function getPackageTotalPrice(item: PackageItem): number {
+    const roomRent = item.branchRoomType?.roomRentPrice ? Number(item.branchRoomType.roomRentPrice) : 0;
+    const medicine = item.medicineEnabled ? Number(item.medicinePrice) : 0;
+    const meals = item.mealsEnabled ? Number(item.mealsPrice) : 0;
+    const doctor = item.doctorFeeEnabled ? Number(item.doctorFeePrice) : 0;
+    const nurse = item.nurseFeeEnabled ? Number(item.nurseFeePrice) : 0;
+    const attendant = item.attendantFeeEnabled ? Number(item.attendantFeePrice) : 0;
+    const therapy = item.therapyEnabled ? Number(item.therapyPrice) : 0;
+    return roomRent + medicine + meals + doctor + nurse + attendant + therapy;
 }
 
 interface OfferItem {
@@ -46,181 +103,96 @@ interface OfferItem {
     bonusLabel: string;
 }
 
-const MOCK_PACKAGES: PackageItem[] = [
-    {
-        id: "pkg-1",
-        packageName: "Cardiac Premium Care",
-        diseaseCategoryType: "Cardiology",
-        packageType: "IPD",
-        branchName: "HIIMS Dera Bassi",
-        remark: "Comprehensive premium recovery package including private suite room stay, daily specialty doctor consultations, medicine charges, full nursing support, customized meal plans, and daily physiotherapy sessions.",
-        medicineEnabled: true,
-        medicinePrice: 2500,
-        mealsEnabled: true,
-        mealsPrice: 1500,
-        doctorFeeEnabled: true,
-        doctorFeePrice: 3000,
-        nurseFeeEnabled: true,
-        nurseFeePrice: 2500,
-        attendantFeeEnabled: true,
-        attendantFeePrice: 2500,
-        therapyEnabled: true,
-        therapyPrice: 3000,
-        branchRoomType: { roomRentPrice: 1500 }
-    },
-    {
-        id: "pkg-2",
-        packageName: "Cardiac Standard",
-        diseaseCategoryType: "Cardiology",
-        packageType: "IPD",
-        branchName: "HIIMS Dera Bassi",
-        remark: "Standard cardiac care package with semi-private room stay, essential medicine coverage, meals, standard nursing care, and doctor visits included.",
-        medicineEnabled: true,
-        medicinePrice: 2000,
-        mealsEnabled: true,
-        mealsPrice: 1000,
-        doctorFeeEnabled: true,
-        doctorFeePrice: 2000,
-        nurseFeeEnabled: true,
-        nurseFeePrice: 1500,
-        attendantFeeEnabled: true,
-        attendantFeePrice: 1500,
-        therapyEnabled: true,
-        therapyPrice: 2000,
-        branchRoomType: { roomRentPrice: 1000 }
-    },
-    {
-        id: "pkg-3",
-        packageName: "Cardiac Advanced Care",
-        diseaseCategoryType: "Cardiology",
-        packageType: "IPD",
-        branchName: "HIIMS Dera Bassi",
-        remark: "Advanced rehabilitation and recovery package featuring deluxe suite stay, high-frequency physical therapy, senior physician consultations, and premium amenities.",
-        medicineEnabled: true,
-        medicinePrice: 3500,
-        mealsEnabled: true,
-        mealsPrice: 2000,
-        doctorFeeEnabled: true,
-        doctorFeePrice: 4000,
-        nurseFeeEnabled: true,
-        nurseFeePrice: 3000,
-        attendantFeeEnabled: true,
-        attendantFeePrice: 3000,
-        therapyEnabled: true,
-        therapyPrice: 4000,
-        branchRoomType: { roomRentPrice: 2000 }
-    },
-    {
-        id: "pkg-4",
-        packageName: "Cardiac Basic Care",
-        diseaseCategoryType: "Cardiology",
-        packageType: "IPD",
-        branchName: "HIIMS Dera Bassi",
-        remark: "Basic cardiac care package with general ward accommodation, essential medication support, meals, and routine nursing visits.",
-        medicineEnabled: true,
-        medicinePrice: 1500,
-        mealsEnabled: true,
-        mealsPrice: 800,
-        doctorFeeEnabled: true,
-        doctorFeePrice: 1500,
-        nurseFeeEnabled: true,
-        nurseFeePrice: 1000,
-        attendantFeeEnabled: true,
-        attendantFeePrice: 1000,
-        therapyEnabled: true,
-        therapyPrice: 1000,
-        branchRoomType: { roomRentPrice: 700 }
-    }
-];
+function mapOfferTabToPromotionType(tab: string): OfferPromotionType {
+    if (tab === "flat") return "flat_discount";
+    if (tab === "conditional") return "conditional_billing";
+    return "bundled_stay";
+}
 
-const MOCK_OFFERS: Record<string, OfferItem[]> = {
-    bundled: [
-        {
-            id: "off-b1",
-            badge: "RECOMMENDED FOR 7+ DAYS",
-            isRecommended: true,
-            title: "7 + 1 Free Stay",
-            subtitle: "Pay for 7 days, get the 8th day stay complimentary. Applies to base room charges.",
-            bonusValue: 15000,
-            appliedDiscount: 4500,
-            bonusLabel: "7+1"
-        },
-        {
-            id: "off-b2",
-            badge: "LONG TERM RECOVERY",
-            isRecommended: false,
-            title: "10 + 2 Free Stay",
-            subtitle: "Complimentary 11th & 12th nights on staying for 10 nights. Best for post-op rehab.",
-            bonusValue: 30000,
-            appliedDiscount: 9000,
-            bonusLabel: "10+2"
-        },
-        {
-            id: "off-b3",
-            badge: "LONG TERM RECOVERY",
-            isRecommended: false,
-            title: "10 + 2 Free Stay",
-            subtitle: "Complimentary 11th & 12th nights on staying for 10 nights. Best for post-op rehab.",
-            bonusValue: 30000,
-            appliedDiscount: 9000,
-            bonusLabel: "10+2"
-        },
-        {
-            id: "off-b4",
-            badge: "LONG TERM RECOVERY",
-            isRecommended: false,
-            title: "10 + 2 Free Stay",
-            subtitle: "Complimentary 11th & 12th nights on staying for 10 nights. Best for post-op rehab.",
-            bonusValue: 30000,
-            appliedDiscount: 9000,
-            bonusLabel: "10+2"
+function mapPatientCategoryToPanelName(category: string): string | undefined {
+    const panelMap: Record<string, string> = {
+        normal: "normal",
+        panel: "panel",
+        tpa: "tpa",
+    };
+    return panelMap[category];
+}
+
+function buildOfferSubtitle(offer: ActiveOfferItem): string {
+    if (offer.promotionType === "bundled_stay") {
+        return `Pay for ${offer.bundledStayDuration ?? 0} days, get ${offer.bundledFreeDays ?? 0} complimentary day(s). Applies to base room charges.`;
+    }
+    if (offer.promotionType === "flat_discount") {
+        return `Flat ${offer.flatDiscountPercentage ?? 0}% discount on total package pricing. Applicable to all services.`;
+    }
+    return `Minimum billing of ₹ ${(offer.condMinBillingAmount ?? 0).toLocaleString()}. Discount up to ₹ ${(offer.condMaxDiscountCap ?? 0).toLocaleString()}.`;
+}
+
+function getOfferBadge(offer: ActiveOfferItem, numberOfDays: number) {
+    if (offer.promotionType === "bundled_stay") {
+        const duration = offer.bundledStayDuration ?? 0;
+        if (numberOfDays >= duration) {
+            return { badge: `RECOMMENDED FOR ${duration}+ DAYS`, isRecommended: true };
         }
-    ],
-    flat: [
-        {
-            id: "off-f1",
-            badge: "LIMITED PERIOD OFFER",
-            isRecommended: true,
-            title: "Flat 10% Off",
-            subtitle: "Flat 10% discount on total package pricing. Applicable to all services.",
+        return { badge: "LONG TERM RECOVERY", isRecommended: false };
+    }
+    if (offer.promotionType === "flat_discount") {
+        return { badge: "FLAT DISCOUNT", isRecommended: true };
+    }
+    return { badge: "CONDITIONAL OFFER", isRecommended: true };
+}
+
+function calculateOfferAmounts(
+    offer: ActiveOfferItem,
+    originalTotal: number,
+    numberOfDays: number,
+    roomRentPerDay: number
+) {
+    if (offer.promotionType === "bundled_stay") {
+        const duration = offer.bundledStayDuration ?? 0;
+        const freeDays = offer.bundledFreeDays ?? 0;
+        const bonusValue = numberOfDays >= duration ? freeDays * roomRentPerDay : 0;
+        return {
+            bonusValue,
+            appliedDiscount: 0,
+            bonusLabel: `${duration}+${freeDays}`,
+        };
+    }
+    if (offer.promotionType === "flat_discount") {
+        const pct = offer.flatDiscountPercentage ?? 0;
+        return {
             bonusValue: 0,
-            appliedDiscount: 10500,
-            bonusLabel: "Flat 10%"
-        },
-        {
-            id: "off-f2",
-            badge: "FLAT DISCOUNT",
-            isRecommended: false,
-            title: "Flat 15% Off",
-            subtitle: "Special summer wellness package discount of flat 15% off base pricing.",
-            bonusValue: 0,
-            appliedDiscount: 15750,
-            bonusLabel: "Flat 15%"
-        }
-    ],
-    conditional: [
-        {
-            id: "off-c1",
-            badge: "SENIOR CITIZEN SCHEME",
-            isRecommended: true,
-            title: "Senior Citizen Special",
-            subtitle: "Additional 5% concession on all medical therapies and consultations for age 60+.",
-            bonusValue: 5000,
-            appliedDiscount: 2500,
-            bonusLabel: "Senior"
-        },
-        {
-            id: "off-c2",
-            badge: "FAMILY CARE DISCOUNT",
-            isRecommended: false,
-            title: "Family Multi-Consultation",
-            subtitle: "Book two or more sibling packages to obtain dynamic referral discount benefits.",
-            bonusValue: 8000,
-            appliedDiscount: 4000,
-            bonusLabel: "Family"
-        }
-    ]
-};
+            appliedDiscount: Math.round(originalTotal * pct / 100),
+            bonusLabel: `Flat ${pct}%`,
+        };
+    }
+    const minBill = offer.condMinBillingAmount ?? 0;
+    let appliedDiscount = 0;
+    if (originalTotal >= minBill) {
+        const discountValue = offer.condDiscountValue ?? 0;
+        const maxCap = offer.condMaxDiscountCap ?? discountValue;
+        appliedDiscount = Math.min(discountValue, maxCap);
+    }
+    return { bonusValue: 0, appliedDiscount, bonusLabel: "Conditional" };
+}
+
+function mapApiOfferToOfferItem(
+    offer: ActiveOfferItem,
+    originalTotal: number,
+    numberOfDays: number,
+    roomRentPerDay: number
+): OfferItem {
+    const { badge, isRecommended } = getOfferBadge(offer, numberOfDays);
+    const amounts = calculateOfferAmounts(offer, originalTotal, numberOfDays, roomRentPerDay);
+    return {
+        id: String(offer.id),
+        badge,
+        isRecommended,
+        title: offer.offerName,
+        subtitle: buildOfferSubtitle(offer),
+        ...amounts,
+    };
+}
 
 const ADMISSION_TYPE_OPTIONS = [
     {
@@ -377,21 +349,30 @@ interface OfferCardProps {
 }
 
 function OfferCard({ offer, isSelected, onClick }: OfferCardProps) {
+    const formattedTitle =
+        offer.title.charAt(0).toUpperCase() + offer.title.slice(1).toLowerCase();
+
     return (
         <div
             onClick={onClick}
-            className={`relative flex flex-col gap-3 p-5 rounded-[20px] border bg-white cursor-pointer select-none transition-all duration-200 ${isSelected
-                ? "border-[#0B8C00] bg-[#F2FAF2]/30 ring-1 ring-[#0B8C00]/20 shadow-sm"
-                : "border-[#DFE0E2] hover:border-[#CBD5E1]"
-                }`}
+            className={`relative flex flex-col gap-2.5 p-5 rounded-[16px] cursor-pointer select-none transition-all duration-200 ${
+                isSelected
+                    ? "border-2 border-[#0B8C00] bg-[#F2FAF2]"
+                    : "border border-[#DFE0E2] bg-white hover:border-[#CBD5E1]"
+            }`}
         >
-            <Badge
-                variant={offer.isRecommended ? "success" : "neutral"}
-                className="text-[10px] font-extrabold uppercase tracking-wider w-fit"
+            <span
+                className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                    isSelected ? "text-[#0B8C00]" : "text-[#262D3B]"
+                }`}
             >
                 {offer.badge}
-            </Badge>
-            <h4 className="text-lg font-bold text-[#262D3B]">{offer.title}</h4>
+            </span>
+
+            <h4 className="text-lg font-bold text-[#262D3B] leading-snug">
+                {formattedTitle}
+            </h4>
+
             <p className="text-xs font-semibold text-[#787E8C] leading-relaxed">
                 {offer.subtitle}
             </p>
@@ -478,7 +459,18 @@ interface CreatePackageProps {
     setAdmissionType: (type: string) => void;
     onNext: () => void;
     onCancel?: () => void;
-    onViewPatientOverview?: () => void;
+    onViewPatientOverview?: () => void | Promise<void>;
+    isViewPatientLoading?: boolean;
+    onActivePackageChange?: (pkg: PackageItem | null) => void;
+    onFinalAmountPayableChange?: (amount: number) => void;
+    onAttendantDetailsChange?: (data: AttendantDetailsFormData | null) => void;
+    onCounsellingMetaChange?: (meta: {
+        patientCategory: string;
+        diseaseType: string;
+        packageAdmissionType: string;
+        applyOfferLabel: string;
+    }) => void;
+    getpatientBranchId?: string | number;
 }
 
 export default function CreatePackage({
@@ -496,13 +488,72 @@ export default function CreatePackage({
     setAdmissionType,
     onNext,
     onCancel,
-    onViewPatientOverview
+    onViewPatientOverview,
+    isViewPatientLoading = false,
+    onActivePackageChange,
+    onFinalAmountPayableChange,
+    onAttendantDetailsChange,
+    onCounsellingMetaChange,
+    getpatientBranchId
 }: CreatePackageProps) {
+    const [isAttendantsDialogOpen, setIsAttendantsDialogOpen] = useState(false);
+    const [attendantDetails, setAttendantDetails] = useState<AttendantDetailsFormData | null>(null);
+    const [attendantFormData, setAttendantFormData] = useState<AttendantDetailsFormData>(EMPTY_ATTENDANT_FORM);
+    const [attendantFormErrors, setAttendantFormErrors] = useState<Record<string, string>>({});
+
     // Local step 1 filter states
     const [patientCategory, setPatientCategory] = useState("panel");
     const [diseaseType, setDiseaseType] = useState("other");
     const [admissionFilterType, setAdmissionFilterType] = useState("day_care");
     const [sortBy, setSortBy] = useState("default");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    const { filterBranchId } = useBranchFilter();
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [patientCategory, diseaseType, admissionFilterType]);
+
+    const getAllPackagesParams = useMemo(() => ({
+        page: currentPage,
+        limit: itemsPerPage,
+        sortBy: "",
+        order: "ASC" as const,
+        branchId: filterBranchId,
+        packageType: mapAdmissionTypeToApi(admissionFilterType),
+        diseaseCategoryType: mapDiseaseTypeToApi(diseaseType),
+        isPackageActive: true,
+    }), [currentPage, itemsPerPage, filterBranchId, admissionFilterType, diseaseType]);
+
+    const {
+        data: packagesRes,
+        isLoading: isPackagesLoading,
+        isError: isPackagesError,
+    } = useGetCounsellorAllPackagesQuery(getAllPackagesParams);
+
+    const packagesList = packagesRes?.data || [];
+    const totalPackages = packagesRes?.total || 0;
+
+    const offerListParams = useMemo(() => ({
+        page: "",
+        limit: "",
+        sortBy: "",
+        order: "asc" as const,
+        // branchId: getpatientBranchId || 2,
+        branchId: 2,
+        promotionType: mapOfferTabToPromotionType(offerTab),
+        panelName: mapPatientCategoryToPanelName(patientCategory),
+        // panelName : getpatientName
+    }), [offerTab, patientCategory, getpatientBranchId]);
+
+    // console.log("Offer List Params:", getpatientName);
+
+    const {
+        data: offersRes,
+        isLoading: isOffersLoading,
+        isError: isOffersError,
+    } = useGetActiveOfferListQuery(offerListParams, { skip: !applyOffer });
 
     // Options for Custom Tabs Component
     const patientCategoryOptions = [
@@ -527,50 +578,59 @@ export default function CreatePackage({
         { value: "conditional", label: "Conditional Offer" }
     ];
 
-    // Sorting functionality
+    // Sorting functionality (client-side on current page results)
     const sortedPackages = useMemo(() => {
-        const sorted = [...MOCK_PACKAGES].sort((a, b) => {
-            const getSum = (item: PackageItem) => {
-                const roomRent = item.branchRoomType?.roomRentPrice ? Number(item.branchRoomType.roomRentPrice) : 0;
-                const medicine = item.medicineEnabled ? Number(item.medicinePrice) : 0;
-                const meals = item.mealsEnabled ? Number(item.mealsPrice) : 0;
-                const doctor = item.doctorFeeEnabled ? Number(item.doctorFeePrice) : 0;
-                const nurse = item.nurseFeeEnabled ? Number(item.nurseFeePrice) : 0;
-                const attendant = item.attendantFeeEnabled ? Number(item.attendantFeePrice) : 0;
-                const therapy = item.therapyEnabled ? Number(item.therapyPrice) : 0;
-                return roomRent + medicine + meals + doctor + nurse + attendant + therapy;
-            };
-
-            if (sortBy === "high-to-low") {
-                return getSum(b) - getSum(a);
-            } else if (sortBy === "low-to-high") {
-                return getSum(a) - getSum(b);
-            }
-            return 0; // default order
-        });
+        const sorted = [...packagesList];
+        if (sortBy === "high-to-low") {
+            sorted.sort((a, b) => getPackageTotalPrice(b) - getPackageTotalPrice(a));
+        } else if (sortBy === "low-to-high") {
+            sorted.sort((a, b) => getPackageTotalPrice(a) - getPackageTotalPrice(b));
+        }
         return sorted;
-    }, [sortBy]);
+    }, [packagesList, sortBy]);
+
+    useEffect(() => {
+        if (sortedPackages.length === 0) return;
+        const currentExists = sortedPackages.some((pkg) => String(pkg.id) === selectedPackageId);
+        if (!currentExists) {
+            setSelectedPackageId(String(sortedPackages[0].id));
+        }
+    }, [sortedPackages, selectedPackageId, setSelectedPackageId]);
 
     // Price summary calculations
     const activePackage = useMemo(() => {
-        return MOCK_PACKAGES.find(pkg => pkg.id === selectedPackageId) || MOCK_PACKAGES[0];
-    }, [selectedPackageId]);
+        return sortedPackages.find((pkg) => String(pkg.id) === selectedPackageId) || sortedPackages[0] || null;
+    }, [sortedPackages, selectedPackageId]);
 
-    const roomRentPerDay = activePackage.branchRoomType?.roomRentPrice ? Number(activePackage.branchRoomType.roomRentPrice) : 0;
-    const medicinePerDay = activePackage.medicineEnabled ? Number(activePackage.medicinePrice) : 0;
-    const mealsPerDay = activePackage.mealsEnabled ? Number(activePackage.mealsPrice) : 0;
-    const doctorFee = activePackage.doctorFeeEnabled ? Number(activePackage.doctorFeePrice) : 0;
-    const nurseFee = activePackage.nurseFeeEnabled ? Number(activePackage.nurseFeePrice) : 0;
-    const attendantFee = activePackage.attendantFeeEnabled ? Number(activePackage.attendantFeePrice) : 0;
-    const therapyFee = activePackage.therapyEnabled ? Number(activePackage.therapyPrice) : 0;
+    useEffect(() => {
+        onActivePackageChange?.(activePackage);
+    }, [activePackage, onActivePackageChange]);
+
+    const roomRentPerDay = activePackage?.branchRoomType?.roomRentPrice ? Number(activePackage.branchRoomType.roomRentPrice) : 0;
+    const medicinePerDay = activePackage?.medicineEnabled ? Number(activePackage.medicinePrice) : 0;
+    const mealsPerDay = activePackage?.mealsEnabled ? Number(activePackage.mealsPrice) : 0;
+    const doctorFee = activePackage?.doctorFeeEnabled ? Number(activePackage.doctorFeePrice) : 0;
+    const nurseFee = activePackage?.nurseFeeEnabled ? Number(activePackage.nurseFeePrice) : 0;
+    const attendantFee = activePackage?.attendantFeeEnabled ? Number(activePackage.attendantFeePrice) : 0;
+    const therapyFee = activePackage?.therapyEnabled ? Number(activePackage.therapyPrice) : 0;
 
     const originalTotal = useMemo(() => {
         return (roomRentPerDay + medicinePerDay + mealsPerDay) * numberOfDays + doctorFee + nurseFee + attendantFee + therapyFee;
     }, [roomRentPerDay, medicinePerDay, mealsPerDay, numberOfDays, doctorFee, nurseFee, attendantFee, therapyFee]);
 
     const activeCategoryOffers = useMemo(() => {
-        return MOCK_OFFERS[offerTab] || [];
-    }, [offerTab]);
+        return (offersRes?.data || []).map((offer) =>
+            mapApiOfferToOfferItem(offer, originalTotal, numberOfDays, roomRentPerDay)
+        );
+    }, [offersRes?.data, originalTotal, numberOfDays, roomRentPerDay]);
+
+    useEffect(() => {
+        if (!applyOffer || activeCategoryOffers.length === 0) return;
+        const currentExists = activeCategoryOffers.some((offer) => offer.id === selectedOfferId);
+        if (!currentExists) {
+            setSelectedOfferId(activeCategoryOffers[0].id);
+        }
+    }, [applyOffer, activeCategoryOffers, selectedOfferId, setSelectedOfferId]);
 
     const activeOffer = useMemo(() => {
         return activeCategoryOffers.find(off => off.id === selectedOfferId) || activeCategoryOffers[0] || {
@@ -592,7 +652,94 @@ export default function CreatePackage({
         return Math.max(0, originalTotal - stayBonus - packageAppliedDiscount);
     }, [originalTotal, stayBonus, packageAppliedDiscount]);
 
+    useEffect(() => {
+        onFinalAmountPayableChange?.(finalAmountPayable);
+    }, [finalAmountPayable, onFinalAmountPayableChange]);
+
+    useEffect(() => {
+        onCounsellingMetaChange?.({
+            patientCategory:
+                patientCategoryOptions.find((o) => o.value === patientCategory)?.label ?? "N/A",
+            diseaseType:
+                diseaseTypeOptions.find((o) => o.value === diseaseType)?.label ?? "N/A",
+            packageAdmissionType:
+                admissionFilterOptions.find((o) => o.value === admissionFilterType)?.label ?? "N/A",
+            applyOfferLabel: applyOffer ? activeOffer.title || "Applied" : "Not Applied",
+        });
+    }, [
+        patientCategory,
+        diseaseType,
+        admissionFilterType,
+        applyOffer,
+        activeOffer.title,
+        onCounsellingMetaChange,
+    ]);
+
     const offerBonusLabel = activeOffer.bonusLabel;
+
+    useEffect(() => {
+        if (isAttendantsDialogOpen) {
+            setAttendantFormData(attendantDetails ?? EMPTY_ATTENDANT_FORM);
+            setAttendantFormErrors({});
+        }
+    }, [isAttendantsDialogOpen, attendantDetails]);
+
+    const handleAdmissionTypeSelect = (type: typeof ADMISSION_TYPE_OPTIONS[number]["type"]) => {
+        setAdmissionType(type);
+        if (type === "immediate") {
+            setIsAttendantsDialogOpen(true);
+        } else {
+            setIsAttendantsDialogOpen(false);
+        }
+    };
+
+    const validateAttendantForm = () => {
+        const nextErrors: Record<string, string> = {};
+
+        if (!attendantFormData.attendantName.trim()) {
+            nextErrors.attendantName = "Attendant name is required";
+        }
+        if (!attendantFormData.gender) {
+            nextErrors.gender = "Gender is required";
+        }
+        if (!attendantFormData.phoneNumber.trim()) {
+            nextErrors.phoneNumber = "Phone number is required";
+        }
+        if (!attendantFormData.address.country) {
+            nextErrors.country = "Country is required";
+        }
+        if (!attendantFormData.address.pinCode.trim()) {
+            nextErrors.pinCode = "Pin code is required";
+        }
+        if (!attendantFormData.address.state) {
+            nextErrors.state = "State is required";
+        }
+        if (!attendantFormData.address.city) {
+            nextErrors.city = "City is required";
+        }
+        if (!attendantFormData.address.address.trim()) {
+            nextErrors.address = "Address is required";
+        }
+
+        setAttendantFormErrors(nextErrors);
+        return Object.keys(nextErrors).length === 0;
+    };
+
+    const handleAttendantDetailsSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!validateAttendantForm()) return;
+        setAttendantDetails(attendantFormData);
+        onAttendantDetailsChange?.(attendantFormData);
+        setIsAttendantsDialogOpen(false);
+    };
+
+    const handleAttendantDialogClose = () => {
+        setAttendantFormErrors({});
+        setIsAttendantsDialogOpen(false);
+        if (!attendantDetails) {
+            setAdmissionType("");
+        }
+    };
 
     return (
         <div className="w-full rounded-[20px] border border-[#E3EEE1] p-3 mt-6">
@@ -628,7 +775,7 @@ export default function CreatePackage({
 
                 {/* Admission Type */}
                 <div className="flex flex-col gap-2 min-w-[350px] p-2 rounded-[8px] border border-[#E3EEE1]">
-                    <span className="text-xs font-bold text-[#787E8C] uppercase tracking-wider px-1 pt-2">Admission Type</span>
+                    <span className="text-xs font-bold text-[#787E8C] uppercase tracking-wider px-1 pt-2">Patient Type</span>
                     <div className="w-[450px] shrink-0">
                         <Tabs
                             options={admissionFilterOptions}
@@ -653,15 +800,20 @@ export default function CreatePackage({
                                 size="medium"
                                 className="!min-w-fit"
                                 leftIcon={
-                                    <Image
-                                        src="/icons/openEye.svg"
-                                        alt=""
-                                        width={16}
-                                        height={16}
-                                        style={{ filter: "brightness(0) invert(1)" }}
-                                    />
+                                    isViewPatientLoading ? (
+                                        <SpinnerLoader size={16} className="text-white" />
+                                    ) : (
+                                        <Image
+                                            src="/icons/openEye.svg"
+                                            alt=""
+                                            width={16}
+                                            height={16}
+                                            style={{ filter: "brightness(0) invert(1)" }}
+                                        />
+                                    )
                                 }
                                 onClick={onViewPatientOverview}
+                                disabled={isViewPatientLoading}
                             >
                                 View Patient Overview
                             </Button>
@@ -684,21 +836,50 @@ export default function CreatePackage({
                             </div>
 
                             <span className="text-sm font-bold">
-                                {sortedPackages.length} Packages available
+                                {totalPackages} Package{totalPackages === 1 ? "" : "s"} available
                             </span>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {sortedPackages.map((pkg) => (
-                            <PackageListCard
-                                key={pkg.id}
-                                item={pkg}
-                                isSelected={selectedPackageId === pkg.id}
-                                onSelect={() => setSelectedPackageId(pkg.id)}
-                            />
-                        ))}
-                    </div>
+                    {isPackagesLoading ? (
+                        <div className="flex items-center justify-center py-16">
+                            <SpinnerLoader size={32} />
+                        </div>
+                    ) : isPackagesError ? (
+                        <div className="py-12 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
+                            Facing server API error
+                        </div>
+                    ) : sortedPackages.length === 0 ? (
+                        <div className="py-12 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
+                            No packages found
+                        </div>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {sortedPackages.map((pkg) => (
+                                    <PackageListCard
+                                        key={pkg.id}
+                                        item={pkg}
+                                        isSelected={selectedPackageId === String(pkg.id)}
+                                        onSelect={() => setSelectedPackageId(String(pkg.id))}
+                                    />
+                                ))}
+                            </div>
+                            {totalPackages > itemsPerPage && (
+                                <Pagination
+                                    currentPage={currentPage}
+                                    totalItems={totalPackages}
+                                    itemsPerPage={itemsPerPage}
+                                    onPageChange={setCurrentPage}
+                                    onItemsPerPageChange={(items) => {
+                                        setItemsPerPage(items);
+                                        setCurrentPage(1);
+                                    }}
+                                    itemsPerPageOptions={[10, 20, 50, 100]}
+                                />
+                            )}
+                        </>
+                    )}
                 </div>
 
                 {/* 4. NUMBER OF DAYS INPUT */}
@@ -735,26 +916,34 @@ export default function CreatePackage({
                                     <Tabs
                                         options={offerTabOptions}
                                         value={offerTab}
-                                        onChange={(val) => {
-                                            setOfferTab(val);
-                                            const newOffers = MOCK_OFFERS[val] || [];
-                                            if (newOffers.length > 0) {
-                                                setSelectedOfferId(newOffers[0].id);
-                                            }
-                                        }}
+                                        onChange={(val) => setOfferTab(val)}
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {activeCategoryOffers.map((offer) => (
-                                        <OfferCard
-                                            key={offer.id}
-                                            offer={offer}
-                                            isSelected={selectedOfferId === offer.id}
-                                            onClick={() => setSelectedOfferId(offer.id)}
-                                        />
-                                    ))}
-                                </div>
+                                {isOffersLoading ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <SpinnerLoader size={32} />
+                                    </div>
+                                ) : isOffersError ? (
+                                    <div className="py-12 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
+                                        Facing server API error
+                                    </div>
+                                ) : activeCategoryOffers.length === 0 ? (
+                                    <div className="py-12 text-center text-sm font-normal leading-[120%] text-[#9FA2AB]">
+                                        No offers found
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {activeCategoryOffers.map((offer) => (
+                                            <OfferCard
+                                                key={offer.id}
+                                                offer={offer}
+                                                isSelected={selectedOfferId === offer.id}
+                                                onClick={() => setSelectedOfferId(offer.id)}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="w-full rounded-[24px] bg-[#0B8C00] text-white p-7 flex flex-col shadow-md justify-between self-stretch">
@@ -818,11 +1007,130 @@ export default function CreatePackage({
                                 title={opt.title}
                                 description={opt.description}
                                 isSelected={admissionType === opt.type}
-                                onClick={() => setAdmissionType(opt.type)}
+                                onClick={() => handleAdmissionTypeSelect(opt.type)}
                             />
                         ))}
                     </div>
                 </div>
+
+                <Dialog
+                    open={isAttendantsDialogOpen}
+                    onClose={handleAttendantDialogClose}
+                    title="Attendants details"
+                    width={920}
+                    contentPadding="px-6 pb-6 pt-4"
+                    contentOverflow="auto"
+                >
+                    <form onSubmit={handleAttendantDetailsSubmit} className="flex flex-col gap-8 text-left">
+                        <div className="flex flex-col gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <FormInputField
+                                    label="Attendant Name *"
+                                    type="text"
+                                    placeholder="Attendant Name"
+                                    value={attendantFormData.attendantName}
+                                    onChange={(e) =>
+                                        setAttendantFormData((prev) => ({ ...prev, attendantName: e.target.value }))
+                                    }
+                                    height={44}
+                                />
+                                <FormSelectField
+                                    label="Gender *"
+                                    options={ATTENDANT_GENDER_OPTIONS}
+                                    value={attendantFormData.gender || null}
+                                    onChange={(val) =>
+                                        setAttendantFormData((prev) => ({
+                                            ...prev,
+                                            gender: Array.isArray(val) ? val[0] : val || "",
+                                        }))
+                                    }
+                                    placeholder="Gender"
+                                    mode="single"
+                                    background="white"
+                                />
+                                <FormInputField
+                                    label="Phone Number *"
+                                    type="text"
+                                    placeholder="Phone Number"
+                                    value={attendantFormData.phoneNumber}
+                                    onChange={(e) =>
+                                        setAttendantFormData((prev) => ({ ...prev, phoneNumber: e.target.value }))
+                                    }
+                                    height={44}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <FormInputField
+                                    label="Email ID"
+                                    type="email"
+                                    placeholder="Email ID"
+                                    value={attendantFormData.emailId}
+                                    onChange={(e) =>
+                                        setAttendantFormData((prev) => ({ ...prev, emailId: e.target.value }))
+                                    }
+                                    height={44}
+                                />
+                                <FormSelectField
+                                    label="Relation with Patient"
+                                    options={ATTENDANT_RELATION_OPTIONS}
+                                    value={attendantFormData.relationWithPatient || null}
+                                    onChange={(val) =>
+                                        setAttendantFormData((prev) => ({
+                                            ...prev,
+                                            relationWithPatient: Array.isArray(val) ? val[0] : val || "",
+                                        }))
+                                    }
+                                    placeholder="Relation with Patient"
+                                    mode="single"
+                                    background="white"
+                                />
+                            </div>
+
+                            {(attendantFormErrors.attendantName || attendantFormErrors.gender || attendantFormErrors.phoneNumber) && (
+                                <div className="flex flex-col gap-1">
+                                    {attendantFormErrors.attendantName && (
+                                        <p className="text-xs text-[#F6776E]">{attendantFormErrors.attendantName}</p>
+                                    )}
+                                    {attendantFormErrors.gender && (
+                                        <p className="text-xs text-[#F6776E]">{attendantFormErrors.gender}</p>
+                                    )}
+                                    {attendantFormErrors.phoneNumber && (
+                                        <p className="text-xs text-[#F6776E]">{attendantFormErrors.phoneNumber}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <AddressDetails
+                            title="Address Information"
+                            nationality="Indian"
+                            formData={attendantFormData.address}
+                            onChange={(field, value) =>
+                                setAttendantFormData((prev) => ({
+                                    ...prev,
+                                    address: { ...prev.address, [field]: value },
+                                }))
+                            }
+                            errors={{
+                                country: attendantFormErrors.country,
+                                pinCode: attendantFormErrors.pinCode,
+                                state: attendantFormErrors.state,
+                                city: attendantFormErrors.city,
+                                address: attendantFormErrors.address,
+                            }}
+                        />
+
+                        <div className="flex flex-wrap items-center gap-3 pt-2">
+                            <Button type="submit" variant="primary">
+                                Next
+                            </Button>
+                            <Button type="button" variant="outline" onClick={handleAttendantDialogClose}>
+                                Cancel
+                            </Button>
+                        </div>
+                    </form>
+                </Dialog>
 
                 {/* 7. BOTTOM ACTION NAVIGATION FOOTER */}
                 <div className="w-full flex items-center justify-end gap-4 pt-6 mt-4 select-none">
