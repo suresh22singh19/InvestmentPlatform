@@ -322,7 +322,7 @@ export const doctorApi = baseApi.injectEndpoints({
 
         getPatientAssessmentHistory: builder.query<GetPatientAssessmentHistoryResponse, GetPatientAssessmentHistoryParams>({
             query: (params) => ({
-                url: `/doctor/GetAllAssessmentHistoryOfPatient?uhid=${params.uhid}&filter=${params.filter}`,
+                url: `/common/GetAllAssessmentHistoryOfPatient?uhid=${params.uhid}&filter=${params.filter}`,
                 method: "GET",
             }),
             providesTags: ["Doctors"],
@@ -330,7 +330,7 @@ export const doctorApi = baseApi.injectEndpoints({
 
         getSpecificAssessmentHistoryDetailOfPatient: builder.query<{ success: boolean; data: any; message?: string }, number | string>({
             query: (opdAssessmentId) => ({
-                url: `/doctor/GetSpecificAssessmentHistoryDetailOfPatient?opdAssessmentId=${opdAssessmentId}`,
+                url: `/common/GetSpecificAssessmentHistoryDetailOfPatient?opdAssessmentId=${opdAssessmentId}`,
                 method: "GET",
             }),
             providesTags: ["Doctors"],
