@@ -234,7 +234,7 @@ export interface CompletePatientAdmissionSplit {
 }
 
 export interface CompletePatientAdmissionRequest {
-  branchId: number;
+  branchId: number | string;
   appointmentId?: number;
   patientType: string;
   diseaseType: string;
@@ -541,6 +541,69 @@ export interface UpdateSchedulePatientResponse {
   statusCode: number;
 }
 
+export interface CounsellorDocumentItem {
+  id: number;
+  documentName: string;
+  description?: string;
+  documentType?: string;
+  isMandatory?: boolean;
+  isActive?: boolean | "active" | "inactive" | "Active" | "Inactive";
+}
+
+export interface CounsellorGetAllDocumentsResponse {
+  success: boolean;
+  data: CounsellorDocumentItem[];
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface UpdateDocumentsRequest {
+  patientId: number | string;
+  documentIds: number[];
+}
+
+export interface UpdateDocumentsResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  data?: unknown;
+}
+
+export interface PatientAdmissionDetailsData {
+  patientId: number;
+  registrationId: number;
+  uhid: string;
+  admissionType: string;
+  admissionStatus: string;
+  admissionDate: string;
+  appointmentId: number;
+  appointmentDate: string;
+  doctorId: number;
+  doctorName: string;
+  patientRoomId?: number;
+  bedNumber?: string;
+  roomId?: number;
+  roomNumber?: string;
+  roomType?: string;
+  buildingId?: number;
+  buildingName?: string;
+  floorId?: number;
+  floorName?: string;
+}
+
+export interface PatientAdmissionDetailsResponse {
+  success: boolean;
+  data: PatientAdmissionDetailsData;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 export const counsellorApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -821,6 +884,54 @@ export const counsellorApi = baseApi.injectEndpoints({
     }),
 
     /**
+     * Get all documents for counsellor IPD admission step
+     */
+    getAllDocuments: builder.query<CounsellorGetAllDocumentsResponse, void>({
+      query: () => ({
+        url: "/counsellor/getAllDocuments",
+        method: "GET",
+      }),
+      providesTags: ["Document"],
+    }),
+
+    /**
+     * Get patient admission details for counsellor IPD admission step
+     */
+    getPatientAdmissionDetails: builder.query<
+      PatientAdmissionDetailsResponse,
+      number | string
+    >({
+      query: (patientId) => ({
+        url: `/counsellor/getPatientAdmissionDetails/${patientId}`,
+        method: "GET",
+      }),
+      providesTags: ["Document"],
+    }),
+
+    /**
+     * Update patient documents (counsellor IPD admission step)
+     */
+    updateDocuments: builder.mutation<UpdateDocumentsResponse, UpdateDocumentsRequest>({
+      query: ({ patientId, documentIds }) => ({
+        url: `/counsellor/updateDocuments/${patientId}`,
+        method: "PATCH",
+        body: { documentIds },
+      }),
+      invalidatesTags: ["Document"],
+    }),
+
+      /**
+     * Get all documents for counsellor IPD admission step
+     */
+    getAllDocumentsDetails: builder.query<CounsellorGetAllDocumentsResponse, void>({
+      query: () => ({
+        url: "/counsellor/getAllDocuments",
+        method: "GET",
+      }),
+      providesTags: ["Document"],
+    }),
+
+    /**
      * Complete patient admission (counselling final step)
      */
     completePatientAdmission: builder.mutation<
@@ -1001,6 +1112,9 @@ export const {
   useLazyGetPackageDetailQuery,
   useGetAdmissionDetailsQuery,
   useLazyGetAdmissionDetailsQuery,
+  useGetAllDocumentsQuery,
+  useGetPatientAdmissionDetailsQuery,
+  useUpdateDocumentsMutation,
   useSendReminderMutation,
   useCompletePatientAdmissionMutation,
   usePaymentAndAllocateRoomMutation,

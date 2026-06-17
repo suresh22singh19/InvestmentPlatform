@@ -23,6 +23,10 @@ export function MedicalInformationCard({
     items,
     className = "",
 }: MedicalInformationCardProps) {
+
+    const shouldScroll = items?.length > 8;
+
+    console.log("MedicalInformationCarditems", items);
     return (
         <div className={`mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] ${className}`}>
             <div className="flex items-center justify-between gap-2 cursor-pointer">
@@ -32,7 +36,7 @@ export function MedicalInformationCard({
                 </div>
             </div>
             <div className="Room-content mt-5">
-                <div>
+                  <div className={shouldScroll ? "max-h-[450px] custom-scroll overflow-y-auto" : ""}>
                     <div className="bg-white mb-4 border border-[#EBECED]">
                         {items.map((item) => (
                             <div

@@ -111,7 +111,7 @@ export function AdmissionInvoiceReceipt({
         invoiceId != null && String(invoiceId).trim() !== ""
             ? String(invoiceId).trim()
             : null;
-console.log("djhsdj",address)
+// console.log("djhsdj",address)
     return (
         <div
             id={captureId}

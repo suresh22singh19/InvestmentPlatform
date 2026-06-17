@@ -841,6 +841,8 @@ export default function DoctorActivity({
             className: "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#0B8C00]/20 bg-[rgba(11,140,0,0.05)] text-[#0B8C00]"
         }] : [])
     ];
+
+    console.log("appData", appData);
     const patientInfoItems: PatientDetailsInfoItem[] = [
         {
             iconSrc: "/icons/UserGear.svg",
@@ -909,6 +911,12 @@ export default function DoctorActivity({
         { label: "Height", value: appData.height || "N/A" },
         { label: "Weight", value: appData.weight || "N/A" },
         { label: "Diet Type", value: appData.dietType || "N/A" },
+        { label: "Diabetes", value: appData.isDiabetes || "N/A" },
+        { label: "HTN(hypertension)", value: appData.isHypertension || "N/A" },
+        { label: "Coronary Artery Disease", value: appData.isCad || "N/A" },
+        { label: "Thyroid", value: appData.isThyroid || "N/A" },
+        { label: "Menstrual", value: appData.isMenstrual || "N/A" },
+        // { label: "Addiction", value: appData.addictionType.length > 0 ? appData.addictionType.join(", ") : "N/A" },
         { label: "Remarks", value: appData.diagnosisRemarks || "N/A", multiline: true },
     ];
 
