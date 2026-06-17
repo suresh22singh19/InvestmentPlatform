@@ -87,6 +87,9 @@ export type GetAppointmentsOfDoctorParams = {
     sortBy?: string;
     order?: "ASC" | "DESC" | "asc" | "desc";
     search?: string;
+    startDate?: string;
+    endDate?: string;
+    detailType?: string;
 };
 
 export type AppointmentOfDoctorItem = {
@@ -347,6 +350,9 @@ export const doctorApi = baseApi.injectEndpoints({
                     sortBy: params.sortBy,
                     order: params.order,
                     search: params.search,
+                    startDate: params.startDate,
+                    endDate: params.endDate,
+                    detailType: params.detailType,
                 });
                 return {
                     url: `/doctor/GetAppointmentsOfDoctor${qs}`,

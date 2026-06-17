@@ -855,8 +855,10 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const [medicineErrors, setMedicineErrors] = useState<Record<string, string>[]>([{}]);
 
         // Validation Refs
-        const chiefComplaintRef = useRef<HTMLInputElement>(null);
-        const symptomsRef = useRef<HTMLInputElement>(null);
+        const chiefComplaintRef = useRef<HTMLTextAreaElement>(null);
+        const symptomsRef = useRef<HTMLTextAreaElement>(null);
+        const currentMedicationsRef = useRef<HTMLDivElement>(null);
+        const painScaleRef = useRef<HTMLDivElement>(null);
 
         const diabetesRef = useRef<HTMLDivElement>(null);
         const bloodPressureRef = useRef<HTMLDivElement>(null);
@@ -1057,7 +1059,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
         // Section Progress Calculations
         const getSection1Percent = () => {
-            const fields = [chiefComplaint, symptoms, hpi, gender, socialHistory, pastMedicalHistory, familyHistory];
+            const fields = [chiefComplaint, symptoms, hpi, socialHistory, pastMedicalHistory, familyHistory];
             const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
             return Math.round((filled / fields.length) * 100);
         };
@@ -1279,6 +1281,10 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 newErrors.symptoms = "Symptoms are required";
                 isValid = false;
             }
+            if (!currentMedications) {
+                newErrors.currentMedications = "Current Medications status is required";
+                isValid = false;
+            }
             if (!diabetes) {
                 newErrors.diabetes = "Diabetes status is required";
                 isValid = false;
@@ -1313,6 +1319,10 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
             }
             if (!walking) {
                 newErrors.walking = "Walking status is required";
+                isValid = false;
+            }
+            if (painScale === null) {
+                newErrors.painScale = "Pain Scale is required";
                 isValid = false;
             }
             if (!prakriti) {
@@ -1361,6 +1371,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 } else if (newErrors.symptoms) {
                     symptomsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => symptomsRef.current?.focus(), 100);
+                } else if (newErrors.currentMedications) {
+                    currentMedicationsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    setTimeout(() => currentMedicationsRef.current?.querySelector("button")?.focus(), 100);
                 } else if (newErrors.diabetes) {
                     diabetesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => diabetesRef.current?.querySelector("button")?.focus(), 100);
@@ -1388,6 +1401,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 } else if (newErrors.walking) {
                     walkingRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => walkingRef.current?.querySelector("button")?.focus(), 100);
+                } else if (newErrors.painScale) {
+                    painScaleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    setTimeout(() => painScaleRef.current?.querySelector("button")?.focus(), 100);
                 } else if (!isMedValid) {
                     const firstErrIdx = newMedErrors.findIndex(x => Object.keys(x).length > 0);
                     if (firstErrIdx >= 0) {
@@ -1670,8 +1686,8 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <SectionProgress percent={getSection1Percent()} />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <FormInputField
+                    <div className="flex flex-col gap-4">
+                        <FormTextareaField
                             ref={chiefComplaintRef}
                             label="Chief Complaint *"
                             placeholder="Describe the main complaint..."
@@ -1688,8 +1704,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             }}
                             width="100%"
                             error={errors.chiefComplaint}
+                            height={60}
                         />
-                        <FormInputField
+                        <FormTextareaField
                             ref={symptomsRef}
                             label="Symptoms *"
                             placeholder="Symptoms"
@@ -1706,39 +1723,41 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             }}
                             width="100%"
                             error={errors.symptoms}
+                            height={60}
                         />
-                        <FormInputField
+                        <FormTextareaField
                             label="History of Present Illness (HPI)"
                             placeholder="Onset, duration, progression..."
                             value={hpi}
                             onChange={(e) => setHpi(e.target.value)}
                             width="100%"
+                            height={60}
                         />
-
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormInputField
+                        <FormTextareaField
                             label="Social History"
                             placeholder="Occupation, lifestyle..."
                             value={socialHistory}
                             onChange={(e) => setSocialHistory(e.target.value)}
                             width="100%"
+                            height={60}
                         />
-                        <FormInputField
+                        <FormTextareaField
                             label="Past Medical History"
                             placeholder="Previous conditions..."
                             value={pastMedicalHistory}
                             onChange={(e) => setPastMedicalHistory(e.target.value)}
                             width="100%"
+                            height={60}
+                        />
+                        <FormTextareaField
+                            label="Family History"
+                            placeholder="Hereditary conditions..."
+                            value={familyHistory}
+                            onChange={(e) => setFamilyHistory(e.target.value)}
+                            width="100%"
+                            height={60}
                         />
                     </div>
-                    <FormInputField
-                        label="Family History"
-                        placeholder="Hereditary conditions..."
-                        value={familyHistory}
-                        onChange={(e) => setFamilyHistory(e.target.value)}
-                        width="100%"
-                    />
                 </div>
 
                 {/* 2. MEDICATIONS & SUPPLEMENTS */}
@@ -1753,11 +1772,22 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                     <div className="w-full md:w-[350px]">
                         <PatientTypeButtonGroup
+                            fieldRef={currentMedicationsRef}
                             options={["Yes", "No"]}
                             value={currentMedications}
-                            onChange={(val) => setCurrentMedications(val as any)}
+                            onChange={(val) => {
+                                setCurrentMedications(val as any);
+                                if (errors.currentMedications) {
+                                    setErrors(prev => {
+                                        const next = { ...prev };
+                                        delete next.currentMedications;
+                                        return next;
+                                    });
+                                }
+                            }}
                             label="Current Medications"
                             required={true}
+                            error={errors.currentMedications}
                         />
                     </div>
 
@@ -2235,14 +2265,23 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     width="100%"
                                 />
                             </div>
-                            <div className="lg:col-span-7 space-y-2 pb-1">
+                            <div ref={painScaleRef} className="lg:col-span-7 space-y-2 pb-1">
                                 <span className="block text-xs font-medium text-[#7B8089]">Pain Scale (0-10) <span className="text-[#F6776E]">*</span></span>
                                 <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                                     {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                                         <button
                                             key={num}
                                             type="button"
-                                            onClick={() => setPainScale(num)}
+                                            onClick={() => {
+                                                setPainScale(num);
+                                                if (errors.painScale) {
+                                                    setErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.painScale;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
                                             className={`w-8 h-8 text-xs rounded-full font-bold flex items-center justify-center shrink-0 transition-all duration-150 ${painScale === num
                                                 ? "bg-[#0B8C00] text-white border-transparent"
                                                 : "bg-[#F1F1F1] text-[#434956] border-transparent hover:bg-[#E5E7EB]"
@@ -2252,6 +2291,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                         </button>
                                     ))}
                                 </div>
+                                {errors.painScale && (
+                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.painScale}</p>
+                                )}
                             </div>
                         </div>
 

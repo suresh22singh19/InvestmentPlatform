@@ -19,6 +19,22 @@ const BASE_URL = "https://advanced-core-api-pvrrcvbtkq-el.a.run.app"; // use thi
 const AUTH_BASE_URL = "https://jeenasikho-auth-pvrrcvbtkq-el.a.run.app"; // usse this for login 
 const HELPER_BASE_URL = "https://jeenasikho-helper-service-pvrrcvbtkq-el.a.run.app";
 
+function getUserEmail(): string {
+    if (typeof window === "undefined") return "";
+    try {
+        const userRaw = localStorage.getItem("user");
+        if (userRaw) {
+            const user = JSON.parse(userRaw);
+            if (user && user.email) {
+                return user.email;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to parse user from localStorage", e);
+    }
+    return "";
+}
+
 let activeRefreshPromise: Promise<string> | null = null;
 let refreshTimeoutId: any = null;
 
@@ -177,7 +193,7 @@ export async function refreshJatayuToken(): Promise<string> {
 
                 // Register session after token refresh
                 try {
-                    const email = "jeena1sikho@gmail.com";
+                    const email = getUserEmail();
                     const curTime = new Date()
                         .toLocaleTimeString()
                         .replace(" ", "-")
@@ -253,7 +269,7 @@ export async function logoutJatayu(): Promise<void> {
                 "Authorization": `Bearer ${token}`
             },
             body: JSON.stringify({
-                emailid: "jeena1sikho@gmail.com"
+                emailid: getUserEmail()
             })
         });
 

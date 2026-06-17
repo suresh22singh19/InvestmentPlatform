@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { uploadAudioChunk, endAudioStream, combineAudioChunks, EndStreamRequest } from "@/store/api/jatayuApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserEmail } from "@/store/slices/authSlice";
 
 export enum RecordingState {
     IDLE = "IDLE",
@@ -72,6 +74,7 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
 }
 
 export function useAudioRecorder() {
+    const userEmail = useAppSelector(selectUserEmail);
     const [recordingState, setRecordingState] = useState<RecordingState>(RecordingState.IDLE);
     const [duration, setDuration] = useState(0);
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -498,7 +501,7 @@ export function useAudioRecorder() {
             combineAudioChunks({
                 chunk_id: chunkIdRef.current,
                 name: nameRef.current,
-                email: "jeena1sikho@gmail.com",
+                email: userEmail || "",
             }).catch((combineErr) => {
                 console.error("Combined audio upload failed:", combineErr);
             });

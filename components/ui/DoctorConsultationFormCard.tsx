@@ -2,7 +2,7 @@
 
 import { useState, forwardRef, useImperativeHandle, useRef, useEffect } from "react";
 import Image from "next/image";
-import { FormInputField } from "./FormInputField";
+import { FormTextareaField } from "./FormTextareaField";
 import { PatientTypeButtonGroup } from "./PatientTypeButtonGroup";
 import { FormSelectField } from "./FormSelectField";
 import { Button } from "./Button";
@@ -109,10 +109,10 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
         const [isNotesOpen, setIsNotesOpen] = useState(false);
 
         // Refs for scrolling & focusing
-        const chiefComplaintRef = useRef<HTMLInputElement>(null);
-        const symptomsRef = useRef<HTMLInputElement>(null);
-        const currentMedicationRef = useRef<HTMLInputElement>(null);
-        const finalDiagnosisRef = useRef<HTMLInputElement>(null);
+        const chiefComplaintRef = useRef<HTMLTextAreaElement>(null);
+        const symptomsRef = useRef<HTMLTextAreaElement>(null);
+        const currentMedicationRef = useRef<HTMLTextAreaElement>(null);
+        const finalDiagnosisRef = useRef<HTMLTextAreaElement>(null);
 
         const diabetesRef = useRef<HTMLDivElement>(null);
         const bloodPressureRef = useRef<HTMLDivElement>(null);
@@ -312,8 +312,8 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                             </button>
                         )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormInputField
+                    <div className="flex flex-col gap-4">
+                        <FormTextareaField
                             ref={chiefComplaintRef}
                             label="Chief Complaint *"
                             value={chiefComplaint}
@@ -329,8 +329,9 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                             }}
                             placeholder="Chief Complaint"
                             error={errors.chiefComplaint}
+                            height={60}
                         />
-                        <FormInputField
+                        <FormTextareaField
                             ref={symptomsRef}
                             label="Symptoms *"
                             value={symptoms}
@@ -346,8 +347,9 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                             }}
                             placeholder="Symptoms"
                             error={errors.symptoms}
+                            height={60}
                         />
-                        <FormInputField
+                        <FormTextareaField
                             ref={currentMedicationRef}
                             label="Current Medication *"
                             value={currentMedication}
@@ -363,8 +365,9 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                             }}
                             placeholder="Remarks"
                             error={errors.currentMedication}
+                            height={60}
                         />
-                        <FormInputField
+                        <FormTextareaField
                             ref={finalDiagnosisRef}
                             label="Final Diagnosis *"
                             value={finalDiagnosis}
@@ -380,6 +383,7 @@ export const DoctorConsultationFormCard = forwardRef<{ validate: () => boolean }
                             }}
                             placeholder="Confirmed diagnosis after investigations..."
                             error={errors.finalDiagnosis}
+                            height={60}
                         />
                     </div>
                 </div>

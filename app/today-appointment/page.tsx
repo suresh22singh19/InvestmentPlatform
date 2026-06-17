@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { usePermission } from "@/hooks/usePermission";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -14,7 +15,8 @@ import {
     BackToPreviousPageButton,
     ViewAppointment,
     Dialog,
-    MessageDialog
+    MessageDialog,
+    Tabs
 } from "@/components/ui";
 import DoctorActivity from "./doctorActivity";
 import { useAppSelector } from "@/store/hooks";
@@ -23,6 +25,7 @@ import { useGetAppointmentsOfDoctorQuery, useGetPatientReferralForDoctorQuery, u
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 
 
 
@@ -46,6 +49,94 @@ export default function DoctorListingPage() {
     const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
     const [selectedPatientView, setSelectedPatientView] = useState(false);
     const [selectedItem, setSelectedItem] = useState<any | null>(null);
+
+    const getTodayYmd = () => {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, "0");
+        const dd = String(today.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const getYesterdayYmd = () => {
+        const date = new Date();
+        date.setDate(date.getDate() - 1);
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const dd = String(date.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
+    const filterRef = useRef<HTMLDivElement>(null);
+
+    const handleFilterClick = () => setIsFilterOpen((prev) => !prev);
+    const handleFilter = (newFromDate: string, newToDate: string) => {
+        setFromDate(newFromDate);
+        setToDate(newToDate);
+        setCurrentPage(1);
+        setIsFilterOpen(false);
+    };
+    const handleClear = () => {
+        setFromDate("");
+        setToDate("");
+        setCurrentPage(1);
+        setIsFilterOpen(false);
+    };
+
+    // Click outside handler for DateFilterDropdown
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (!filterRef.current) return;
+            if (!filterRef.current.contains(event.target as Node)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const tabOptions2 = [
+        { value: "Present", label: "Today Appointment" },
+        { value: "Past", label: "Past Appointment" },
+    ];
+    const [activeTab2, setActiveTab2] = useState("Present");
+    const [periodLockedWithSearch, setPeriodLockedWithSearch] = useState(false);
+    const periodLockSearchSnapshotRef = useRef<string | null>(null);
+
+    const isSearchingUi = searchTerm.trim() !== "";
+
+    const handleTabChange2 = (value: string) => {
+        setActiveTab2(value);
+        setCurrentPage(1);
+        setFromDate("");
+        setToDate("");
+        if (searchTerm.trim() !== "") {
+            setPeriodLockedWithSearch(true);
+            periodLockSearchSnapshotRef.current = debouncedSearch.trim();
+        } else {
+            setPeriodLockedWithSearch(false);
+            periodLockSearchSnapshotRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        const curr = debouncedSearch.trim();
+        if (curr === "") {
+            setPeriodLockedWithSearch(false);
+            periodLockSearchSnapshotRef.current = null;
+            return;
+        }
+        const snap = periodLockSearchSnapshotRef.current;
+        if (snap != null && curr !== snap) {
+            setPeriodLockedWithSearch(false);
+            periodLockSearchSnapshotRef.current = null;
+        }
+    }, [debouncedSearch]);
 
     const { data: referralData } = useGetPatientReferralForDoctorQuery(
         { registrationId: selectedItem?.registrationId || selectedItem?.appointmentId || 0 },
@@ -140,6 +231,9 @@ export default function DoctorListingPage() {
         sortBy: "createdAt",
         order: "DESC" as const,
         search: debouncedSearch.trim() || undefined,
+        startDate: fromDate || undefined,
+        endDate: toDate || undefined,
+        detailType: activeTab2 === "Past" ? "past" : "today",
     };
 
     const { data: apiResponse, isLoading, isError, refetch } = useGetAppointmentsOfDoctorQuery(
@@ -175,11 +269,22 @@ export default function DoctorListingPage() {
     const rows = filteredData.map((item, index) => {
         const sr = (currentPage - 1) * itemsPerPage + index + 1;
 
+        const isToday = (() => {
+            if (!item.appointmentDate) return false;
+            const appDateStr = item.appointmentDate.split('T')[0];
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, "0");
+            const dd = String(today.getDate()).padStart(2, "0");
+            const todayStr = `${yyyy}-${mm}-${dd}`;
+            return appDateStr === todayStr;
+        })();
+
         const uhid = (
             <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline" onClick={() => {
                 if (canAdd) {
-                    setSelectedItem(item); setSelectedPatientView(true);
-                    // handleStartConsultation(item);
+                    // setSelectedItem(item); setSelectedPatientView(true);
+                    handleStartConsultation(item);
                 }
             }}>
                 {item.uhid || "N/A"}
@@ -206,14 +311,25 @@ export default function DoctorListingPage() {
                         Completed
                     </Button>
                 ) : (
-                    <Button
-                        variant="outline"
-                        size="xsmall"
-                        className="whitespace-nowrap"
-                        onClick={() => handleStartConsultation(item)}
-                    >
-                        Start Consultation
-                    </Button>
+                    (!isToday || activeTab2 === "Past") ? (
+                        <Button
+                            variant="outline"
+                            size="xsmall"
+                            className="whitespace-nowrap cursor-not-allowed opacity-50"
+                            disabled={true}
+                        >
+                            Start Consultation
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            size="xsmall"
+                            className="whitespace-nowrap"
+                            onClick={() => handleStartConsultation(item)}
+                        >
+                            Start Consultation
+                        </Button>
+                    )
                 )}
             </div>
         );
@@ -438,8 +554,16 @@ export default function DoctorListingPage() {
                             );
                         })()}
                     </div>) : (<>
-                        <div className="flex items-start justify-between">
-                            <PageHeading title="Today Appointment" />
+                        <div className="flex items-start justify-between  gap-2">
+                            <PageHeading title={activeTab2 === "Past" ? "Past Appointment" : "Today Appointment"} />
+
+                        </div>
+                        <div className="w-[460px] shrink-0">
+                            <Tabs
+                                options={tabOptions2}
+                                value={isSearchingUi && !periodLockedWithSearch ? "" : activeTab2}
+                                onChange={handleTabChange2}
+                            />
                         </div>
                         <div className="w-full rounded-[20px] border border-[#E3EEE1] p-2">
                             <TableListingCard
@@ -447,6 +571,7 @@ export default function DoctorListingPage() {
                                     {
                                         id: "doctor-patients-list",
                                         title: "",
+
                                         titleRightContent: (
                                             <div className="flex gap-2">
                                                 {/* Branch Filter */}
@@ -502,9 +627,37 @@ export default function DoctorListingPage() {
                                                         placeholder="Search Here..."
                                                     />
                                                 </div>
+                                                {activeTab2 === "Past" && (
+                                                    <div className="relative" ref={filterRef}>
+                                                        <button
+                                                            onClick={handleFilterClick}
+                                                            className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center w-[108px] h-10 rounded-[32px] border border-[#0B8C00] bg-white hover:bg-[#F7FAF7] relative z-10"
+                                                        >
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <Image src="/icons/FilterIcon.svg" alt="filter" width={24} height={24} />
+                                                                <span className="font-inter font-medium text-sm leading-[120%] text-[#0B8C00]">Filter</span>
+                                                            </div>
+                                                        </button>
+                                                        {isFilterOpen && (
+                                                            <div className="absolute right-0 top-full mt-2 z-50">
+                                                                <DateFilterDropdown
+                                                                    onFilter={handleFilter}
+                                                                    onClear={handleClear}
+                                                                    initialFromDate={fromDate}
+                                                                    initialToDate={toDate}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 <RefreshButton onClick={() => {
                                                     setSearchTerm("");
                                                     setCurrentPage(1);
+                                                    setFromDate(getTodayYmd());
+                                                    setToDate(getTodayYmd());
+                                                    setActiveTab2("Present");
+                                                    setPeriodLockedWithSearch(false);
+                                                    periodLockSearchSnapshotRef.current = null;
                                                     if (isSuperAdmin) {
                                                         setSelectedBranchFilter(branchOptions[0]?.value || "");
                                                         setSelectedDoctorFilter("");

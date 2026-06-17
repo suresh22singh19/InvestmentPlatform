@@ -7,7 +7,7 @@ import { PageHeading } from "@/components/layout/PageHeading";
 import { uploadAudioReturn, refreshJatayuToken, forceLogoutJatayu } from "@/store/api/jatayuApi";
 import { useLogoutMutation } from "@/store/api/authApi";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { logout, selectUser, selectLoginType } from "@/store/slices/authSlice";
+import { logout, selectUser, selectLoginType, selectUserEmail } from "@/store/slices/authSlice";
 import {
     useGetPatientReferralForDoctorQuery,
     useGetPatientAssessmentHistoryQuery,
@@ -106,6 +106,7 @@ export default function DoctorActivity({
 
     const user = useAppSelector(selectUser);
     const loginType = useAppSelector(selectLoginType);
+    const userEmail = useAppSelector(selectUserEmail);
 
     const isDoctor = loginType?.toLowerCase() === "doctor";
     const aiVoiceActivated = user?.aiVoiceActivated === true || user?.aiVoiceActivated === "true";
@@ -149,8 +150,8 @@ export default function DoctorActivity({
 
     const handleConfirmJatayuReLogin = async () => {
         setIsJatayuActionLoading(true);
-            const getUser = typeof window !== "undefined" ? localStorage.getItem("user") : null;
-            const userData = getUser ? JSON.parse(getUser) : null;
+        const getUser = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+        const userData = getUser ? JSON.parse(getUser) : null;
         try {
             await forceLogoutJatayu(userData?.email);
         } catch (err) {
@@ -654,7 +655,7 @@ export default function DoctorActivity({
 
                     const fieldsObject = {
                         doctorInfo: {
-                            emailID: "jeena1sikho@gmail.com",
+                            emailID: userEmail,
                             doctorID: String(appData.doctorId || ""),
                             firstName: doctorFirstName,
                             lastName: doctorLastName,
@@ -691,7 +692,7 @@ export default function DoctorActivity({
 
                     const res = await uploadAudioReturn({
                         audio: audioArray,
-                        email: "jeena1sikho@gmail.com",
+                        email: userEmail || "",
                         fields: fieldsObject,
                         name: `appointment_${appData.appointmentId || "recording"}.wav`,
                         source: "med",
@@ -1002,19 +1003,20 @@ export default function DoctorActivity({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
 
                     {/* Left Column (col-span-8) */}
-                    <div className="lg:col-span-8 space-y-0">
-                        <ScrollableContainer maxHeight="none" className="lg:max-h-[calc(100vh-270px)] max-h-none pr-2">
-                            <div className="space-y-4 pt-1 pb-1">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <PatientDetailsCard
-                                        name={patientName}
-                                        subtitle={patientSubtitle}
-                                        badges={patientBadges}
-                                        infoItems={patientInfoItems}
-                                    />
-                                    {/* Vitals Card */}
-                                    <VitalsCard items={vitalsItems} />
-                                </div>
+                    <div className="lg:col-span-8 flex flex-col gap-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <PatientDetailsCard
+                                name={patientName}
+                                subtitle={patientSubtitle}
+                                badges={patientBadges}
+                                infoItems={patientInfoItems}
+                            />
+                            {/* Vitals Card */}
+                            <VitalsCard items={vitalsItems} />
+                        </div>
+
+                        <ScrollableContainer maxHeight="none" className="lg:max-h-[calc(100vh-350px)] max-h-none pr-2">
+                            <div className="space-y-4 pt-0 pb-0">
                                 {/* Add here that Patient history card view only for old patient ok if the patient is new then its hide  */}
                                 {isOldPatient && (
                                     <div className="mt-4 mb-4">
@@ -1169,7 +1171,7 @@ export default function DoctorActivity({
 
                     {/* Right Column (col-span-4) */}
                     <div className="lg:col-span-4">
-                        <ScrollableContainer maxHeight="none" className="lg:max-h-[calc(100vh-200px)] max-h-none pr-2">
+                        <ScrollableContainer maxHeight="none" className="lg:max-h-[calc(100vh-40px)] max-h-none pr-2">
                             <div className="space-y-6 pt-1 pb-1">
                                 {/* Health Card Preview */}
                                 <HealthCardPreview cardNumber={appData.jsHealthCardNo || "N/A"} />

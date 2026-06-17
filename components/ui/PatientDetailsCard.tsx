@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Tooltip } from "./Tooltip";
 
 export interface PatientDetailsBadge {
     label: string;
@@ -44,7 +45,7 @@ export function PatientDetailsCard({
                 </div>
             </div>
 
-            <div className="data mt-5">
+            <div className="data mt-2">
                 <div>
                     <h4 className="font-semibold text-2xl leading-[120%] text-[#262D3B]">{name}</h4>
                     <p className="mt-1 font-normal text-sm leading-[120%] text-[#434956] font-[Inter]">{subtitle}</p>
@@ -60,17 +61,30 @@ export function PatientDetailsCard({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mt-5">
-                    {infoItems.map((item) => (
-                        <div key={item.label} className="flex gap-3 items-center ">
-                            <div className="flex items-center justify-center w-[40px] h-[40px] bg-[rgba(11,140,0,0.05)] border border-[#EBECED] rounded-full shrink-0">
-                                <Image src={item.iconSrc} alt={item.iconAlt} width={20} height={20} />
+                    {infoItems.map((item) => {
+                        const isAddress = item.label.toLowerCase() === "address";
+                        return (
+                            <div key={item.label} className="flex gap-3 items-center min-w-0">
+                                <div className="flex items-center justify-center w-[40px] h-[40px] bg-[rgba(11,140,0,0.05)] border border-[#EBECED] rounded-full shrink-0">
+                                    <Image src={item.iconSrc} alt={item.iconAlt} width={20} height={20} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="not-italic font-medium text-[12px] leading-[120%] text-[#434956]">{item.label}</h4>
+                                    {isAddress ? (
+                                        <Tooltip content={<div className="max-w-[280px] whitespace-pre-wrap">{item.value}</div>} position="top">
+                                            <h2 className="not-italic font-medium text-[14px] leading-[120%] text-[#262D3B] truncate cursor-pointer hover:text-[#0B8C00] transition-colors">
+                                                {item.value}
+                                            </h2>
+                                        </Tooltip>
+                                    ) : (
+                                        <h2 className="not-italic font-medium text-[14px] leading-[120%] text-[#262D3B] truncate" title={item.value}>
+                                            {item.value}
+                                        </h2>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="not-italic font-medium text-[12px] leading-[120%] text-[#434956]">{item.label}</h4>
-                                <h2 className="not-italic font-medium text-[14px] leading-[120%] text-[#262D3B]">{item.value}</h2>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>
