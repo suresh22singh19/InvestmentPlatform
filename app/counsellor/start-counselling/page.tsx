@@ -89,7 +89,6 @@ function extractPatientContextFromApiData(
     const appDetail = data.appointmentDetail || {};
     const patDetails = data.patientDetails || {};
     const medInfo = data.medicalInfo || {};
-    const otherInfo = data.otherInformation || {};
 
     const patientName = patDetails.name?.trim();
     const patientUhid = appDetail.uhid || patDetails.uhid;
@@ -99,8 +98,8 @@ function extractPatientContextFromApiData(
         patientName: patientName || "N/A",
         patientUhid: patientUhid || "N/A",
         diagnosis: medInfo.diagnosis || medInfo.disease || "N/A",
-        status: otherInfo.patientType || appDetail.status || "Referred",
-        branchId: Number(appDetail.branchId) || 1,
+        status: appDetail.status || patDetails.status || "Referred",
+        branchId: Number(appDetail.branchId) > 0 ? Number(appDetail.branchId) : 0,
         appointmentId: Number(appDetail.opid ?? fallbackAppointmentId) || 0,
     };
 }
@@ -114,8 +113,38 @@ function extractPatientContextFromReferredRow(
         patientUhid: row.patientUhid || "N/A",
         diagnosis: row.diagnosisSymptoms || "N/A",
         status: row.status || "Referred",
-        branchId: Number(row.branchId) || 1,
+        branchId: Number(row.branchId) > 0 ? Number(row.branchId) : 0,
         appointmentId: Number(row.appointmentId ?? row.id ?? patientIdParam) || 0,
+    };
+}
+
+function mergePatientContextWithReferredFallback(
+    apiContext: CounsellingPatientContext,
+    fallback: CounsellingPatientContext | null | undefined
+): CounsellingPatientContext {
+    if (!fallback) {
+        return {
+            ...apiContext,
+            branchId: apiContext.branchId > 0 ? apiContext.branchId : 0,
+        };
+    }
+
+    return {
+        ...apiContext,
+        diagnosis:
+            fallback.diagnosis && fallback.diagnosis !== "N/A"
+                ? fallback.diagnosis
+                : apiContext.diagnosis,
+        status:
+            fallback.status && fallback.status !== "N/A"
+                ? fallback.status
+                : apiContext.status,
+        branchId:
+            fallback.branchId > 0
+                ? fallback.branchId
+                : apiContext.branchId > 0
+                  ? apiContext.branchId
+                  : 0,
     };
 }
 
@@ -207,6 +236,14 @@ export default function StartCounsellingPage() {
     }
   }, [patientIdParam, isEditMode, rowfilterbyId]);
 
+  const rowBranchId = Number(rowfilterbyId?.branchId) > 0 ? Number(rowfilterbyId?.branchId) : 0;
+  const contextBranchId =
+    patientContext?.branchId && patientContext.branchId > 0 ? patientContext.branchId : 0;
+
+  const resolvedBranchId = isEditMode
+    ? Number(editAdmissionData?.branchId) || ""
+    : rowBranchId || contextBranchId || "";
+
   const resolvedAppointmentLookupId = useMemo(() => {
     if (appointmentIdParam) return appointmentIdParam;
     if (rowfilterbyId?.appointmentId != null && rowfilterbyId.appointmentId !== "") {
@@ -225,15 +262,15 @@ export default function StartCounsellingPage() {
     : (patientContext?.patientUhid || "N/A");
   const getdiagnosisSymptoms = isEditMode
     ? "N/A"
-    : (patientContext?.diagnosis || "N/A");
+    : (rowfilterbyId?.diagnosisSymptoms || patientContext?.diagnosis || "N/A");
   const getpatientBranchId = isEditMode
     ? String(editAdmissionData?.branchId ?? "N/A")
-    : String(patientContext?.branchId ?? "N/A");
+    : String(patientContext?.branchId ?? rowfilterbyId?.branchId ?? "N/A");
   const getpatientStatus = isEditMode
     ? "Edit Admission"
-    : isPatientContextLoading && !patientContext
+    : isPatientContextLoading && !patientContext && !rowfilterbyId
       ? "Loading..."
-      : (patientContext?.status || "N/A");
+      : (rowfilterbyId?.status || patientContext?.status || "N/A");
   const editPatientSubtitle = isEditMode && editAdmissionData?.patient
     ? `Contact: ${editAdmissionData.patient.contactNumber || "N/A"} • Age: ${editAdmissionData.patient.age || "N/A"} Years • Gender: ${editAdmissionData.patient.gender || "N/A"}`
     : null;
@@ -312,6 +349,7 @@ export default function StartCounsellingPage() {
         }
         setEditAdmissionPrefillApplied(true);
     }, [editAdmissionData, editAdmissionPrefillApplied]);
+    
     const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
     const [getPatientDetail] = useLazyGetPatientDetailQuery();
     const [getPatientDetailByAppointment] = useLazyGetPatientDetailByAppointmentQuery();
@@ -340,7 +378,9 @@ export default function StartCounsellingPage() {
                                 resolvedAppointmentLookupId
                             );
                             if (ctx) {
-                                setPatientContext(ctx);
+                                setPatientContext((prev) =>
+                                    mergePatientContextWithReferredFallback(ctx, prev)
+                                );
                                 return;
                             }
                         }
@@ -354,7 +394,9 @@ export default function StartCounsellingPage() {
                     if (!cancelled && byPatient?.success) {
                         const ctx = extractPatientContextFromApiData(byPatient.data, patientIdParam);
                         if (ctx) {
-                            setPatientContext(ctx);
+                            setPatientContext((prev) =>
+                                mergePatientContextWithReferredFallback(ctx, prev)
+                            );
                         }
                     }
                 }
@@ -378,6 +420,7 @@ export default function StartCounsellingPage() {
         resolvedAppointmentLookupId,
         getPatientDetailByAppointment,
         getPatientDetail,
+        rowBranchId,
     ]);
 
     const patientDetailId =
@@ -386,9 +429,6 @@ export default function StartCounsellingPage() {
         patientIdParam ||
         editPatientIdParam;
 
-    const resolvedBranchId = isEditMode
-        ? Number(editAdmissionData?.branchId) || 1
-        : patientContext?.branchId || Number(rowfilterbyId?.branchId) || 1;
     const resolvedAppointmentId = isEditMode
         ? Number(editAdmissionData?.appointmentId) || 0
         : patientContext?.appointmentId ||
@@ -804,7 +844,15 @@ export default function StartCounsellingPage() {
                             setSelectedOfferId={setSelectedOfferId}
                             admissionType={admissionType}
                             setAdmissionType={setAdmissionType}
-                            onNext={() => setCurrentStep(showRoomStep ? 2 : paymentStepNumber)}
+                            onNext={() => {
+                                const nextStep = showRoomStep ? 2 : paymentStepNumber;
+                                setCurrentStep(nextStep);
+                                if (showRoomStep) {
+                                    setHasVisitedRoomStep(true);
+                                } else {
+                                    setHasVisitedPaymentStep(true);
+                                }
+                            }}
                             onCancel={handleDetailsStepCancel}
                             onViewPatientOverview={handleViewPatientOverview}
                             isViewPatientLoading={isViewPatientLoading}

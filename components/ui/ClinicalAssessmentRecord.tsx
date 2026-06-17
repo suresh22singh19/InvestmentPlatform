@@ -46,8 +46,8 @@ export interface ClinicalAssessmentRecordProps {
     setStanding: (val: "normal" | "abnormal" | "") => void;
     walking: "normal" | "abnormal" | "";
     setWalking: (val: "normal" | "abnormal" | "") => void;
-    medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>;
-    setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string }>>>;
+    medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string; remarks?: string }>;
+    setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string; remarks?: string }>>>;
 
     // Extra fields
     followUpDate?: string;
@@ -579,6 +579,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     medicineFrequency: m.frequency || "",
                                     medicineTiming: m.timing || "",
                                     medicineDuration: m.duration || "",
+                                    medicineRemarks: m.remarks || "",
                                     confidence: 1.0,
                                     stamp: { Std_Code: "", Std_Name: "" }
                                 }))
@@ -1241,7 +1242,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
         // Row Handlers for medicines
         const handleAddRow = () => {
-            setMedicines([...medicines, { name: "", dosage: "", frequency: "", timing: "", duration: "" }]);
+            setMedicines([...medicines, { name: "", dosage: "", frequency: "", timing: "", duration: "", remarks: "" }]);
             setMedicineErrors([...medicineErrors, {}]);
         };
 
@@ -1395,7 +1396,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         rowEl?.scrollIntoView({ behavior: "smooth", block: "center" });
 
                         const err = newMedErrors[firstErrIdx];
-                        const fieldsOrder = ["name", "dosage", "frequency", "timing", "duration"];
+                        const fieldsOrder = ["name", "dosage", "frequency", "duration", "remarks"];
                         const missingFieldIdx = fieldsOrder.findIndex(f => err[f]);
                         if (missingFieldIdx >= 0) {
                             setTimeout(() => {
@@ -2558,7 +2559,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                 {/* 7. TREATMENT PLAN & EDUCATION */}
                 <div ref={section7Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
-                    <div className="flex items-center justify-between ">
+                    <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">7</div>
                             <h3 className="font-inter font-semibold text-base text-[#262D3B]">Treatment Plan & Education</h3>
@@ -2566,7 +2567,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <SectionProgress percent={getSection7Percent()} />
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="flex flex-col gap-6">
                         <FormInputField
                             label="Patient Education"
                             placeholder="What was explained to the patient..."
@@ -2575,105 +2576,102 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             width="100%"
                         />
 
-                        {/* Medicine Prescribed Table */}
-                        <div className="space-y-4 pt-2">
-                            <span className="text-sm font-normal text-gray-500 ">Medicine Prescribed</span>
+                        <div className="rounded-[12px] border border-[#EBECED] bg-white p-4 md:p-5">
+                            <p className="mb-4 text-sm font-medium text-[#434956]">
+                                Medicine Prescribed <span className="text-[#EF4444]">*</span>
+                            </p>
 
-                            <div className="space-y-2 pt-1">
-                                {/* Header */}
-                                <div className="hidden md:grid grid-cols-11 gap-3 py-3 px-2 border border-[#EBECED] rounded-xl text-xs font-semibold text-[#7B8089] items-center">
-                                    <div className="col-span-2 pl-3">Name</div>
-                                    <div className="col-span-2">Dosage</div>
-                                    <div className="col-span-2">Frequency</div>
-                                    <div className="col-span-2">Timing</div>
-                                    <div className="col-span-2">Duration</div>
-                                    <div className="col-span-1 text-center">Action</div>
-                                </div>
+                            <div className="hidden md:grid md:grid-cols-4 md:gap-3 md:px-1 md:pb-3 text-xs font-semibold text-[#7B8089]">
+                                <span>Name</span>
+                                <span>Dosage</span>
+                                <span>Frequency</span>
+                                <span>Duration</span>
+                            </div>
 
-                                {/* Rows */}
+                            <div className="flex flex-col gap-4">
                                 {medicines.map((med, idx) => (
                                     <div
                                         key={idx}
                                         ref={(el) => {
                                             medicineRowRefs.current[idx] = el;
                                         }}
-                                        className="grid grid-cols-1 md:grid-cols-11 gap-2 items-center bg-[#FAFAFA] md:bg-transparent p-0 md:py-0.5 md:px-0 rounded-xl border border-gray-100 md:border-none"
+                                        className="flex flex-col gap-3 border-b border-[#EBECED] pb-4 last:border-b-0 last:pb-0"
                                     >
-                                        <div className="col-span-1 md:col-span-2">
-                                            <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Name</span>
-                                            <FormSelectField
-                                                label="Name"
-                                                placeholder="Select"
-                                                options={MEDICINE_OPTIONS}
-                                                value={med.name}
-                                                onChange={(val) => handleRowChange(idx, "name", val as string)}
-                                                background="white"
-                                                hideLabel={true}
-                                                width="100%"
-                                                error={medicineErrors[idx]?.name}
-                                            />
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                            <div>
+                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Name</span>
+                                                <FormSelectField
+                                                    label="Name"
+                                                    placeholder="Select"
+                                                    options={MEDICINE_OPTIONS}
+                                                    value={med.name}
+                                                    onChange={(val) => handleRowChange(idx, "name", val as string)}
+                                                    background="white"
+                                                    hideLabel={true}
+                                                    width="100%"
+                                                    error={medicineErrors[idx]?.name}
+                                                />
+                                            </div>
+                                            <div>
+                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Dosage</span>
+                                                <FormSelectField
+                                                    label="Dosage"
+                                                    placeholder="Select"
+                                                    options={DOSAGE_OPTIONS}
+                                                    value={med.dosage}
+                                                    onChange={(val) => handleRowChange(idx, "dosage", val as string)}
+                                                    background="white"
+                                                    hideLabel={true}
+                                                    width="100%"
+                                                    error={medicineErrors[idx]?.dosage}
+                                                />
+                                            </div>
+                                            <div>
+                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Frequency</span>
+                                                <FormSelectField
+                                                    label="Frequency"
+                                                    placeholder="Select"
+                                                    options={FREQUENCY_OPTIONS}
+                                                    value={med.frequency}
+                                                    onChange={(val) => handleRowChange(idx, "frequency", val as string)}
+                                                    background="white"
+                                                    hideLabel={true}
+                                                    width="100%"
+                                                    error={medicineErrors[idx]?.frequency}
+                                                />
+                                            </div>
+                                            <div>
+                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Duration</span>
+                                                <FormSelectField
+                                                    label="Duration"
+                                                    placeholder="Select"
+                                                    options={DURATION_OPTIONS}
+                                                    value={med.duration}
+                                                    onChange={(val) => handleRowChange(idx, "duration", val as string)}
+                                                    background="white"
+                                                    hideLabel={true}
+                                                    width="100%"
+                                                    error={medicineErrors[idx]?.duration}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="col-span-1 md:col-span-2">
-                                            <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Dosage</span>
-                                            <FormSelectField
-                                                label="Dosage"
-                                                placeholder="Select"
-                                                options={DOSAGE_OPTIONS}
-                                                value={med.dosage}
-                                                onChange={(val) => handleRowChange(idx, "dosage", val as string)}
-                                                background="white"
-                                                hideLabel={true}
-                                                width="100%"
-                                                error={medicineErrors[idx]?.dosage}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 md:col-span-2">
-                                            <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Frequency</span>
-                                            <FormSelectField
-                                                label="Frequency"
-                                                placeholder="Select"
-                                                options={FREQUENCY_OPTIONS}
-                                                value={med.frequency}
-                                                onChange={(val) => handleRowChange(idx, "frequency", val as string)}
-                                                background="white"
-                                                hideLabel={true}
-                                                width="100%"
-                                                error={medicineErrors[idx]?.frequency}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 md:col-span-2">
-                                            <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Timing</span>
-                                            <FormSelectField
-                                                label="Timing"
-                                                placeholder="Select"
-                                                options={TIMING_OPTIONS}
-                                                value={med.timing}
-                                                onChange={(val) => handleRowChange(idx, "timing", val as string)}
-                                                background="white"
-                                                hideLabel={true}
-                                                width="100%"
-                                                error={medicineErrors[idx]?.timing}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 md:col-span-2">
-                                            <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Duration</span>
-                                            <FormSelectField
-                                                label="Duration"
-                                                placeholder="Select"
-                                                options={DURATION_OPTIONS}
-                                                value={med.duration}
-                                                onChange={(val) => handleRowChange(idx, "duration", val as string)}
-                                                background="white"
-                                                hideLabel={true}
-                                                width="100%"
-                                                error={medicineErrors[idx]?.duration}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 md:col-span-1 flex justify-center pt-2 md:pt-0">
+
+                                        <div className="flex items-start gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <FormInputField
+                                                    label="Remarks"
+                                                    placeholder="Remarks"
+                                                    value={med.remarks || ""}
+                                                    onChange={(e) => handleRowChange(idx, "remarks", e.target.value)}
+                                                    width="100%"
+                                                    error={medicineErrors[idx]?.remarks}
+                                                />
+                                            </div>
                                             <button
                                                 type="button"
                                                 onClick={() => handleDeleteRow(idx)}
-                                                className="flex items-center justify-center w-6 h-6 rounded-full bg-[#EF4444] text-white hover:bg-red-600 transition-colors font-bold text-[10px] focus:outline-none"
+                                                className="mt-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EF4444] text-sm font-bold text-white transition-colors hover:bg-red-600 focus:outline-none"
+                                                aria-label="Remove medicine row"
                                             >
                                                 ✕
                                             </button>
@@ -2682,20 +2680,14 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                 ))}
                             </div>
 
-                            <div className="pt-0 pb-4">
-                                <Button
-                                    variant="primary"
-                                    size="small"
-                                    onClick={handleAddRow}
-                                // className="bg-[#0B8C00] hover:bg-[#0A7F00] text-xs h-9 px-6 rounded-full font-bold"
-                                >
+                            <div className="mt-4">
+                                <Button variant="primary" size="small" onClick={handleAddRow}>
                                     Add Row
                                 </Button>
                             </div>
                         </div>
 
-                        {/* Footer Advices */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 ">
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                             <FormInputField
                                 ref={dietAdviceRef}
                                 label="Diet Advice *"

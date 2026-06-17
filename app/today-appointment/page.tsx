@@ -377,6 +377,11 @@ export default function DoctorListingPage() {
                                 { label: "Height", value: selectedItem?.height || "N/A" },
                                 { label: "Weight", value: selectedItem?.weight || "N/A" },
                                 { label: "Diet Type", value: selectedItem?.dietType || "N/A" },
+                                { label: "HTN(hypertension)", value: selectedItem?.isHypertension || "N/A" },
+                                { label: "Coronary Artery Disease", value: selectedItem?.isCad || "N/A" },
+                                { label: "Thyroid", value: selectedItem?.isThyroid || "N/A" },
+                                { label: "Menstrual", value: selectedItem?.isMenstrual || "N/A" },
+                                // { label: "Addiction", value:    "N/A" },
                                 { label: "Remark", value: selectedItem?.diagnosisRemarks || "N/A", multiline: true },
                             ];
 

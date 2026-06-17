@@ -78,7 +78,7 @@ interface AdmissionPaymentProps {
     doctorFee: number;
     patientName?: string;
     patientUhid?: string;
-    branchId: number;
+    branchId: number | string;
     appointmentId: number;
     packageId: number;
     numberOfDays: number;
@@ -735,8 +735,6 @@ export default function AdmissionPayment({
             setShowErrorDialog(true);
             return;
         }
-
-        // console.log("dhdsjhdjd",offerId, offerApplied);
 
         const paymentPayload = buildPaymentPayload();
         const includeOffer = Boolean(offerApplied && offerId);

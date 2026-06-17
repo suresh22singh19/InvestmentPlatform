@@ -490,7 +490,7 @@ interface CreatePackageProps {
     onAdmissionOfferChange?: (offer: { offerApplied: boolean; offerId?: number }) => void;
     getpatientBranchId?: string | number;
     appointmentId?: number;
-    branchId?: number;
+    branchId?: string | number;
     editPrefill?: EditAdmissionPrefill | null;
 }
 
@@ -519,7 +519,7 @@ export default function CreatePackage({
     onAdmissionOfferChange,
     getpatientBranchId,
     appointmentId = 0,
-    branchId = 1,
+    branchId = "",
     editPrefill = null,
 }: CreatePackageProps) {
     const [completePatientAdmission, { isLoading: isTentativeSubmitting }] = useCompletePatientAdmissionMutation();
@@ -542,6 +542,16 @@ export default function CreatePackage({
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [editPrefillApplied, setEditPrefillApplied] = useState(false);
+
+    const resolvedQueryBranchId = useMemo(() => {
+        const fromProp = Number(branchId);
+        if (Number.isFinite(fromProp) && fromProp > 0) return fromProp;
+        const fromPatient = Number(getpatientBranchId);
+        if (Number.isFinite(fromPatient) && fromPatient > 0) return fromPatient;
+        return 0;
+    }, [branchId, getpatientBranchId]);
+
+    const isBranchIdReady = resolvedQueryBranchId > 0;
 
     // const { filterBranchId } = useBranchFilter();
 
@@ -566,8 +576,22 @@ export default function CreatePackage({
     ]);
 
     const { data: allOffersForEditRes } = useGetActiveOfferListQuery(
-        { branchId: Number(getpatientBranchId) || branchId },
-        { skip: !editPrefill?.offerId || !editPrefillApplied || !applyOffer }
+        {
+            page: "",
+            limit: "",
+            sortBy: "",
+            order: "asc" as const,
+            branchId: resolvedQueryBranchId,
+            promotionType: "bundled_stay",
+            panelName: "panel",
+        },
+        {
+            skip:
+                !editPrefill?.offerId ||
+                !editPrefillApplied ||
+                !applyOffer ||
+                !isBranchIdReady,
+        }
     );
 
     useEffect(() => {
@@ -594,17 +618,17 @@ export default function CreatePackage({
         limit: itemsPerPage,
         sortBy: "",
         order: "ASC" as const,
-        branchId: Number(getpatientBranchId),
+        branchId: resolvedQueryBranchId,
         packageType: mapAdmissionTypeToApi(admissionFilterType),
         diseaseCategoryType: mapDiseaseTypeToApi(diseaseType),
         isPackageActive: true,
-    }), [currentPage, itemsPerPage, getpatientBranchId, admissionFilterType, diseaseType]);
+    }), [currentPage, itemsPerPage, resolvedQueryBranchId, admissionFilterType, diseaseType]);
 
     const {
         data: packagesRes,
         isLoading: isPackagesLoading,
         isError: isPackagesError,
-    } = useGetCounsellorAllPackagesQuery(getAllPackagesParams);
+    } = useGetCounsellorAllPackagesQuery(getAllPackagesParams, { skip: !isBranchIdReady });
 
     const packagesList = packagesRes?.data || [];
     const totalPackages = packagesRes?.total || 0;
@@ -614,22 +638,18 @@ export default function CreatePackage({
         limit: "",
         sortBy: "",
         order: "asc" as const,
-        branchId: Number(getpatientBranchId),
-        // branchId: 2,
+        branchId: resolvedQueryBranchId,
         promotionType: mapOfferTabToPromotionType(offerTab),
         panelName: mapPatientCategoryToPanelName(patientCategory),
-        // panelName : getpatientName
-    }), [offerTab, patientCategory, getpatientBranchId]);
-
-    // console.log("Offer List Params:", getpatientName);
-
-    // console.log("dhfshdjhds",selectedOfferId)
+    }), [offerTab, patientCategory, resolvedQueryBranchId]);
 
     const {
         data: offersRes,
         isLoading: isOffersLoading,
         isError: isOffersError,
-    } = useGetActiveOfferListQuery(offerListParams, { skip: !applyOffer });
+    } = useGetActiveOfferListQuery(offerListParams, {
+        skip: !(applyOffer && isBranchIdReady),
+    });
 
     useEffect(() => {
         if (!onAdmissionOfferChange) return;
@@ -852,6 +872,8 @@ export default function CreatePackage({
             return;
         }
 
+        if (!selectedPackageId) return;
+
         onNext();
     };
 
@@ -930,7 +952,7 @@ export default function CreatePackage({
             return;
         }
 
-        const resolvedBranchId = Number(branchId || getpatientBranchId) || 1;
+        const resolvedBranchId = Number(branchId) || resolvedQueryBranchId || 1;
         const apiOffers = offersRes?.data ?? [];
         const includeOffer = Boolean(
             applyOffer &&
@@ -1246,8 +1268,13 @@ export default function CreatePackage({
 
                                     <button
                                         type="button"
-                                        disabled
-                                        className={`w-full h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm ${admissionType !== "scheduled" ? "cursor-not-allowed" : "cursor-pointer"} flex items-center justify-center gap-2 mt-5 shadow-sm select-none`}
+                                        onClick={handleNextClick}
+                                        disabled={admissionType !== "scheduled"}
+                                        className={`w-full h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm flex items-center justify-center gap-2 mt-5 shadow-sm select-none transition-all duration-200 ${
+                                            admissionType !== "scheduled"
+                                                ? "cursor-not-allowed opacity-50"
+                                                : "cursor-pointer hover:bg-opacity-95 hover:scale-[1.005]"
+                                        }`}
                                     >
                                         Confirm Selection &gt;
                                     </button>

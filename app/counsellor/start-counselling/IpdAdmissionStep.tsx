@@ -1,194 +1,238 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { SpinnerLoader, MessageDialog } from "@/components/ui";
-import { Step2IpdAdmission } from "@/app/ipd-reception/patient/[patientId]/file/Step2IpdAdmission";
-import type {
-    RequiredDocumentItem,
-    OpenFileAdmissionSummary,
-} from "@/lib/ipd-reception/types";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
 import {
-    useCreateIpdAdmissionMutation,
-    useGetIpdAwaitingPatientsQuery,
-} from "@/store/api/ipdReceptionApi";
+    Button,
+    Checkbox,
+    MessageDialog,
+    SpinnerLoader,
+} from "@/components/ui";
 import {
-    buildCreateIpdAdmissionPayload,
-} from "@/lib/ipd-reception/buildCreateIpdAdmissionPayload";
-import {
-    buildSelectedDocumentsMap,
-    findAwaitingPatientById,
-    hasAtLeastOneSelectedDocument,
-    sortRequiredDocuments,
-} from "@/lib/ipd-reception/requiredDocumentsUtils";
-import { mapAwaitingPatientToOpenFile } from "@/lib/ipd-reception/mapAwaitingPatientToOpenFile";
-import { resolveReceptionBranchId } from "@/lib/ipd-reception/resolveReceptionBranchId";
-import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
-import type { OpenFileStep1Form } from "@/lib/ipd-reception/types";
+    useGetAllDocumentsQuery,
+    useGetPatientAdmissionDetailsQuery,
+    useUpdateDocumentsMutation,
+} from "@/store/api/counsellorApi";
+import type { CounsellorDocumentItem, PatientAdmissionDetailsData } from "@/store/api/counsellorApi";
 import { useRouter } from "next/navigation";
 
-const INITIAL_STEP1_FORM: OpenFileStep1Form = {
-    vitals: {
-        bloodPressure: "",
-        sugarLevel: "",
-        temperature: "",
-        pulseRate: "",
-        spo2: "",
-    },
-    dietary: {
-        dietPlanRequest: "",
-        clinicalNote: "",
-    },
-};
+const FINALIZE_DISCLAIMER =
+    "By clicking Finalize, you confirm that all physical documents have been collected.";
+
+type DocumentSelection = "required" | "not_required";
 
 type IpdAdmissionStepProps = {
     patientId: number | null;
     onBack: () => void;
 };
 
+function SectionCard({
+    title,
+    children,
+    className = "",
+}: {
+    title?: string;
+    children: ReactNode;
+    className?: string;
+}) {
+    return (
+        <div
+            className={`rounded-[20px] border border-[#E3EEE1] bg-white p-5 shadow-sm md:p-6 ${className}`}
+        >
+            {title ? (
+                <h2 className="mb-5 text-base font-medium text-[#262D3B]">{title}</h2>
+            ) : null}
+            {children}
+        </div>
+    );
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="rounded-xl border border-[#0B8C00]/20 bg-[#F4FAF4] px-4 py-3">
+            <p className="text-xs font-medium text-[#434956]">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-[#262D3B]">{value || "—"}</p>
+        </div>
+    );
+}
+
+function isActiveDocument(doc: CounsellorDocumentItem): boolean {
+    const status = doc.isActive;
+    if (typeof status === "boolean") return status;
+    if (status == null) return true;
+    return String(status).toLowerCase() === "active";
+}
+
+function formatWardAssigned(details: PatientAdmissionDetailsData): string {
+    const roomBed = [details.roomNumber, details.bedNumber].filter(Boolean).join(" / ");
+    if (roomBed) return roomBed;
+    if (details.roomType) {
+        return details.roomType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    return "—";
+}
+
+const DOCUMENTS_TABLE_GRID =
+    "grid w-full grid-cols-3 items-center gap-x-8 sm:gap-x-12 md:gap-x-16";
+
 export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStepProps) {
     const router = useRouter();
-    const selectedBranch = useAppSelector(selectSelectedBranch);
-    const userBranchId = useAppSelector(selectUserBranchId);
 
     const numericPatientId = patientId ?? 0;
     const isValidPatientId = Number.isFinite(numericPatientId) && numericPatientId > 0;
 
     const {
-        data: awaitingListingResponse,
-        isLoading: isListingLoading,
-        isError: isListingError,
-        error: listingError,
-    } = useGetIpdAwaitingPatientsQuery(
-        { patientId: numericPatientId, limit: 10, page: 1 },
-        { skip: !isValidPatientId, refetchOnMountOrArgChange: true }
-    );
+        data: documentsResponse,
+        isLoading: isDocumentsLoading,
+        isError: isDocumentsError,
+        error: documentsError,
+        refetch: refetchDocuments,
+    } = useGetAllDocumentsQuery();
 
-    const listingPatient = useMemo(
-        () => findAwaitingPatientById(awaitingListingResponse?.data, numericPatientId),
-        [awaitingListingResponse?.data, numericPatientId]
-    );
+    const {
+        data: admissionDetailsResponse,
+        isLoading: isAdmissionDetailsLoading,
+        isError: isAdmissionDetailsError,
+        error: admissionDetailsError,
+    } = useGetPatientAdmissionDetailsQuery(numericPatientId, {
+        skip: !isValidPatientId,
+        refetchOnMountOrArgChange: true,
+    });
 
-    const patientDetails = useMemo(
-        () => mapAwaitingPatientToOpenFile(listingPatient),
-        [listingPatient]
-    );
+    const admissionDetails = admissionDetailsResponse?.data ?? null;
 
-    const requiredDocuments = useMemo(
-        () => sortRequiredDocuments(listingPatient?.requiredDocuments),
-        [listingPatient?.requiredDocuments]
-    );
+    const activeDocuments = useMemo(() => {
+        const items = documentsResponse?.data ?? [];
+        return items.filter(isActiveDocument);
+    }, [documentsResponse?.data]);
 
-    const admissionSummary: OpenFileAdmissionSummary | null = patientDetails?.admissionSummary ?? null;
-
-    const [selectedDocuments, setSelectedDocuments] = useState<Record<string, boolean>>({});
+    const [documentSelections, setDocumentSelections] = useState<Record<number, DocumentSelection>>({});
     const [confirmConsentsReceived, setConfirmConsentsReceived] = useState(false);
-    const [confirmIdTag, setConfirmIdTag] = useState(false);
     const [documentsValidationError, setDocumentsValidationError] = useState<string | null>(null);
+    const [updateDocuments, { isLoading: isUpdatingDocuments }] = useUpdateDocumentsMutation();
 
-    // Create mutation (Finalizes IPD admission)
-    const [createIpdAdmission, { isLoading: isCreatingAdmission }] = useCreateIpdAdmissionMutation();
-
-    const [finalizeDialog, setFinalizeDialog] = useState<{
+    const [resultDialog, setResultDialog] = useState<{
         open: boolean;
         variant: "success" | "error";
         message: string;
     }>({ open: false, variant: "success", message: "" });
 
-    useEffect(() => {
-        setSelectedDocuments(buildSelectedDocumentsMap(requiredDocuments));
-        setConfirmConsentsReceived(false);
-        setConfirmIdTag(false);
-        setDocumentsValidationError(null);
-    }, [requiredDocuments]);
-
-    const hasSelectedRequiredDocument = useMemo(
-        () => hasAtLeastOneSelectedDocument(requiredDocuments, selectedDocuments),
-        [requiredDocuments, selectedDocuments]
+    const hasAnyDocumentSelection = useMemo(
+        () => activeDocuments.some((doc) => documentSelections[doc.id] != null),
+        [activeDocuments, documentSelections]
     );
 
-    const canFinalize = confirmConsentsReceived && hasSelectedRequiredDocument;
+    const canUpdateDocuments =
+        confirmConsentsReceived &&
+        hasAnyDocumentSelection &&
+        activeDocuments.length > 0 &&
+        !isDocumentsLoading &&
+        !isDocumentsError;
 
-    const handleToggleDocument = (documentMasterId: number) => {
-        const key = String(documentMasterId);
-        setSelectedDocuments((prev) => {
-            const next = { ...prev, [key]: !prev[key] };
-            if (hasAtLeastOneSelectedDocument(requiredDocuments, next)) {
-                setDocumentsValidationError(null);
+    const requiredDocumentIds = useMemo(
+        () =>
+            activeDocuments
+                .filter((doc) => documentSelections[doc.id] === "required")
+                .map((doc) => doc.id),
+        [activeDocuments, documentSelections]
+    );
+
+    const handleRequiredChange = (docId: number, checked: boolean) => {
+        setDocumentSelections((prev) => {
+            const next = { ...prev };
+            if (checked) {
+                next[docId] = "required";
+            } else if (prev[docId] === "required") {
+                delete next[docId];
             }
             return next;
         });
+        setDocumentsValidationError(null);
     };
 
-    const admissionBranchId = useMemo(() => {
-        return resolveReceptionBranchId({
-            patientListingBranchId: patientDetails?.branchId ?? listingPatient?.branchId,
-            selectedBranchId: selectedBranch?.id,
-            userBranchId,
+    const handleNotRequiredChange = (docId: number, checked: boolean) => {
+        setDocumentSelections((prev) => {
+            const next = { ...prev };
+            if (checked) {
+                next[docId] = "not_required";
+            } else if (prev[docId] === "not_required") {
+                delete next[docId];
+            }
+            return next;
         });
-    }, [patientDetails?.branchId, listingPatient?.branchId, selectedBranch?.id, userBranchId]);
+        setDocumentsValidationError(null);
+    };
 
-    const handleFinalize = useCallback(async () => {
-        if (!confirmConsentsReceived || !patientDetails) return;
-
-        if (!hasSelectedRequiredDocument) {
-            setDocumentsValidationError("Please select at least one document.");
+    const handleUpdateDocuments = useCallback(async () => {
+        if (!confirmConsentsReceived) {
+            setDocumentsValidationError(
+                "Please confirm that you have received the signed consent forms."
+            );
             return;
         }
 
-        if (admissionBranchId == null || !Number.isFinite(admissionBranchId) || admissionBranchId < 1) {
-            setFinalizeDialog({
-                open: true,
-                variant: "error",
-                message: "Branch information is missing for this patient.",
-            });
+        if (!hasAnyDocumentSelection) {
+            setDocumentsValidationError(
+                "Please mark at least one document as Required or Not Required."
+            );
             return;
         }
 
         try {
-            const payload = buildCreateIpdAdmissionPayload({
+            const res = await updateDocuments({
                 patientId: numericPatientId,
-                branchId: admissionBranchId,
-                patientName: patientDetails.patientName,
-                step1Form: INITIAL_STEP1_FORM,
-                requiredDocuments: requiredDocuments as RequiredDocumentItem[],
-                selectedDocuments,
-            });
+                documentIds: requiredDocumentIds,
+            }).unwrap();
 
-            await createIpdAdmission(payload).unwrap();
-
-            setFinalizeDialog({
+            setResultDialog({
                 open: true,
                 variant: "success",
-                message: "Admission finalized successfully.",
+                message: res.message || "Documents updated successfully.",
             });
-        } catch (err) {
-            setFinalizeDialog({
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setResultDialog({
                 open: true,
                 variant: "error",
-                message: "Failed to finalize IPD admission. Please try again.",
+                message:
+                    apiErr?.data?.message ||
+                    apiErr?.message ||
+                    "Failed to update documents. Please try again.",
             });
         }
     }, [
         confirmConsentsReceived,
-        patientDetails,
-        hasSelectedRequiredDocument,
-        admissionBranchId,
+        hasAnyDocumentSelection,
+        updateDocuments,
         numericPatientId,
-        requiredDocuments,
-        selectedDocuments,
-        createIpdAdmission,
+        requiredDocumentIds,
     ]);
+
+    const documentsErrorMessage = useMemo(() => {
+        if (!documentsError) return "Failed to load documents. Please try again.";
+        const apiErr = documentsError as { data?: { message?: string }; message?: string };
+        return apiErr?.data?.message || apiErr?.message || "Failed to load documents. Please try again.";
+    }, [documentsError]);
+
+    const admissionDetailsErrorMessage = useMemo(() => {
+        if (!admissionDetailsError) return "Failed to load patient admission details.";
+        const apiErr = admissionDetailsError as { data?: { message?: string }; message?: string };
+        return (
+            apiErr?.data?.message ||
+            apiErr?.message ||
+            "Failed to load patient admission details."
+        );
+    }, [admissionDetailsError]);
 
     if (!isValidPatientId) {
         return (
-            <div className="rounded-[20px] border border-[#DFE0E2] bg-white p-6 text-sm text-[#EF4444]">
-                Invalid patient ID.
-            </div>
+            <SectionCard>
+                <p className="text-sm text-[#EF4444]">Invalid patient ID.</p>
+            </SectionCard>
         );
     }
 
-    if (isListingLoading) {
+    if (isAdmissionDetailsLoading) {
         return (
             <div className="flex min-h-[240px] items-center justify-center">
                 <SpinnerLoader size={28} />
@@ -196,50 +240,168 @@ export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStep
         );
     }
 
-    if (isListingError || !patientDetails || !admissionSummary) {
+    if (isAdmissionDetailsError || !admissionDetails) {
         return (
-            <div className="rounded-[20px] border border-[#DFE0E2] bg-white p-6 text-sm text-[#EF4444]">
-                Patient not found in IPD awaiting list.
-                {listingError ? ` Error: ${String((listingError as any)?.message ?? listingError)}` : ""}
-            </div>
+            <SectionCard>
+                <p className="text-sm text-[#EF4444]">{admissionDetailsErrorMessage}</p>
+            </SectionCard>
         );
     }
 
     return (
         <div className="flex flex-col gap-6">
-            <Step2IpdAdmission
-                admissionSummary={admissionSummary}
-                requiredDocuments={requiredDocuments as RequiredDocumentItem[]}
-                isDocumentsLoading={false}
-                selectedDocuments={selectedDocuments}
-                onToggleDocument={handleToggleDocument}
-                confirmConsentsReceived={confirmConsentsReceived}
-                onConfirmConsentsReceivedChange={setConfirmConsentsReceived}
-                confirmIdTag={confirmIdTag}
-                onConfirmIdTagChange={setConfirmIdTag}
-                onBack={onBack}
-                onFinalize={() => void handleFinalize()}
-                canFinalize={canFinalize}
-                isFinalizing={isCreatingAdmission}
-                documentsValidationError={documentsValidationError}
-            />
+            <SectionCard title="Documents">
+                {isDocumentsLoading ? (
+                    <div className="flex min-h-[160px] items-center justify-center">
+                        <SpinnerLoader size={24} />
+                    </div>
+                ) : isDocumentsError ? (
+                    <div className="flex min-h-[160px] flex-col items-center justify-center gap-3 text-center">
+                        <p className="text-sm text-[#EF4444]" role="alert">
+                            {documentsErrorMessage}
+                        </p>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="medium"
+                            className="!min-w-0"
+                            onClick={() => void refetchDocuments()}
+                        >
+                            Retry
+                        </Button>
+                    </div>
+                ) : activeDocuments.length === 0 ? (
+                    <div className="flex min-h-[120px] items-center justify-center">
+                        <p className="text-sm text-[#787E8C]">No documents available.</p>
+                    </div>
+                ) : (
+                    <div className="w-full">
+                        <div className={`${DOCUMENTS_TABLE_GRID} border-b border-[#EDF3EA] pb-4`}>
+                            <span className="text-sm font-medium text-[#262D3B]">Documents</span>
+                            <span className="text-center text-sm font-medium text-[#262D3B]">
+                                Required Document
+                            </span>
+                            <span className="text-center text-sm font-medium text-[#262D3B]">
+                                Not Required Document
+                            </span>
+                        </div>
+
+                        <div className="flex flex-col">
+                            {activeDocuments.map((doc) => {
+                                const selection = documentSelections[doc.id];
+                                const isRequired = selection === "required";
+                                const isNotRequired = selection === "not_required";
+
+                                return (
+                                    <div
+                                        key={doc.id}
+                                        className={`${DOCUMENTS_TABLE_GRID} border-b border-[#EDF3EA] py-4 last:border-b-0`}
+                                    >
+                                        <span className="text-sm font-medium leading-relaxed text-[#262D3B]">
+                                            {doc.documentName}
+                                        </span>
+                                        <div className="flex justify-center">
+                                            <Checkbox
+                                                checked={isRequired}
+                                                onChange={(checked) =>
+                                                    handleRequiredChange(doc.id, checked)
+                                                }
+                                            />
+                                        </div>
+                                        <div className="flex justify-center">
+                                            <Checkbox
+                                                checked={isNotRequired}
+                                                onChange={(checked) =>
+                                                    handleNotRequiredChange(doc.id, checked)
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {documentsValidationError ? (
+                    <p className="mt-3 text-sm text-[#EF4444]" role="alert">
+                        {documentsValidationError}
+                    </p>
+                ) : null}
+
+                <div className="mt-6 rounded-[6px] border border-[#0B8C00]/50 bg-[#F4FAF4] p-4">
+                    <label className="flex cursor-pointer items-start gap-3">
+                        <Checkbox
+                            checked={confirmConsentsReceived}
+                            onChange={(checked) => {
+                                setConfirmConsentsReceived(checked);
+                                if (checked) setDocumentsValidationError(null);
+                            }}
+                        />
+                        <span className="text-sm leading-relaxed text-[#434956]">
+                            I confirm that I have received the signed consent forms from the patient
+                            or their attendant.
+                        </span>
+                    </label>
+                </div>
+            </SectionCard>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <InfoCard label="Ward Assigned" value={formatWardAssigned(admissionDetails)} />
+                <InfoCard label="Billing Type" value={admissionDetails.admissionType} />
+                <InfoCard label="OPD Doctor" value={admissionDetails.doctorName} />
+            </div>
+
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap gap-3">
+                    <Button
+                        type="button"
+                        variant="primary"
+                        size="medium"
+                        className="!min-w-0"
+                        onClick={() => void handleUpdateDocuments()}
+                        disabled={!canUpdateDocuments || isUpdatingDocuments}
+                        isLoading={isUpdatingDocuments}
+                    >
+                        Update Document
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="medium"
+                        className="!min-w-0 !border-[#9A7909] !bg-white !text-[#9A7909] shadow-none hover:!bg-[#FBF8F2] active:!bg-[#F5F0E6]"
+                        onClick={onBack}
+                        leftIcon={
+                            <Image src="/icons/LeftArrowIcon.svg" alt="" width={16} height={16} />
+                        }
+                    >
+                        Back
+                    </Button>
+                </div>
+                <p className="text-xs italic leading-relaxed text-[#9FA2AB] sm:text-right">
+                    {FINALIZE_DISCLAIMER}
+                </p>
+            </div>
 
             <MessageDialog
-                open={finalizeDialog.open}
-                onClose={() => setFinalizeDialog((p) => ({ ...p, open: false }))}
-                icon={finalizeDialog.variant === "success" ? "/icons/SuccessCheck.svg" : "/icons/ErrorIcon.svg"}
-                iconBgColor={finalizeDialog.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
-                message={finalizeDialog.message}
+                open={resultDialog.open}
+                onClose={() => setResultDialog((p) => ({ ...p, open: false }))}
+                icon={
+                    resultDialog.variant === "success"
+                        ? "/icons/SuccessCheck.svg"
+                        : "/icons/ErrorIcon.svg"
+                }
+                iconBgColor={resultDialog.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
+                message={resultDialog.message}
                 confirmText="OK"
                 showCancel={false}
                 onConfirm={() => {
-                    setFinalizeDialog((p) => ({ ...p, open: false }));
-                    if (finalizeDialog.variant === "success") {
-                        router.push("/ipd-reception/dashboard");
+                    setResultDialog((p) => ({ ...p, open: false }));
+                    if (resultDialog.variant === "success") {
+                        router.push("/counsellor/dashboard");
                     }
                 }}
             />
         </div>
     );
 }
-

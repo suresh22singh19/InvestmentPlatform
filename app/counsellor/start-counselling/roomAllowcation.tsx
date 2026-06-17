@@ -311,6 +311,7 @@ interface RoomAllocationProps {
         id?: string;
         packageName?: string;
         remark?: string;
+        totalAmount?: number;
         branchRoomType?: {
             roomRentPrice?: number;
         };
@@ -405,7 +406,7 @@ export default function RoomAllocation({
         return status;
     };
 
-    console.log("dsjdfhssdj",counsellingSummary)
+    // console.log("dsjdfhssdj",counsellingSummary)
 
     // Compile building and floor options
     const floorOptions = useMemo(() => {
@@ -513,7 +514,7 @@ export default function RoomAllocation({
         return `${selectedRoom.floor || "N/A"} • ${selectedRoom.roomType} • ${bedLabel}`;
     }, [selectedRoom, bedDetailRes?.data?.room?.totalBeds]);
 
-    console.log("counsellingSummaryhdgshd", counsellingSummary);
+    // console.log("counsellingSummaryhdgshd", counsellingSummary);
 
     const handleBedClick = (bed: BedLayoutItem) => {
         const statusLower = bed.status?.toLowerCase() || "";
@@ -639,6 +640,8 @@ export default function RoomAllocation({
         return name.slice(0, 2).toUpperCase();
     };
 
+    // console.log("activePackageHASHDJAHJ", activePackage?.totalAmount);
+
     return (
         <div className="flex flex-col gap-6 select-none mt-6">
             {/* Premium Inline Patient Details Header */}
@@ -708,7 +711,8 @@ export default function RoomAllocation({
                 <div className="flex flex-col md:items-end gap-0.5">
                     <span className="text-lg font-normal tracking-wider">Daily Rate</span>
                     <div className="flex items-baseline gap-1">
-                        <span className="text-2xl font-black">₹ {((activePackage.branchRoomType?.roomRentPrice || 1500) * 9).toLocaleString()}</span>
+                        {/* <span className="text-2xl font-black">₹ {((activePackage.branchRoomType?.roomRentPrice || 1500) * 9).toLocaleString()}</span> */}
+                         <span className="text-2xl font-black">₹ {((activePackage?.totalAmount)?.toLocaleString())}</span>
                         <span className="text-lg font-normal">/day</span>
                     </div>
                 </div>
