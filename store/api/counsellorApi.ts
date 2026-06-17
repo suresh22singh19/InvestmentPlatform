@@ -204,6 +204,155 @@ export interface CounsellorAdvanceBookingResponse {
   statusCode: number;
 }
 
+export interface CompletePatientAdmissionRoom {
+  buildingId: number;
+  floorId: number;
+  roomId: number;
+  bedId: number;
+}
+
+export interface CompletePatientAdmissionAttendant {
+  name: string;
+  email?: string;
+  phoneNumber: string;
+  relation?: string;
+  gender: string;
+  address: string;
+  country: string;
+  state: string;
+  city: string;
+  pincode: string;
+  age?: string;
+}
+
+export interface CompletePatientAdmissionSplit {
+  method: string;
+  amount: number;
+  transactionId: string;
+  status: string;
+  remarks?: string;
+}
+
+export interface CompletePatientAdmissionRequest {
+  branchId: number;
+  appointmentId?: number;
+  patientType: string;
+  diseaseType: string;
+  packageId: number;
+  numberOfDays: number;
+  offerApplied: boolean;
+  offerId?: number;
+  admissionType: string;
+  admissionDate: string;
+  specialInstructions?: string;
+  originalAmount: number;
+  discountAmount: number;
+  netPayable: number;
+  paymentMode: "completed" | "split";
+  paymentMethod?: string;
+  transactionId?: string;
+  paymentStatus?: string;
+  receivedAmount: number;
+  splits?: CompletePatientAdmissionSplit[];
+  room?: CompletePatientAdmissionRoom;
+  attendant?: CompletePatientAdmissionAttendant;
+  finalizeAdmission?: boolean;
+}
+
+export interface CompletePatientAdmissionAddress {
+  address?: string;
+  area?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pinCode?: string;
+}
+
+export interface CompletePatientAdmissionPaymentRecord {
+  id?: number;
+  amount: string | number;
+  method: string;
+  status: string;
+}
+
+export interface CompletePatientAdmissionResult {
+  patientId?: number;
+  patientPackageId?: number;
+  invoiceId?: number;
+  totalReceived?: number;
+  invoiceNumber?: string;
+  dueAmount?: number;
+  perDayCost?: number;
+  paymentId?: number;
+  admissionType?: string;
+  admissionDate?: string;
+  firstDayPaymentStatus?: string;
+  paymentRecords?: CompletePatientAdmissionPaymentRecord[];
+  patientDetails?: {
+    patientName?: string;
+    uhid?: string;
+    contactNumber?: string;
+    address?: CompletePatientAdmissionAddress;
+  };
+}
+
+export interface CompletePatientAdmissionResponse {
+  success: boolean;
+  message: string;
+  data?: CompletePatientAdmissionResult;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export type CompletePatientAdmissionMutationArg =
+  | CompletePatientAdmissionRequest
+  | {
+      body: CompletePatientAdmissionRequest;
+      editPatientId?: number | string;
+    };
+
+export interface AdmissionDetailsPatient {
+  id: number;
+  uhid: string;
+  name: string;
+  age?: string;
+  gender?: string;
+  contactNumber?: string;
+}
+
+export interface AdmissionDetailsData {
+  branchId: number;
+  appointmentId: number;
+  patientType: string;
+  diseaseType: string;
+  packageId: number;
+  numberOfDays: number;
+  offerApplied: boolean;
+  offerId?: number;
+  admissionType: string;
+  admissionDate?: string;
+  specialInstructions?: string;
+  originalAmount: number;
+  discountAmount: number;
+  netPayable: number;
+  freeDays?: number;
+  totalDays?: number;
+  advanceAmount?: number;
+  receivedAmount?: number;
+  remainingAmount?: number;
+  patient: AdmissionDetailsPatient;
+  room?: CompletePatientAdmissionRoom;
+  attendant?: CompletePatientAdmissionAttendant;
+}
+
+export interface AdmissionDetailsResponse {
+  success: boolean;
+  message: string;
+  data?: AdmissionDetailsData;
+  timestamp?: string;
+  statusCode?: number;
+}
+
 export interface RevertToOpdResponse {
   success: boolean;
   data: {
@@ -231,6 +380,34 @@ export interface CheckFirstDayPaymentResponse {
   message: string;
   timestamp: string;
   statusCode: number;
+}
+
+export interface PaymentAndAllocateRoomSplit {
+  method: string;
+  amount: number;
+  transactionId?: string | null;
+  status: string;
+  remarks?: string;
+}
+
+export interface PaymentAndAllocateRoomRequest {
+  patientId: number | string;
+  id: number | string;
+  paymentMode: "completed" | "split";
+  paymentMethod?: string;
+  amount?: number;
+  transactionId?: string;
+  paymentStatus?: string;
+  splits?: PaymentAndAllocateRoomSplit[];
+  room: CompletePatientAdmissionRoom;
+}
+
+export interface PaymentAndAllocateRoomResponse {
+  success: boolean;
+  message: string;
+  data?: unknown;
+  timestamp?: string;
+  statusCode?: number;
 }
 
 export interface RoomListParams {
@@ -548,6 +725,20 @@ export const counsellorApi = baseApi.injectEndpoints({
     }),
 
     /**
+     * Collect payment and allocate room (future admissions flow)
+     */
+    paymentAndAllocateRoom: builder.mutation<
+      PaymentAndAllocateRoomResponse,
+      PaymentAndAllocateRoomRequest
+    >({
+      query: (body) => ({
+        url: "/counsellor/payment-and-allocate-room",
+        method: "PATCH",
+        body,
+      }),
+    }),
+
+    /**
      * Get patient schedule appointments for calendar
      */
     getSchedulePatient: builder.query<GetSchedulePatientResponse, GetSchedulePatientParams>({
@@ -618,6 +809,37 @@ export const counsellorApi = baseApi.injectEndpoints({
         method: "POST",
       }),
     }),
+
+    /**
+     * Get existing admission details for edit flow
+     */
+    getAdmissionDetails: builder.query<AdmissionDetailsResponse, number | string>({
+      query: (patientId) => ({
+        url: `/counsellor/get-admission-details/${patientId}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
+     * Complete patient admission (counselling final step)
+     */
+    completePatientAdmission: builder.mutation<
+      CompletePatientAdmissionResponse,
+      CompletePatientAdmissionMutationArg
+    >({
+      query: (arg) => {
+        const body = "body" in arg ? arg.body : arg;
+        const editPatientId = "body" in arg ? arg.editPatientId : undefined;
+        return {
+          url:
+            editPatientId != null
+              ? `/counsellor/complete-patient-admission/${editPatientId}`
+              : "/counsellor/complete-patient-admission",
+          method: editPatientId != null ? "PUT" : "POST",
+          body,
+        };
+      },
+    }),
   }),
 });
 
@@ -679,6 +901,7 @@ export interface FutureAdmissionItem {
   advance: string;
   admissionDate: string;
   doctorName: string;
+  patientId?: number;
 }
 
 export interface FutureAdmissionMetrics {
@@ -776,6 +999,10 @@ export const {
   useLazyGetAdvanceBookingDetailQuery,
   useGetPackageDetailQuery,
   useLazyGetPackageDetailQuery,
+  useGetAdmissionDetailsQuery,
+  useLazyGetAdmissionDetailsQuery,
   useSendReminderMutation,
+  useCompletePatientAdmissionMutation,
+  usePaymentAndAllocateRoomMutation,
 } = counsellorApi;
 

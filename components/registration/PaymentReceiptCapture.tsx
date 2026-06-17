@@ -38,6 +38,20 @@ export interface PaymentReceiptCaptureProps {
     splitCardAmount?: string;
     splitCardStatus?: string;
     selectedOnlineSplitMethod?: "razorpay" | "payu";
+    invoiceId?: number | string;
+    contactNumber?: string;
+    admissionType?: string;
+    admissionDate?: string;
+    amountReceived?: number;
+    dueAmount?: number;
+    paymentStatus?: string;
+    paymentRecords?: Array<{
+        id?: number;
+        amount: string | number;
+        method: string;
+        status: string;
+    }>;
+    lineItemLabel?: string;
 }
 
 export function PaymentReceiptCapture({
@@ -74,11 +88,25 @@ export function PaymentReceiptCapture({
     splitCardAmount,
     splitCardStatus,
     selectedOnlineSplitMethod,
+    invoiceId,
+    contactNumber,
+    admissionType,
+    admissionDate,
+    amountReceived,
+    dueAmount,
+    paymentStatus,
+    paymentRecords,
+    lineItemLabel = "Consultation Fee",
 }: PaymentReceiptCaptureProps) {
     const invoiceDisplay =
         invoiceNumber != null && String(invoiceNumber).trim() !== ""
             ? String(invoiceNumber).trim()
             : "-";
+
+    const invoiceIdDisplay =
+        invoiceId != null && String(invoiceId).trim() !== ""
+            ? String(invoiceId).trim()
+            : null;
 
     const formatCurrency = (amount: number) => {
         return `₹${amount.toLocaleString("en-IN")}`;
@@ -147,6 +175,16 @@ export function PaymentReceiptCapture({
                         {uhid || jsHealthCardNo || "N/A"}
                     </span>
                 </div>
+                {invoiceIdDisplay ? (
+                    <div className="flex items-center gap-[8px] w-full h-[55px] border-t border-[#C0C3C8] py-[11px] px-[24px]">
+                        <span className="font-inter not-italic font-extrabold text-[14px] leading-[120%] text-[#434956]">
+                            Invoice ID:
+                        </span>
+                        <span className="font-inter not-italic font-medium text-[14px] leading-[120%] text-[#434956]">
+                            {invoiceIdDisplay}
+                        </span>
+                    </div>
+                ) : null}
             </div>
 
             <div className="flex flex-col w-full border-t border-[#C0C3C8]">
@@ -157,6 +195,12 @@ export function PaymentReceiptCapture({
                     <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
                         <span className="font-extrabold">Name:</span> <span className="font-medium">{patientName}</span>
                     </p>
+                    {contactNumber ? (
+                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">Contact Number:</span>{" "}
+                            <span className="font-medium">{contactNumber}</span>
+                        </p>
+                    ) : null}
                     {!countryName || countryName === "India" ? (
                         <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
                             <span className="font-extrabold">Address:</span>{" "}
@@ -182,6 +226,26 @@ export function PaymentReceiptCapture({
                     </p>
                 </div>
             </div>
+
+            {admissionType ? (
+                <div className="flex flex-col w-full border-t border-[#C0C3C8]">
+                    <h3 className="font-inter not-italic font-extrabold text-[19px] leading-[130%] text-[#434956] py-[11px] px-[24px] pb-0">
+                        Admission Details
+                    </h3>
+                    <div className="flex flex-col gap-[8px] py-[11px] px-[24px]">
+                        <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">Admission Type:</span>{" "}
+                            <span className="font-medium">{admissionType}</span>
+                        </p>
+                        {admissionDate ? (
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Admission Date:</span>{" "}
+                                <span className="font-medium">{admissionDate}</span>
+                            </p>
+                        ) : null}
+                    </div>
+                </div>
+            ) : null}
 
             {gstBilling ? (
                 <div className="flex flex-col w-full border-t border-[#C0C3C8]">
@@ -231,7 +295,7 @@ export function PaymentReceiptCapture({
                 <tbody>
                     <tr>
                         <td className="font-inter not-italic font-normal text-[14px] leading-[120%] text-[#434956] border border-[#C0C3C8] border-l-0 py-[12px] px-[24px]">
-                            Consultation Fee
+                            {lineItemLabel}
                         </td>
                         <td className="border border-[#C0C3C8] border-r-0 py-[12px] px-[24px] text-right font-inter text-[14px] font-normal not-italic leading-[120%] text-[#434956]">
                             {formatCurrency(consultationCharges)}
@@ -268,6 +332,72 @@ export function PaymentReceiptCapture({
                     </tr>
                 </tbody>
             </table>
+
+            {amountReceived != null || dueAmount != null || paymentStatus ? (
+                <div className="flex flex-col w-full border-t border-[#C0C3C8]">
+                    <h3 className="font-inter not-italic font-extrabold text-[15px] leading-[130%] text-[#434956] py-[12px] px-[24px] pb-3 bg-gray-50/50">
+                        Payment Summary
+                    </h3>
+                    <div className="flex flex-col gap-[8px] py-[11px] px-[24px]">
+                        {amountReceived != null ? (
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Amount Received:</span>{" "}
+                                <span className="font-medium">{formatCurrency(Number(amountReceived) || 0)}</span>
+                            </p>
+                        ) : null}
+                        {dueAmount != null ? (
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Due Amount:</span>{" "}
+                                <span className="font-medium">{formatCurrency(Number(dueAmount) || 0)}</span>
+                            </p>
+                        ) : null}
+                        {paymentStatus ? (
+                            <p className="font-inter not-italic text-[14px] leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Payment Status:</span>{" "}
+                                <span className="font-medium capitalize">{paymentStatus}</span>
+                            </p>
+                        ) : null}
+                    </div>
+                </div>
+            ) : null}
+
+            {paymentRecords && paymentRecords.length > 0 ? (
+                <div className="flex flex-col w-full border-t border-[#C0C3C8]">
+                    <h3 className="font-inter not-italic font-extrabold text-[15px] leading-[130%] text-[#434956] py-[12px] px-[24px] pb-3 bg-gray-50/50">
+                        Payment Records
+                    </h3>
+                    <table className="w-full border-collapse border-t border-[#C0C3C8]">
+                        <thead>
+                            <tr className="bg-white">
+                                <th className="border border-[#C0C3C8] border-l-0 py-[12px] px-[24px] text-start font-inter text-[13px] font-extrabold text-[#434956]">
+                                    Payment Method
+                                </th>
+                                <th className="border border-[#C0C3C8] py-[12px] px-[16px] text-center font-inter text-[13px] font-extrabold text-[#434956]">
+                                    Status
+                                </th>
+                                <th className="border border-[#C0C3C8] border-r-0 py-[12px] px-[24px] text-end font-inter text-[13px] font-extrabold text-[#434956] w-[160px]">
+                                    Amount
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {paymentRecords.map((record, index) => (
+                                <tr key={record.id ?? index} className="hover:bg-gray-50/30">
+                                    <td className="border border-[#C0C3C8] border-l-0 py-[10px] px-[24px] text-start font-inter text-[13px] font-semibold text-[#434956] capitalize">
+                                        {record.method}
+                                    </td>
+                                    <td className="border border-[#C0C3C8] py-[10px] px-[16px] text-center font-inter text-[13px] font-medium text-[#434956] capitalize">
+                                        {record.status}
+                                    </td>
+                                    <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
+                                        ₹ {Number(record.amount || 0).toLocaleString("en-IN")}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
 
             {_paymentMode === "split" && (
                 <div className="flex flex-col w-full  mt-0">

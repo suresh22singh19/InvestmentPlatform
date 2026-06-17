@@ -149,8 +149,10 @@ export default function DoctorActivity({
 
     const handleConfirmJatayuReLogin = async () => {
         setIsJatayuActionLoading(true);
+            const getUser = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+            const userData = getUser ? JSON.parse(getUser) : null;
         try {
-            await forceLogoutJatayu();
+            await forceLogoutJatayu(userData?.email);
         } catch (err) {
             console.error("Jatayu logout failed on confirm:", err);
         }

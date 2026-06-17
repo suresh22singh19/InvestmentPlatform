@@ -52,6 +52,20 @@ interface PaymentDialogDetailsProps {
     splitCardAmount?: string;
     splitCardStatus?: string;
     selectedOnlineSplitMethod?: "razorpay" | "payu";
+    invoiceId?: number | string;
+    contactNumber?: string;
+    admissionType?: string;
+    admissionDate?: string;
+    amountReceived?: number;
+    dueAmount?: number;
+    paymentStatus?: string;
+    paymentRecords?: Array<{
+        id?: number;
+        amount: string | number;
+        method: string;
+        status: string;
+    }>;
+    lineItemLabel?: string;
 }
 
 export default function PaymentDialogDetails({
@@ -97,6 +111,15 @@ export default function PaymentDialogDetails({
     splitCardAmount,
     splitCardStatus,
     selectedOnlineSplitMethod,
+    invoiceId,
+    contactNumber,
+    admissionType,
+    admissionDate,
+    amountReceived,
+    dueAmount,
+    paymentStatus,
+    paymentRecords,
+    lineItemLabel,
 }: PaymentDialogDetailsProps) {
     // Add print styles for proper spacing - single page only
     useEffect(() => {
@@ -248,6 +271,15 @@ export default function PaymentDialogDetails({
                     splitCardAmount={splitCardAmount}
                     splitCardStatus={splitCardStatus}
                     selectedOnlineSplitMethod={selectedOnlineSplitMethod}
+                    invoiceId={invoiceId}
+                    contactNumber={contactNumber}
+                    admissionType={admissionType}
+                    admissionDate={admissionDate}
+                    amountReceived={amountReceived}
+                    dueAmount={dueAmount}
+                    paymentStatus={paymentStatus}
+                    paymentRecords={paymentRecords}
+                    lineItemLabel={lineItemLabel}
                 />
 
                 {/* Action Buttons */}

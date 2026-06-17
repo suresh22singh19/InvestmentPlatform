@@ -95,7 +95,7 @@ if (typeof window !== "undefined") {
     }, 1000);
 }
 
-export async function forceLogoutJatayu(): Promise<void> {
+export async function forceLogoutJatayu(email: string | null): Promise<void> {
     const tempToken = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
     try {
         await fetch(`${AUTH_BASE_URL}/logout`, {
@@ -105,7 +105,7 @@ export async function forceLogoutJatayu(): Promise<void> {
                 ...(tempToken ? { "Authorization": `Bearer ${tempToken}` } : {})
             },
             body: JSON.stringify({
-                emailid: "jeena1sikho@gmail.com"
+                emailid: email || ""
             })
         });
     } catch (logoutErr) {

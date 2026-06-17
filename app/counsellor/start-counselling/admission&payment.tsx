@@ -1,16 +1,69 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Image from "next/image";
-import PaymentDialogDetails from "@/components/registration/PaymentDialogDetails";
+import AdmissionInvoiceDialog from "./AdmissionInvoiceDialog";
 import {
     FormInputField,
     FormSelectField,
+    FormTextareaField,
     Badge,
     Button,
     BackToPreviousPageButton,
     Slider,
+    MessageDialog,
 } from "@/components/ui";
+import {
+    useCompletePatientAdmissionMutation,
+    usePaymentAndAllocateRoomMutation,
+    type CompletePatientAdmissionAttendant,
+    type CompletePatientAdmissionRequest,
+    type CompletePatientAdmissionRoom,
+    type PaymentAndAllocateRoomRequest,
+} from "@/store/api/counsellorApi";
+import {
+    useGetCountriesQuery,
+    useGetStatesQuery,
+    useGetCitiesQuery,
+} from "@/store/api/publicApi";
+import type { AttendantDetailsFormData } from "./createPackage";
+
+interface CompletePatientAdmissionAddress {
+    address?: string;
+    area?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pinCode?: string;
+}
+
+interface CompletePatientAdmissionPaymentRecord {
+    id?: number;
+    amount: string | number;
+    method: string;
+    status: string;
+}
+
+interface CompletePatientAdmissionResult {
+    patientId?: number;
+    patientPackageId?: number;
+    invoiceId?: number;
+    totalReceived?: number;
+    invoiceNumber?: string;
+    dueAmount?: number;
+    perDayCost?: number;
+    paymentId?: number;
+    admissionType?: string;
+    admissionDate?: string;
+    firstDayPaymentStatus?: string;
+    paymentRecords?: CompletePatientAdmissionPaymentRecord[];
+    patientDetails?: {
+        patientName?: string;
+        uhid?: string;
+        contactNumber?: string;
+        address?: CompletePatientAdmissionAddress;
+    };
+}
 
 interface AdmissionPaymentProps {
     activePackage: {
@@ -23,16 +76,226 @@ interface AdmissionPaymentProps {
     medicinePerDay: number;
     mealsPerDay: number;
     doctorFee: number;
+    patientName?: string;
+    patientUhid?: string;
+    branchId: number;
+    appointmentId: number;
+    packageId: number;
+    numberOfDays: number;
+    offerApplied: boolean;
+    offerId?: number;
+    admissionType: string;
+    patientType: string;
+    diseaseType: string;
+    originalAmount: number;
+    discountAmount: number;
+    netPayable: number;
+    roomAllocation?: CompletePatientAdmissionRoom | null;
+    attendantDetails?: AttendantDetailsFormData | null;
+    requireRoomAllocation?: boolean;
+    initialAdmissionDate?: string;
+    initialSpecialInstructions?: string;
+    editPaymentAmounts?: {
+        advanceAmount?: number;
+        receivedAmount?: number;
+        remainingAmount?: number;
+    } | null;
+    isEditMode?: boolean;
+    editPatientId?: number | string;
+    futureAdmissionPayment?: {
+        patientId: number | string;
+        id: number | string;
+    };
     onNext: () => void;
     onBack: () => void;
 }
 
+function mapAdmissionTypeToPayload(type: string): string {
+    if (type === "immediate") return "Immediate";
+    if (type === "scheduled") return "Schedule";
+    if (type === "tentative") return "Tentative";
+    return type;
+}
+
+type GeoLookupData = { data?: { id: number | string; name: string }[] };
+
+function resolveGeoName(
+    id: string | undefined,
+    geoData: GeoLookupData | undefined,
+    nameOverride?: string
+): string {
+    if (nameOverride?.trim()) return nameOverride.trim();
+    if (!id?.trim()) return "";
+    if (id === "6") return "India";
+    const match = geoData?.data?.find((item) => String(item.id) === String(id));
+    if (match?.name) return match.name;
+    if (!/^\d+$/.test(id)) return id;
+    return "";
+}
+
+// function mapAttendantToPayload(
+//     details: AttendantDetailsFormData,
+//     geo: {
+//         countries?: GeoLookupData;
+//         states?: GeoLookupData;
+//         cities?: GeoLookupData;
+//     }
+// ): CompletePatientAdmissionAttendant {
+//     const addr = details.address;
+//     return {
+//         name: details.attendantName,
+//         email: details.emailId,
+//         phoneNumber: details.phoneNumber,
+//         relation: details.relationWithPatient.toLowerCase(),
+//         gender: details.gender.toLowerCase(),
+//         address: addr.address.trim(),
+//         country: resolveGeoName(addr.country, geo.countries, addr.countryName),
+//         state: resolveGeoName(addr.state, geo.states, addr.stateName),
+//         city: resolveGeoName(addr.city, geo.cities, addr.cityName),
+//         pincode: addr.pinCode.trim(),
+//     };
+// }
+
+function mapAttendantToPayload(
+    details: AttendantDetailsFormData,
+    geo: {
+        countries?: GeoLookupData;
+        states?: GeoLookupData;
+        cities?: GeoLookupData;
+    }
+): CompletePatientAdmissionAttendant {
+    const addr = details.address;
+    const attendant: CompletePatientAdmissionAttendant = {
+        name: details.attendantName,
+        phoneNumber: details.phoneNumber,
+        gender: details.gender.toLowerCase(),
+        address: addr.address.trim(),
+        country: resolveGeoName(addr.country, geo.countries, addr.countryName),
+        state: resolveGeoName(addr.state, geo.states, addr.stateName),
+        city: resolveGeoName(addr.city, geo.cities, addr.cityName),
+        pincode: addr.pinCode.trim(),
+    };
+
+    const email = details.emailId?.trim();
+    if (email) {
+        attendant.email = email;
+    }
+
+    const relation = details.relationWithPatient?.trim();
+    if (relation) {
+        attendant.relation = relation.toLowerCase();
+    }
+
+    return attendant;
+}
+
+function getTodayDateInputValue(): string {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function formatAdmissionStreetAddress(address?: CompletePatientAdmissionAddress): string {
+    if (!address) return "";
+    return [address.address, address.area].filter(Boolean).join(", ");
+}
+
+function formatAdmissionBillDate(date?: string): string {
+    if (!date) {
+        return new Date().toLocaleString("en-IN");
+    }
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) {
+        return date;
+    }
+    return parsed.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+}
+
+function formatAdmissionDisplayDate(date?: string): string {
+    if (!date) return "N/A";
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) {
+        return date;
+    }
+    return parsed.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+}
+
 const othersPaymentMethodOptions = [
     { value: "cheque", label: "Cheque" },
-    { value: "neft_rtgs", label: "NEFT / RTGS" },
-    { value: "dd", label: "Demand Draft" },
-    { value: "other", label: "Other" },
+    { value: "net_banking", label: "Net Banking" },
+    { value: "wallet", label: "Wallet" },
 ];
+
+function formatPaymentMethodForApi(method: string): string {
+    switch (method.trim().toLowerCase()) {
+        case "upi":
+            return "UPI";
+        case "card":
+            return "card";
+        case "cash":
+            return "Cash";
+        case "cheque":
+            return "cheque";
+        case "net_banking":
+        case "neft_rtgs":
+            return "net_banking";
+        case "wallet":
+            return "wallet";
+        default:
+            return method;
+    }
+}
+
+function formatPaymentMethodForAllocateRoomApi(method: string, singlePayment: boolean): string {
+    const normalized = method.trim().toLowerCase();
+    if (singlePayment) {
+        switch (normalized) {
+            case "upi":
+                return "UPI";
+            case "card":
+                return "Credit Card";
+            case "cash":
+                return "Cash";
+            case "cheque":
+                return "Cheque";
+            case "net_banking":
+            case "neft_rtgs":
+                return "Net Banking";
+            case "wallet":
+                return "Wallet";
+            default:
+                return method;
+        }
+    }
+
+    switch (normalized) {
+        case "upi":
+            return "upi";
+        case "card":
+            return "credit_card";
+        case "cash":
+            return "cash";
+        case "cheque":
+            return "cheque";
+        case "net_banking":
+        case "neft_rtgs":
+            return "net_banking";
+        case "wallet":
+            return "wallet";
+        default:
+            return normalized;
+    }
+}
 
 function PaymentGatewayCard({ title, children }: { title: string; children: React.ReactNode }) {
     return (
@@ -144,23 +407,67 @@ export default function AdmissionPayment({
     medicinePerDay,
     mealsPerDay,
     doctorFee,
+    patientName = "Patient",
+    patientUhid = "",
+    branchId,
+    appointmentId,
+    packageId,
+    numberOfDays,
+    offerApplied,
+    offerId,
+    admissionType,
+    patientType,
+    diseaseType,
+    originalAmount,
+    discountAmount,
+    netPayable,
+    roomAllocation,
+    attendantDetails,
+    requireRoomAllocation = true,
+    initialAdmissionDate,
+    initialSpecialInstructions,
+    editPaymentAmounts = null,
+    isEditMode = false,
+    editPatientId,
+    futureAdmissionPayment,
     onNext,
     onBack,
 }: AdmissionPaymentProps) {
+    const [completePatientAdmission, { isLoading: isCompletingAdmission }] = useCompletePatientAdmissionMutation();
+    const [paymentAndAllocateRoom, { isLoading: isPaymentAllocating }] = usePaymentAndAllocateRoomMutation();
+    const isSubmitting = isCompletingAdmission || isPaymentAllocating;
+    const attendantCountryId = attendantDetails?.address.country;
+    const attendantStateId = attendantDetails?.address.state;
+    const { data: countriesData } = useGetCountriesQuery();
+    const { data: statesData } = useGetStatesQuery(
+        attendantCountryId ? { countryId: attendantCountryId } : undefined,
+        { skip: !attendantCountryId }
+    );
+    const { data: citiesData } = useGetCitiesQuery(
+        attendantStateId ? { stateId: attendantStateId } : undefined,
+        { skip: !attendantStateId }
+    );
     const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
-    const defaultAmount = finalAmountPayable > 0 ? String(finalAmountPayable) : "2500";
+    const [admissionResult, setAdmissionResult] = useState<CompletePatientAdmissionResult | null>(null);
+    const [admissionDate, setAdmissionDate] = useState(
+        () => initialAdmissionDate || getTodayDateInputValue()
+    );
+    const [specialInstructions, setSpecialInstructions] = useState(initialSpecialInstructions || "");
+    const [showErrorDialog, setShowErrorDialog] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
 
-    const [razorpayUpiAmount, setRazorpayUpiAmount] = useState(defaultAmount);
+    const [razorpayUpiAmount, setRazorpayUpiAmount] = useState("100");
     const [razorpayUpiId, setRazorpayUpiId] = useState("");
     const [razorpayUpiPaid, setRazorpayUpiPaid] = useState(false);
-    const [razorpayCardAmount, setRazorpayCardAmount] = useState(defaultAmount);
+    const [razorpayCardAmount, setRazorpayCardAmount] = useState("100");
     const [razorpayCardPaid, setRazorpayCardPaid] = useState(false);
 
-    const [payuUpiAmount, setPayuUpiAmount] = useState(defaultAmount);
+    const [payuUpiAmount, setPayuUpiAmount] = useState("100");
     const [payuUpiId, setPayuUpiId] = useState("");
     const [payuUpiPaid, setPayuUpiPaid] = useState(false);
 
-    const [cashAmount, setCashAmount] = useState(defaultAmount);
+    const [cashAmount, setCashAmount] = useState("100");
     const [cashPaid, setCashPaid] = useState(false);
 
     const [othersMethod, setOthersMethod] = useState<string | null>(null);
@@ -169,12 +476,28 @@ export default function AdmissionPayment({
     const [othersPaid, setOthersPaid] = useState(false);
 
     useEffect(() => {
-        const next = finalAmountPayable > 0 ? String(finalAmountPayable) : "2500";
-        setRazorpayUpiAmount(next);
-        setRazorpayCardAmount(next);
-        setPayuUpiAmount(next);
-        setCashAmount(next);
-    }, [finalAmountPayable]);
+        if (!isEditMode) return;
+        if (initialAdmissionDate) {
+            setAdmissionDate(initialAdmissionDate);
+        }
+        if (initialSpecialInstructions) {
+            setSpecialInstructions(initialSpecialInstructions);
+        }
+    }, [isEditMode, initialAdmissionDate, initialSpecialInstructions]);
+
+    useEffect(() => {
+        if (!isEditMode || !editPaymentAmounts) return;
+        const payableRemaining =
+            editPaymentAmounts.remainingAmount != null && editPaymentAmounts.remainingAmount > 0
+                ? String(editPaymentAmounts.remainingAmount)
+                : finalAmountPayable > 0
+                    ? String(finalAmountPayable)
+                    : "";
+        setRazorpayUpiAmount(payableRemaining);
+        setRazorpayCardAmount(payableRemaining);
+        setPayuUpiAmount(payableRemaining);
+        setCashAmount(payableRemaining);
+    }, [isEditMode, editPaymentAmounts, finalAmountPayable]);
 
     const totalReceived = useMemo(() => {
         return (
@@ -212,16 +535,371 @@ export default function AdmissionPayment({
         setOthersReferenceId("");
         setRazorpayUpiId("");
         setPayuUpiId("");
+        if (!isEditMode) {
+            setRazorpayUpiAmount("");
+            setRazorpayCardAmount("");
+            setPayuUpiAmount("");
+            setCashAmount("");
+        }
+    };
+
+    const collectPaidEntries = useCallback(() => {
+        const paidEntries: Array<{
+            method: string;
+            amount: number;
+            transactionId: string;
+            remarks?: string;
+        }> = [];
+
+        if (razorpayUpiPaid) {
+            paidEntries.push({
+                method: "upi",
+                amount: Number(razorpayUpiAmount) || 0,
+                transactionId: razorpayUpiId || `TXN${Date.now()}`,
+                remarks: "Razorpay UPI payment",
+            });
+        }
+        if (razorpayCardPaid) {
+            paidEntries.push({
+                method: "card",
+                amount: Number(razorpayCardAmount) || 0,
+                transactionId: `TXN${Date.now()}`,
+                remarks: "Razorpay card payment",
+            });
+        }
+        if (payuUpiPaid) {
+            paidEntries.push({
+                method: "upi",
+                amount: Number(payuUpiAmount) || 0,
+                transactionId: payuUpiId || `TXN${Date.now()}`,
+                remarks: "PayU UPI payment",
+            });
+        }
+        if (cashPaid) {
+            paidEntries.push({
+                method: "cash",
+                amount: Number(cashAmount) || 0,
+                transactionId: "",
+                remarks: "Cash payment received",
+            });
+        }
+        if (othersPaid && othersMethod) {
+            paidEntries.push({
+                method: othersMethod,
+                amount: Number(othersAmount) || 0,
+                transactionId: othersReferenceId,
+                remarks: "Other payment method",
+            });
+        }
+
+        return paidEntries;
+    }, [
+        razorpayUpiPaid, razorpayUpiAmount, razorpayUpiId,
+        razorpayCardPaid, razorpayCardAmount,
+        payuUpiPaid, payuUpiAmount, payuUpiId,
+        cashPaid, cashAmount,
+        othersPaid, othersMethod, othersAmount, othersReferenceId,
+    ]);
+
+    const buildPaymentPayload = useCallback((): Pick<
+        CompletePatientAdmissionRequest,
+        "paymentMode" | "paymentMethod" | "transactionId" | "paymentStatus" | "receivedAmount" | "splits"
+    > => {
+        const paidEntries = collectPaidEntries();
+
+        if (paidEntries.length === 0) {
+            return {
+                paymentMode: "completed",
+                paymentMethod: formatPaymentMethodForApi("cash"),
+                transactionId: "",
+                paymentStatus: "Pending",
+                receivedAmount: 0,
+            };
+        }
+
+        if (paidEntries.length === 1) {
+            const entry = paidEntries[0];
+            return {
+                paymentMode: "completed",
+                paymentMethod: formatPaymentMethodForApi(entry.method),
+                transactionId: entry.transactionId,
+                paymentStatus: "Success",
+                receivedAmount: entry.amount,
+            };
+        }
+
+        return {
+            paymentMode: "split",
+            receivedAmount: totalReceived,
+            splits: paidEntries.map((entry) => ({
+                method: formatPaymentMethodForApi(entry.method),
+                amount: entry.amount,
+                transactionId: entry.transactionId,
+                status: "Success",
+                remarks: entry.remarks,
+            })),
+        };
+    }, [collectPaidEntries, totalReceived]);
+
+    const buildPaymentAndAllocateRoomPayload = useCallback((
+        patientId: number | string,
+        id: number | string,
+        room: CompletePatientAdmissionRoom
+    ): PaymentAndAllocateRoomRequest => {
+        const paidEntries = collectPaidEntries();
+
+        if (paidEntries.length === 1) {
+            const entry = paidEntries[0];
+            return {
+                patientId,
+                id,
+                paymentMode: "completed",
+                paymentMethod: formatPaymentMethodForAllocateRoomApi(entry.method, true),
+                amount: entry.amount,
+                transactionId: entry.transactionId || undefined,
+                paymentStatus: "Success",
+                room,
+            };
+        }
+
+        return {
+            patientId,
+            id,
+            paymentMode: "split",
+            splits: paidEntries.map((entry) => ({
+                method: formatPaymentMethodForAllocateRoomApi(entry.method, false),
+                amount: entry.amount,
+                transactionId: entry.transactionId || null,
+                status: "Success",
+                remarks: entry.remarks,
+            })),
+            room,
+        };
+    }, [collectPaidEntries]);
+
+    const handleCompleteAdmission = useCallback(async () => {
+        if (requireRoomAllocation && !roomAllocation) {
+            setErrorMessage("Please allocate a room and bed before completing payment.");
+            setShowErrorDialog(true);
+            return;
+        }
+        if (totalReceived <= 0) {
+            setErrorMessage("Please confirm at least one payment method before finalizing.");
+            setShowErrorDialog(true);
+            return;
+        }
+
+        if (futureAdmissionPayment) {
+            try {
+                const payload = buildPaymentAndAllocateRoomPayload(
+                    futureAdmissionPayment.patientId,
+                    futureAdmissionPayment.id,
+                    roomAllocation!
+                );
+                const res = await paymentAndAllocateRoom(payload).unwrap();
+                if (res.success) {
+                    setShowSuccessDialog(true);
+                } else {
+                    setErrorMessage(res.message || "Failed to complete payment and room allocation.");
+                    setShowErrorDialog(true);
+                }
+            } catch (err: unknown) {
+                const apiErr = err as { data?: { message?: string }; message?: string };
+                setErrorMessage(
+                    apiErr?.data?.message ||
+                        apiErr?.message ||
+                        "An error occurred while completing payment and room allocation."
+                );
+                setShowErrorDialog(true);
+            }
+            return;
+        }
+
+        if (editPatientId == null && !appointmentId) {
+            setErrorMessage("Appointment ID is missing. Please return to the dashboard and select a patient.");
+            setShowErrorDialog(true);
+            return;
+        }
+        if (!packageId) {
+            setErrorMessage("Please select a package before completing admission.");
+            setShowErrorDialog(true);
+            return;
+        }
+        if (!admissionType) {
+            setErrorMessage("Please select an admission type in the Details step.");
+            setShowErrorDialog(true);
+            return;
+        }
+        if (admissionType === "scheduled" && !admissionDate) {
+            setErrorMessage("Please select a proposed admission date.");
+            setShowErrorDialog(true);
+            return;
+        }
+
+        // console.log("dhdsjhdjd",offerId, offerApplied);
+
+        const paymentPayload = buildPaymentPayload();
+        const includeOffer = Boolean(offerApplied && offerId);
+        const isEditAdmission = editPatientId != null;
+        const payload: CompletePatientAdmissionRequest = {
+            branchId,
+            ...(!isEditAdmission && appointmentId ? { appointmentId } : {}),
+            ...(isEditAdmission ? { finalizeAdmission: admissionType !== "scheduled" ? true : false } : {}),
+            patientType,
+            diseaseType,
+            packageId,
+            numberOfDays,
+            offerApplied: includeOffer,
+            ...(includeOffer ? { offerId } : {}),
+            admissionType: mapAdmissionTypeToPayload(admissionType),
+            admissionDate: admissionType === "scheduled" ? admissionDate : getTodayDateInputValue(),
+            ...(admissionType === "scheduled" && specialInstructions.trim()
+                ? { specialInstructions: specialInstructions.trim() }
+                : {}),
+            originalAmount,
+            discountAmount,
+            netPayable,
+            ...paymentPayload,
+            ...(roomAllocation ? { room: roomAllocation } : {}),
+            ...(attendantDetails
+                ? {
+                    attendant: mapAttendantToPayload(attendantDetails, {
+                        countries: countriesData,
+                        states: statesData,
+                        cities: citiesData,
+                    }),
+                }
+                : {}),
+        };
+
+        try {
+            const res = await completePatientAdmission(
+                editPatientId != null ? { body: payload, editPatientId } : payload
+            ).unwrap();
+            if (res.success) {
+                if (res.data) {
+                    setAdmissionResult(res.data as CompletePatientAdmissionResult);
+                }
+                if (futureAdmissionPayment) {
+                    setShowSuccessDialog(true);
+                } else {
+                    setIsInvoiceDialogOpen(true);
+                }
+            } else {
+                setErrorMessage(res.message || "Failed to complete patient admission.");
+                setShowErrorDialog(true);
+            }
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while completing admission."
+            );
+            setShowErrorDialog(true);
+        }
+    }, [
+        futureAdmissionPayment,
+        appointmentId,
+        packageId,
+        admissionType,
+        admissionDate,
+        requireRoomAllocation,
+        roomAllocation,
+        totalReceived,
+        buildPaymentPayload,
+        buildPaymentAndAllocateRoomPayload,
+        branchId,
+        patientType,
+        diseaseType,
+        numberOfDays,
+        offerApplied,
+        offerId,
+        specialInstructions,
+        originalAmount,
+        discountAmount,
+        netPayable,
+        attendantDetails,
+        countriesData,
+        statesData,
+        citiesData,
+        completePatientAdmission,
+        paymentAndAllocateRoom,
+        editPatientId,
+    ]);
+
+    const isScheduledAdmission = admissionType === "scheduled";
+
+    const invoicePatientAddress = admissionResult?.patientDetails?.address;
+    const perDayCost = Number(admissionResult?.perDayCost ?? 0);
+    const invoiceProps = useMemo(() => {
+        const patient = admissionResult?.patientDetails;
+        return {
+            patientName: patient?.patientName || patientName,
+            address: formatAdmissionStreetAddress(invoicePatientAddress),
+            countryName: invoicePatientAddress?.country || "India",
+            pinCode: invoicePatientAddress?.pinCode || "",
+            cityName: invoicePatientAddress?.city || "N/A",
+            stateName: invoicePatientAddress?.state || "N/A",
+            uhid: patient?.uhid || patientUhid,
+            invoiceNumber: admissionResult?.invoiceNumber,
+            invoiceId: admissionResult?.invoiceId,
+            contactNumber: patient?.contactNumber,
+            admissionType: admissionResult?.admissionType,
+            admissionDate: formatAdmissionDisplayDate(admissionResult?.admissionDate),
+            consultationCharges: perDayCost,
+            subtotal: perDayCost,
+            tax: 0,
+            totalAmount: perDayCost,
+            billDate: formatAdmissionBillDate(admissionResult?.admissionDate),
+            transactionId: admissionResult?.paymentId ? String(admissionResult.paymentId) : undefined,
+            paymentMode: "completed",
+            amountReceived: admissionResult?.totalReceived,
+            dueAmount: admissionResult?.dueAmount,
+            paymentStatus: admissionResult?.firstDayPaymentStatus,
+            paymentRecords: admissionResult?.paymentRecords,
+            lineItemLabel: "Per Day Cost",
+        };
+    }, [admissionResult, invoicePatientAddress, patientName, patientUhid, perDayCost]);
+
+    const handlePrintInvoiceClick = () => {
+        if (!admissionResult) {
+            setErrorMessage("Please complete payment before printing the invoice.");
+            setShowErrorDialog(true);
+            return;
+        }
+        setIsInvoiceDialogOpen(true);
     };
 
     return (
         <div className="w-full flex flex-col gap-6 mt-6">
+            {isScheduledAdmission && !futureAdmissionPayment && (
+                <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-6 shadow-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                        <FormInputField
+                            label="Proposed Admission Date"
+                            type="date"
+                            value={admissionDate}
+                            onChange={(e) => setAdmissionDate(e.target.value)}
+                              min={new Date().toISOString().split("T")[0]}
+                            height={44}
+                        />
+                        <FormTextareaField
+                            label="Special Instructions"
+                            value={specialInstructions}
+                            onChange={(e) => setSpecialInstructions(e.target.value)}
+                            placeholder="Any specific requirements or notes for the ward nurses..."
+                            height={96}
+                            className="font-semibold text-xs"
+                        />
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
                 {/* Column 1: Payment Gateways */}
                 <div className="flex flex-col gap-4">
                     <PaymentGatewayCard title="Razorpay Gateway">
                         <PaymentMethodRow
-                            icon={<Image src="/icons/upi.svg" alt="UPI" width={20} height={20} className="object-contain" />}
+                            icon={<Image src="/icons/upi.svg" alt="UPI" width={20} height={20} className="object-contain"/>}
                             title="UPI Payment"
                             paidLabel="Verified"
                             pendingLabel="Ready to Pay"
@@ -341,6 +1019,29 @@ export default function AdmissionPayment({
                         <h4 className="text-xl font-bold border-b border-white/20 pb-3">Payment Summary</h4>
 
                         <div className="flex flex-col gap-4 text-sm flex-1">
+                            {isEditMode && editPaymentAmounts ? (
+                                <>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/90">Advance Collected</span>
+                                        <span className="font-extrabold text-base">
+                                            ₹ {(editPaymentAmounts.advanceAmount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/90">Previously Received</span>
+                                        <span className="font-extrabold text-base">
+                                            ₹ {(editPaymentAmounts.receivedAmount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/90">Remaining Amount</span>
+                                        <span className="font-extrabold text-base">
+                                            ₹ {(editPaymentAmounts.remainingAmount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="border-t border-white/20 my-1" />
+                                </>
+                            ) : null}
                             <div className="flex justify-between items-center">
                                 <span className="text-white/90">Total Advance</span>
                                 <span className="font-extrabold text-base">₹ {finalAmountPayable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -374,10 +1075,11 @@ export default function AdmissionPayment({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-auto">
                             <button
                                 type="button"
-                                onClick={() => setIsInvoiceDialogOpen(true)}
-                                className="h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm hover:bg-opacity-95 transition-all flex items-center justify-center shadow-sm"
+                                onClick={handleCompleteAdmission}
+                                disabled={isSubmitting}
+                                className="h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm hover:bg-opacity-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-60"
                             >
-                                Confirm & Finalize
+                                {isSubmitting ? "Submitting..." : "Confirm & Finalize"}
                             </button>
                             <button
                                 type="button"
@@ -485,54 +1187,92 @@ export default function AdmissionPayment({
                         leftIcon={
                             <Image src="/icons/Printer.svg" alt="" width={18} height={18} className="object-contain" />
                         }
-                        onClick={() => setIsInvoiceDialogOpen(true)}
+                        onClick={handlePrintInvoiceClick}
                     >
                         Print Invoice
                     </Button>
-                    <Button
+                    {/* <Button
                         type="button"
                         variant="primary"
                         className="min-w-[240px] h-11 rounded-full font-bold"
                         rightIcon={<span>→</span>}
-                        onClick={() => setIsInvoiceDialogOpen(true)}
+                        disabled={isSubmitting}
+                        onClick={handleCompleteAdmission}
                     >
-                        Complete Payment
-                    </Button>
+                        {isSubmitting ? "Submitting..." : "Complete Payment"}
+                    </Button> */}
                 </div>
             </div>
 
-            <PaymentDialogDetails
+            <AdmissionInvoiceDialog
                 open={isInvoiceDialogOpen}
                 onClose={() => setIsInvoiceDialogOpen(false)}
-                patientName="John Doe"
-                address="House No. 123, Sector 62"
-                cityName="S.A.S Nagar (Mohali)"
-                stateName="Punjab"
-                jsHealthCardNo=""
-                uhid="JSKL41712025"
-                consultationCharges={finalAmountPayable}
-                subtotal={finalAmountPayable}
-                tax={0}
-                totalAmount={finalAmountPayable}
-                billDate={new Date().toLocaleDateString("en-IN") + " " + new Date().toLocaleTimeString("en-IN")}
-                transactionId={"TXN" + Date.now()}
-                paymentMode={totalReceived > 0 ? "split" : "complete"}
-                gstBilling={false}
-                onPrint={() => window.print()}
-                onSaveAndNext={() => {
-                    setIsInvoiceDialogOpen(false);
+                onSaveAndNext={
+                    futureAdmissionPayment
+                        ? undefined
+                        : () => {
+                              setIsInvoiceDialogOpen(false);
+                              onNext();
+                          }
+                }
+                patientName={invoiceProps.patientName}
+                address={invoiceProps.address || "N/A"}
+                countryName={invoiceProps.countryName}
+                pinCode={invoiceProps.pinCode}
+                cityName={invoiceProps.cityName}
+                stateName={invoiceProps.stateName}
+                uhid={invoiceProps.uhid}
+                invoiceNumber={invoiceProps.invoiceNumber}
+                invoiceId={invoiceProps.invoiceId}
+                contactNumber={invoiceProps.contactNumber}
+                admissionType={invoiceProps.admissionType}
+                admissionDate={invoiceProps.admissionDate}
+                consultationCharges={invoiceProps.consultationCharges}
+                subtotal={invoiceProps.subtotal}
+                tax={invoiceProps.tax}
+                totalAmount={invoiceProps.totalAmount}
+                billDate={invoiceProps.billDate}
+                transactionId={invoiceProps.transactionId}
+                amountReceived={invoiceProps.amountReceived}
+                dueAmount={invoiceProps.dueAmount}
+                paymentStatus={invoiceProps.paymentStatus}
+                paymentRecords={invoiceProps.paymentRecords}
+                lineItemLabel={invoiceProps.lineItemLabel}
+            />
+
+            <MessageDialog
+                open={showErrorDialog}
+                onClose={() => setShowErrorDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message={errorMessage}
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowErrorDialog(false)}
+            />
+
+            <MessageDialog
+                open={showSuccessDialog}
+                onClose={() => {
+                    setShowSuccessDialog(false);
                     onNext();
                 }}
-                onDownload={() => window.print()}
-                canDownload={true}
-                submitLabel="Save & Next"
-                splitCashAmount={cashAmount}
-                splitCashStatus={cashPaid ? "verified" : "pending"}
-                splitUpiAmount={razorpayUpiAmount}
-                splitUpiStatus={razorpayUpiPaid ? "success" : "ready"}
-                splitCardAmount={payuUpiAmount}
-                splitCardStatus={payuUpiPaid ? "success" : "ready"}
-                selectedOnlineSplitMethod={razorpayUpiPaid ? "razorpay" : "payu"}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message={
+                    <div className="flex flex-col items-center text-center">
+                        <span className="text-lg font-bold text-[#1E293B] mb-1">Admission Completed</span>
+                        <span className="text-sm text-[#475569]">
+                            Patient admission and payment have been finalized successfully.
+                        </span>
+                    </div>
+                }
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => {
+                    setShowSuccessDialog(false);
+                    onNext();
+                }}
             />
         </div>
     );

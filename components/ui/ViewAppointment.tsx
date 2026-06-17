@@ -292,6 +292,8 @@ export function ViewAppointment({
         });
     }, [assessmentHistoryRes, appointmentId, timelineItems]);
 
+    // console.log("walletDetails", walletDetails);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             {/* Left Column */}
@@ -302,7 +304,7 @@ export function ViewAppointment({
 
                 {walletDetails && (
                     <PatientWalletInformationCard
-                        remainingAmount={"N/A"}
+                        remainingAmount={walletRemainingAmount}
                         details={walletDetails}
                         onActionClick={onWalletActionClick}
                     />

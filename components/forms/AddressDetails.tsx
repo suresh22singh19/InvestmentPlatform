@@ -20,6 +20,10 @@ export interface AddressFormData {
   /** For non-India: Apartment/Unit (optional). Sent as addressLine2 in API. */
   addressLine2?: string;
   companyName?: string;
+  /** Resolved display names for API payloads (IDs remain in country/state/city for form controls). */
+  countryName?: string;
+  stateName?: string;
+  cityName?: string;
 }
 
 /** Same rules as Patient Name on registration/hospital (`RegistrationPersonalDetails`): letters and spaces only, no leading spaces, collapse 3+ repeated characters to 2, capitalize first letter, max 100. */

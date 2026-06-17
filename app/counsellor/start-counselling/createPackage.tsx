@@ -13,11 +13,14 @@ import {
     Pagination,
     SpinnerLoader,
     Dialog,
+    MessageDialog,
 } from "@/components/ui";
 import {
     useGetCounsellorAllPackagesQuery,
     useGetActiveOfferListQuery,
+    useCompletePatientAdmissionMutation,
     type ActiveOfferItem,
+    type CompletePatientAdmissionRequest,
 } from "@/store/api/counsellorApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import type { OfferPromotionType, PackageItem } from "@/store/api/settingsApi";
@@ -30,6 +33,14 @@ export interface AttendantDetailsFormData {
     emailId: string;
     relationWithPatient: string;
     address: AddressFormData;
+}
+
+export interface EditAdmissionPrefill {
+    diseaseType: string;
+    admissionFilterType: string;
+    packageId: string;
+    offerApplied: boolean;
+    offerId?: string;
 }
 
 const EMPTY_ATTENDANT_ADDRESS: AddressFormData = {
@@ -470,7 +481,17 @@ interface CreatePackageProps {
         packageAdmissionType: string;
         applyOfferLabel: string;
     }) => void;
+    onCounsellingDataChange?: (data: {
+        patientType: string;
+        diseaseType: string;
+        originalAmount: number;
+        discountAmount: number;
+    }) => void;
+    onAdmissionOfferChange?: (offer: { offerApplied: boolean; offerId?: number }) => void;
     getpatientBranchId?: string | number;
+    appointmentId?: number;
+    branchId?: number;
+    editPrefill?: EditAdmissionPrefill | null;
 }
 
 export default function CreatePackage({
@@ -494,9 +515,21 @@ export default function CreatePackage({
     onFinalAmountPayableChange,
     onAttendantDetailsChange,
     onCounsellingMetaChange,
-    getpatientBranchId
+    onCounsellingDataChange,
+    onAdmissionOfferChange,
+    getpatientBranchId,
+    appointmentId = 0,
+    branchId = 1,
+    editPrefill = null,
 }: CreatePackageProps) {
+    const [completePatientAdmission, { isLoading: isTentativeSubmitting }] = useCompletePatientAdmissionMutation();
     const [isAttendantsDialogOpen, setIsAttendantsDialogOpen] = useState(false);
+    const [isTentativeDialogOpen, setIsTentativeDialogOpen] = useState(false);
+    const [tentativeAdmissionDate, setTentativeAdmissionDate] = useState("");
+    const [tentativeDateError, setTentativeDateError] = useState("");
+    const [showTentativeSuccessDialog, setShowTentativeSuccessDialog] = useState(false);
+    const [showTentativeErrorDialog, setShowTentativeErrorDialog] = useState(false);
+    const [tentativeErrorMessage, setTentativeErrorMessage] = useState("");
     const [attendantDetails, setAttendantDetails] = useState<AttendantDetailsFormData | null>(null);
     const [attendantFormData, setAttendantFormData] = useState<AttendantDetailsFormData>(EMPTY_ATTENDANT_FORM);
     const [attendantFormErrors, setAttendantFormErrors] = useState<Record<string, string>>({});
@@ -508,8 +541,49 @@ export default function CreatePackage({
     const [sortBy, setSortBy] = useState("default");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [editPrefillApplied, setEditPrefillApplied] = useState(false);
 
-    const { filterBranchId } = useBranchFilter();
+    // const { filterBranchId } = useBranchFilter();
+
+    // console.log("admissionType:", admissionType === "scheduled");
+
+    useEffect(() => {
+        if (!editPrefill || editPrefillApplied) return;
+        setDiseaseType(editPrefill.diseaseType);
+        setAdmissionFilterType(editPrefill.admissionFilterType);
+        setSelectedPackageId(editPrefill.packageId);
+        setApplyOffer(editPrefill.offerApplied);
+        if (editPrefill.offerId) {
+            setSelectedOfferId(editPrefill.offerId);
+        }
+        setEditPrefillApplied(true);
+    }, [
+        editPrefill,
+        editPrefillApplied,
+        setSelectedPackageId,
+        setApplyOffer,
+        setSelectedOfferId,
+    ]);
+
+    const { data: allOffersForEditRes } = useGetActiveOfferListQuery(
+        { branchId: Number(getpatientBranchId) || branchId },
+        { skip: !editPrefill?.offerId || !editPrefillApplied || !applyOffer }
+    );
+
+    useEffect(() => {
+        if (!editPrefill?.offerId || !allOffersForEditRes?.data?.length) return;
+        const match = allOffersForEditRes.data.find(
+            (offer) => String(offer.id) === editPrefill.offerId
+        );
+        if (!match) return;
+        if (match.promotionType === "flat_discount") {
+            setOfferTab("flat");
+        } else if (match.promotionType === "conditional_billing") {
+            setOfferTab("conditional");
+        } else {
+            setOfferTab("bundled");
+        }
+    }, [allOffersForEditRes?.data, editPrefill?.offerId, setOfferTab]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -520,11 +594,11 @@ export default function CreatePackage({
         limit: itemsPerPage,
         sortBy: "",
         order: "ASC" as const,
-        branchId: filterBranchId,
+        branchId: Number(getpatientBranchId),
         packageType: mapAdmissionTypeToApi(admissionFilterType),
         diseaseCategoryType: mapDiseaseTypeToApi(diseaseType),
         isPackageActive: true,
-    }), [currentPage, itemsPerPage, filterBranchId, admissionFilterType, diseaseType]);
+    }), [currentPage, itemsPerPage, getpatientBranchId, admissionFilterType, diseaseType]);
 
     const {
         data: packagesRes,
@@ -540,8 +614,8 @@ export default function CreatePackage({
         limit: "",
         sortBy: "",
         order: "asc" as const,
-        // branchId: getpatientBranchId || 2,
-        branchId: 2,
+        branchId: Number(getpatientBranchId),
+        // branchId: 2,
         promotionType: mapOfferTabToPromotionType(offerTab),
         panelName: mapPatientCategoryToPanelName(patientCategory),
         // panelName : getpatientName
@@ -549,11 +623,43 @@ export default function CreatePackage({
 
     // console.log("Offer List Params:", getpatientName);
 
+    // console.log("dhfshdjhds",selectedOfferId)
+
     const {
         data: offersRes,
         isLoading: isOffersLoading,
         isError: isOffersError,
     } = useGetActiveOfferListQuery(offerListParams, { skip: !applyOffer });
+
+    useEffect(() => {
+        if (!onAdmissionOfferChange) return;
+
+        if (!applyOffer || !selectedOfferId) {
+            onAdmissionOfferChange({ offerApplied: false });
+            return;
+        }
+
+        if (isOffersLoading || offersRes === undefined) return;
+
+        const apiOffers = offersRes.data ?? [];
+        const offerExists = apiOffers.some((offer) => String(offer.id) === selectedOfferId);
+
+        if (!apiOffers.length || !offerExists) {
+            onAdmissionOfferChange({ offerApplied: false });
+            return;
+        }
+
+        onAdmissionOfferChange({
+            offerApplied: true,
+            offerId: Number(selectedOfferId),
+        });
+    }, [
+        onAdmissionOfferChange,
+        applyOffer,
+        selectedOfferId,
+        isOffersLoading,
+        offersRes,
+    ]);
 
     // Options for Custom Tabs Component
     const patientCategoryOptions = [
@@ -591,11 +697,20 @@ export default function CreatePackage({
 
     useEffect(() => {
         if (sortedPackages.length === 0) return;
+        if (editPrefill?.packageId) {
+            const editPackageExists = sortedPackages.some(
+                (pkg) => String(pkg.id) === editPrefill.packageId
+            );
+            if (editPackageExists && selectedPackageId !== editPrefill.packageId) {
+                setSelectedPackageId(editPrefill.packageId);
+            }
+            return;
+        }
         const currentExists = sortedPackages.some((pkg) => String(pkg.id) === selectedPackageId);
         if (!currentExists) {
             setSelectedPackageId(String(sortedPackages[0].id));
         }
-    }, [sortedPackages, selectedPackageId, setSelectedPackageId]);
+    }, [sortedPackages, selectedPackageId, setSelectedPackageId, editPrefill?.packageId]);
 
     // Price summary calculations
     const activePackage = useMemo(() => {
@@ -626,11 +741,26 @@ export default function CreatePackage({
 
     useEffect(() => {
         if (!applyOffer || activeCategoryOffers.length === 0) return;
+        if (editPrefill?.offerId) {
+            const editOfferExists = activeCategoryOffers.some(
+                (offer) => offer.id === editPrefill.offerId
+            );
+            if (editOfferExists && selectedOfferId !== editPrefill.offerId) {
+                setSelectedOfferId(editPrefill.offerId);
+            }
+            return;
+        }
         const currentExists = activeCategoryOffers.some((offer) => offer.id === selectedOfferId);
         if (!currentExists) {
             setSelectedOfferId(activeCategoryOffers[0].id);
         }
-    }, [applyOffer, activeCategoryOffers, selectedOfferId, setSelectedOfferId]);
+    }, [
+        applyOffer,
+        activeCategoryOffers,
+        selectedOfferId,
+        setSelectedOfferId,
+        editPrefill?.offerId,
+    ]);
 
     const activeOffer = useMemo(() => {
         return activeCategoryOffers.find(off => off.id === selectedOfferId) || activeCategoryOffers[0] || {
@@ -665,6 +795,7 @@ export default function CreatePackage({
             packageAdmissionType:
                 admissionFilterOptions.find((o) => o.value === admissionFilterType)?.label ?? "N/A",
             applyOfferLabel: applyOffer ? activeOffer.title || "Applied" : "Not Applied",
+            // applyOfferLabel: applyOffer && selectedOfferId ? activeOffer.title || "Applied" : "Not Applied",
         });
     }, [
         patientCategory,
@@ -673,6 +804,22 @@ export default function CreatePackage({
         applyOffer,
         activeOffer.title,
         onCounsellingMetaChange,
+    ]);
+
+    useEffect(() => {
+        onCounsellingDataChange?.({
+            patientType: admissionFilterType,
+            diseaseType: mapDiseaseTypeToApi(diseaseType) || diseaseType,
+            originalAmount: originalTotal,
+            discountAmount: stayBonus + packageAppliedDiscount,
+        });
+    }, [
+        admissionFilterType,
+        diseaseType,
+        originalTotal,
+        stayBonus,
+        packageAppliedDiscount,
+        onCounsellingDataChange,
     ]);
 
     const offerBonusLabel = activeOffer.bonusLabel;
@@ -686,11 +833,26 @@ export default function CreatePackage({
 
     const handleAdmissionTypeSelect = (type: typeof ADMISSION_TYPE_OPTIONS[number]["type"]) => {
         setAdmissionType(type);
-        if (type === "immediate") {
+        setIsAttendantsDialogOpen(false);
+        setIsTentativeDialogOpen(false);
+    };
+
+    const handleNextClick = () => {
+        if (!admissionType) return;
+
+        if (admissionType === "immediate") {
             setIsAttendantsDialogOpen(true);
-        } else {
-            setIsAttendantsDialogOpen(false);
+            return;
         }
+
+        if (admissionType === "tentative") {
+            setTentativeAdmissionDate("");
+            setTentativeDateError("");
+            setIsTentativeDialogOpen(true);
+            return;
+        }
+
+        onNext();
     };
 
     const validateAttendantForm = () => {
@@ -704,6 +866,8 @@ export default function CreatePackage({
         }
         if (!attendantFormData.phoneNumber.trim()) {
             nextErrors.phoneNumber = "Phone number is required";
+        } else if (attendantFormData.phoneNumber.length !== 10) {
+         nextErrors.phoneNumber = "Phone number must be 10 digits";
         }
         if (!attendantFormData.address.country) {
             nextErrors.country = "Country is required";
@@ -731,6 +895,7 @@ export default function CreatePackage({
         setAttendantDetails(attendantFormData);
         onAttendantDetailsChange?.(attendantFormData);
         setIsAttendantsDialogOpen(false);
+        onNext();
     };
 
     const handleAttendantDialogClose = () => {
@@ -739,6 +904,95 @@ export default function CreatePackage({
         if (!attendantDetails) {
             setAdmissionType("");
         }
+    };
+
+    const handleTentativeDialogClose = () => {
+        setTentativeDateError("");
+        setTentativeAdmissionDate("");
+        setIsTentativeDialogOpen(false);
+        setAdmissionType("");
+    };
+
+    const handleTentativeSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!tentativeAdmissionDate) {
+            setTentativeDateError("Please select a proposed admission date.");
+            return;
+        }
+        if (!selectedPackageId) {
+            setTentativeErrorMessage("Please select a package before submitting tentative admission.");
+            setShowTentativeErrorDialog(true);
+            return;
+        }
+        if (!appointmentId) {
+            setTentativeErrorMessage("Appointment ID is missing. Please return to the dashboard and select a patient.");
+            setShowTentativeErrorDialog(true);
+            return;
+        }
+
+        const resolvedBranchId = Number(branchId || getpatientBranchId) || 1;
+        const apiOffers = offersRes?.data ?? [];
+        const includeOffer = Boolean(
+            applyOffer &&
+            selectedOfferId &&
+            apiOffers.length > 0 &&
+            apiOffers.some((offer) => String(offer.id) === selectedOfferId)
+        );
+        const payload: CompletePatientAdmissionRequest = {
+            branchId: resolvedBranchId,
+            appointmentId,
+            patientType: admissionFilterType,
+            diseaseType: mapDiseaseTypeToApi(diseaseType) || diseaseType,
+            packageId: Number(selectedPackageId),
+            numberOfDays,
+            offerApplied: includeOffer,
+            ...(includeOffer ? { offerId: Number(selectedOfferId) } : {}),
+            admissionType: "Tentative",
+            admissionDate: tentativeAdmissionDate,
+            originalAmount: originalTotal,
+            discountAmount: stayBonus + packageAppliedDiscount,
+            netPayable: finalAmountPayable,
+            paymentMode: "completed",
+            paymentMethod: "Cash",
+            transactionId: "",
+            paymentStatus: "Pending",
+            receivedAmount: 0,
+        };
+
+        try {
+            const res = await completePatientAdmission(payload).unwrap();
+            if (res.success) {
+                setIsTentativeDialogOpen(false);
+                setShowTentativeSuccessDialog(true);
+            } else {
+                setTentativeErrorMessage(res.message || "Failed to submit tentative admission.");
+                setShowTentativeErrorDialog(true);
+            }
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setTentativeErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while submitting tentative admission."
+            );
+            setShowTentativeErrorDialog(true);
+        }
+    };
+
+    const handleDetailsCancel = () => {
+        setIsAttendantsDialogOpen(false);
+        setIsTentativeDialogOpen(false);
+        setTentativeAdmissionDate("");
+        setTentativeDateError("");
+        setAttendantDetails(null);
+        setAttendantFormData({ ...EMPTY_ATTENDANT_FORM, address: { ...EMPTY_ATTENDANT_ADDRESS } });
+        setAttendantFormErrors({});
+        setPatientCategory("panel");
+        setDiseaseType("other");
+        setAdmissionFilterType("day_care");
+        setSortBy("default");
+        setCurrentPage(1);
+        setItemsPerPage(10);
+        onAttendantDetailsChange?.(null);
+        onCancel?.();
     };
 
     return (
@@ -982,10 +1236,18 @@ export default function CreatePackage({
                                         </span>
                                     </div>
 
-                                    <button
+                                    {/* <button
                                         type="button"
                                         onClick={onNext}
                                         className="w-full h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm hover:bg-opacity-95 hover:scale-[1.005] transition-all duration-200 flex items-center justify-center gap-2 mt-5 shadow-sm select-none"
+                                    >
+                                        Confirm Selection &gt;
+                                    </button> */}
+
+                                    <button
+                                        type="button"
+                                        disabled
+                                        className={`w-full h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm ${admissionType !== "scheduled" ? "cursor-not-allowed" : "cursor-pointer"} flex items-center justify-center gap-2 mt-5 shadow-sm select-none`}
                                     >
                                         Confirm Selection &gt;
                                     </button>
@@ -1048,7 +1310,7 @@ export default function CreatePackage({
                                     mode="single"
                                     background="white"
                                 />
-                                <FormInputField
+                                {/* <FormInputField
                                     label="Phone Number *"
                                     type="text"
                                     placeholder="Phone Number"
@@ -1057,7 +1319,24 @@ export default function CreatePackage({
                                         setAttendantFormData((prev) => ({ ...prev, phoneNumber: e.target.value }))
                                     }
                                     height={44}
-                                />
+                                /> */}
+                                <FormInputField
+                                    label="Phone Number *"
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="Phone Number"
+                                    value={attendantFormData.phoneNumber}
+                                    onChange={(e) => {
+                                        const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+
+                                        setAttendantFormData((prev) => ({
+                                        ...prev,
+                                        phoneNumber: value,
+                                        }));
+                                    }}
+                                    maxLength={10}
+                                    height={44}
+                                    />
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1132,13 +1411,75 @@ export default function CreatePackage({
                     </form>
                 </Dialog>
 
+                <Dialog
+                    open={isTentativeDialogOpen}
+                    onClose={handleTentativeDialogClose}
+                    title="Tentative Admission"
+                    width={520}
+                    contentPadding="px-6 pb-6 pt-4"
+                >
+                    <form onSubmit={handleTentativeSubmit} className="flex flex-col gap-6 text-left">
+                        <FormInputField
+                            label="Proposed Admission Date"
+                            type="date"
+                            value={tentativeAdmissionDate}
+                            onChange={(e) => {
+                                setTentativeAdmissionDate(e.target.value);
+                                if (tentativeDateError) setTentativeDateError("");
+                            }}
+                            min={new Date().toISOString().split("T")[0]}
+                            height={44}
+                        />
+                        {tentativeDateError && (
+                            <p className="text-xs text-[#F6776E]">{tentativeDateError}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3 pt-2">
+                            <Button type="submit" variant="primary" disabled={isTentativeSubmitting}>
+                                {isTentativeSubmitting ? "Submitting..." : "Submit"}
+                            </Button>
+                            <Button type="button" variant="outline" onClick={handleTentativeDialogClose}>
+                                Cancel
+                            </Button>
+                        </div>
+                    </form>
+                </Dialog>
+
+                <MessageDialog
+                    open={showTentativeErrorDialog}
+                    onClose={() => setShowTentativeErrorDialog(false)}
+                    icon="/icons/CrossIcon.svg"
+                    iconBgColor="#FFEBEE"
+                    message={tentativeErrorMessage}
+                    confirmText="OK"
+                    showCancel={false}
+                    onConfirm={() => setShowTentativeErrorDialog(false)}
+                />
+
+                <MessageDialog
+                    open={showTentativeSuccessDialog}
+                    onClose={() => setShowTentativeSuccessDialog(false)}
+                    icon="/icons/SuccessCheck.svg"
+                    iconBgColor="#E8F5E9"
+                    message={
+                        <div className="flex flex-col items-center text-center">
+                            <span className="text-lg font-bold text-[#1E293B] mb-1">Tentative Admission Submitted</span>
+                            <span className="text-sm text-[#475569]">
+                                The tentative admission has been recorded successfully.
+                            </span>
+                        </div>
+                    }
+                    confirmText="OK"
+                    showCancel={false}
+                    onConfirm={() => setShowTentativeSuccessDialog(false)}
+                />
+
                 {/* 7. BOTTOM ACTION NAVIGATION FOOTER */}
                 <div className="w-full flex items-center justify-end gap-4 pt-6 mt-4 select-none">
                     <Button
                         type="button"
                         variant="outline"
                         className="!border-[#DFE0E2] !text-[#434956] hover:!bg-gray-50 !shadow-sm"
-                        onClick={onCancel}
+                        onClick={handleDetailsCancel}
                     >
                         Cancel
                     </Button>
@@ -1146,7 +1487,7 @@ export default function CreatePackage({
                         type="button"
                         variant="primary"
                         rightIcon={<span>➔</span>}
-                        onClick={onNext}
+                        onClick={handleNextClick}
                     >
                         Next: Basic Information
                     </Button>

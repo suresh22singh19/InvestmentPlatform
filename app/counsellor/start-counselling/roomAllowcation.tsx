@@ -10,10 +10,11 @@ import {
     Tooltip,
     MessageDialog,
     Dialog,
+    BackToPreviousPageButton,
 } from "@/components/ui";
 import { useAppSelector } from "@/store/hooks";
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
-import { useGetRoomListQuery, useGetRoomBedDetailQuery, type BedLayoutItem } from "@/store/api/counsellorApi";
+import { useGetRoomListQuery, useGetRoomBedDetailQuery, useAllocateRoomMutation, type BedLayoutItem } from "@/store/api/counsellorApi";
 import { useGetBuildingDropdownQuery, useGetFloorDropdownQuery, useGetRoomTypeDropdownQuery } from "@/store/api/commonApi";
 
 interface CounsellingSummary {
@@ -304,6 +305,8 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
 }
 
 interface RoomAllocationProps {
+    id?: number;
+    roomAllocatedHitAPI?: boolean;
     activePackage: {
         id?: string;
         packageName?: string;
@@ -323,12 +326,15 @@ interface RoomAllocationProps {
     };
     onSuccess?: () => void;
     onConfirmAllocation?: (allocation: {
+        buildingId: number;
+        floorId: number;
         roomId: number;
         roomNumber: string;
-        bedId: string;
+        bedId: number;
         bedNumber: string;
     }) => void;
     onCancel?: () => void;
+    onBack?: () => void;
     selectedRoomId?: number | null;
     setSelectedRoomId?: (id: number | null) => void;
     selectedBed?: string | null;
@@ -338,17 +344,23 @@ interface RoomAllocationProps {
 }
 
 export default function RoomAllocation({
+    id,
+    roomAllocatedHitAPI = false,
     activePackage,
+    patientId,
+    patientPackageId,
     patientDetails,
     onSuccess,
     onConfirmAllocation,
     onCancel,
+    onBack,
     selectedRoomId: controlledRoomId,
     setSelectedRoomId: controlledSetRoomId,
     selectedBed: controlledBed,
     setSelectedBed: controlledSetBed,
     setSelectedRoom,
     counsellingSummary,
+
 }: RoomAllocationProps) {
     const selectedBranch = useAppSelector(selectSelectedBranch);
     const userBranchId = useAppSelector(selectUserBranchId);
@@ -363,6 +375,8 @@ export default function RoomAllocation({
     const [errorMessage, setErrorMessage] = useState("");
     const [bedDetailsModalBed, setBedDetailsModalBed] = useState<BedLayoutItem | null>(null);
     const [showBedDetailsDialog, setShowBedDetailsDialog] = useState(false);
+    const [isConfirming, setIsConfirming] = useState(false);
+    const [allocateRoom] = useAllocateRoomMutation();
 
     const isControlledRoom = controlledRoomId !== undefined && controlledSetRoomId !== undefined;
     const selectedRoomId = isControlledRoom ? controlledRoomId : localRoomId;
@@ -390,6 +404,8 @@ export default function RoomAllocation({
         if (!status) return undefined;
         return status;
     };
+
+    console.log("dsjdfhssdj",counsellingSummary)
 
     // Compile building and floor options
     const floorOptions = useMemo(() => {
@@ -521,17 +537,81 @@ export default function RoomAllocation({
     const handleConfirm = async () => {
         if (!selectedRoom || !selectedBed) return;
 
-        // Find the bed number
         const selectedBedObj = bedDetailRes?.data?.bedLayout?.find(b => b.bedId.toString() === selectedBed);
         const bedNumber = selectedBedObj?.bedNumber || selectedBed;
 
-        onConfirmAllocation?.({
-            roomId: selectedRoom.id,
-            roomNumber: selectedRoom.roomNumber,
-            bedId: selectedBed,
-            bedNumber: bedNumber,
+        const roomBuildingName = selectedRoom.building || "";
+        const foundBuilding = buildingData?.data?.find(
+            (b) => b.name?.toLowerCase() === roomBuildingName.toLowerCase()
+        );
+        const resolvedBuildingId = foundBuilding
+            ? foundBuilding.id
+            : selectedBuilding
+                ? parseInt(selectedBuilding, 10)
+                : 1;
+
+        const roomFloorName = selectedRoom.floor || "";
+        const foundFloor = floorData?.data?.find((f) => {
+            const rawName = (f as { floor?: string; name?: string }).floor || f.name || "";
+            return rawName.toLowerCase() === roomFloorName.toLowerCase();
         });
-        onSuccess?.();
+        const resolvedFloorId = foundFloor
+            ? foundFloor.id
+            : selectedFloor
+                ? parseInt(selectedFloor, 10)
+                : 1;
+
+        const allocation = {
+            buildingId: Number(resolvedBuildingId),
+            floorId: Number(resolvedFloorId),
+            roomId: Number(selectedRoom.id),
+            roomNumber: selectedRoom.roomNumber,
+            bedId: Number(selectedBed),
+            bedNumber,
+        };
+
+        if (!roomAllocatedHitAPI) {
+            onConfirmAllocation?.(allocation);
+            onSuccess?.();
+            return;
+        }
+
+        if (!patientId || !patientPackageId) {
+            setErrorMessage("Patient information is missing. Please return and try again.");
+            setShowErrorDialog(true);
+            return;
+        }
+
+        setIsConfirming(true);
+        try {
+            const res = await allocateRoom({
+                patientId,
+                // id: patientPackageId,
+                id: Number(id),
+                buildingId: allocation.buildingId,
+                floorId: allocation.floorId,
+                roomId: allocation.roomId,
+                bedId: allocation.bedId,
+                ...(remark.trim() ? { remark: remark.trim() } : {}),
+            }).unwrap();
+
+            if (res?.success === false) {
+                setErrorMessage(res?.message || "Failed to allocate room.");
+                setShowErrorDialog(true);
+                return;
+            }
+
+            onConfirmAllocation?.(allocation);
+            setShowSuccessDialog(true);
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while allocating the room."
+            );
+            setShowErrorDialog(true);
+        } finally {
+            setIsConfirming(false);
+        }
     };
 
     const bedModalStatusMeta = bedDetailsModalBed
@@ -884,6 +964,16 @@ export default function RoomAllocation({
                 </div>
 
                 <div className="flex items-center gap-3 select-none">
+                    {/* <Button
+                        type="button"
+                        variant="outline"
+                        className="!border-[#DFE0E2] !text-[#434956] hover:!bg-gray-50 px-6 h-11 rounded-full font-bold"
+                        onClick={onBack}
+                    >
+                        Back
+                    </Button> */}
+
+                     <BackToPreviousPageButton text="Back" onClick={onBack} />
                     <Button
                         type="button"
                         variant="outline"
@@ -899,10 +989,10 @@ export default function RoomAllocation({
                         type="button"
                         variant="primary"
                         className="px-6 h-11 rounded-full font-bold"
-                        disabled={!selectedRoomId || !selectedBed}
+                        disabled={!selectedRoomId || !selectedBed || isConfirming}
                         onClick={handleConfirm}
                     >
-                        Confirm Allocation
+                        {isConfirming ? "Allocating..." : "Confirm Allocation"}
                     </Button>
                 </div>
             </div>

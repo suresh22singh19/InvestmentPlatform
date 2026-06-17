@@ -115,6 +115,7 @@ export default function LoginPage() {
   const [showJatayuSuccessDialog, setShowJatayuSuccessDialog] = useState(false);
   const [showJatayuErrorDialog, setShowJatayuErrorDialog] = useState(false);
   const [isJatayuActionLoading, setIsJatayuActionLoading] = useState(false);
+  const [jatayuEmail, setJatayuEmail] = useState<string | null>(null);
   const [deferredRedirect, setDeferredRedirect] = useState<{
     result: LoginResponse;
     values: LoginFormValues;
@@ -248,7 +249,8 @@ export default function LoginPage() {
         jatayuAuthObj?.message?.toLowerCase().includes("already logged in");
 
       if (aiVoiceActivated && isAlreadyLoggedIn) {
-        // Defer routing and show force logout dialog
+        // User is not persisted to localStorage until after force-logout flow completes.
+        setJatayuEmail(values.email || result.data.user?.email || null);
         setDeferredRedirect({ result, values });
         setShowJatayuForceLogoutDialog(true);
       } else {
@@ -293,7 +295,7 @@ export default function LoginPage() {
     setIsJatayuActionLoading(true);
     try {
       // 1. Call forceLogoutJatayu() to logout Jatayu
-      await forceLogoutJatayu();
+      await forceLogoutJatayu(jatayuEmail);
 
       // 2. Call the HIIMS login API again
       const result = await login({

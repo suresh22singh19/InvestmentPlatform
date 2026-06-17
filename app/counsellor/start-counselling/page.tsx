@@ -3,16 +3,20 @@
 import { useState, useMemo, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Badge, ViewAppointment, BackToPreviousPageButton, MessageDialog } from "@/components/ui";
+import { Badge, ViewAppointment, BackToPreviousPageButton, MessageDialog, SpinnerLoader, PatientWalletDetailItem } from "@/components/ui";
 import RoomAllocation from "./roomAllowcation";
 import AdmissionPayment from "./admission&payment";
-import CreatePackage from "./createPackage";
+import CreatePackage, { type AttendantDetailsFormData, type EditAdmissionPrefill } from "./createPackage";
+import IpdAdmissionStep from "./IpdAdmissionStep";
 import { useSearchParams } from "next/navigation";
 import {
     useGetReferredPatientsQuery,
     useLazyGetPatientDetailQuery,
     useLazyGetPatientDetailByAppointmentQuery,
+    useGetAdmissionDetailsQuery,
     type CounsellorPatientListItem,
+    type CompletePatientAdmissionRoom,
+    type AdmissionDetailsData,
 } from "@/store/api/counsellorApi";
 import type { PackageItem } from "@/store/api/settingsApi";
 
@@ -24,6 +28,95 @@ function findReferredPatientRow(
     return data.find(
         (d) => Number(d.patientId) === patientIdParam || Number(d.id) === patientIdParam
     );
+}
+function mapApiAdmissionTypeToUi(type: string): string {
+    const normalized = type.trim().toLowerCase();
+    if (normalized === "immediate") return "immediate";
+    if (normalized === "schedule" || normalized === "scheduled") return "scheduled";
+    if (normalized === "tentative") return "tentative";
+    return "";
+}
+
+function mapApiPatientTypeToUi(type: string): string {
+    const normalized = type.trim().toLowerCase();
+    if (normalized === "daycare" || normalized === "day_care") return "day_care";
+    if (normalized === "ipd") return "ipd";
+    return normalized;
+}
+
+function mapApiDiseaseTypeToUi(type: string): string {
+    const normalized = type.trim().toLowerCase();
+    if (normalized === "ckd") return "ckd";
+    if (normalized === "others" || normalized === "other") return "other";
+    return "other";
+}
+
+function formatAdmissionDateInput(iso?: string): string {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function buildEditPrefill(data: AdmissionDetailsData): EditAdmissionPrefill {
+    return {
+        diseaseType: mapApiDiseaseTypeToUi(data.diseaseType),
+        admissionFilterType: mapApiPatientTypeToUi(data.patientType),
+        packageId: String(data.packageId),
+        offerApplied: Boolean(data.offerApplied),
+        ...(data.offerId != null ? { offerId: String(data.offerId) } : {}),
+    };
+}
+
+interface CounsellingPatientContext {
+    patientName: string;
+    patientUhid: string;
+    diagnosis: string;
+    status: string;
+    branchId: number;
+    appointmentId: number;
+}
+
+function extractPatientContextFromApiData(
+    data: Record<string, any> | undefined,
+    fallbackAppointmentId: number | null
+): CounsellingPatientContext | null {
+    if (!data) return null;
+
+    const appDetail = data.appointmentDetail || {};
+    const patDetails = data.patientDetails || {};
+    const medInfo = data.medicalInfo || {};
+    const otherInfo = data.otherInformation || {};
+
+    const patientName = patDetails.name?.trim();
+    const patientUhid = appDetail.uhid || patDetails.uhid;
+    if (!patientName && !patientUhid) return null;
+
+    return {
+        patientName: patientName || "N/A",
+        patientUhid: patientUhid || "N/A",
+        diagnosis: medInfo.diagnosis || medInfo.disease || "N/A",
+        status: otherInfo.patientType || appDetail.status || "Referred",
+        branchId: Number(appDetail.branchId) || 1,
+        appointmentId: Number(appDetail.opid ?? fallbackAppointmentId) || 0,
+    };
+}
+
+function extractPatientContextFromReferredRow(
+    row: CounsellorPatientListItem,
+    patientIdParam: number
+): CounsellingPatientContext {
+    return {
+        patientName: row.patientName || "N/A",
+        patientUhid: row.patientUhid || "N/A",
+        diagnosis: row.diagnosisSymptoms || "N/A",
+        status: row.status || "Referred",
+        branchId: Number(row.branchId) || 1,
+        appointmentId: Number(row.appointmentId ?? row.id ?? patientIdParam) || 0,
+    };
 }
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
@@ -43,8 +136,22 @@ export default function StartCounsellingPage() {
         packageAdmissionType: "Day Care",
         applyOfferLabel: "Not Applied",
     });
+    const [counsellingData, setCounsellingData] = useState({
+        patientType: "ipd",
+        diseaseType: "others",
+        originalAmount: 0,
+        discountAmount: 0,
+    });
+    const [roomAllocation, setRoomAllocation] = useState<CompletePatientAdmissionRoom | null>(null);
+    const [attendantDetails, setAttendantDetails] = useState<AttendantDetailsFormData | null>(null);
+    const [admissionOffer, setAdmissionOffer] = useState<{ offerApplied: boolean; offerId?: number }>({
+        offerApplied: false,
+    });
     const searchParams = useSearchParams();
     const patientIdParam = Number(searchParams?.get("patientID")) || null;
+    const appointmentIdParam = Number(searchParams?.get("appointmentID")) || null;
+    const editPatientIdParam = Number(searchParams?.get("editpatientID")) || null;
+    const isEditMode = editPatientIdParam != null;
     const counsellingRecordIdParam = Number(searchParams?.get("id")) || null;
     // const activeCard = searchParams?.get("activeCard") || "referred";
 
@@ -59,31 +166,152 @@ export default function StartCounsellingPage() {
   const {
     data: referredRes,
     isLoading: isReferredLoading,
-  } = useGetReferredPatientsQuery(referredParams, { skip: !patientIdParam });
+  } = useGetReferredPatientsQuery(referredParams, { skip: !patientIdParam || isEditMode });
+
+  const {
+    data: editAdmissionRes,
+    isLoading: isEditAdmissionLoading,
+    isError: isEditAdmissionError,
+  } = useGetAdmissionDetailsQuery(editPatientIdParam!, { skip: !editPatientIdParam });
+
+    const editAdmissionData = editAdmissionRes?.success ? editAdmissionRes.data : undefined;
+    const editPrefill = useMemo(
+    () => (editAdmissionData ? buildEditPrefill(editAdmissionData) : null),
+    [editAdmissionData]
+  );
+  const [editAdmissionPrefillApplied, setEditAdmissionPrefillApplied] = useState(false);
+  const [editAdmissionDate, setEditAdmissionDate] = useState("");
+  const [editSpecialInstructions, setEditSpecialInstructions] = useState("");
+  const [editPaymentAmounts, setEditPaymentAmounts] = useState<{
+    advanceAmount?: number;
+    receivedAmount?: number;
+    remainingAmount?: number;
+  } | null>(null);
 
   const rowfilterbyId = useMemo(
     () => findReferredPatientRow(referredRes?.data, patientIdParam),
     [referredRes, patientIdParam]
   );
-  const getpatientName = rowfilterbyId ? `${rowfilterbyId.patientName || "N/A"}` : "N/A";
-  const getpatientUhid = rowfilterbyId ? `${rowfilterbyId.patientUhid || "N/A" }` : "N/A";
-  const getdiagnosisSymptoms = rowfilterbyId ? `${rowfilterbyId.diagnosisSymptoms || "N/A"} ` : "N/A";
-  const getpatientBranchId = rowfilterbyId ? `${rowfilterbyId.branchId || "N/A"} ` : "N/A";
-  const getpatientStatus = rowfilterbyId ? `${rowfilterbyId.status || "N/A"} ` : "N/A";
+  const [patientContext, setPatientContext] = useState<CounsellingPatientContext | null>(null);
+  const [isPatientContextLoading, setIsPatientContextLoading] = useState(false);
 
+  useEffect(() => {
+    if (!patientIdParam || isEditMode) {
+      setPatientContext(null);
+      setIsPatientContextLoading(false);
+      return;
+    }
+
+    if (rowfilterbyId) {
+      setPatientContext(extractPatientContextFromReferredRow(rowfilterbyId, patientIdParam));
+    }
+  }, [patientIdParam, isEditMode, rowfilterbyId]);
+
+  const resolvedAppointmentLookupId = useMemo(() => {
+    if (appointmentIdParam) return appointmentIdParam;
+    if (rowfilterbyId?.appointmentId != null && rowfilterbyId.appointmentId !== "") {
+      return Number(rowfilterbyId.appointmentId);
+    }
+    return null;
+  }, [appointmentIdParam, rowfilterbyId]);
+
+  const getpatientName = isEditMode
+    ? (editAdmissionData?.patient?.name || "N/A")
+    : isPatientContextLoading && !patientContext
+      ? "Loading..."
+      : (patientContext?.patientName || "N/A");
+  const getpatientUhid = isEditMode
+    ? (editAdmissionData?.patient?.uhid || "N/A")
+    : (patientContext?.patientUhid || "N/A");
+  const getdiagnosisSymptoms = isEditMode
+    ? "N/A"
+    : (patientContext?.diagnosis || "N/A");
+  const getpatientBranchId = isEditMode
+    ? String(editAdmissionData?.branchId ?? "N/A")
+    : String(patientContext?.branchId ?? "N/A");
+  const getpatientStatus = isEditMode
+    ? "Edit Admission"
+    : isPatientContextLoading && !patientContext
+      ? "Loading..."
+      : (patientContext?.status || "N/A");
+  const editPatientSubtitle = isEditMode && editAdmissionData?.patient
+    ? `Contact: ${editAdmissionData.patient.contactNumber || "N/A"} • Age: ${editAdmissionData.patient.age || "N/A"} Years • Gender: ${editAdmissionData.patient.gender || "N/A"}`
+    : null;
 
     // Stepper State
     const [currentStep, setCurrentStep] = useState(1);
+    const [hasVisitedRoomStep, setHasVisitedRoomStep] = useState(false);
+    const [hasVisitedPaymentStep, setHasVisitedPaymentStep] = useState(false);
+    const [hasVisitedIpdAdmissionStep, setHasVisitedIpdAdmissionStep] = useState(false);
     const showRoomStep = admissionType !== "scheduled";
     const paymentStepNumber = showRoomStep ? 3 : 2;
+    const ipdAdmissionStepNumber = showRoomStep ? 4 : 3;
     const isOnRoomStep = showRoomStep && currentStep === 2;
     const isOnPaymentStep = currentStep === paymentStepNumber;
+    const isOnIpdAdmissionStep = currentStep === ipdAdmissionStepNumber;
 
     useEffect(() => {
-        if (!showRoomStep && currentStep === 3) {
+        if (isOnRoomStep) {
+            setHasVisitedRoomStep(true);
+        }
+    }, [isOnRoomStep]);
+
+    useEffect(() => {
+        if (isOnPaymentStep) {
+            setHasVisitedPaymentStep(true);
+        }
+    }, [isOnPaymentStep]);
+
+    useEffect(() => {
+        if (isOnIpdAdmissionStep) {
+            setHasVisitedIpdAdmissionStep(true);
+        }
+    }, [isOnIpdAdmissionStep]);
+
+    // When admission type changes to scheduled (room hidden), payment step number shifts.
+    // If we are still on the old payment step number (3) and IPD step hasn't started yet, move to payment (2).
+    useEffect(() => {
+        if (!showRoomStep && currentStep === 3 && !hasVisitedIpdAdmissionStep && hasVisitedPaymentStep) {
             setCurrentStep(2);
         }
-    }, [showRoomStep, currentStep]);
+    }, [showRoomStep, currentStep, hasVisitedIpdAdmissionStep, hasVisitedPaymentStep]);
+
+    console.log("djfisdjfsd",editAdmissionData)
+
+    useEffect(() => {
+        if (!editAdmissionData || editAdmissionPrefillApplied) return;
+
+        setSelectedPackageId(String(editAdmissionData.packageId));
+        setNumberOfDays(editAdmissionData.numberOfDays);
+        setApplyOffer(Boolean(editAdmissionData.offerApplied));
+        setSelectedOfferId(editAdmissionData.offerId != null ? String(editAdmissionData.offerId) : "");
+        setAdmissionType(mapApiAdmissionTypeToUi(editAdmissionData.admissionType));
+        setFinalAmountPayable(editAdmissionData.netPayable);
+        setCounsellingData({
+            patientType: mapApiPatientTypeToUi(editAdmissionData.patientType),
+            diseaseType: editAdmissionData.diseaseType,
+            originalAmount: editAdmissionData.originalAmount,
+            discountAmount: editAdmissionData.discountAmount,
+        });
+        setCounsellingMeta((prev) => ({
+            ...prev,
+            diseaseType: mapApiDiseaseTypeToUi(editAdmissionData.diseaseType) === "ckd" ? "CKD" : "Other",
+            packageAdmissionType:
+                mapApiPatientTypeToUi(editAdmissionData.patientType) === "ipd" ? "IPD" : "Day Care",
+            applyOfferLabel: editAdmissionData.offerApplied ? "Applied" : "Not Applied",
+        }));
+        setEditAdmissionDate(formatAdmissionDateInput(editAdmissionData.admissionDate));
+        setEditSpecialInstructions(editAdmissionData.specialInstructions || "");
+        setEditPaymentAmounts({
+            advanceAmount: editAdmissionData.advanceAmount,
+            receivedAmount: editAdmissionData.receivedAmount,
+            remainingAmount: editAdmissionData.remainingAmount,
+        });
+        if (editAdmissionData.room) {
+            setRoomAllocation(editAdmissionData.room);
+        }
+        setEditAdmissionPrefillApplied(true);
+    }, [editAdmissionData, editAdmissionPrefillApplied]);
     const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
     const [getPatientDetail] = useLazyGetPatientDetailQuery();
     const [getPatientDetailByAppointment] = useLazyGetPatientDetailByAppointmentQuery();
@@ -93,15 +321,117 @@ export default function StartCounsellingPage() {
     const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
     const [apiErrorMessage, setApiErrorMessage] = useState("");
 
+    useEffect(() => {
+        if (!patientIdParam || isEditMode) return;
+
+        let cancelled = false;
+
+        const loadPatientContext = async () => {
+            setIsPatientContextLoading(true);
+            try {
+                if (resolvedAppointmentLookupId) {
+                    try {
+                        const byAppointment = await getPatientDetailByAppointment(
+                            resolvedAppointmentLookupId
+                        ).unwrap();
+                        if (!cancelled && byAppointment?.success) {
+                            const ctx = extractPatientContextFromApiData(
+                                byAppointment.data,
+                                resolvedAppointmentLookupId
+                            );
+                            if (ctx) {
+                                setPatientContext(ctx);
+                                return;
+                            }
+                        }
+                    } catch {
+                        // Fall back to patient detail lookup.
+                    }
+                }
+
+                if (patientIdParam) {
+                    const byPatient = await getPatientDetail(patientIdParam).unwrap();
+                    if (!cancelled && byPatient?.success) {
+                        const ctx = extractPatientContextFromApiData(byPatient.data, patientIdParam);
+                        if (ctx) {
+                            setPatientContext(ctx);
+                        }
+                    }
+                }
+            } catch {
+                // Keep referred-list context when direct lookup fails.
+            } finally {
+                if (!cancelled) {
+                    setIsPatientContextLoading(false);
+                }
+            }
+        };
+
+        void loadPatientContext();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        patientIdParam,
+        isEditMode,
+        resolvedAppointmentLookupId,
+        getPatientDetailByAppointment,
+        getPatientDetail,
+    ]);
+
     const patientDetailId =
         counsellingRecordIdParam ||
         rowfilterbyId?.patientId ||
-        patientIdParam;
+        patientIdParam ||
+        editPatientIdParam;
+
+    const resolvedBranchId = isEditMode
+        ? Number(editAdmissionData?.branchId) || 1
+        : patientContext?.branchId || Number(rowfilterbyId?.branchId) || 1;
+    const resolvedAppointmentId = isEditMode
+        ? Number(editAdmissionData?.appointmentId) || 0
+        : patientContext?.appointmentId ||
+            resolvedAppointmentLookupId ||
+            Number(rowfilterbyId?.appointmentId ?? counsellingRecordIdParam) ||
+            0;
+
+    const handleDetailsStepCancel = () => {
+        setSelectedPackageId("");
+        setActivePackage(null);
+        setNumberOfDays(5);
+        setApplyOffer(true);
+        setOfferTab("bundled");
+        setSelectedOfferId("");
+        setFinalAmountPayable(0);
+        setAdmissionType("");
+        setCounsellingMeta({
+            patientCategory: "Panel",
+            diseaseType: "Other",
+            packageAdmissionType: "Day Care",
+            applyOfferLabel: "Not Applied",
+        });
+        setCounsellingData({
+            patientType: "ipd",
+            diseaseType: "others",
+            originalAmount: 0,
+            discountAmount: 0,
+        });
+        setRoomAllocation(null);
+        setAttendantDetails(null);
+        setHasVisitedRoomStep(false);
+        setHasVisitedPaymentStep(false);
+        setHasVisitedIpdAdmissionStep(false);
+        setCurrentStep(1);
+    };
 
     const handleViewPatientOverview = async () => {
-        // const isReferredFlow = activeCard === "referred";
-           const isReferredFlow = patientIdParam !== null;
-        const idToFetch = isReferredFlow ? patientIdParam : patientDetailId;
+        const isReferredFlow = patientIdParam !== null && !isEditMode;
+        const idToFetch = isEditMode
+            ? editPatientIdParam
+            : isReferredFlow
+                ? patientIdParam
+                : patientDetailId;
 
         if (!idToFetch) {
             setApiErrorMessage("Patient ID not found. Please return to the dashboard and select a patient.");
@@ -111,9 +441,11 @@ export default function StartCounsellingPage() {
 
         setIsViewPatientLoading(true);
         try {
-            const res = isReferredFlow
-                ? await getPatientDetailByAppointment(patientIdParam!).unwrap()
-                : await getPatientDetail(idToFetch).unwrap();
+            const viewByAppointmentId = resolvedAppointmentLookupId;
+            const res =
+                isReferredFlow && viewByAppointmentId
+                    ? await getPatientDetailByAppointment(viewByAppointmentId).unwrap()
+                    : await getPatientDetail(idToFetch).unwrap();
             if (res && res.success) {
                 setFetchedPatientData(res.data);
                 const opid = res.data?.appointmentDetail?.opid;
@@ -121,7 +453,7 @@ export default function StartCounsellingPage() {
                     opid != null && opid !== ""
                         ? Number(opid)
                         : isReferredFlow
-                            ? patientIdParam
+                            ? viewByAppointmentId
                             : null
                 );
                 setViewAppointmentMode(true);
@@ -148,6 +480,29 @@ export default function StartCounsellingPage() {
     const attendantFee = activePackage?.attendantFeeEnabled ? Number(activePackage.attendantFeePrice) : 0;
     const therapyFee = activePackage?.therapyEnabled ? Number(activePackage.therapyPrice) : 0;
 
+    if (isEditMode && isEditAdmissionLoading) {
+        return (
+            <AppShell>
+                <div className="flex min-h-[320px] items-center justify-center">
+                    <SpinnerLoader size={40} />
+                </div>
+            </AppShell>
+        );
+    }
+
+    if (isEditMode && (isEditAdmissionError || (!isEditAdmissionLoading && !editAdmissionData))) {
+        return (
+            <AppShell>
+                <div className="flex min-h-[320px] flex-col items-center justify-center gap-4">
+                    <p className="text-sm font-medium text-[#787E8C]">
+                        {editAdmissionRes?.message || "Failed to load admission details for editing."}
+                    </p>
+                    <BackToPreviousPageButton text="Back" />
+                </div>
+            </AppShell>
+        );
+    }
+
     return (
         <AppShell>
             {viewAppointmentMode ? (
@@ -169,6 +524,7 @@ export default function StartCounsellingPage() {
                         const refDetail = fetchedPatientData?.referralDetail || {};
                         const medInfo = fetchedPatientData?.medicalInfo || {};
                         const otherInfo = fetchedPatientData?.otherInformation || {};
+                        const walletInfo = fetchedPatientData?.wallet || {};
 
                         const appointmentItems = [
                             { label: "UHID", value: appDetail.uhid || "N/A" },
@@ -239,6 +595,26 @@ export default function StartCounsellingPage() {
                             { label: "Heart Rate", value: patDetails.heartRate || "N/A", unit: "bpm" },
                         ];
 
+                            //Patient Wallet Information Card
+                            const remainingAmount =  walletInfo?.walletExists && walletInfo.availableBalance !== undefined
+                                ? `Rs. ${walletInfo.availableBalance}`
+                                : "N/A";
+                        
+                            const walletDetails: PatientWalletDetailItem[] = walletInfo?.walletExists
+                                ? [
+                                    { label: "Current Balance", value: `Rs. ${walletInfo.currentBalance ?? 0}` },
+                                    { label: "Hold Amount", value: `Rs. ${walletInfo.holdAmount ?? 0}` },
+                                    { label: "Total Credit", value: `Rs. ${walletInfo.totalCredit ?? 0}` },
+                                    { label: "Total Debit", value: `Rs. ${walletInfo.totalDebit ?? 0}` },
+                                    { label: "Last Updated", value: walletInfo.lastUpdated ? new Date(walletInfo.lastUpdated).toLocaleDateString('en-GB') : "N/A" },
+                                ]
+                                : [
+                                    { label: "Package", value: "N/A" },
+                                    { label: "Amount", value: "N/A" },
+                                    { label: "Discount", value: "N/A" },
+                                    { label: "Expire", value: "N/A" },
+                                ];
+
                         const medicalItems = [
                             { label: "Diagnosis", value: medInfo.diagnosis || "N/A" },
                             { label: "Disease", value: medInfo.disease || "N/A" },
@@ -278,8 +654,8 @@ export default function StartCounsellingPage() {
                             <ViewAppointment
                                 appointmentId={selectedAppointmentId ?? undefined}
                                 appointmentItems={appointmentItems}
-                                walletRemainingAmount="Rs. 0"
-                                walletDetails={undefined}
+                                walletRemainingAmount={remainingAmount}
+                                walletDetails={walletDetails}
                                 referralItems={referralItems}
                                 patientName={patientName}
                                 patientSubtitle={patientSubtitle}
@@ -322,7 +698,15 @@ export default function StartCounsellingPage() {
                                         </Badge>
                                     </div>
                                     <p className="text-xs font-semibold text-[#787E8C] tracking-wide">
-                                        UHID: <span className="text-[#262D3B] font-bold">{getpatientUhid}</span> • Diagnosis: <span className="text-[#262D3B] font-bold">{getdiagnosisSymptoms}</span>
+                                        {editPatientSubtitle ? (
+                                            <>
+                                                UHID: <span className="text-[#262D3B] font-bold">{getpatientUhid}</span> • {editPatientSubtitle}
+                                            </>
+                                        ) : (
+                                            <>
+                                                UHID: <span className="text-[#262D3B] font-bold">{getpatientUhid}</span> • Diagnosis: <span className="text-[#262D3B] font-bold">{getdiagnosisSymptoms}</span>
+                                            </>
+                                        )}
                                     </p>
                                 </div>
                             </div>
@@ -330,6 +714,8 @@ export default function StartCounsellingPage() {
                             <PageHeading title="Room Allocation" />
                         ) : isOnPaymentStep ? (
                             <PageHeading title="Admission & Payment" />
+                        ) : isOnIpdAdmissionStep ? (
+                            <PageHeading title="IPD Admission" />
                         ) : null}
 
                         {/* Right Side: Stepper Progress */}
@@ -372,11 +758,39 @@ export default function StartCounsellingPage() {
                                 </div>
                                 <span className={`text-xs font-semibold ${currentStep >= paymentStepNumber ? "text-[#0B8C00]" : "text-[#787E8C] opacity-50"}`}>Payment</span>
                             </div>
+
+                            {/* Connection bar: Payment -> IPD Admission */}
+                            <div
+                                className={`w-20 rounded-full mx-1 mt-[13px] transition-all duration-200 ${
+                                    currentStep > paymentStepNumber ? "h-1 bg-[#0B8C00]" : "h-[2px] bg-[#DFE0E2]"
+                                }`}
+                            ></div>
+
+                            {/* IPD Admission step */}
+                            <div className="flex flex-col items-center gap-1">
+                                <div
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 ${
+                                        currentStep >= ipdAdmissionStepNumber
+                                            ? "bg-[#0B8C00] text-white"
+                                            : "bg-white text-[#787E8C] border border-[#DFE0E2] opacity-50"
+                                    }`}
+                                >
+                                    {ipdAdmissionStepNumber}
+                                </div>
+                                <span
+                                    className={`text-xs font-semibold ${
+                                        currentStep >= ipdAdmissionStepNumber
+                                            ? "text-[#0B8C00]"
+                                            : "text-[#787E8C] opacity-50"
+                                    }`}
+                                >
+                                    IPD Admission
+                                </span>
+                            </div>
                         </div>
                     </div>
 
-                    {currentStep === 1 ? (
-                        /* STEP 1 - CREATE PACKAGE CONTENT */
+                    <div className={currentStep === 1 ? undefined : "hidden"}>
                         <CreatePackage
                             selectedPackageId={selectedPackageId}
                             setSelectedPackageId={setSelectedPackageId}
@@ -391,17 +805,25 @@ export default function StartCounsellingPage() {
                             admissionType={admissionType}
                             setAdmissionType={setAdmissionType}
                             onNext={() => setCurrentStep(showRoomStep ? 2 : paymentStepNumber)}
-                            onCancel={() => alert("Cancellation triggered.")}
+                            onCancel={handleDetailsStepCancel}
                             onViewPatientOverview={handleViewPatientOverview}
                             isViewPatientLoading={isViewPatientLoading}
                             onActivePackageChange={setActivePackage}
                             onFinalAmountPayableChange={setFinalAmountPayable}
                             onCounsellingMetaChange={setCounsellingMeta}
+                            onCounsellingDataChange={setCounsellingData}
+                            onAttendantDetailsChange={setAttendantDetails}
+                            onAdmissionOfferChange={setAdmissionOffer}
                             getpatientBranchId={getpatientBranchId}
+                            appointmentId={resolvedAppointmentId}
+                            branchId={resolvedBranchId}
+                            editPrefill={isEditMode ? editPrefill : null}
                         />
-                    ) : isOnRoomStep ? (
-                        /* STEP 2 - ROOM ALLOCATION CONTENT */
-                        <RoomAllocation
+                    </div>
+
+                    {showRoomStep && hasVisitedRoomStep && (
+                        <div className={isOnRoomStep ? undefined : "hidden"}>
+                            <RoomAllocation
                             activePackage={
                                 activePackage
                                     ? { ...activePackage, id: String(activePackage.id) }
@@ -417,25 +839,74 @@ export default function StartCounsellingPage() {
                                 numberOfDays,
                                 finalAmountPayable,
                             }}
-                            patientId={patientIdParam ?? undefined}
+                            patientId={isEditMode ? editPatientIdParam ?? undefined : patientIdParam ?? undefined}
+                            onConfirmAllocation={(allocation) => {
+                                setRoomAllocation({
+                                    buildingId: allocation.buildingId,
+                                    floorId: allocation.floorId,
+                                    roomId: allocation.roomId,
+                                    bedId: allocation.bedId,
+                                });
+                            }}
                             onSuccess={() => setCurrentStep(paymentStepNumber)}
-                            onCancel={() => setCurrentStep(1)}
+                            onBack={() => setCurrentStep(1)}
                         />
-                    ) : isOnPaymentStep ? (
-                        /* ADMISSION & PAYMENT CONTENT */
-                        <AdmissionPayment
+                        </div>
+                    )}
+                
+
+                    {hasVisitedPaymentStep && (
+                        <div className={isOnPaymentStep ? undefined : "hidden"}>
+                            <AdmissionPayment
                             activePackage={activePackage ?? { packageName: "", packageType: "", remark: "" }}
                             finalAmountPayable={finalAmountPayable}
                             roomRentPerDay={roomRentPerDay}
                             medicinePerDay={medicinePerDay}
                             mealsPerDay={mealsPerDay}
                             doctorFee={doctorFee}
+                            patientName={getpatientName}
+                            patientUhid={getpatientUhid}
+                            branchId={resolvedBranchId}
+                            appointmentId={resolvedAppointmentId}
+                            packageId={Number(selectedPackageId) || 0}
+                            numberOfDays={numberOfDays}
+                            offerApplied={admissionOffer.offerApplied}
+                            offerId={admissionOffer.offerId}
+                            admissionType={admissionType}
+                            patientType={counsellingData.patientType}
+                            diseaseType={counsellingData.diseaseType}
+                            originalAmount={counsellingData.originalAmount}
+                            discountAmount={counsellingData.discountAmount}
+                            netPayable={finalAmountPayable}
+                            roomAllocation={showRoomStep ? roomAllocation : null}
+                            attendantDetails={attendantDetails}
+                            requireRoomAllocation={showRoomStep}
+                            initialAdmissionDate={isEditMode ? editAdmissionDate : undefined}
+                            initialSpecialInstructions={isEditMode ? editSpecialInstructions : undefined}
+                            editPaymentAmounts={isEditMode ? editPaymentAmounts : null}
+                            isEditMode={isEditMode}
+                            editPatientId={isEditMode ? editPatientIdParam ?? undefined : undefined}
                             onNext={() => {
-                                alert("Payment completed successfully!");
+                                setCurrentStep(ipdAdmissionStepNumber);
+                                setHasVisitedIpdAdmissionStep(true);
                             }}
                             onBack={() => setCurrentStep(showRoomStep ? 2 : 1)}
                         />
-                    ) : null}
+                        </div>
+                    )}
+
+                    {hasVisitedIpdAdmissionStep && (
+                        <div className={isOnIpdAdmissionStep ? undefined : "hidden"}>
+                            <IpdAdmissionStep
+                                patientId={
+                                    isEditMode
+                                        ? Number(editAdmissionData?.patient?.id ?? 0)
+                                        : patientIdParam
+                                }
+                                onBack={() => setCurrentStep(paymentStepNumber)}
+                            />
+                        </div>
+                    )}
                 </>
             )}
             <MessageDialog

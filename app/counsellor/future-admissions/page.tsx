@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -16,8 +16,16 @@ import {
     Badge,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useGetFutureAdmissionsQuery, useSendReminderMutation } from "@/store/api/counsellorApi";
+import {
+    useGetFutureAdmissionsQuery,
+    useSendReminderMutation,
+    useLazyCheckFirstDayPaymentQuery,
+    type FutureAdmissionItem,
+} from "@/store/api/counsellorApi";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
+import FutureAdmissionProceedFlow, {
+    type FutureAdmissionProceedFlowState,
+} from "./FutureAdmissionProceedFlow";
 
 // StatCard Component specifically designed for Future Admissions
 interface StatCardProps {
@@ -112,11 +120,20 @@ export default function FutureAdmissionsPage() {
     // Modal dialogs states
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
+    const [successDialogConfig, setSuccessDialogConfig] = useState<{
+        message: ReactNode;
+        confirmText?: string;
+        cancelText?: string;
+        showCancel?: boolean;
+        onConfirm?: () => void;
+        onCancel?: () => void;
+    } | null>(null);
     const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
     const [apiErrorMessage, setApiErrorMessage] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submittingItemId, setSubmittingItemId] = useState<number | null>(null);
-    const [pendingAction, setPendingAction] = useState<{ type: "proceed" | "reminder"; item: any } | null>(null);
+    const [pendingAction, setPendingAction] = useState<{ type: "proceed" | "reminder"; item: FutureAdmissionItem } | null>(null);
+    const [proceedFlow, setProceedFlow] = useState<FutureAdmissionProceedFlowState | null>(null);
     const [isLoadingPDF, setIsLoadingPDF] = useState(false);
 
     const handleExportPDF = async () => {
@@ -141,8 +158,9 @@ export default function FutureAdmissionsPage() {
     };
 
     // Query Hook call
-    const { data: apiResponse, isLoading: isFutureLoading } = useGetFutureAdmissionsQuery(queryParams);
+    const { data: apiResponse, isLoading: isFutureLoading, refetch: refetchFutureAdmissions } = useGetFutureAdmissionsQuery(queryParams);
     const [sendReminder] = useSendReminderMutation();
+    const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
 
     const metrics = apiResponse?.data?.metrics;
     const listingData = apiResponse?.data?.listing?.data || [];
@@ -186,17 +204,36 @@ export default function FutureAdmissionsPage() {
     // Since the API returns paginated data, paginatedList is just filteredList!
     const paginatedList = filteredList;
 
-    // Handle Action Trigger: Proceed to Admission
-    const handleProceedToAdmission = async (item: any) => {
+    const handleProceedToAdmission = async (item: FutureAdmissionItem) => {
+        const paymentCheckId = item.id;
         setSubmittingItemId(item.id);
         setIsSubmitting(true);
-        // Simulate background processing API call delay
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        try {
+            const res = await checkFirstDayPayment(paymentCheckId).unwrap();
+            if (res.success) {
+                const showPaymentStep = res.data.firstDayPaymentComplete === false;
 
-        setIsSubmitting(false);
-        setSubmittingItemId(null);
-        setSuccessMessage(`Proceeded to admission successfully for ${item.patientName}!`);
-        setShowSuccessDialog(true);
+                setProceedFlow({
+                    item,
+                    paymentData: res.data,
+                    showPaymentStep,
+                    currentStep: 1,
+                });
+            } else {
+                setApiErrorMessage(res.message || "Failed to check payment status.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: unknown) {
+            console.error("Error checking first day payment:", err);
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setApiErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while starting admission."
+            );
+            setShowApiErrorDialog(true);
+        } finally {
+            setIsSubmitting(false);
+            setSubmittingItemId(null);
+        }
     };
 
     // Handle Action Trigger: Send Reminder
@@ -295,29 +332,42 @@ export default function FutureAdmissionsPage() {
             </span>
         );
 
-        // Actions: Proceed to Admission (filled green) / Send Reminder (outlined green)
-        const actions = item.bookingStatus === "Confirmed" ? (
-            <Button
-                variant="primary"
-                size="xsmall"
-                onClick={() => setPendingAction({ type: "proceed", item })}
-                isLoading={isSubmitting && submittingItemId === item.id}
-                disabled={isSubmitting && submittingItemId !== item.id}
-                className="whitespace-nowrap "
-            >
-                Proceed to Admission
-            </Button>
-        ) : (
-            <Button
-                variant="outline"
-                size="xsmall"
-                onClick={() => setPendingAction({ type: "reminder", item })}
-                isLoading={isSubmitting && submittingItemId === item.id}
-                disabled={isSubmitting && submittingItemId !== item.id}
-                className="whitespace-nowrap"
-            >
-                Send Reminder
-            </Button>
+        // Actions: Edit + Proceed to Admission / Send Reminder
+        const actions = (
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    // className="flex h-11 items-center gap-2 rounded-full border border-[#0B8C00] px-4 py-0  text-sm font-semibold text-[#0B8C00] shadow-[0px_20px_40px_rgba(34,56,43,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-[32px] items-center gap-2 rounded-full border border-[#0B8C00] px-4 text-sm font-semibold text-[#0B8C00] shadow-[0px_20px_40px_rgba(34,56,43,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => router.push(`/counsellor/start-counselling?editpatientID=${item.id}`)}
+                >
+                    <Image src="/icons/EditPencil.svg" alt="Edit" width={14} height={14} />
+                    Edit
+                </button>
+                {item.bookingStatus === "Confirmed" ? (
+                    <Button
+                        variant="primary"
+                        size="xsmall"
+                        onClick={() => setPendingAction({ type: "proceed", item })}
+                        isLoading={isSubmitting && submittingItemId === item.id}
+                        disabled={isSubmitting && submittingItemId !== item.id}
+                        className="whitespace-nowrap"
+                    >
+                        Proceed to Admission
+                    </Button>
+                ) : (
+                    <Button
+                        variant="outline"
+                        size="xsmall"
+                        onClick={() => setPendingAction({ type: "reminder", item })}
+                        isLoading={isSubmitting && submittingItemId === item.id}
+                        disabled={isSubmitting && submittingItemId !== item.id}
+                        className="whitespace-nowrap"
+                    >
+                        Send Reminder
+                    </Button>
+                )}
+            </div>
         );
 
         return [
@@ -377,6 +427,23 @@ export default function FutureAdmissionsPage() {
 
     return (
         <AppShell>
+            {proceedFlow ? (
+                <FutureAdmissionProceedFlow
+                    flow={proceedFlow}
+                    onClose={() => setProceedFlow(null)}
+                    onStepChange={(step) =>
+                        setProceedFlow((prev) => (prev ? { ...prev, currentStep: step } : prev))
+                    }
+                    onComplete={() => {
+                        setProceedFlow(null);
+                        try {
+                            void refetchFutureAdmissions();
+                        } catch (e) {
+                            console.warn("Failed to refetch future admissions:", e);
+                        }
+                    }}
+                />
+            ) : (
             <div className="flex flex-col gap-6">
                 {/* Page Heading & Export Button */}
                 <div className="flex items-center justify-between">
@@ -481,19 +548,40 @@ export default function FutureAdmissionsPage() {
                     ]}
                 />
             </div>
+            )}
 
             {/* Action Confirmation Dialog */}
             <MessageDialog
                 open={!!pendingAction}
                 onClose={() => { if (!isSubmitting) setPendingAction(null); }}
                 icon="/icons/questionMark.svg"
-                iconBgColor="#FFF8E1"
+                iconBgColor="transparent"
                 message={
-                    pendingAction
-                        ? pendingAction.type === "proceed"
-                            ? `Are you sure you want to proceed to admission for ${pendingAction.item.patientName}?`
-                            : `Are you sure you want to send an admission reminder to ${pendingAction.item.patientName}?`
-                        : ""
+                    pendingAction ? (
+                        pendingAction.type === "proceed" ? (
+                            <div className="flex flex-col items-center text-center">
+                                <span className="text-lg font-bold text-[#1E293B] mb-1">Confirm Admission</span>
+                                <span className="text-sm text-[#475569] max-w-[290px]">
+                                    Are you sure you want to proceed with the admission process for{" "}
+                                    <strong className="text-[#0B8C00]">
+                                        {pendingAction.item.patientName || "this patient"}
+                                    </strong>
+                                    ?
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center text-center">
+                                <span className="text-lg font-bold text-[#1E293B] mb-1">Send Reminder</span>
+                                <span className="text-sm text-[#475569] max-w-[290px]">
+                                    Are you sure you want to send an admission reminder to{" "}
+                                    <strong className="text-[#0B8C00]">
+                                        {pendingAction.item.patientName || "this patient"}
+                                    </strong>
+                                    ?
+                                </span>
+                            </div>
+                        )
+                    ) : null
                 }
                 confirmText="Confirm"
                 cancelText="Cancel"
@@ -509,6 +597,25 @@ export default function FutureAdmissionsPage() {
                     setPendingAction(null);
                 }}
                 onCancel={() => { if (!isSubmitting) setPendingAction(null); }}
+            />
+
+            <MessageDialog
+                open={!!successDialogConfig}
+                onClose={() => setSuccessDialogConfig(null)}
+                icon="/icons/SuccessCheck.svg"
+                iconBgColor="#E8F5E9"
+                message={successDialogConfig?.message || ""}
+                confirmText={successDialogConfig?.confirmText || "OK"}
+                cancelText={successDialogConfig?.cancelText || "Close"}
+                showCancel={successDialogConfig?.showCancel ?? false}
+                onConfirm={() => {
+                    successDialogConfig?.onConfirm?.();
+                    setSuccessDialogConfig(null);
+                }}
+                onCancel={() => {
+                    successDialogConfig?.onCancel?.();
+                    setSuccessDialogConfig(null);
+                }}
             />
 
             {/* Standard Feedback Dialogs */}

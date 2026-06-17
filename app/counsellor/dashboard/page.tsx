@@ -583,7 +583,8 @@ export default function CounsellorDashboardPage() {
 
           if (activeCard === "referred") {
             const uhid = (
-              <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
+              <span className="text-[#0B8C00] font-medium cursor-pointer">
+                  {/* //  <span className="text-[#434956] font-medium"> */}
                 {item.patientUhid || "N/A"}
               </span>
             );
@@ -592,7 +593,14 @@ export default function CounsellorDashboardPage() {
                 variant="primary"
                 size="xsmall"
                 className="whitespace-nowrap"
-                onClick={() => router.push(`/counsellor/start-counselling?patientID=${item.patientId ?? item.id}`)}
+                onClick={() => {
+                  const patientId = item.patientId ?? item.id;
+                  const appointmentId = item.appointmentId;
+                  const query = appointmentId != null && appointmentId !== ""
+                    ? `patientID=${patientId}&appointmentID=${appointmentId}`
+                    : `patientID=${patientId}`;
+                  router.push(`/counsellor/start-counselling?${query}`);
+                }}
               >
                 Start Counselling
               </Button>
