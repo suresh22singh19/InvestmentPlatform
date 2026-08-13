@@ -14,10 +14,74 @@ interface TelegramProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Checks whether the current window context is a real Telegram Mini App.
+ *
+ * Key insight: telegram-web-app.js creates window.Telegram.WebApp in ALL browsers
+ * (Chrome, Firefox, Safari, Edge) but with dummy/empty values:
+ *   - initData      = ""           (empty — Chrome)
+ *   - initDataUnsafe = {}          (empty — Chrome)
+ *   - platform      = "unknown"    (Chrome)
+ *
+ * A REAL Telegram Mini App provides at minimum ONE of:
+ *   1. Non-empty initData string (Telegram-signed)
+ *   2. Non-empty initDataUnsafe with user/auth data
+ *   3. tgWebAppData in URL hash/search (injected by Telegram launcher)
+ *   4. platform !== "unknown"  (android/ios/tdesktop/macos/weba/webk/webz)
+ *   5. window.TelegramWebviewProxy (native mobile Telegram WebView injection)
+ */
+function detectTelegramEnvironment(): { isTelegram: boolean; tg: TelegramWebApp | null } {
+  const win = window as unknown as {
+    Telegram?: { WebApp?: TelegramWebApp };
+    TelegramWebviewProxy?: unknown;
+  };
+
+  const tg = win.Telegram?.WebApp ?? null;
+  const hash = window.location.hash;
+  const search = window.location.search;
+
+  // --- Signals that ONLY appear inside a real Telegram Mini App ---
+  const hasInitData = typeof tg?.initData === 'string' && tg.initData.trim().length > 0;
+
+  const hasInitDataUnsafe =
+    tg?.initDataUnsafe != null &&
+    typeof tg.initDataUnsafe === 'object' &&
+    Object.keys(tg.initDataUnsafe).length > 0;
+
+  const hasTgUrlParam =
+    hash.includes('tgWebAppData') ||
+    hash.includes('tgWebAppVersion') ||
+    search.includes('tgWebAppData') ||
+    search.includes('tgWebAppVersion');
+
+  const hasRealPlatform =
+    typeof tg?.platform === 'string' &&
+    tg.platform.length > 0 &&
+    tg.platform !== 'unknown';
+
+  const hasNativeProxy = Boolean(win.TelegramWebviewProxy);
+
+  // Dev-only bypass: open URL with ?mock_telegram=true to test the app in browser
+  const isMockDev =
+    process.env.NODE_ENV === 'development' &&
+    new URLSearchParams(search).get('mock_telegram') === 'true';
+
+  const isTelegram = Boolean(
+    isMockDev ||
+    hasInitData ||
+    hasInitDataUnsafe ||
+    hasTgUrlParam ||
+    hasRealPlatform ||
+    hasNativeProxy
+  );
+
+  return { isTelegram, tg };
+}
+
 export const TelegramProvider: React.FC<TelegramProviderProps> = ({ children }) => {
   const [state, setState] = useState<TelegramContextType>({
     isTelegram: false,
-    isChecking: true,
+    isChecking: true,   // Start in checking state — guard shows spinner, app never flashes
     isReady: false,
     telegramWebApp: null,
     initData: '',
@@ -28,77 +92,39 @@ export const TelegramProvider: React.FC<TelegramProviderProps> = ({ children }) 
   });
 
   useEffect(() => {
-    // Only execute detection on client side
-    if (typeof window === 'undefined') return;
+    // telegram-web-app.js is loaded with strategy="beforeInteractive" which means
+    // it executes before any React hydration. A short delay of 150ms is enough
+    // to guarantee window.Telegram.WebApp is fully populated before we read it.
+    const DETECTION_DELAY_MS = 150;
 
-    const checkTelegramEnvironment = () => {
-      const windowWithTelegram = window as unknown as {
-        Telegram?: { WebApp?: TelegramWebApp };
-      };
-      const tg = windowWithTelegram.Telegram?.WebApp;
-      const hash = window.location.hash || '';
-      const search = window.location.search || '';
+    const timer = setTimeout(() => {
+      const { isTelegram, tg } = detectTelegramEnvironment();
 
-      // Development mock bypass check (disabled in production unless process.env.NEXT_PUBLIC_ALLOW_BROWSER_DEV === 'true')
-      const isDevMode = process.env.NODE_ENV === 'development';
-      const urlParams = new URLSearchParams(search);
-      const isMockTelegram = isDevMode && urlParams.get('mock_telegram') === 'true';
+      if (isTelegram && tg) {
+        // Initialize Telegram SDK lifecycle
+        try { tg.ready?.(); } catch { /* noop */ }
+        try { tg.expand?.(); } catch { /* noop */ }
 
-      // Telegram Mini App detection rules:
-      // When opened inside Telegram Mini App, Telegram injects initData, platform name, or URL parameters like tgWebAppData.
-      // In normal desktop browsers (Chrome/Firefox), even if script is loaded, initData is empty and platform is "unknown".
-      const hasInitData = Boolean(tg?.initData && tg.initData.trim().length > 0);
-      const hasInitDataUnsafe = Boolean(tg?.initDataUnsafe && Object.keys(tg.initDataUnsafe).length > 0);
-      const hasTelegramUrlParams = hash.includes('tgWebAppData') || search.includes('tgWebAppData');
-      const isKnownTelegramPlatform = Boolean(
-        tg?.platform && tg.platform !== 'unknown' && tg.platform.length > 0
-      );
-
-      const isTelegramEnvironment = Boolean(
-        isMockTelegram ||
-        hasInitData ||
-        hasInitDataUnsafe ||
-        hasTelegramUrlParams ||
-        isKnownTelegramPlatform
-      );
-
-      if (isTelegramEnvironment && tg) {
-        try {
-          // Initialize Telegram WebApp SDK lifecycle methods safely
-          if (typeof tg.ready === 'function') {
-            tg.ready();
-          }
-          if (typeof tg.expand === 'function') {
-            tg.expand();
-          }
-        } catch (err) {
-          console.warn('[TelegramProvider] Error initializing Telegram WebApp SDK:', err);
-        }
-
-        const rawInitData = tg.initData || '';
-        const initDataUnsafe = (tg.initDataUnsafe || {}) as TelegramInitDataUnsafe;
-        const currentUser: TelegramUser | null = initDataUnsafe.user || null;
-        const colorScheme = (tg.colorScheme as 'light' | 'dark') || 'light';
-        const themeParams = (tg.themeParams || {}) as TelegramThemeParams;
+        const initDataUnsafe = (tg.initDataUnsafe ?? {}) as TelegramInitDataUnsafe;
 
         setState({
           isTelegram: true,
           isChecking: false,
           isReady: true,
           telegramWebApp: tg,
-          initData: rawInitData,
+          initData: tg.initData ?? '',
           initDataUnsafe,
-          user: currentUser,
-          colorScheme,
-          themeParams,
+          user: (initDataUnsafe.user as TelegramUser) ?? null,
+          colorScheme: (tg.colorScheme as 'light' | 'dark') ?? 'light',
+          themeParams: (tg.themeParams ?? {}) as TelegramThemeParams,
         });
       } else {
-        // Normal web browser or non-Telegram environment detected
+        // Standard browser (Chrome / Firefox / Safari / Edge) → block access
         setState({
           isTelegram: false,
           isChecking: false,
           isReady: false,
-          telegramWebApp: tg || null,
+          telegramWebApp: tg,
           initData: '',
           initDataUnsafe: {},
           user: null,
@@ -106,27 +132,9 @@ export const TelegramProvider: React.FC<TelegramProviderProps> = ({ children }) 
           themeParams: {},
         });
       }
-    };
+    }, DETECTION_DELAY_MS);
 
-    // Check immediately and also after script finishes loading if delayed
-    checkTelegramEnvironment();
-
-    // If script is loaded dynamically or delayed, re-verify on load
-    const handleScriptLoad = () => {
-      checkTelegramEnvironment();
-    };
-
-    window.addEventListener('TelegramWebAppReady', handleScriptLoad);
-
-    // Fallback timer to finish checking if environment detection is slow
-    const timer = setTimeout(() => {
-      checkTelegramEnvironment();
-    }, 300);
-
-    return () => {
-      window.removeEventListener('TelegramWebAppReady', handleScriptLoad);
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   return (
