@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -10,8 +10,7 @@ import {
     FormSelectField,
     TableListingCard,
 } from "@/components/ui";
-import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
 import { useGetRoomListQuery, useGetRoomBedDetailQuery } from "@/store/api/counsellorApi";
 import { useGetBuildingDropdownQuery, useGetFloorDropdownQuery, useGetRoomTypeDropdownQuery } from "@/store/api/commonApi";
 
@@ -20,7 +19,10 @@ interface StatCardProps {
     value: string | number;
     iconSrc: string;
 }
-
+const capitalizeFirstLetter = (str:string) => {
+  if (!str) return "N/A";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
 function ManageRoomStatCard({ label, value, iconSrc }: StatCardProps) {
     return (
         <div className="rounded-[20px] p-5 bg-white flex justify-between items-center transition-all duration-200 hover:shadow-md select-none">
@@ -59,11 +61,12 @@ interface RoomItem {
 
 interface RoomCardProps {
     room: RoomItem;
+    serialNumber: number;
     isSelected: boolean;
     onClick: () => void;
 }
 
-function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
+function RoomCard({ room, serialNumber, isSelected, onClick }: RoomCardProps) {
     const borderClass = isSelected
         ? "border-[#0B8C00] ring-2 ring-[#0B8C00]/10"
         : "border-[#DFE0E2] hover:border-[#CBD5E1]";
@@ -71,6 +74,7 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
     const statusLower = room.status?.toLowerCase() || "";
     const isAvailable = statusLower === "available" || statusLower === "vacant";
     const isOccupied = statusLower === "occupied" || statusLower === "fully occupied";
+    const isNoBed = statusLower === "No Beds Available" || statusLower === "no beds available";
     const isPartiallyOccupied = statusLower === "partially occupied";
     const isReserved = statusLower === "reserved";
     const isUnderCleaning = statusLower === "under cleaning" || statusLower === "under maintenance" || statusLower === "not available";
@@ -85,17 +89,20 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
             <div className="p-5 flex justify-between items-center border-b border-[#DFE0E2] gap-2 h-[72px]">
                 <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-[#F5F6F8] text-[#787E8C] font-semibold text-sm flex items-center justify-center">
-                        {room.id}
+                        {serialNumber}
                     </span>
                     <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-[#787E8C] uppercase tracking-wider">Room Number</span>
-                        <span className="font-semibold text-sm text-[#262D3B]">{room.roomNumber}</span>
+                        <span className="text-[12px] font-normal text-[#525763] tracking-wider">Room Number</span>
+                        <span className="font-semibold  text-[14px] text-[#434956] text-base mt-0.5">{room.roomNumber}</span>
                     </div>
                 </div>
 
                 {/* Status Badges */}
                 {isAvailable && (
                     <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#0B8C00]">Available</Badge>
+                )}
+                  {isNoBed && (
+                    <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#787E8C]">No Beds Available</Badge>
                 )}
                 {isOccupied && (
                     <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#EF444433] text-[#EF4444]">Fully Occupied</Badge>
@@ -118,26 +125,26 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
             <div className="p-5 border-b border-[#DFE0E2] text-xs leading-normal flex flex-col justify-center h-[90px]">
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Branch</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate" title={room.branch || "N/A"}>
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Branch</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate" title={room.branch || "N/A"}>
                             {room.branch || "N/A"}
                         </span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Room Type</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate">
-                            {room.roomType || "N/A"}
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Room Type</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate">
+                            {capitalizeFirstLetter(room.roomType || "N/A")}
                         </span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Building</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate" title={room.building || "N/A"}>
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Building</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate" title={room.building || "N/A"}>
                             {room.building || "N/A"}
                         </span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Floor</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate">
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Floor</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate">
                             {room.floor || "N/A"}
                         </span>
                     </div>
@@ -147,18 +154,18 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
             {/* 3. Bottom Row (Footer / Action) */}
             <div className="p-5 flex items-center justify-between text-xs h-[76px] bg-[#FAFBFD] rounded-b-[20px]">
                 <div className="flex flex-col gap-0.5">
-                    <span className="text-[#787E8C] font-semibold text-[9px] uppercase tracking-wider">Available Beds</span>
+                    <span className="text-[12px] text-[#787E8C] font-normal text-[9px] tracking-wider">Available Beds</span>
                     <span className="font-bold text-[#0B8C00] text-xs">
                         {room.availableBeds} / {room.totalBeds} Beds
                     </span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                    <span className={`font-semibold text-xs ${isSelected ? "text-[#0B8C00]" : "text-[#787E8C]"}`}>
+                    <span className={`font-normal text-xs ${isSelected ? "text-[#0B8C00]" : "text-[#787E8C]"}`}>
                         {isSelected ? "Selected" : "Select"}
                     </span>
                     {isSelected ? (
-                        <span className="w-5 h-5 rounded-full border border-[#0B8C00] text-[#0B8C00] font-semibold text-[10px] flex items-center justify-center bg-[#E3EEE1]">
+                        <span className="w-5 h-5 rounded-full border border-[#0B8C00] text-[#0B8C00] font-normal text-[10px] flex items-center justify-center bg-[#E3EEE1]">
                             ✓
                         </span>
                     ) : (
@@ -260,16 +267,29 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
 }
 
 export default function ManageRoomPage() {
-    const selectedBranch = useAppSelector(selectSelectedBranch);
-    const userBranchId = useAppSelector(selectUserBranchId);
-    const branchId = selectedBranch?.id || userBranchId || 1;
+    const {
+        selectedBranchFilter: selectedBranch,
+        setSelectedBranchFilter: setSelectedBranch,
+        branchFilterOptions: hookBranchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        resolvedFilterBranchId,
+    } = useCounsellorResolvedBranchId();
+
+    const branchId = resolvedFilterBranchId ?? 0;
 
     const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
     const [selectedBed, setSelectedBed] = useState<string | null>(null);
 
     // Dynamic dropdown hooks from common API
-    const { data: buildingData } = useGetBuildingDropdownQuery({ branchId });
-    const { data: floorData } = useGetFloorDropdownQuery({ branchId });
+    const { data: buildingData } = useGetBuildingDropdownQuery(
+        { branchId },
+        { skip: !branchId }
+    );
+    const { data: floorData } = useGetFloorDropdownQuery(
+        { branchId },
+        { skip: !branchId }
+    );
     const { data: roomTypeData } = useGetRoomTypeDropdownQuery();
 
     // Filter states
@@ -279,7 +299,17 @@ export default function ManageRoomPage() {
     const [selectedStatus, setSelectedStatus] = useState("");
 
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [itemsPerPage, setItemsPerPage] = useState(12);
+
+    useEffect(() => {
+        setSelectedBuilding("");
+        setSelectedFloor("");
+        setSelectedRoomType("");
+        setSelectedStatus("");
+        setSelectedRoomId(null);
+        setSelectedBed(null);
+        setCurrentPage(1);
+    }, [selectedBranch]);
 
     const getMappedRoomStatus = (status: string) => {
         if (!status) return undefined;
@@ -318,7 +348,7 @@ export default function ManageRoomPage() {
 
     // Rooms list query
     const roomParams = {
-        branchId,
+        branchId: branchId || undefined,
         buildingId: selectedBuilding || undefined,
         floorId: selectedFloor || undefined,
         roomType: selectedRoomType || undefined,
@@ -327,7 +357,9 @@ export default function ManageRoomPage() {
         limit: itemsPerPage,
     };
 
-    const { data: roomListRes, isLoading: isRoomsLoading } = useGetRoomListQuery(roomParams);
+    const { data: roomListRes, isLoading: isRoomsLoading } = useGetRoomListQuery(roomParams, {
+        skip: !branchId,
+    });
 
     const stats = roomListRes?.data?.stats || {
         totalCapacity: 0,
@@ -367,6 +399,98 @@ export default function ManageRoomPage() {
         return null;
     }, [selectedRoomId, roomsData, bedDetailRes]);
 
+    const roomFilters = (
+        <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2">
+            <div className="min-w-0 flex-1">
+                <FormSelectField
+                    label="Branch"
+                    hideLabel
+                    options={hookBranchFilterOptions}
+                    placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                    mode="single"
+                    background="normal"
+                    value={selectedBranch}
+                    onChange={(val) => {
+                        const v = typeof val === "string" ? val : "";
+                        setSelectedBranch(v);
+                        setCurrentPage(1);
+                    }}
+                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                />
+            </div>
+            <div className="min-w-0 flex-1">
+                <FormSelectField
+                    label="Building"
+                    hideLabel
+                    options={buildingOptions}
+                    placeholder="Building"
+                    mode="single"
+                    background="normal"
+                    value={selectedBuilding}
+                    onChange={(val) => {
+                        const v = typeof val === "string" ? val : "";
+                        setSelectedBuilding(v);
+                        setCurrentPage(1);
+                    }}
+                />
+            </div>
+            <div className="min-w-0 flex-1">
+                <FormSelectField
+                    label="Floor"
+                    hideLabel
+                    options={floorOptions}
+                    placeholder="Floor"
+                    mode="single"
+                    background="normal"
+                    value={selectedFloor}
+                    onChange={(val) => {
+                        const v = typeof val === "string" ? val : "";
+                        setSelectedFloor(v);
+                        setCurrentPage(1);
+                    }}
+                />
+            </div>
+            <div className="min-w-0 flex-1">
+                <FormSelectField
+                    label="Room Type"
+                    hideLabel
+                    options={roomTypeOptions}
+                    placeholder="Room Type"
+                    mode="single"
+                    background="normal"
+                    value={selectedRoomType}
+                    onChange={(val) => {
+                        const v = typeof val === "string" ? val : "";
+                        setSelectedRoomType(v);
+                        setCurrentPage(1);
+                    }}
+                />
+            </div>
+            <div className="min-w-0 flex-1">
+                <FormSelectField
+                    label="Room Status"
+                    hideLabel
+                    options={[
+                        { label: "All", value: "" },
+                        { label: "Vacant / Available", value: "vacant" },
+                        { label: "Fully Occupied", value: "fully occupied" },
+                        { label: "Partially Occupied", value: "partially occupied" },
+                        { label: "Reserved", value: "reserved" },
+                        { label: "Under Maintenance", value: "under maintenance" },
+                    ]}
+                    placeholder="Room Status"
+                    mode="single"
+                    background="normal"
+                    value={selectedStatus}
+                    onChange={(val) => {
+                        setSelectedStatus(String(val));
+                        setCurrentPage(1);
+                    }}
+                />
+            </div>
+        </div>
+    );
+
     return (
         <AppShell>
             <div className="flex flex-col gap-6 select-none">
@@ -391,92 +515,19 @@ export default function ManageRoomPage() {
                 </div>
 
                 {/* Main Split Grid Section */}
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+                <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
                     {/* Left Card: Rooms Grid Card (col-span-2 when room selected, col-span-3 otherwise) */}
                     <TableListingCard
-                        className={selectedRoomId ? "xl:col-span-2 !mb-0" : "xl:col-span-3 !mb-0"}
+                        className={
+                            selectedRoomId
+                                ? "min-w-0 xl:col-span-2 !mb-0"
+                                : "min-w-0 xl:col-span-3 !mb-0"
+                        }
                         sections={[
                             {
                                 id: "rooms-list",
                                 title: "Rooms",
-                                titleRightContent: (
-                                    <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
-                                        {/* Dynamic Building Selector */}
-                                        <div className="w-[240px] shrink-0">
-                                            <FormSelectField
-                                                label="Building"
-                                                hideLabel
-                                                options={buildingOptions}
-                                                placeholder="Building"
-                                                mode="single"
-                                                background="normal"
-                                                value={selectedBuilding}
-                                                onChange={(val) => {
-                                                    const v = typeof val === "string" ? val : "";
-                                                    setSelectedBuilding(v);
-                                                    setCurrentPage(1);
-                                                }}
-                                            />
-                                        </div>
-                                        {/* Dynamic Floor Selector */}
-                                        <div className="w-[240px] shrink-0">
-                                            <FormSelectField
-                                                label="Floor"
-                                                hideLabel
-                                                options={floorOptions}
-                                                placeholder="Floor"
-                                                mode="single"
-                                                background="normal"
-                                                value={selectedFloor}
-                                                onChange={(val) => {
-                                                    const v = typeof val === "string" ? val : "";
-                                                    setSelectedFloor(v);
-                                                    setCurrentPage(1);
-                                                }}
-                                            />
-                                        </div>
-                                        {/* Room Type Selector */}
-                                        <div className="w-[240px] shrink-0">
-                                            <FormSelectField
-                                                label="Room Type"
-                                                hideLabel
-                                                options={roomTypeOptions}
-                                                placeholder="Room Type"
-                                                mode="single"
-                                                background="normal"
-                                                value={selectedRoomType}
-                                                onChange={(val) => {
-                                                    const v = typeof val === "string" ? val : "";
-                                                    setSelectedRoomType(v);
-                                                    setCurrentPage(1);
-                                                }}
-                                            />
-                                        </div>
-                                        {/* Room Status Selector */}
-                                        <div className="w-[240px] shrink-0">
-                                            <FormSelectField
-                                                label="Room Status"
-                                                hideLabel
-                                                options={[
-                                                    { label: "All", value: "" },
-                                                    { label: "Vacant / Available", value: "vacant" },
-                                                    { label: "Fully Occupied", value: "fully occupied" },
-                                                    { label: "Partially Occupied", value: "partially occupied" },
-                                                    { label: "Reserved", value: "reserved" },
-                                                    { label: "Under Maintenance", value: "under maintenance" }
-                                                ]}
-                                                placeholder="Room Status"
-                                                mode="single"
-                                                background="normal"
-                                                value={selectedStatus}
-                                                onChange={(val) => {
-                                                    setSelectedStatus(String(val));
-                                                    setCurrentPage(1);
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                ),
+                                titleRightContent: roomFilters,
                                 customContent: isRoomsLoading ? (
                                     <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
                                         Loading Rooms...
@@ -486,14 +537,21 @@ export default function ManageRoomPage() {
                                         No rooms found matching filters.
                                     </div>
                                 ) : (
-                                    <div className={`grid grid-cols-1 md:grid-cols-2 ${selectedRoomId ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-6 pb-2`}>
-                                        {roomsData.map((room) => (
+                                    <div
+                                        className={`grid grid-cols-1 gap-6 pb-2 md:grid-cols-2 ${
+                                            selectedRoomId ? "lg:grid-cols-2 xl:grid-cols-3" : "lg:grid-cols-3 xl:grid-cols-4"
+                                        }`}
+                                    >
+                                        {roomsData.map((room, index) => (
                                             <RoomCard
                                                 key={room.id}
                                                 room={room}
+                                                serialNumber={(currentPage - 1) * itemsPerPage + index + 1}
                                                 isSelected={selectedRoomId === room.id}
                                                 onClick={() => {
-                                                    setSelectedRoomId(room.id === selectedRoomId ? null : room.id);
+                                                    setSelectedRoomId(
+                                                        room.id === selectedRoomId ? null : room.id
+                                                    );
                                                     setSelectedBed(null);
                                                 }}
                                             />
@@ -506,16 +564,16 @@ export default function ManageRoomPage() {
                                     itemsPerPage: itemsPerPage,
                                     onPageChange: (page) => setCurrentPage(page),
                                     onItemsPerPageChange: (size) => setItemsPerPage(size),
-                                    itemsPerPageOptions: [10, 20, 50, 100],
-                                }
-                            }
+                                    itemsPerPageOptions: [12, 30, 50, 100],
+                                },
+                            },
                         ]}
                     />
 
 
                     {/* Right Card: Bed Allocation Sidebar (only rendered when a Room is selected) */}
                     {selectedRoom && (
-                        <div className="xl:col-span-1 bg-white p-6 rounded-[24px] border border-[#DFE0E2] shadow-sm flex flex-col gap-6 transition-all duration-200">
+                        <div className="flex min-w-0 flex-col gap-6 rounded-[24px] border border-[#DFE0E2] bg-white p-6 shadow-sm transition-all duration-200 xl:col-span-1">
                             {/* Header details */}
                             <div className="flex justify-between items-start pb-0">
                                 <div className="flex flex-col gap-1">
@@ -585,7 +643,7 @@ export default function ManageRoomPage() {
                                                             setSelectedBed(bedIdStr);
                                                         }
                                                     } else {
-                                                        alert(`Bed ${bed.bedNumber} is currently ${statusLower === "occupied" || statusLower === "fully occupied" ? "Occupied by " + bed.patientName : "Reserved"}.`);
+                                                        // alert(`Bed ${bed.bedNumber} is currently ${statusLower === "occupied" || statusLower === "fully occupied" ? "Occupied by " + bed.patientName : "Reserved"}.`);
                                                     }
                                                 }}
                                             />

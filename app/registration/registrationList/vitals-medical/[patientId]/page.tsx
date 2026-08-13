@@ -26,6 +26,7 @@ export default function VitalsMedicalInfoPage() {
     // Get gender and patient name from URL query parameters
     const genderFromUrl = searchParams?.get("gender");
     const patientNameFromUrl = searchParams?.get("patientName");
+    const patientTypeFromUrl = searchParams?.get("patientType");
     
     const [currentStep, setCurrentStep] = useState(0); // 0 = Vitals, 1 = Medical Info
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -33,11 +34,6 @@ export default function VitalsMedicalInfoPage() {
     const [errorMessage, setErrorMessage] = useState("");
     const [showPatientHistoryDialog, setShowPatientHistoryDialog] = useState(false);
     const [patientName, setPatientName] = useState(patientNameFromUrl || "");
-
-    const vitalsMedicalSteps = [
-        { number: "Step 01", label: `Vitals` },
-        { number: "Step 02", label: "Medical" },
-    ];
 
     // Get current user ID for updatedBy
     const userId = useSelector((state: RootState) => selectUserId(state));
@@ -50,6 +46,28 @@ export default function VitalsMedicalInfoPage() {
         },
         { skip: !appointmentId }
     );
+
+    const isDaycare = useMemo(() => {
+        const rawType = (
+            patientTypeFromUrl ||
+            appointmentData?.data?.patientType ||
+            appointmentData?.data?.registration?.patientType ||
+            (appointmentData?.data as any)?.patient_type ||
+            (appointmentData?.data?.registration as any)?.patient_type ||
+            ""
+        ).toString().toLowerCase().trim();
+        return rawType === "daycare";
+    }, [patientTypeFromUrl, appointmentData]);
+
+    const vitalsMedicalSteps = useMemo(() => {
+        if (isDaycare) {
+            return [{ number: "Step 01", label: "Vitals" }];
+        }
+        return [
+            { number: "Step 01", label: "Vitals" },
+            { number: "Step 02", label: "Medical" },
+        ];
+    }, [isDaycare]);
 
     const vitalsDietListBranchId = useMemo(() => {
         const bid = appointmentData?.data?.branchId;
@@ -251,7 +269,9 @@ export default function VitalsMedicalInfoPage() {
     };
 
     const handleNextStep = () => {
-        if (currentStep < vitalsMedicalSteps.length - 1) {
+        if (isDaycare) {
+            void handleFinalSubmit();
+        } else if (currentStep < vitalsMedicalSteps.length - 1) {
             setCurrentStep(currentStep + 1);
         }
     };
@@ -443,6 +463,7 @@ export default function VitalsMedicalInfoPage() {
                             onBack={handleBackSteps}
                             showBackButton={false}
                             branchId={vitalsDietListBranchId}
+                            submitButtonText={isDaycare ? "Save" : "Save & Next"}
                         />
                     )}
 
@@ -457,6 +478,7 @@ export default function VitalsMedicalInfoPage() {
                             }}
                             customSuccessMessage="Completed Vitals & Medical Information!"
                             showInternalSuccessDialog={false}
+                            isSubmitting={isSubmitting}
                         />
                     )}
                 </div>

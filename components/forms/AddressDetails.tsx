@@ -42,6 +42,7 @@ interface AddressDetailsProps {
   onChange: (field: keyof AddressFormData, value: string) => void;
   onBlur?: (field: keyof AddressFormData) => void;
   /** Prefix for `data-field` attributes (e.g. `address.` → `address.pinCode`) when multiple address blocks exist on one page. */
+ designedBycounsellormodule?:Boolean;
   dataFieldPrefix?: string;
   /** When "Foreigner" or "Nepal", show non-India address fields (ZIP/Postal Code, Address Line 1/2). When "Indian", show India fields (Pin Code, Tehsil, Post Office, Address). */
   nationality?: string; // "Indian" | "Foreigner" | "Nepal"
@@ -69,6 +70,7 @@ export default function AddressDetails({
   formData,
   onChange,
   onBlur,
+  designedBycounsellormodule,
   dataFieldPrefix = "",
   nationality,
   title = "Address Details",
@@ -1011,9 +1013,15 @@ export default function AddressDetails({
     if (readOnly) return;
     onChange("city", sanitizePatientNameStyleInput(e.target.value));
   };
-
+// designedBycounsellormodule
   return (
-    <div className="space-y-6 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]">
+        <div
+          className={`${
+            designedBycounsellormodule
+              ? "space-y-6 rounded-[16px] bg-transparent p-0"
+              : "space-y-6 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]"
+          }`}
+        >
       <h2 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center">
         {iconSrc && <Image src={iconSrc} alt={iconAlt} width={20} height={20} />}
         {title}
@@ -1065,10 +1073,8 @@ export default function AddressDetails({
             onChange={handleCountryChange}
             onBlur={() => onBlur?.("country")}
             disabled={countriesLoading || readOnly}
+            error={errors?.country}
           />
-          {errors?.country && (
-            <p className="mt-1 text-xs text-[#F6776E]">{errors.country}</p>
-          )}
         </div>
 
         {/* Show Pin Code only when India (countryId: 6) is selected */}
@@ -1206,10 +1212,8 @@ export default function AddressDetails({
                 onChange={handleStateChange}
                 onBlur={() => onBlur?.("state")}
                 disabled={statesLoading || !formData.country || readOnly}
+                error={errors?.state}
               />
-              {errors?.state && (
-                <p className="mt-1 text-xs text-[#F6776E]">{errors.state}</p>
-              )}
             </>
           ) : (
             <FormInputField
@@ -1257,10 +1261,8 @@ export default function AddressDetails({
                 onChange={handleCityChange}
                 onBlur={() => onBlur?.("city")}
                 disabled={citiesLoading || !formData.state || readOnly}
+                error={errors?.city}
               />
-              {errors?.city && (
-                <p className="mt-1 text-xs text-[#F6776E]">{errors.city}</p>
-              )}
             </>
           ) : (
             <FormInputField
@@ -1364,10 +1366,8 @@ export default function AddressDetails({
               onChange={handleTehsilChange}
               onBlur={() => onBlur?.("tehsil")}
               disabled={tehsilsLoading || !formData.city || readOnly}
+              error={errors?.tehsil}
             />
-            {errors?.tehsil && (
-              <p className="mt-1 text-xs text-[#F6776E]">{errors.tehsil}</p>
-            )}
           </div>
         )}
         
@@ -1444,10 +1444,8 @@ export default function AddressDetails({
                 !formData.tehsil ||
                 (areaOptions.length === 0 && !String(formData.area || "").trim())
               }
+              error={errors?.area}
             />
-            {errors?.area && (
-              <p className="mt-1 text-xs text-[#F6776E]">{errors.area}</p>
-            )}
           </div>
         )}
         {/* Address * - only for India */}

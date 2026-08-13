@@ -107,7 +107,7 @@ export default function AdmissionInvoiceDialog({
             </button>
         </div>
     );
-
+console.log("receiptProps",receiptProps)
     return (
         <Dialog
             open={open}
@@ -150,7 +150,7 @@ export default function AdmissionInvoiceDialog({
                         />
                         Download Now
                     </button>
-                    {onSaveAndNext && (
+                    {onSaveAndNext && receiptProps?.admissionType === "Immediate" && (
                         <button
                             type="button"
                             onClick={onSaveAndNext}

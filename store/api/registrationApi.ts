@@ -229,6 +229,10 @@ export interface HospitalPatientRequest {
     voucher: string;
     benefitMessage: string;
   };
+  /** Complimentary Health Gold Package fields */
+  isCompPackageReceived?: boolean;
+  compPackageCouponNumber?: string | null;
+  compPackageNotUsedReason?: string | null;
 }
 
 export interface HospitalPatientResponse {
@@ -243,7 +247,7 @@ export interface HospitalPatientResponse {
 export interface ClinicPatientRequest {
   branchId: number;
   patientEntryId?: number | string;
-  patientTitle: string;            
+  patientTitle: string;
   patientName: string;
   contactNumber: string;
   whatsappNo: string;
@@ -262,7 +266,7 @@ export interface ClinicPatientRequest {
   insuranceCompany?: string;
   isReferral?: string; // "yes" | "no"
 
- 
+
   maritalStatus: string;
   referral?: {
     referralSourceType: string; // Source from form: tv | newspaper | social-media | doctor | other | Referral
@@ -288,7 +292,7 @@ export interface ClinicPatientRequest {
     doctorUserId: number | string;
     bloodPressure?: string;
     sugarLevel?: string;
-//  remove from here 
+    //  remove from here 
 
     temperature?: string;
     spo2?: string;
@@ -352,6 +356,10 @@ export interface ClinicPatientRequest {
     voucher: string;
     benefitMessage: string;
   };
+  /** Complimentary Health Gold Package fields */
+  isCompPackageReceived?: boolean;
+  compPackageCouponNumber?: string | null;
+  compPackageNotUsedReason?: string | null;
 }
 
 export interface ClinicPatientResponse {
@@ -503,6 +511,7 @@ export interface AppointmentRegistration {
   temperature?: string | number | null;
   remark?: string | null;
   status?: string;
+  patientType?: string | null;
   isPreBooking?: boolean;
   patientIpdId?: number | string | null;
   token?: string | null;
@@ -530,6 +539,7 @@ export interface AppointmentRegistration {
     age?: string;
     contactNumber?: string;
     emailAddress?: string;
+    patientType?: string | null;
     /** From appointments-list / registration detail */
     address?: {
       id?: number;
@@ -730,7 +740,7 @@ export interface PatientRegistrationDetails {
   agentId?: number | null;
   createdAt?: string;
   updatedAt?: string;
-  patientReferral:{
+  patientReferral: {
     createdAt?: string;
     doctorUserId?: number | null;
     id?: number | null;
@@ -1503,6 +1513,43 @@ export const registrationApi = baseApi.injectEndpoints({
       },
     }),
     /**
+     * Request change of health card
+     */
+    createChangeHealthCardRequest: builder.mutation<
+      {
+        success: boolean;
+        data?: unknown;
+        message: string;
+        timestamp?: string;
+        statusCode: number;
+      },
+      {
+        uhid: string;
+        registrationId: number | string;
+        branchId: number;
+        phone: string;
+        newCardNumber: string;
+        reason?: string;
+        requestedBy: number;
+      }
+    >({
+      query: (params) => {
+        return {
+          url: `/admin/registration/changeHealthCardRequest`,
+          method: "POST",
+          body: {
+            uhid: params.uhid,
+            registrationId: typeof params.registrationId === "string" ? parseInt(params.registrationId, 10) : params.registrationId,
+            branchId: Number(params.branchId),
+            phone: params.phone,
+            newCardNumber: params.newCardNumber,
+            reason: params.reason || "",
+            requestedBy: Number(params.requestedBy),
+          },
+        };
+      },
+    }),
+    /**
      * Get appointment with registration details by appointmentId
      */
     getAppointmentWithRegistration: builder.query<
@@ -1651,6 +1698,26 @@ export const registrationApi = baseApi.injectEndpoints({
       invalidatesTags: ["Prebookings"],
     }),
     /**
+     * Create Appointment For Admitted Patient (for active IPD or Daycare patients)
+     */
+    createAppointmentForAdmittedPatient: builder.mutation<
+      {
+        success: boolean;
+        data?: unknown;
+        message: string;
+        timestamp?: string;
+        statusCode: number;
+      },
+      Record<string, unknown>
+    >({
+      query: (data) => ({
+        url: "/admin/registration/CreateAppointmentForAdmittedPatient",
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["Prebookings"],
+    }),
+    /**
      * Get all registrations for referral by phone number
      */
     getAllRegistrationForReferralByPhone: builder.query<
@@ -1704,26 +1771,37 @@ export const registrationApi = baseApi.injectEndpoints({
         };
       },
     }),
-    /** Public: allowed JS Health Card number range (id=1 = JS Health Card). */
     getArogyaCardSeries: builder.query<
       {
         success: boolean;
         data: {
           id: number;
+          arogyaCardId?: number;
           cardName: string;
+          branchId?: number;
           seriesStart: string;
           seriesEnd: string;
-        };
+          loyalPatientConsultantPackage?: boolean;
+          refereePatientConsultantPackage?: boolean;
+        }[];
         message: string;
         timestamp: string;
         statusCode: number;
       },
-      { id?: number }
+      { id?: number; branchId?: number }
     >({
-      query: (params) => ({
-        url: `/public/getArogyaCardSeries?id=${params?.id ?? 1}`,
-        method: "GET",
-      }),
+      query: (params) => {
+        // let url = `/public/getArogyaCardSeries?arogyaCardId=${21}`;
+        // let url = `/public/getArogyaCardSeries?arogyaCardId=${params?.id ?? 17}`;
+        let url = `/public/getArogyaCardSeries?`;
+        if (params?.branchId != null) {
+          url += `branchId=${params.branchId}`;
+        }
+        return {
+          url,
+          method: "GET",
+        };
+      },
     }),
     checkJsHealthCardAssignment: builder.query<
       {
@@ -1752,20 +1830,35 @@ export const registrationApi = baseApi.injectEndpoints({
     getJSHealthCardByUhid: builder.query<
       {
         success: boolean;
+        // NOTE: The backend now returns an ARRAY of cards for a patient. At any
+        // point only one card can be "active"; any previous cards are "inactive"
+        // (permanently closed) and are kept only for history/transactions.
         data: {
           uhid: string;
           cardNumber: string;
           assignDate: string;
           contactNumber: string;
           totalCoins: number;
+          availableCoins?: number;
+          isCompPackageReceived?: boolean;
+          isCompPackageUsed?: boolean;
+          compPackageNotUsedReason?: string | null;
+          compPackageCouponNumber?: string | null;
+          cardName?: string;
+          cardId?: number;
+          status?: string;
           transactions: {
             id: number;
             coins: number;
             entryType: "credit" | "debit";
             transactionType?: string | null;
             createdAt?: string | null;
+            isHold?: boolean;
+            holdUntil?: string | null;
+            expiresAt?: string | null;
+            isExpired?: boolean;
           }[];
-        };
+        }[];
         message: string;
         timestamp: string;
         statusCode: number;
@@ -1818,8 +1911,22 @@ export const registrationApi = baseApi.injectEndpoints({
         return uhid ? [{ type: "PatientFiles" as const, id: String(uhid) }] : ["PatientFiles"];
       },
     }),
-
-
+    removePatientFile: builder.mutation<
+      {
+        success?: boolean;
+        message?: string;
+        statusCode?: number;
+        timestamp?: string;
+      },
+      { id: number | string; uhid?: string }
+    >({
+      query: ({ id }) => ({
+        url: `/patient/removePatientFile/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_result, _error, { uhid }) =>
+        uhid ? [{ type: "PatientFiles" as const, id: uhid }] : ["PatientFiles"],
+    }),
   }),
 });
 
@@ -1848,7 +1955,7 @@ export interface GlobalPatientSearchResponse {
   statusCode: number;
 }
 
-export const { 
+export const {
   useGetDoctorsQuery,
   useLazyGetDoctorsQuery,
   useGetDoctorsByBranchQuery,
@@ -1877,6 +1984,7 @@ export const {
   useLazyGetPatientRegistrationDetailsQuery,
   useUpdatePatientRegistrationDetailsMutation,
   useUpdatePatientContactNumberMutation,
+  useCreateChangeHealthCardRequestMutation,
   useGetAppointmentWithRegistrationQuery,
   useLazyGetAppointmentWithRegistrationQuery,
   useLazyCheckPhoneNumberQuery,
@@ -1884,6 +1992,7 @@ export const {
   useLazyGetRazorpayPosPaymentStatusPollingQuery,
   useCancelRazorpayPosPaymentMutation,
   useCreateAppointmentAndUpdateRegistrationMutation,
+  useCreateAppointmentForAdmittedPatientMutation,
   useGetAllRegistrationForReferralByPhoneQuery,
   useLazyGetAllRegistrationForReferralByPhoneQuery,
   useGlobalPatientSearchQuery,
@@ -1895,6 +2004,7 @@ export const {
   useGetArogyaCardSeriesQuery,
   useGetAllFileTypesOfPatientListQuery,
   useCreatePatientFileMutation,
+  useRemovePatientFileMutation,
 } = registrationApi;
 
 

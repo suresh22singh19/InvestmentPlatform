@@ -310,266 +310,273 @@ export default function ApprovalLeaveSetupPage() {
                             You don&apos;t have permission to view approval level setup.
                         </div>
                     ) : (
-                    <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
-                        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                            <h2 className="text-lg font-semibold text-[#434956]" />
+                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5">
+                            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                                <h2 className="text-lg font-semibold text-[#434956]" />
 
-                            <div className="flex flex-wrap items-center justify-end gap-3">
-                                <div className="flex-shrink-0" style={{ width: "300px" }}>
-                                    <TableSearchInput
-                                        value={searchTerm}
-                                        onChange={setSearchTerm}
-                                        placeholder="Search Here..."
-                                        isLoading={listFetching}
-                                    />
+                                <div className="flex flex-wrap items-center justify-end gap-3">
+                                    <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                        <TableSearchInput
+                                            value={searchTerm}
+                                            onChange={setSearchTerm}
+                                            placeholder="Search Here..."
+                                            isLoading={listFetching}
+                                        />
+                                    </div>
+                                    {canAdd ? (
+                                        <button
+                                            type="button"
+                                            className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] disabled:cursor-not-allowed disabled:opacity-60"
+                                            onClick={handleAddClick}
+                                            disabled={isSubmitting}
+                                        >
+                                            <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
+                                            <span className="text-hide">Add Approval Level Setup</span>
+                                        </button>
+                                    ) : null}
                                 </div>
-                                {canAdd ? (
-                                    <button
-                                        type="button"
-                                        className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] disabled:cursor-not-allowed disabled:opacity-60"
-                                        onClick={handleAddClick}
-                                        disabled={isSubmitting}
-                                    >
-                                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
-                                        <span className="text-hide">Add Approval Level Setup</span>
-                                    </button>
-                                ) : null}
                             </div>
-                        </div>
 
-                        {listError ? (
-                            <div className="py-12 text-center text-sm text-[#F87171]">
-                                Could not load approval levels. Check getApprovalLevelsList and your session.
-                            </div>
-                        ) : showListLoader ? (
-                            <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading…</div>
-                        ) : (
-                            <>
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="bg-white">
-                                            <TableHead position="first">Sr no.</TableHead>
-                                            <TableHead
+                            {listError ? (
+                                <div className="py-12 text-center text-sm text-[#F87171]">
+                                    Could not load approval levels. Check getApprovalLevelsList and your session.
+                                </div>
+                            ) : showListLoader ? (
+                                <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading…</div>
+                            ) : (
+                                <>
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="bg-white">
+                                                <TableHead position="first">Sr no.</TableHead>
+                                                <TableHead
                                                 // sortable
                                                 // sortDirection={getSortDirection("levelName")}
                                                 // onSort={() => handleSort("levelName")}
-                                            >
-                                                Level Name
-                                            </TableHead>
-                                            <TableHead
+                                                >
+                                                    Level Name
+                                                </TableHead>
+                                                <TableHead
                                                 // sortable
                                                 // sortDirection={getSortDirection("levelCode")}
                                                 // onSort={() => handleSort("levelCode")}
-                                            >
-                                                Level Code
-                                            </TableHead>
-                                            <TableHead>Max % Variance</TableHead>
-                                            <TableHead>Max Amount</TableHead>
-                                            <TableHead>Modules</TableHead>
-                                            <TableHead position="last">Action</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {levels.length === 0 ? (
-                                            <TableRow>
-                                                <TableData
-                                                    colSpan={7}
-                                                    className="py-12 text-center text-sm text-[#9CA3AF]"
                                                 >
-                                                    No approval levels found
-                                                </TableData>
+                                                    Level Code
+                                                </TableHead>
+                                                <TableHead>Max % Variance</TableHead>
+                                                <TableHead>Max Amount</TableHead>
+                                                <TableHead>Modules</TableHead>
+                                                <TableHead position="last">Action</TableHead>
                                             </TableRow>
-                                        ) : (
-                                            levels.map((row, index) => (
-                                                <TableRow
-                                                    key={row.id}
-                                                    className="bg-white transition-colors hover:bg-[#F7FAF7]"
-                                                >
-                                                    <TableData variant="primary">
-                                                        {(currentPage - 1) * itemsPerPage + index + 1}
-                                                    </TableData>
-                                                    <TableData>{row.levelName}</TableData>
-                                                    <TableData>{row.levelCode}</TableData>
-                                                    <TableData>{formatVariance(row.maxVariance)}</TableData>
-                                                    <TableData>{formatInr(row.maxAmount)}</TableData>
-                                                    <TableData>{displayModules(row)}</TableData>
-                                                    <TableData>
-                                                        <div className="flex items-center gap-3">
-                                                            {canEdit ? (
-                                                                <Tooltip content="Edit" position="top" delay={0}>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:cursor-not-allowed disabled:opacity-50"
-                                                                        aria-label="Edit"
-                                                                        disabled={isSubmitting}
-                                                                        onClick={() => handleEdit(row)}
-                                                                    >
-                                                                        <Image
-                                                                            src="/icons/EditIconBlack.svg"
-                                                                            alt="Edit"
-                                                                            width={20}
-                                                                            height={20}
-                                                                        />
-                                                                    </button>
-                                                                </Tooltip>
-                                                            ) : null}
-                                                        </div>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {levels.length === 0 ? (
+                                                <TableRow>
+                                                    <TableData
+                                                        colSpan={7}
+                                                        className="py-12 text-center text-sm text-[#9CA3AF]"
+                                                    >
+                                                        No approval levels found
                                                     </TableData>
                                                 </TableRow>
-                                            ))
-                                        )}
-                                    </TableBody>
-                                </Table>
+                                            ) : (
+                                                levels.map((row, index) => (
+                                                    <TableRow
+                                                        key={row.id}
+                                                        className="bg-white transition-colors hover:bg-[#F7FAF7]"
+                                                    >
+                                                        <TableData variant="primary">
+                                                            {(currentPage - 1) * itemsPerPage + index + 1}
+                                                        </TableData>
+                                                        <TableData className="min-w-0 max-w-[320px]">
+                                                            <Tooltip content={row.levelName || "—"} position="top">
+                                                                <span className="inline-block max-w-[320px] truncate align-middle font-medium text-[#262D3B]">
+                                                                    {row.levelName || "—"}
+                                                                </span>
+                                                            </Tooltip>
+                                                        </TableData>
+                                                        <TableData>{row.levelCode}</TableData>
+                                                        <TableData>{formatVariance(row.maxVariance)}</TableData>
+                                                        <TableData>{formatInr(row.maxAmount)}</TableData>
+                                                        <TableData>{displayModules(row)}</TableData>
+                                                        <TableData>
+                                                            <div className="flex items-center gap-3">
+                                                                {canEdit ? (
+                                                                    <Tooltip content="Edit" position="top" delay={0}>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:cursor-not-allowed disabled:opacity-50"
+                                                                            aria-label="Edit"
+                                                                            disabled={isSubmitting}
+                                                                            onClick={() => handleEdit(row)}
+                                                                        >
+                                                                            <Image
+                                                                                src="/icons/EditIconBlack.svg"
+                                                                                alt="Edit"
+                                                                                width={20}
+                                                                                height={20}
+                                                                            />
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                ) : null}
+                                                            </div>
+                                                        </TableData>
+                                                    </TableRow>
+                                                ))
+                                            )}
+                                        </TableBody>
+                                    </Table>
 
-                                {totalItems > 0 ? (
-                                    <Pagination
-                                        currentPage={currentPage}
-                                        totalItems={totalItems}
-                                        itemsPerPage={itemsPerPage}
-                                        onPageChange={handlePageChange}
-                                        onItemsPerPageChange={handleItemsPerPageChange}
-                                        itemsPerPageOptions={[10, 20, 50, 100]}
-                                    />
-                                ) : null}
-                            </>
-                        )}
-                    </div>
+                                    {totalItems > 0 ? (
+                                        <Pagination
+                                            currentPage={currentPage}
+                                            totalItems={totalItems}
+                                            itemsPerPage={itemsPerPage}
+                                            onPageChange={handlePageChange}
+                                            onItemsPerPageChange={handleItemsPerPageChange}
+                                            itemsPerPageOptions={[10, 20, 50, 100]}
+                                        />
+                                    ) : null}
+                                </>
+                            )}
+                        </div>
                     )}
                 </ListBorder>
             </div>
 
             {canView ? (
-            <>
-            <Dialog
-                open={isDialogOpen && ((isEditMode && canEdit) || (!isEditMode && canAdd))}
-                onClose={() => {
-                    if (!isSubmitting) closeDialog();
-                }}
-                title={isEditMode ? "Edit Approval Level Setup" : "Add Approval Level Setup"}
-                width={686}
-            >
-                <form onSubmit={handleFormSubmit} className="space-y-6">
-                    <FormInputField
-                        label="Level Name"
-                        value={formLevelName}
-                        placeholder="Level Name"
-                        type="text"
-                        disabled={isSubmitting}
-                        maxLength={100}
-                        onChange={(e) => setFormLevelName(sanitizePatientNameInput(e.target.value))}
-                        onBlur={(e) => {
-                            const trimmed = e.target.value.trim();
-                            if (trimmed !== e.target.value) setFormLevelName(trimmed);
+                <>
+                    <Dialog
+                        open={isDialogOpen && ((isEditMode && canEdit) || (!isEditMode && canAdd))}
+                        onClose={() => {
+                            if (!isSubmitting) closeDialog();
                         }}
-                        error={levelNameError}
-                    />
-                    <FormInputField
-                        label="Level Code"
-                        value={formLevelCode}
-                        placeholder="Level Code"
-                        type="text"
-                        disabled={isSubmitting}
-                        maxLength={100}
-                        onChange={(e) => setFormLevelCode(sanitizeLevelCodeInput(e.target.value))}
-                        onBlur={(e) => {
-                            const trimmed = e.target.value.trim();
-                            if (trimmed !== e.target.value) setFormLevelCode(trimmed);
-                        }}
-                        error={levelCodeError}
-                    />
-                    <div className="scroll-mt-4">
-                        <div className="relative w-full">
+                        title={isEditMode ? "Edit Approval Level Setup" : "Add Approval Level Setup"}
+                        width={686}
+                        closeOnOutsideClick={false}
+                    >
+                        <form onSubmit={handleFormSubmit} className="space-y-6">
                             <FormInputField
-                                label="Max % Variance"
-                                placeholder="Unlimited if empty (0–100)"
+                                label="Level Name *"
+                                value={formLevelName}
+                                placeholder="Level Name"
                                 type="text"
-                                inputMode="numeric"
-                                maxLength={3}
-                                autoComplete="off"
-                                className="pr-10"
-                                value={formMaxVariance}
                                 disabled={isSubmitting}
-                                onChange={(e) => setFormMaxVariance(sanitizeMaxVariancePercentInput(e.target.value))}
+                                maxLength={100}
+                                onChange={(e) => setFormLevelName(sanitizePatientNameInput(e.target.value))}
+                                onBlur={(e) => {
+                                    const trimmed = e.target.value.trim();
+                                    if (trimmed !== e.target.value) setFormLevelName(trimmed);
+                                }}
+                                error={levelNameError}
                             />
-                            <span
-                                className="pointer-events-none absolute right-6 top-[0px] flex h-[44px] items-center font-inter text-[12px] font-normal not-italic leading-[120%] text-[#525763]"
-                            >
-                                %
-                            </span>
-                        </div>
-                    </div>
-                    <div className="scroll-mt-4">
-                        <div className="relative w-full">
                             <FormInputField
-                                label="Max Amount"
-                                placeholder="Unlimited if empty"
+                                label="Level Code *"
+                                value={formLevelCode}
+                                placeholder="Level Code"
                                 type="text"
-                                inputMode="numeric"
-                                maxLength={10}
-                                autoComplete="off"
-                                className="pr-10"
-                                value={formMaxAmount}
                                 disabled={isSubmitting}
-                                onChange={(e) => setFormMaxAmount(sanitizeMaxAmountDigitsInput(e.target.value))}
+                                maxLength={15}
+                                onChange={(e) => setFormLevelCode(sanitizeLevelCodeInput(e.target.value))}
+                                onBlur={(e) => {
+                                    const trimmed = e.target.value.trim();
+                                    if (trimmed !== e.target.value) setFormLevelCode(trimmed);
+                                }}
+                                error={levelCodeError}
                             />
-                            <span
-                                className="pointer-events-none absolute right-6 top-[0px] flex h-[44px] items-center font-inter text-[12px] font-normal not-italic leading-[120%] text-[#525763]"
-                            >
-                                ₹
-                            </span>
-                        </div>
-                    </div>
-                    <div>
-                        <FormSelectField
-                            label="Modules"
-                            value={formModules}
-                            options={APPROVAL_MODULE_OPTIONS}
-                            placeholder="Select Modules"
-                            mode="multiple"
-                            background="white"
-                            disabled={isSubmitting}
-                            onChange={(val) => {
-                                const v = Array.isArray(val) ? val : val ? [val] : [];
-                                setFormModules(v);
-                                if (v.length && modulesError) setModulesError("");
-                            }}
-                        />
-                        {modulesError ? <span className="mt-2 block text-xs text-[#F87171]">{modulesError}</span> : null}
-                    </div>
+                            <div className="scroll-mt-4">
+                                <div className="relative w-full">
+                                    <FormInputField
+                                        label="Max % Variance"
+                                        placeholder="Unlimited if empty (0–100)"
+                                        type="text"
+                                        inputMode="numeric"
+                                        maxLength={3}
+                                        autoComplete="off"
+                                        className="pr-10"
+                                        value={formMaxVariance}
+                                        disabled={isSubmitting}
+                                        onChange={(e) => setFormMaxVariance(sanitizeMaxVariancePercentInput(e.target.value))}
+                                    />
+                                    <span
+                                        className="pointer-events-none absolute right-6 top-[0px] flex h-[44px] items-center font-inter text-[12px] font-normal not-italic leading-[120%] text-[#525763]"
+                                    >
+                                        %
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="scroll-mt-4">
+                                <div className="relative w-full">
+                                    <FormInputField
+                                        label="Max Amount"
+                                        placeholder="Unlimited if empty"
+                                        type="text"
+                                        inputMode="numeric"
+                                        maxLength={10}
+                                        autoComplete="off"
+                                        className="pr-10"
+                                        value={formMaxAmount}
+                                        disabled={isSubmitting}
+                                        onChange={(e) => setFormMaxAmount(sanitizeMaxAmountDigitsInput(e.target.value))}
+                                    />
+                                    <span
+                                        className="pointer-events-none absolute right-6 top-[0px] flex h-[44px] items-center font-inter text-[12px] font-normal not-italic leading-[120%] text-[#525763]"
+                                    >
+                                        ₹
+                                    </span>
+                                </div>
+                            </div>
+                            <div>
+                                <FormSelectField
+                                    label="Modules *"
+                                    value={formModules}
+                                    options={APPROVAL_MODULE_OPTIONS}
+                                    placeholder="Select Modules"
+                                    mode="multiple"
+                                    background="white"
+                                    disabled={isSubmitting}
+                                    onChange={(val) => {
+                                        const v = Array.isArray(val) ? val : val ? [val] : [];
+                                        setFormModules(v);
+                                        if (v.length && modulesError) setModulesError("");
+                                    }}
+                                />
+                                {modulesError ? <span className="mt-2 block text-xs text-[#F87171]">{modulesError}</span> : null}
+                            </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
-                            {isEditMode ? "Update Approval Level Setup" : "Add Approval Level Setup"}
-                        </Button>
-                        <Button type="button" variant="outline" onClick={closeDialog} disabled={isSubmitting}>
-                            Cancel
-                        </Button>
-                    </div>
-                </form>
-            </Dialog>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                                    {isEditMode ? "Update" : "Submit"}
+                                </Button>
+                                <Button type="button" variant="outline" onClick={closeDialog} disabled={isSubmitting}>
+                                    Cancel
+                                </Button>
+                            </div>
+                        </form>
+                    </Dialog>
 
-            <MessageDialog
-                open={showSuccessDialog}
-                onClose={() => setShowSuccessDialog(false)}
-                message={successMessage}
-                icon="/icons/SuccessCheck.svg"
-                iconBgColor="#E8F5E9"
-                onConfirm={() => setShowSuccessDialog(false)}
-                confirmText="OK"
-                showCancel={false}
-            />
+                    <MessageDialog
+                        open={showSuccessDialog}
+                        onClose={() => setShowSuccessDialog(false)}
+                        message={successMessage}
+                        icon="/icons/SuccessCheck.svg"
+                        iconBgColor="#E8F5E9"
+                        onConfirm={() => setShowSuccessDialog(false)}
+                        confirmText="OK"
+                        showCancel={false}
+                    />
 
-            <MessageDialog
-                open={showErrorDialog}
-                onClose={() => setShowErrorDialog(false)}
-                message={errorMessage}
-                icon="/icons/CrossIcon.svg"
-                iconBgColor="#FFEBEE"
-                onConfirm={() => setShowErrorDialog(false)}
-                confirmText="OK"
-                showCancel={false}
-            />
-            </>
+                    <MessageDialog
+                        open={showErrorDialog}
+                        onClose={() => setShowErrorDialog(false)}
+                        message={errorMessage}
+                        icon="/icons/CrossIcon.svg"
+                        iconBgColor="#FFEBEE"
+                        onConfirm={() => setShowErrorDialog(false)}
+                        confirmText="OK"
+                        showCancel={false}
+                    />
+                </>
             ) : null}
         </AppShell>
     );

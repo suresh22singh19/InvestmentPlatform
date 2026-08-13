@@ -94,6 +94,8 @@ export type GetAppointmentsOfDoctorParams = {
 
 export type AppointmentOfDoctorItem = {
     appointmentId: number;
+    patientType?: string | null;
+    patientId?: number | null;
     uhid: string;
     appointmentDate: string;
     timeSlot: string;
@@ -190,7 +192,7 @@ export type GetPatientReferralForDoctorResponse = {
 
 export type GetDBranchTherapyListForDoctorParams = {
     branchId: number | string;
-    category: string;
+    category?: string;
     search?: string;
 };
 
@@ -198,6 +200,7 @@ export type TherapyItemForDoctor = {
     therapyId: number;
     therapyName: string;
     category: string;
+    jatayuTherapyCode?: string;
 };
 
 export type GetDBranchTherapyListForDoctorResponse = {
@@ -213,13 +216,18 @@ export type CreateOpdAssessmentRequest = {
     branchId: number;
     doctorId: number;
     visitType: string;
+    patientType?: string;
+    patientId?: number;
     isEdited: boolean;
+    recommendedCareType: 'ipd' | 'day_care' | 'followup';
     aiResponse: Record<string, any> | null;
     updatedResponse: Record<string, any>;
     therapies?: Array<{
         uhid: string;
         appointmentId: number;
         therapyId: number;
+        therapySessions?: number;
+        therapyDays?: number;
         patientType: string;
     }>;
     opdFollowUp?: {
@@ -228,6 +236,8 @@ export type CreateOpdAssessmentRequest = {
     };
     uhid: string;
     doctorNotes?: string;
+    communicableDiseases?: string[];
+    // communicableDiseasesRemark?: string;
 };
 
 export type CreateOpdAssessmentResponse = {
@@ -253,6 +263,11 @@ export type PatientAssessmentHistoryItem = {
     doctorName: string | null;
     branchName: string | null;
     isEdited: boolean;
+    doctorNotes?: string | null;
+    opdNextFollowupDate?: string | null;
+    opdNextFollowupRemark?: string | null;
+    communicableDiseases?: string[] | string | null;
+    communicableDiseasesRemark?: string | null;
     patientPresentation?: {
         duration?: string;
         chiefComplaint?: string | any;
@@ -302,6 +317,7 @@ export type PatientAssessmentHistoryItem = {
     updatedBy: number | null;
     createdAt: string;
     updatedAt: string | null;
+    patientMedicinesPres?: any[];
 };
 
 export type GetPatientAssessmentHistoryResponse = {
@@ -373,7 +389,6 @@ export const doctorApi = baseApi.injectEndpoints({
             query: (params) => {
                 const qs = toQueryString({
                     branchId: params.branchId,
-                    category: params.category,
                     search: params.search,
                 });
                 return {
@@ -385,7 +400,7 @@ export const doctorApi = baseApi.injectEndpoints({
 
         getAllDepartmentsForDoctor: builder.query<GetAllDepartmentsForDoctorResponse, void>({
             query: () => ({
-                url: "/admin/doctor/getAllDepartmentsForDoctor",
+                url: "/admin/setting/doctor/getAllDepartmentsForDoctor",
                 method: "GET",
             }),
         }),
@@ -401,7 +416,7 @@ export const doctorApi = baseApi.injectEndpoints({
                     order: params.order,
                 });
                 return {
-                    url: `/admin/doctor/getAllDoctorsDetails${qs}`,
+                    url: `/admin/setting/doctor/getAllDoctorsDetails${qs}`,
                     method: "GET",
                 };
             },
@@ -426,7 +441,7 @@ export const doctorApi = baseApi.injectEndpoints({
                 if (hasFile && files) {
                     const formData = buildUpdateDoctorFormData(body, files);
                     return {
-                        url: "/admin/doctor/createDoctorByBranch",
+                        url: "/admin/setting/doctor/createDoctorByBranch",
                         method: "POST",
                         body: formData,
                         prepareHeaders: (headers: Headers) => {
@@ -436,7 +451,7 @@ export const doctorApi = baseApi.injectEndpoints({
                     };
                 }
                 return {
-                    url: "/admin/doctor/createDoctorByBranch",
+                    url: "/admin/setting/doctor/createDoctorByBranch",
                     method: "POST",
                     body,
                 };
@@ -456,7 +471,7 @@ export const doctorApi = baseApi.injectEndpoints({
                 if (hasFile && files) {
                     const formData = buildUpdateDoctorFormData(body, files);
                     return {
-                        url: `/admin/doctor/updateDoctorDetails/${id}`,
+                        url: `/admin/setting/doctor/updateDoctorDetails/${id}`,
                         method: "PUT",
                         body: formData,
                         prepareHeaders: (headers: Headers) => {
@@ -466,7 +481,7 @@ export const doctorApi = baseApi.injectEndpoints({
                     };
                 }
                 return {
-                    url: `/admin/doctor/updateDoctorDetails/${id}`,
+                    url: `/admin/setting/doctor/updateDoctorDetails/${id}`,
                     method: "PUT",
                     body,
                 };
@@ -479,10 +494,22 @@ export const doctorApi = baseApi.injectEndpoints({
 
         updateDoctorPassword: builder.mutation<ApiMessageResponse, { id: number; body: UpdateDoctorPasswordRequest }>({
             query: ({ id, body }) => ({
-                url: `/admin/doctor/updateDoctorPassword/${id}`,
+                url: `/admin/setting/doctor/updateDoctorPassword/${id}`,
                 method: "PUT",
                 body,
             }),
+        }),
+
+        updateDoctorStatus: builder.mutation<ApiMessageResponse, { id: number; status: string }>({
+            query: ({ id, status }) => ({
+                url: `/admin/setting/doctor/updateDoctorStatus/${id}`,
+                method: "PUT",
+                body: { status },
+            }),
+            invalidatesTags: (_r, _e, arg) => [
+                { type: "Doctors", id: "LIST" },
+                { type: "Doctors", id: String(arg.id) },
+            ],
         }),
 
         generatePdfForDoctor: builder.query<ExportDoctorFileResponse, { branchId?: string | number; search?: string }>(
@@ -490,7 +517,7 @@ export const doctorApi = baseApi.injectEndpoints({
                 query: ({ branchId, search }) => {
                     const qs = toQueryString({ branchId, search });
                     return {
-                        url: `/admin/doctor/generatePdfForDoctor${qs}`,
+                        url: `/admin/setting/doctor/generatePdfForDoctor${qs}`,
                         method: "GET",
                     };
                 },
@@ -502,7 +529,7 @@ export const doctorApi = baseApi.injectEndpoints({
                 query: ({ branchId, search }) => {
                     const qs = toQueryString({ branchId, search });
                     return {
-                        url: `/admin/doctor/generateCsvForDoctor${qs}`,
+                        url: `/admin/setting/doctor/generateCsvForDoctor${qs}`,
                         method: "GET",
                     };
                 },
@@ -511,7 +538,7 @@ export const doctorApi = baseApi.injectEndpoints({
 
         getPatientWalletBalance: builder.query<{ success: boolean; data: any; message?: string }, string>({
             query: (uhid) => ({
-                url: `/counsellor/wallet-balance/${uhid}`,
+                url: `/wallet-balance/${uhid}`,
                 method: "GET",
             }),
         }),
@@ -525,6 +552,7 @@ export const {
     useCreateDoctorByBranchMutation,
     useUpdateDoctorDetailsMutation,
     useUpdateDoctorPasswordMutation,
+    useUpdateDoctorStatusMutation,
     useLazyGeneratePdfForDoctorQuery,
     useLazyGenerateCsvForDoctorQuery,
     useGetAppointmentsOfDoctorQuery,

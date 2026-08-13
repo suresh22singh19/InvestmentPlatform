@@ -88,63 +88,70 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-[480px]">
-        <div className="flex justify-start mb-6">
-          <Logo />
-        </div>
+    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center relative overflow-hidden px-4 py-12">
+      {/* Background Ambient Spotlights */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/10 blur-[140px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none" />
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-[#434956] mb-2">
-            Forgot Password
-          </h1>
-          <p className="text-sm text-[#434956] leading-[120%]">
-            Don’t worry! Just enter your email address and we’ll help you reset
-            your password.
-          </p>
-        </div>
+      <div className="w-full max-w-[480px] relative z-10">
+        {/* Dark Glass Card Container */}
+        <div className="p-8 md:p-10 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl">
+          {/* Logo Badge */}
+          <div className="flex justify-center mb-8">
+            <Logo />
+          </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <Input
-            label="Enter Your Email ID"
-            type="email"
-            value={email}
-            onChange={(event) => {
-              setEmail(event.target.value);
-              if (showErrorDialog) {
-                setShowErrorDialog(false);
-                setErrorMessage("");
-              }
-            }}
-            placeholder="Enter Your Email..."
-          />
+          <div className="mb-6 text-center">
+            <h1 className="text-2xl font-black text-white tracking-tight">
+              Forgot Password
+            </h1>
+            <p className="text-sm text-slate-400 font-medium mt-1">
+              Don’t worry! Just enter your email address and we’ll help you reset your password.
+            </p>
+          </div>
 
-          <Button
-            type="submit"
-            variant="primary"
-            size="large"
-            fullWidth
-            isLoading={isLoading}
-            disabled={isLoading}
-          >
-            Submit
-          </Button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <Input
+              label="Enter Your Email ID"
+              type="email"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (showErrorDialog) {
+                  setShowErrorDialog(false);
+                  setErrorMessage("");
+                }
+              }}
+              placeholder="Enter Your Email..."
+            />
 
-        <div className="flex items-center my-6">
-          <div className="flex-1 border-t border-[#EBECED]"></div>
-          <span className="px-4 text-xs text-[#434956]">Or</span>
-          <div className="flex-1 border-t border-[#EBECED]"></div>
-        </div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-6 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 text-slate-950 font-black text-base tracking-wide shadow-lg shadow-amber-500/20 hover:from-amber-300 hover:to-yellow-300 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isLoading ? (
+                <span className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-slate-950 border-t-transparent" />
+              ) : (
+                "Submit"
+              )}
+            </button>
+          </form>
 
-        <Button
-          variant="outline"
-          size="large"
-          fullWidth
+          <div className="flex items-center my-6">
+            <div className="flex-1 border-t border-slate-800"></div>
+            <span className="px-4 text-xs text-slate-500 font-semibold uppercase">Or</span>
+            <div className="flex-1 border-t border-slate-800"></div>
+          </div>
+
+          <button
+            type="button"
             onClick={navigateToLogin}
-        >
-          Back to Login
-        </Button>
+            className="w-full py-3.5 px-6 rounded-2xl bg-slate-900 text-slate-200 hover:text-white font-extrabold text-base border border-slate-800 hover:bg-slate-800 transition-all duration-200 cursor-pointer"
+          >
+            Back to Login
+          </button>
+        </div>
       </div>
 
       {/* Success Dialog */}

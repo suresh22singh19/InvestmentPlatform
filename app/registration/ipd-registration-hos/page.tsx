@@ -1239,6 +1239,7 @@ export default function IPDRegistrationPage() {
                     {/* Personal Form - Only Step */}
                     <PersonalForm
                         formik={formik}
+                        isNewPatient={!isRevisitedPatient}
                         getFormErrors={getFormErrors}
                         scrollToFirstError={scrollToFirstError}
                         onNext={handleNextStep}

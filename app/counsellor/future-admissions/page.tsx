@@ -14,8 +14,10 @@ import {
     FormSelectField,
     ExportButton,
     Badge,
+    Tooltip,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
 import {
     useGetFutureAdmissionsQuery,
     useSendReminderMutation,
@@ -35,6 +37,11 @@ interface StatCardProps {
     badgeText?: string;
     badgeType?: "success" | "neutral" | "warning";
 }
+
+const capitalizeFirstLetter = (str:string) => {
+  if (!str) return "N/A";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
 
 function FutureAdmissionsStatCard({ label, value, iconSrc, badgeText, badgeType }: StatCardProps) {
     return (
@@ -68,10 +75,69 @@ function FutureAdmissionsStatCard({ label, value, iconSrc, badgeText, badgeType 
     );
 }
 
+const TRUNCATED_TABLE_CELL_WIDTH = 150;
+
+function TruncatedTableCell({ text }: { text: string }) {
+  const value = text?.trim() ? text.trim() : "N/A";
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+
+    const checkTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+    };
+
+    checkTruncation();
+
+    const observer = new ResizeObserver(checkTruncation);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return (
+    <Tooltip
+      position="top"
+      maxWidth={360}
+      disabled={!isTruncated}
+      className="!overflow-visible !py-2.5"
+      content={
+        <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+          {value}
+        </p>
+      }
+    >
+      <div
+        className="flex min-w-0 items-center"
+        style={{ width: TRUNCATED_TABLE_CELL_WIDTH, maxWidth: TRUNCATED_TABLE_CELL_WIDTH }}
+      >
+        <span
+          ref={textRef}
+          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+        >
+          {value}
+        </span>
+        {isTruncated ? <span className="shrink-0 pl-1.5 text-[#434956]">...</span> : null}
+      </div>
+    </Tooltip>
+  );
+}
+
 
 
 export default function FutureAdmissionsPage() {
     const router = useRouter();
+
+    const {
+        selectedBranchFilter: selectedBranch,
+        setSelectedBranchFilter: setSelectedBranch,
+        branchFilterOptions: hookBranchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        resolvedFilterBranchId,
+    } = useCounsellorResolvedBranchId();
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState("");
@@ -84,7 +150,7 @@ export default function FutureAdmissionsPage() {
 
     // Table States
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(6);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
     const [sortBy, setSortBy] = useState<"patientName" | "">("patientName");
 
@@ -154,11 +220,17 @@ export default function FutureAdmissionsPage() {
         search: debouncedSearch.trim() || undefined,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
-        branchId: undefined, // Branch ID can be set if needed
+        ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
     };
 
     // Query Hook call
-    const { data: apiResponse, isLoading: isFutureLoading, refetch: refetchFutureAdmissions } = useGetFutureAdmissionsQuery(queryParams);
+    const { data: apiResponse, isLoading: isFutureLoading, refetch: refetchFutureAdmissions } = useGetFutureAdmissionsQuery(queryParams,
+        {
+            skip: resolvedFilterBranchId == null,
+            refetchOnMountOrArgChange: true,
+        }
+        
+    );
     const [sendReminder] = useSendReminderMutation();
     const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
 
@@ -211,13 +283,40 @@ export default function FutureAdmissionsPage() {
         try {
             const res = await checkFirstDayPayment(paymentCheckId).unwrap();
             if (res.success) {
-                const showPaymentStep = res.data.firstDayPaymentComplete === false;
+                const remaining = parseFloat(res.data.remainingForFirstDay || "0");
+                const complete = res.data.firstDayPaymentComplete;
 
-                setProceedFlow({
-                    item,
-                    paymentData: res.data,
-                    showPaymentStep,
-                    currentStep: 1,
+                if (remaining > 0 || !complete) {
+                    setProceedFlow({
+                        item,
+                        paymentData: res.data,
+                        showPaymentStep: true,
+                        currentStep: 1,
+                    });
+                    return;
+                }
+
+                setSuccessDialogConfig({
+                    message: (
+                        <div className="flex flex-col items-center text-center">
+                            <span className="text-sm text-[#475569]">
+                                Admission started for{" "}
+                                <strong className="text-[#0B8C00]">{item.patientName || "patient"}</strong>{" "}
+                                successfully! You can now proceed with room allocation.
+                            </span>
+                        </div>
+                    ),
+                    confirmText: "Assign Room & Bed",
+                    cancelText: "Close",
+                    showCancel: true,
+                    onConfirm: () => {
+                        setProceedFlow({
+                            item,
+                            paymentData: res.data,
+                            showPaymentStep: false,
+                            currentStep: 1,
+                        });
+                    },
                 });
             } else {
                 setApiErrorMessage(res.message || "Failed to check payment status.");
@@ -285,9 +384,10 @@ export default function FutureAdmissionsPage() {
 
     // Headers & Columns definition
     const columns = [
-        { label: "Sr no.", position: "first" as const },
+        { label: "Sr no.", position: "first" as const, className:"w-[80px] max-w-[80px]" },
         {
             label: "Patient Name",
+            className: "w-[150px] max-w-[150px]",
             sortable: true,
             sortDirection: sortBy === "patientName" ? sortOrder : null,
             onSort: () => {
@@ -311,7 +411,8 @@ export default function FutureAdmissionsPage() {
 
         // Interactive click styled green UHID link
         const uhid = (
-            <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
+            // <span className="text-[#0B8C00] font-medium">
+                  <span className="font-medium">
                 {item.uhid || "N/A"}
             </span>
         );
@@ -332,6 +433,8 @@ export default function FutureAdmissionsPage() {
             </span>
         );
 
+        // console.log("item",item)
+
         // Actions: Edit + Proceed to Admission / Send Reminder
         const actions = (
             <div className="flex flex-wrap items-center gap-2">
@@ -339,7 +442,7 @@ export default function FutureAdmissionsPage() {
                     type="button"
                     // className="flex h-11 items-center gap-2 rounded-full border border-[#0B8C00] px-4 py-0  text-sm font-semibold text-[#0B8C00] shadow-[0px_20px_40px_rgba(34,56,43,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
                     className="flex h-[32px] items-center gap-2 rounded-full border border-[#0B8C00] px-4 text-sm font-semibold text-[#0B8C00] shadow-[0px_20px_40px_rgba(34,56,43,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => router.push(`/counsellor/start-counselling?editpatientID=${item.id}`)}
+                    onClick={() => router.push(`/counsellor/start-counselling?editpatientID=${item.id}&branchId=${item.branchId}`)}
                 >
                     <Image src="/icons/EditPencil.svg" alt="Edit" width={14} height={14} />
                     Edit
@@ -372,11 +475,11 @@ export default function FutureAdmissionsPage() {
 
         return [
             sr,
-            item.patientName || "N/A",
+            <TruncatedTableCell key={`futureAdmission-${item.id ?? index}`} text={`${item.patientTitle || ""} ${item.patientName || "N/A"}`} />,
             uhid,
             bookingStatusBadge,
             item.package || "N/A",
-            item.roomType || "N/A",
+            item.branchRoomType ?? capitalizeFirstLetter(item.branchRoomType || "N/A"),
             advanceCol,
             formatAdmissionDate(item.admissionDate),
             actions,
@@ -390,15 +493,15 @@ export default function FutureAdmissionsPage() {
             label: "Total Bookings (Next 7 Days)",
             value: isFutureLoading ? "..." : (metrics?.totalBookingsNext7Days ?? 0),
             iconSrc: "/icons/calendarCheck.svg",
-            badgeText: "+12%",
+            badgeText: "",
             badgeType: "success" as const,
         },
         {
             id: "confirmed-admissions",
-            label: "Confirmed Admissions",
+            label: "All Confirmed Admission",
             value: isFutureLoading ? "..." : (metrics?.confirmedAdmissions ?? 0),
             iconSrc: "/icons/confirmCheck.svg",
-            badgeText: "Fixed",
+            badgeText: "",
             badgeType: "neutral" as const,
         },
         {
@@ -448,7 +551,7 @@ export default function FutureAdmissionsPage() {
                 {/* Page Heading & Export Button */}
                 <div className="flex items-center justify-between">
                     <PageHeading title="Future Admissions & Bookings Tracker" />
-                    <ExportButton onExportPDF={handleExportPDF} isLoadingPDF={isLoadingPDF} className="!bg-transparent" />
+                    {/* <ExportButton onExportPDF={handleExportPDF} isLoadingPDF={isLoadingPDF} className="!bg-transparent" /> */}
                 </div>
 
                 {/* Top Widgets Summary Section */}
@@ -472,6 +575,21 @@ export default function FutureAdmissionsPage() {
                             id: "future-admissions-list",
                             titleRightContent: (
                                 <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
+                                    <FormSelectField
+                                        label=""
+                                        hideLabel
+                                        options={hookBranchFilterOptions}
+                                        value={selectedBranch}
+                                        onChange={(value) => {
+                                            setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                                            setCurrentPage(1);
+                                        }}
+                                        placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                        mode="single"
+                                        background="normal"
+                                        width={280}
+                                        disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                    />
                                     {/* Date Range Picker Filter using DateFilterDropdown */}
                                     <div className="relative" ref={filterRef}>
                                         <button
@@ -496,7 +614,7 @@ export default function FutureAdmissionsPage() {
                                     </div>
 
                                     {/* Status FormSelectField Filter */}
-                                    <FormSelectField
+                                    {/* <FormSelectField
                                         label=""
                                         hideLabel
                                         options={[
@@ -514,7 +632,7 @@ export default function FutureAdmissionsPage() {
                                             setSelectedStatus(v);
                                             setCurrentPage(1);
                                         }}
-                                    />
+                                    /> */}
 
                                     {/* Table Search Input Filter */}
                                     <div className="w-[280px]">
@@ -542,7 +660,7 @@ export default function FutureAdmissionsPage() {
                                     setItemsPerPage(items);
                                     setCurrentPage(1);
                                 },
-                                itemsPerPageOptions: [6, 12, 24, 60],
+                                itemsPerPageOptions: [10, 30, 50, 100],
                             },
                         },
                     ]}

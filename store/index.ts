@@ -10,11 +10,13 @@ import storage from "redux-persist/lib/storage";
 import { combineReducers } from "@reduxjs/toolkit";
 
 import authReducer from "./slices/authSlice";
+import medicineReducer from "./slices/medicineSlice";
 import { baseApi } from "./api/baseApi";
 import { authRefreshApi } from "./api/authRefreshApi";
 import "./api/doctorApi";
 import "./api/nurseApi";
 import "./api/v3OldHiimsApis";
+import "./api/settingHealthCardApi";
 
 import { logoutJatayu } from "./api/jatayuApi";
 
@@ -28,6 +30,7 @@ const persistConfig = {
 
 const rootReducer = combineReducers({
   auth: authReducer,
+  medicine: medicineReducer,
   [baseApi.reducerPath]: baseApi.reducer,
   [authRefreshApi.reducerPath]: authRefreshApi.reducer,
 });

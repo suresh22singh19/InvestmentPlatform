@@ -3,6 +3,7 @@ import { useAppSelector } from "@/store/hooks";
 import {
   selectSelectedBranch,
   selectRoleCategoryType,
+  selectUserBranchId,
 } from "@/store/slices/authSlice";
 import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import type { SelectOption } from "@/components/ui/FormSelectField";
@@ -15,6 +16,18 @@ export const REGISTRATION_LIST_BRANCH_STORAGE_KEY = "hiims-registration-list-bra
 
 /** Session key for branch on `/pre-booking` — shared with `/pre-booking/new` so selection survives navigation. */
 export const PRE_BOOKING_LIST_BRANCH_STORAGE_KEY = "hiims-pre-booking-list-branch-filter";
+
+/** Session key for super-admin branch selection on `/counsellor/dashboard`. */
+export const COUNSELLOR_DASHBOARD_BRANCH_STORAGE_KEY = "hiims-counsellor-branch-filter";
+
+/** Shared session key for counsellor list pages branch filter. */
+export const COUNSELLOR_BRANCH_FILTER_STORAGE_KEY = COUNSELLOR_DASHBOARD_BRANCH_STORAGE_KEY;
+
+/** Session key for super-admin branch selection on `/ipd-head-nurse/dashboard`. */
+export const IPD_HEAD_NURSE_BRANCH_STORAGE_KEY = "hiims-ipd-head-nurse-branch-filter";
+
+/** Shared session key for IPD HEAD NURSE list pages branch filter. */
+export const IPD_HEAD_NURSE_BRANCH_FILTER_STORAGE_KEY = IPD_HEAD_NURSE_BRANCH_STORAGE_KEY;
 
 function readPersistedBranchId(key: string | undefined): string {
   if (typeof window === "undefined" || !key) return "";
@@ -49,6 +62,10 @@ export function writePersistedBranchFilterSelection(key: string, val: string): v
 export interface UseBranchFilterOptions {
   /** When set (e.g. doctor list), super-admin branch choice is restored from sessionStorage after navigation. */
   persistSuperAdminSelectionKey?: string;
+  /** Omit the "All Branches" option from the super-admin branch dropdown. */
+  excludeAllBranches?: boolean;
+  /** When super-admin has no valid branch selected, default to the first branch in the list. */
+  defaultToFirstBranch?: boolean;
 }
 
 export interface UseBranchFilterReturn {
@@ -68,6 +85,8 @@ export interface UseBranchFilterReturn {
 
 export function useBranchFilter(options?: UseBranchFilterOptions): UseBranchFilterReturn {
   const persistKey = options?.persistSuperAdminSelectionKey;
+  const excludeAllBranches = options?.excludeAllBranches ?? false;
+  const defaultToFirstBranch = options?.defaultToFirstBranch ?? false;
   const roleCategoryType = useAppSelector(selectRoleCategoryType);
   const selectedBranch = useAppSelector(selectSelectedBranch);
 
@@ -84,7 +103,9 @@ export function useBranchFilter(options?: UseBranchFilterOptions): UseBranchFilt
 
   const branchFilterOptions: SelectOption[] = useMemo(() => {
     if (isSuperAdmin) {
-      const options: SelectOption[] = [{ value: "", label: "All Branches" }];
+      const options: SelectOption[] = excludeAllBranches
+        ? []
+        : [{ value: "", label: "All Branches" }];
       if (branchesData?.data) {
         for (const b of branchesData.data) {
           const typeLabel = b.type ? b.type.charAt(0).toUpperCase() + b.type.slice(1).toLowerCase() : "";
@@ -105,7 +126,7 @@ export function useBranchFilter(options?: UseBranchFilterOptions): UseBranchFilt
       ];
     }
     return [];
-  }, [isSuperAdmin, branchesData, selectedBranch]);
+  }, [isSuperAdmin, branchesData, selectedBranch, excludeAllBranches]);
 
   const selectedBranchFilter = isSuperAdmin
     ? superAdminFilter
@@ -125,6 +146,29 @@ export function useBranchFilter(options?: UseBranchFilterOptions): UseBranchFilt
       setBranchFilterPersistReady(true);
     }
   }, [persistKey, isSuperAdmin]);
+
+  useEffect(() => {
+    if (!defaultToFirstBranch || !isSuperAdmin || !branchFilterPersistReady) return;
+    const branches = branchesData?.data;
+    if (!branches?.length) return;
+
+    const hasValidSelection =
+      superAdminFilter !== "" &&
+      branches.some((branch) => String(branch.id) === superAdminFilter);
+
+    if (hasValidSelection) return;
+
+    const firstBranchId = String(branches[0].id);
+    setSuperAdminFilter(firstBranchId);
+    writePersistedBranchId(persistKey, firstBranchId);
+  }, [
+    defaultToFirstBranch,
+    isSuperAdmin,
+    branchFilterPersistReady,
+    superAdminFilter,
+    branchesData?.data,
+    persistKey,
+  ]);
 
   const setSelectedBranchFilter = useCallback(
     (val: string) => {
@@ -151,5 +195,73 @@ export function useBranchFilter(options?: UseBranchFilterOptions): UseBranchFilt
     filterBranchId,
     isSuperAdmin,
     branchFilterPersistReady,
+  };
+}
+
+const counsellorBranchFilterOptions = {
+  excludeAllBranches: true,
+  defaultToFirstBranch: true,
+  persistSuperAdminSelectionKey: COUNSELLOR_BRANCH_FILTER_STORAGE_KEY,
+} as const satisfies UseBranchFilterOptions;
+
+const ipdNurseBranchFilterOptions = {
+  excludeAllBranches: true,
+  defaultToFirstBranch: true,
+  persistSuperAdminSelectionKey: IPD_HEAD_NURSE_BRANCH_FILTER_STORAGE_KEY,
+} as const satisfies UseBranchFilterOptions;
+
+export function useCounsellorBranchFilter(): UseBranchFilterReturn {
+  return useBranchFilter(counsellorBranchFilterOptions);
+}
+
+export function useCounsellorResolvedBranchId(): UseBranchFilterReturn & {
+  resolvedFilterBranchId: number | undefined;
+} {
+  const branchFilter = useCounsellorBranchFilter();
+  const authUserBranchId = useAppSelector(selectUserBranchId);
+
+  const resolvedFilterBranchId = useMemo(() => {
+    if (
+      branchFilter.filterBranchId != null &&
+      Number.isFinite(branchFilter.filterBranchId) &&
+      branchFilter.filterBranchId > 0
+    ) {
+      return branchFilter.filterBranchId;
+    }
+    const n = Number(authUserBranchId);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  }, [branchFilter.filterBranchId, authUserBranchId]);
+
+  return {
+    ...branchFilter,
+    resolvedFilterBranchId,
+  };
+}
+
+export function useIPDNurseBranchFilter(): UseBranchFilterReturn {
+  return useBranchFilter(ipdNurseBranchFilterOptions);
+}
+
+export function useIPDNurseResolvedBranchId(): UseBranchFilterReturn & {
+  resolvedFilterBranchId: number | undefined;
+} {
+  const branchFilter = useIPDNurseBranchFilter();
+  const authUserBranchId = useAppSelector(selectUserBranchId);
+
+  const resolvedFilterBranchId = useMemo(() => {
+    if (
+      branchFilter.filterBranchId != null &&
+      Number.isFinite(branchFilter.filterBranchId) &&
+      branchFilter.filterBranchId > 0
+    ) {
+      return branchFilter.filterBranchId;
+    }
+    const n = Number(authUserBranchId);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  }, [branchFilter.filterBranchId, authUserBranchId]);
+
+  return {
+    ...branchFilter,
+    resolvedFilterBranchId,
   };
 }

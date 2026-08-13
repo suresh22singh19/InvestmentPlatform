@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormInputField, FormSelectField } from "@/components/ui";
+import { FormInputField, FormSelectField, Tooltip } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
 export interface ReferralFormData {
@@ -27,16 +27,18 @@ interface ReferralProps {
     fieldRefs?: {
         referral?: React.RefObject<HTMLDivElement | null>;
         source?: React.RefObject<HTMLDivElement | null>;
-    tvSpecificField?: React.RefObject<HTMLDivElement | null>;
-    newspaperSpecificField?: React.RefObject<HTMLDivElement | null>;
-    socialMediaSpecificField?: React.RefObject<HTMLDivElement | null>;
-    doctorSpecificField?: React.RefObject<HTMLDivElement | null>;
-    referralName?: React.RefObject<HTMLInputElement | null>;
+        tvSpecificField?: React.RefObject<HTMLDivElement | null>;
+        newspaperSpecificField?: React.RefObject<HTMLDivElement | null>;
+        socialMediaSpecificField?: React.RefObject<HTMLDivElement | null>;
+        doctorSpecificField?: React.RefObject<HTMLDivElement | null>;
+        referralName?: React.RefObject<HTMLInputElement | null>;
         referralMobile?: React.RefObject<HTMLInputElement | null>;
     };
     errors?: Record<string, string>;
     readOnlyFields?: string[];
     isReferralMobileLoading?: boolean;
+    patientType?: string;
+    onClearReferral?: () => void;
 }
 
 export default function Referral({
@@ -52,10 +54,15 @@ export default function Referral({
     errors,
     readOnlyFields = [],
     isReferralMobileLoading = false,
+    patientType,
+    onClearReferral,
 }: ReferralProps) {
     const isFieldReadOnly = (fieldName: string) => {
         return readOnlyFields.includes(fieldName);
     };
+
+    const isSourceDisabled = !patientType || isFieldReadOnly("source");
+    const sourcePlaceholder = !patientType ? "Please Select Patient Type First" : "Select";
 
     const sourceLower = formData.source?.toLowerCase();
     const sourceSlug = sourceLower?.replace(/\s+/g, "-");
@@ -184,10 +191,10 @@ export default function Referral({
                     sourceSlug === "tv"
                         ? "tvSpecificField"
                         : sourceSlug === "newspaper"
-                        ? "newspaperSpecificField"
-                        : sourceSlug === "social-media"
-                        ? "socialMediaSpecificField"
-                        : "doctorSpecificField";
+                            ? "newspaperSpecificField"
+                            : sourceSlug === "social-media"
+                                ? "socialMediaSpecificField"
+                                : "doctorSpecificField";
                 onBlur?.(fieldName as keyof ReferralFormData);
             }, 0);
         }
@@ -235,7 +242,8 @@ export default function Referral({
                                 value={formData.source || null}
                                 onChange={handleSourceChange}
                                 onBlur={() => onBlur?.("source")}
-                                placeholder="Select"
+                                placeholder={sourcePlaceholder}
+                                disabled={isSourceDisabled}
                                 mode="single"
                                 background="white"
                             />
@@ -277,7 +285,8 @@ export default function Referral({
                             value={formData.source || null}
                             onChange={handleSourceChange}
                             onBlur={() => onBlur?.("source")}
-                            placeholder="Select"
+                            placeholder={sourcePlaceholder}
+                            disabled={isSourceDisabled}
                             mode="single"
                             background="white"
                         />
@@ -310,7 +319,7 @@ export default function Referral({
                             disabled={isFieldReadOnly("referralMobile")}
                             readOnly={isFieldReadOnly("referralMobile")}
                         />
-                        {isReferralMobileLoading && (
+                        {isReferralMobileLoading ? (
                             <div className="absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center">
                                 <svg
                                     className="h-5 w-5 animate-spin text-[#0B8C00]"
@@ -322,7 +331,29 @@ export default function Referral({
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                                 </svg>
                             </div>
-                        )}
+                        ) : (Boolean(formData.referralMobile?.trim()) || Boolean(formData.referralName?.trim())) ? (
+                            <div className="absolute right-4 top-[10px] z-10">
+                                <Tooltip content="Clear Referral Details" position="top">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            onChange("referralMobile", "");
+                                            onChange("referralName", "");
+                                            if (onClearReferral) {
+                                                onClearReferral();
+                                            }
+                                        }}
+                                        className="flex h-6 w-6 items-center justify-center rounded-full bg-[#EAECF0] hover:bg-[#D0D5DD] text-[#667085] hover:text-[#101828] transition-colors cursor-pointer"
+                                    >
+                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </Tooltip>
+                            </div>
+                        ) : null}
                     </div>
 
                     <div data-field="referralName" className="scroll-mt-4">

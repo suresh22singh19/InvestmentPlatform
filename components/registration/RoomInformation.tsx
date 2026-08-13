@@ -5,7 +5,7 @@ import Image from "next/image";
 import { ScrollableContainer } from "../ui";
 import NoDataBox from "./NoDataBox";
 
-interface RoomData {
+export interface RoomData {
     building?: string;
     roomNumber?: string | number;
     roomType?: string;
@@ -14,17 +14,11 @@ interface RoomData {
 }
 
 interface RoomInformationProps {
-    roomData?: RoomData;
+    roomData?: RoomData | null;
 }
 
 export default function RoomInformation({
-    roomData = {
-        building: "In-Patient Block",
-        roomNumber: "301",
-        roomType: "Private",
-        bedNumber: "35",
-        floor: "2nd",
-    },
+    roomData,
 }: RoomInformationProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
@@ -32,12 +26,14 @@ export default function RoomInformation({
         setIsExpanded(!isExpanded);
     };
 
-    const hasRoomData = roomData && (
-        roomData.building ||
-        roomData.roomNumber !== undefined ||
-        roomData.roomType ||
-        roomData.bedNumber !== undefined ||
-        roomData.floor
+    const hasRoomData = Boolean(
+        roomData && (
+            Boolean(roomData.building) ||
+            (roomData.roomNumber !== undefined && roomData.roomNumber !== null && roomData.roomNumber !== "") ||
+            Boolean(roomData.roomType) ||
+            (roomData.bedNumber !== undefined && roomData.bedNumber !== null && roomData.bedNumber !== "") ||
+            Boolean(roomData.floor)
+        )
     );
 
     return (
@@ -71,60 +67,50 @@ export default function RoomInformation({
                             <ScrollableContainer maxHeight="400px" className="pr-2" showScrollbar={true}>
                                 <div>
                                     <div className="bg-white mb-4 border border-[#EBECED]">
-                                        {roomData?.building && (
-                                            <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    Building
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {roomData.building}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                Building
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {roomData?.building || "NA"}
+                                            </span>
+                                        </div>
 
-                                        {roomData?.roomNumber !== undefined && (
-                                            <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    Room Number
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {roomData.roomNumber}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                Room Number
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {roomData?.roomNumber ?? "NA"}
+                                            </span>
+                                        </div>
 
-                                        {roomData?.roomType && (
-                                            <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    Room Type
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {roomData.roomType}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                Room Type
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {roomData?.roomType || "NA"}
+                                            </span>
+                                        </div>
 
-                                        {roomData?.bedNumber !== undefined && (
-                                            <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    Bed Number
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {roomData.bedNumber}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                Bed Number
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {roomData?.bedNumber ?? "NA"}
+                                            </span>
+                                        </div>
 
-                                        {roomData?.floor && (
-                                            <div className="flex justify-between px-[20px] py-[18px]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    Floor
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {roomData.floor}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                Floor
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {roomData?.floor || "NA"}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </ScrollableContainer>

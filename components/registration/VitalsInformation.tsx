@@ -4,6 +4,7 @@ import Image from "next/image";
 import { FormInputField, FormSelectField } from "@/components/ui";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 export interface VitalsInformationFormData {
     heightFeet: string;
@@ -11,8 +12,11 @@ export interface VitalsInformationFormData {
     weight: string;
     bloodGroup: string;
     allergies: string;
+    allergiesDetails?: string;
     surgeries: string;
+    surgeriesDetails?: string;
     dietType: string;
+    lastDayFullDiet?: string;
     bloodPressure: string;
     sugarLevel: string;
     temperature: string;
@@ -63,10 +67,7 @@ export default function VitalsInformation({
     ],
     dietTypeOptions = [
         { value: "Vegetarian", label: "Vegetarian" },
-        { value: "Non Vegetarian", label: "Non Vegetarian" },
-        { value: "Eggetarian", label: "Eggetarian" },
-        { value: "Vegan", label: "Vegan" },
-        { value: "Others", label: "Others" },
+        { value: "Non-Vegetarian", label: "Non-Vegetarian" },
     ],
     fieldRefs,
     errors,
@@ -88,8 +89,8 @@ export default function VitalsInformation({
                             label={allFieldsOptional ? "Height in Feet" : "Height in Feet *"}
                             value={formData.heightFeet}
                             onChange={(e) => {
-                                // Only allow digits, limit to 2 digits
-                                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 2);
+                                // Only allow digits, disallow leading zero, limit to 2 digits
+                                const digitsOnly = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 2);
 
                                 // Clamp value between 1 and 10
                                 let value = digitsOnly;
@@ -155,8 +156,8 @@ export default function VitalsInformation({
                             label={allFieldsOptional ? "Weight" : "Weight *"}
                             value={formData.weight}
                             onChange={(e) => {
-                                // Only allow digits, limit to 3 digits
-                                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                                // Only allow digits, disallow leading zero, limit to 3 digits
+                                const digitsOnly = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 3);
 
                                 // Clamp value between 1 and 500
                                 let value = digitsOnly;
@@ -215,64 +216,103 @@ export default function VitalsInformation({
                 </div>
 
                 <div data-field="allergies" className="scroll-mt-4" ref={fieldRefs?.allergies}>
-                    <PatientTypeButtonGroup
-                        options={yesNoOptions}
-                        value={formData.allergies}
-                        onChange={(value) => {
-                            onChange("allergies", value);
-                            setTimeout(() => {
-                                onBlur?.("allergies");
-                            }, 0);
-                        }}
-                        label={allFieldsOptional ? "Allergies" : "Allergies"}
-                        required={!allFieldsOptional}
-                        error={errors?.allergies}
-                        fieldRef={fieldRefs?.allergies}
-                        dataField="allergies"
-                    />
+                    <div className="flex items-start gap-2">
+                        <div className="flex-grow">
+                            <PatientTypeButtonGroup
+                                options={yesNoOptions}
+                                value={formData.allergies}
+                                onChange={(value) => {
+                                    onChange("allergies", value);
+                                    setTimeout(() => {
+                                        onBlur?.("allergies");
+                                    }, 0);
+                                }}
+                                label={allFieldsOptional ? "Allergies" : "Allergies"}
+                                required={false}
+                                error={errors?.allergies}
+                                fieldRef={fieldRefs?.allergies}
+                                dataField="allergies"
+                            />
+                        </div>
+                        {formData.allergies?.toLowerCase() === "yes" && formData.allergiesDetails && (
+                            <div className="mt-5 shrink-0 flex items-center h-6">
+                                <Tooltip content={formData.allergiesDetails} position="top" delay={0}>
+                                    <div className="cursor-pointer hover:scale-105 transition-all flex items-center justify-center bg-[#E8F5E9] rounded-full p-[3px] border border-[#0B8C00]/30 shadow-sm">
+                                        <Image src="/icons/infoIcon.svg" alt="Allergies Details" width={14} height={14} />
+                                    </div>
+                                </Tooltip>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
             {/* Surgeries and Diet Type */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div data-field="surgeries" className="scroll-mt-4" ref={fieldRefs?.surgeries}>
-                    <PatientTypeButtonGroup
-                        options={yesNoOptions}
-                        value={formData.surgeries}
-                        onChange={(value) => {
-                            onChange("surgeries", value);
-                            setTimeout(() => {
-                                onBlur?.("surgeries");
-                            }, 0);
-                        }}
-                        label={allFieldsOptional ? "Surgeries" : "Surgeries"}
-                        required={!allFieldsOptional}
-                        error={errors?.surgeries}
-                        fieldRef={fieldRefs?.surgeries}
-                        dataField="surgeries"
-                    />
+                    <div className="flex items-start gap-2">
+                        <div className="flex-grow">
+                            <PatientTypeButtonGroup
+                                options={yesNoOptions}
+                                value={formData.surgeries}
+                                onChange={(value) => {
+                                    onChange("surgeries", value);
+                                    setTimeout(() => {
+                                        onBlur?.("surgeries");
+                                    }, 0);
+                                }}
+                                label={allFieldsOptional ? "Surgeries" : "Surgeries"}
+                                required={false}
+                                error={errors?.surgeries}
+                                fieldRef={fieldRefs?.surgeries}
+                                dataField="surgeries"
+                            />
+                        </div>
+                        {formData.surgeries?.toLowerCase() === "yes" && formData.surgeriesDetails && (
+                            <div className="mt-5 shrink-0 flex items-center h-6">
+                                <Tooltip content={formData.surgeriesDetails} position="top" delay={0}>
+                                    <div className="cursor-pointer hover:scale-105 transition-all flex items-center justify-center bg-[#E8F5E9] rounded-full p-[3px] border border-[#0B8C00]/30 shadow-sm">
+                                        <Image src="/icons/infoIcon.svg" alt="Surgeries Details" width={14} height={14} />
+                                    </div>
+                                </Tooltip>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div data-field="dietType" className="scroll-mt-4" ref={fieldRefs?.dietType}>
-                    <FormSelectField
-                        label={allFieldsOptional ? "Diet Type" : "Diet Type *"}
-                        options={dietTypeOptions}
-                        value={formData.dietType || null}
-                        onOpen={onDietTypeSelectOpen}
-                        onChange={(value) => {
-                            const selectedValue = Array.isArray(value) ? value[0] : value;
-                            onChange("dietType", selectedValue || "");
-                            if (selectedValue) {
-                                setTimeout(() => {
-                                    onBlur?.("dietType");
-                                }, 0);
-                            }
-                        }}
-                        onBlur={() => onBlur?.("dietType")}
-                        placeholder="Select"
-                        mode="single"
-                        background="white"
-                    />
+                    <div className="flex items-start gap-2">
+                        <div className="flex-grow">
+                            <FormSelectField
+                                label={allFieldsOptional ? "Diet Type" : "Diet Type *"}
+                                options={dietTypeOptions}
+                                value={formData.dietType || null}
+                                onOpen={onDietTypeSelectOpen}
+                                onChange={(value) => {
+                                    const selectedValue = Array.isArray(value) ? value[0] : value;
+                                    onChange("dietType", selectedValue || "");
+                                    if (selectedValue) {
+                                        setTimeout(() => {
+                                            onBlur?.("dietType");
+                                        }, 0);
+                                    }
+                                }}
+                                onBlur={() => onBlur?.("dietType")}
+                                placeholder="Select"
+                                mode="single"
+                                background="white"
+                            />
+                        </div>
+                        {formData.dietType && formData.lastDayFullDiet && (
+                            <div className="mt-0 shrink-0 flex items-center h-[44px]">
+                                <Tooltip content={formData.lastDayFullDiet} position="top" delay={0}>
+                                    <div className="cursor-pointer hover:scale-105 transition-all flex items-center justify-center bg-[#E8F5E9] rounded-full p-[3px] border border-[#0B8C00]/30 shadow-sm">
+                                        <Image src="/icons/infoIcon.svg" alt="Diet Details" width={14} height={14} />
+                                    </div>
+                                </Tooltip>
+                            </div>
+                        )}
+                    </div>
                     {errors?.dietType && (
                         <p className="mt-1 text-xs text-[#F6776E]">{errors.dietType}</p>
                     )}
@@ -290,10 +330,10 @@ export default function VitalsInformation({
                             onChange={(e) => {
                                 // Remove all non-digit characters
                                 const digitsOnly = e.target.value.replace(/\D/g, "");
-                                
+
                                 // Limit to 6 digits total (3 before slash + 3 after slash)
                                 const limitedDigits = digitsOnly.slice(0, 6);
-                                
+
                                 let formattedValue = "";
                                 if (limitedDigits.length <= 3) {
                                     // If 3 or fewer digits, just show them
@@ -304,7 +344,7 @@ export default function VitalsInformation({
                                     const diastolic = limitedDigits.slice(3);
                                     formattedValue = `${systolic}/${diastolic}`;
                                 }
-                                
+
                                 onChange("bloodPressure", formattedValue);
                             }}
                             onBlur={() => onBlur?.("bloodPressure")}
@@ -328,16 +368,33 @@ export default function VitalsInformation({
                             label={allFieldsOptional ? "Sugar Level" : "Sugar Level *"}
                             value={formData.sugarLevel}
                             onChange={(e) => {
-                                // Only allow digits, limit to 3 digits
-                                const value = e.target.value.replace(/\D/g, "").slice(0, 3);
+                                // Allow digits and a single dot, disallow leading zero or dot as first character
+                                let val = e.target.value.replace(/[^0-9.]/g, "").replace(/^[0.]+/, "");
+                                const parts = val.split(".");
+                                if (parts.length > 2) {
+                                    val = parts[0] + "." + parts.slice(1).join("");
+                                }
+                                // Limit fractional part to at most 1 digit
+                                if (val.includes(".")) {
+                                    const dotIndex = val.indexOf(".");
+                                    val = val.slice(0, dotIndex + 2);
+                                }
+                                // Limit length to 5 characters (e.g. 600.0)
+                                let value = val.slice(0, 5);
+                                if (value) {
+                                    const numValue = parseFloat(value);
+                                    if (numValue > 600) {
+                                        value = "600";
+                                    }
+                                }
                                 onChange("sugarLevel", value);
                             }}
                             onBlur={() => onBlur?.("sugarLevel")}
                             placeholder="Sugar Level"
                             required={!allFieldsOptional}
-                            type="tel"
+                            type="text"
                             className="pr-10"
-                            maxLength={3}
+                            maxLength={5}
                             error={errors?.sugarLevel}
                         />
                         <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
@@ -356,28 +413,34 @@ export default function VitalsInformation({
                             label={allFieldsOptional ? "Temperature" : "Temperature *"}
                             value={formData.temperature}
                             onChange={(e) => {
-                                // Only allow digits, limit to 3 digits
-                                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
-                                
-                                // Prevent typing values greater than 110
-                                let value = digitsOnly;
-                                if (digitsOnly) {
-                                    const numValue = parseInt(digitsOnly, 10);
-                                    if (numValue > 110) {
-                                        value = "110";
-                                    } else {
-                                        value = digitsOnly;
+                                // Allow digits and a single dot, disallow leading zero or dot as first character
+                                let val = e.target.value.replace(/[^0-9.]/g, "").replace(/^[0.]+/, "");
+                                const parts = val.split(".");
+                                if (parts.length > 2) {
+                                    val = parts[0] + "." + parts.slice(1).join("");
+                                }
+                                // Limit fractional part to at most 1 digit
+                                if (val.includes(".")) {
+                                    const dotIndex = val.indexOf(".");
+                                    val = val.slice(0, dotIndex + 2);
+                                }
+                                // Limit length to 5 characters (e.g. 110.2)
+                                let value = val.slice(0, 5);
+                                if (value) {
+                                    const numValue = parseFloat(value);
+                                    if (numValue > 113) {
+                                        value = "113";
                                     }
                                 }
-                                
+
                                 onChange("temperature", value);
                             }}
                             onBlur={() => onBlur?.("temperature")}
                             placeholder="Temperature (°F)"
                             required={!allFieldsOptional}
-                            type="tel"
+                            type="text"
                             className="pr-10"
-                            maxLength={3}
+                            maxLength={5}
                             error={errors?.temperature}
                         />
                         <span className="absolute right-6 top-[0px] font-inter not-italic font-normal text-[12px] leading-[120%] text-[#525763] pointer-events-none flex items-center" style={{ height: '44px' }}>
@@ -393,8 +456,8 @@ export default function VitalsInformation({
                             label="Pulse"
                             value={formData.pulse}
                             onChange={(e) => {
-                                // Only allow digits, limit to 3 digits
-                                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                                // Only allow digits, disallow leading zeros, limit to 3 digits
+                                const digitsOnly = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 3);
 
                                 // Enforce maximum value 200
                                 let value = digitsOnly;
@@ -427,8 +490,8 @@ export default function VitalsInformation({
                             label="SPO2"
                             value={formData.spo2}
                             onChange={(e) => {
-                                // Only allow digits, limit to 3 digits
-                                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                                // Only allow digits, disallow leading zeros, limit to 3 digits
+                                const digitsOnly = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 3);
 
                                 // Enforce maximum value 100
                                 let value = digitsOnly;

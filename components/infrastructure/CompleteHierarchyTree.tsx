@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Button, ConfigurationSummaryPanel } from "@/components/ui";
+import { Button, ConfigurationSummaryPanel, Tooltip } from "@/components/ui";
 import type { FacilityConfigurationSummarySnapshot } from "@/lib/types/facilityConfigurationSummary";
 import { useFacilityConfigurationSummaryFromHierarchy } from "@/hooks/useFacilityConfigurationSummaryFromHierarchy";
 import { useGetBranchHierarchyTreeQuery } from "@/store/api/branchSetupApi";
 import { useGetCompleteBranchHierarchyTreeQuery } from "@/store/api/branchSetupApi";
 import { isConfiguredStatus } from "@/lib/utils/branchHierarchyStats";
+import { getRoomConfigStatusInfo } from "./StructureBuilder";
 import {
   mapCompleteBranchTreeToNodes,
   type CompleteTreeNode,
@@ -24,7 +25,10 @@ type CompleteHierarchyTreeProps = {
 };
 
 function roomConfigDotClass(status: string | null | undefined): string {
-  return isConfiguredStatus(status) ? "bg-green-500" : "bg-red-500";
+  const info = getRoomConfigStatusInfo(status);
+  if (info.label === "Configured") return "bg-green-500";
+  if (info.label === "Incomplete") return "bg-red-500";
+  return "bg-yellow-500";
 }
 
 export const CompleteHierarchyTree = ({
@@ -120,7 +124,7 @@ export const CompleteHierarchyTree = ({
     });
   };
 
-  const getNodeIcon = (type: TreeNode["type"]) => {
+  const getNodeIcon = (type: TreeNode["type"], status?: string | null) => {
     const iconClass =
       type === "room" || type === "bed" ? "h-4 w-4 text-green-700" : "h-5 w-5 text-green-700";
     switch (type) {
@@ -141,9 +145,10 @@ export const CompleteHierarchyTree = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         );
-      case "room":
+      case "room": {
+        const info = getRoomConfigStatusInfo(status);
         return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={`h-4 w-4 ${info.textColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -152,6 +157,7 @@ export const CompleteHierarchyTree = ({
             />
           </svg>
         );
+      }
       case "bed":
         return (
           <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,16 +232,23 @@ export const CompleteHierarchyTree = ({
             </div>
           )}
 
-          {node.type === "room" && (
-            <span
-              className={`h-2 w-2 rounded-full flex-shrink-0 ${roomConfigDotClass(node.roomConfigStatus)}`}
-              title={node.roomConfigStatus ?? "unknown"}
-            />
+          {node.type === "room" ? (
+            <Tooltip content={getRoomConfigStatusInfo(node.roomConfigStatus).label}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={`h-2 w-2 rounded-full flex-shrink-0 ${roomConfigDotClass(node.roomConfigStatus)}`}
+                  title={node.roomConfigStatus ?? "unknown"}
+                />
+                <div className="flex-shrink-0">{getNodeIcon(node.type, node.roomConfigStatus)}</div>
+                <span className="text-sm text-gray-900 truncate">{node.name}</span>
+              </div>
+            </Tooltip>
+          ) : (
+            <>
+              <div className="flex-shrink-0">{getNodeIcon(node.type, node.roomConfigStatus)}</div>
+              <span className="flex-1 text-sm text-gray-900 min-w-0 truncate">{node.name}</span>
+            </>
           )}
-
-          <div className="flex-shrink-0">{getNodeIcon(node.type)}</div>
-
-          <span className="flex-1 text-sm text-gray-900 min-w-0 truncate">{node.name}</span>
 
           {showSummary && (
             <span className="text-xs text-gray-500 flex-shrink-0">

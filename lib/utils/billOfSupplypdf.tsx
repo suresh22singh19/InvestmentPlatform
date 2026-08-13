@@ -144,7 +144,7 @@ const BillOfSupplyPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(functi
     fontFamily: "'Calibri', 'Gill Sans', 'Trebuchet MS', Arial, sans-serif",
     fontSize: "11px",
     // color: "#1a1a1a",
-    color:"#000000",
+    color: "#000000",
     // lineHeight: "1.55",
   };
 
@@ -152,16 +152,16 @@ const BillOfSupplyPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(functi
     ? { background: "#d0d0cc", minHeight: "100vh", padding: "20px" }
     // ? { background: "#d0d0cc", minHeight: "100vh", padding: "20px" }
     : {
-        position: "fixed",
-        left: "-10000px",
-        top: 0,
-        width: "694px",
-        padding: 0,
-        margin: 0,
-        background: "#d0d0cc",
-        zIndex: -1,
-        pointerEvents: "none",
-      };
+      position: "fixed",
+      left: "-10000px",
+      top: 0,
+      width: "694px",
+      padding: 0,
+      margin: 0,
+      background: "#d0d0cc",
+      zIndex: -1,
+      pointerEvents: "none",
+    };
 
   return (
     <div style={shellStyle}>
@@ -189,53 +189,54 @@ const BillOfSupplyPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(functi
             font-weight: 700 !important;
           }
         `}</style>
-        <div style={{ ...BASE, position: "relative", maxWidth: "720px", margin: "50px auto", padding: "0 20px 40px"}}>
+        <div style={{ ...BASE, position: "relative", maxWidth: "720px", margin: "50px auto", padding: "0 20px 40px" }}>
           <div style={{ margin: "0 auto 20px", textAlign: "center", fontSize: "32px", marginBottom: "26px" }}><strong>Bill Of Supply</strong></div>
 
           <table style={{ width: "100%", borderCollapse: "collapse", borderBottom: "none" }}>
             <tbody>
               <tr>
-                <td style={{ border: "1px solid #000", padding: "10px", fontSize: "11px",  lineHeight: "1.1", paddingBottom: "14px", paddingTop: "4px" }}>
+                <td style={{ border: "1px solid #000", padding: "10px", fontSize: "11px", lineHeight: "1.1", paddingBottom: "14px", paddingTop: "4px" }}>
                   <p style={{ margin: 0, lineHeight: "1.2" }}><strong>Jeena Sikho Lifecare Limited</strong></p>
                   <p style={{ margin: 0, lineHeight: "1.2" }}>{branch.address}</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}>Tehsil-Rampur Sainia BO</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}>Disitt-{branch.district.toUpperCase()}</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}>GSTIN/UIN: 03AADCJ9908J1ZE</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>State Name: </strong>{branch.state.toUpperCase()}, code: 03</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}>Tehsil-Rampur Sainia BO</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}>Disitt-{branch.district.toUpperCase()}</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}>GSTIN/UIN: 03AADCJ9908J1ZE</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>State Name: </strong>{branch.state.toUpperCase()}, code: 03</p>
                 </td>
               </tr>
             </tbody>
           </table>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", marginTop:"-2px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "-2px" }}>
             <tbody>
               <tr>
-                <td style={{ border: "1px solid #000", padding: "10px", fontSize: "11px", width: "50%", borderRight:  "none",lineHeight: "1.2" ,paddingBottom: "14px", paddingTop: "0px" }}>
+                <td style={{ border: "1px solid #000", padding: "10px", fontSize: "11px", width: "50%", borderRight: "none", lineHeight: "1.2", paddingBottom: "14px", paddingTop: "0px" }}>
                   <p style={{ margin: 0 }}>Buyer (Bill to)</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>{patient.patient}</strong></p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>UHID:</strong> {patient.uhid}</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}>{branch.state}</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>State Name:</strong> {branch.state.toUpperCase()}, code: 03</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>{patient.patient}</strong></p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>UHID:</strong> {patient.uhid}</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}>{branch.state}</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>State Name:</strong> {branch.state.toUpperCase()}, code: 03</p>
                 </td>
                 <td style={{ border: "1px solid #000", padding: "10px", fontSize: "11px", width: "50%", textAlign: "right", lineHeight: "1.0" }}>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>Invoice Date :</strong> {fmtDate.split(" ")[0]}</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>Order No :</strong> {patient.opdId}</p>
-                  <p style={{ margin: 0 , lineHeight: "1.2" }}><strong>Invoice No :</strong> JS/2026/04/{patient.uhid}</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>Invoice Date :</strong> {fmtDate.split(" ")[0]}</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>Order No :</strong> {patient.opdId}</p>
+                  <p style={{ margin: 0, lineHeight: "1.2" }}><strong>Invoice No :</strong> JS/2026/04/{patient.uhid}</p>
                 </td>
               </tr>
             </tbody>
           </table>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", marginTop:"-2px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", marginTop: "-2px" }}>
             <thead>
               <tr>
-                {["S No.", "Description of Goods", "HSN/SAC", "GST Rate", "Quantity", "Rate(Per Unit)", hasJsHealthPoints ? "JS Health Point" : "Disc.", "Amount(Excl GST)"].map((h,i) => (
-                  <th key={h} style={{ border: "1px solid #000", padding: "10px", textAlign: i === 1 ? "start" :"center", 
-                    width:i === 0 ? "50px" : i === 7 ? "140px" : "auto", 
-                    paddingTop :"0px",
-                    borderRight: [0, 1, 2, 3,4, 5,6].includes(i) ? "none" : "1px solid #000", borderBottom: [0, 1, 2, 3, 4, 5,6,7].includes(i) ? "none" : "1px solid #000" 
-                    
-                   }}>{h}</th>
+                {["S No.", "Description of Goods", "HSN/SAC", "GST Rate", "Quantity", "Rate(Per Unit)", hasJsHealthPoints ? "JS Health Point" : "Disc.", "Amount(Excl GST)"].map((h, i) => (
+                  <th key={h} style={{
+                    border: "1px solid #000", padding: "10px", textAlign: i === 1 ? "start" : "center",
+                    width: i === 0 ? "50px" : i === 7 ? "140px" : "auto",
+                    paddingTop: "0px",
+                    borderRight: [0, 1, 2, 3, 4, 5, 6].includes(i) ? "none" : "1px solid #000", borderBottom: [0, 1, 2, 3, 4, 5, 6, 7].includes(i) ? "none" : "1px solid #000"
+
+                  }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -249,162 +250,163 @@ const BillOfSupplyPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(functi
               ].map((row) => (
                 <tr key={row[0]}>
                   {row.map((c, i) => (
-                    <td key={`${row[0]}-${i}`} style={{ border: "1px solid #000", padding: "10px", textAlign: i === 1 ? "left" : "center" , paddingTop :"0px",
-                    borderRight: [0, 1, 2, 3,4, 5,6].includes(i) ? "none" : "1px solid #000", borderBottom: [0, 1, 2, 3, 4, 5,6,7].includes(i) ? "none" : "1px solid #000" 
+                    <td key={`${row[0]}-${i}`} style={{
+                      border: "1px solid #000", padding: "10px", textAlign: i === 1 ? "left" : "center", paddingTop: "0px",
+                      borderRight: [0, 1, 2, 3, 4, 5, 6].includes(i) ? "none" : "1px solid #000", borderBottom: [0, 1, 2, 3, 4, 5, 6, 7].includes(i) ? "none" : "1px solid #000"
                     }}>{c}</td>
                   ))}
                 </tr>
               ))}
               <tr>
-                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", borderBottom: "none", paddingTop :"0px" }} />
-                <td colSpan={3} style={{ border: "1px solid #000", padding: "10px", textAlign: "center",borderRight: "none", borderBottom: "none" , paddingTop :"0px" }}>Sub Total</td>
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none",paddingTop :"0px" }}>20</td>
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none",paddingTop :"0px" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none", paddingTop :"0px" }}>0.00</td>
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderBottom: "none", paddingTop :"0px" }}>52,000.00</td>
+                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", borderBottom: "none", paddingTop: "0px" }} />
+                <td colSpan={3} style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none", paddingTop: "0px" }}>Sub Total</td>
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none", paddingTop: "0px" }}>20</td>
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none", paddingTop: "0px" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", borderBottom: "none", paddingTop: "0px" }}>0.00</td>
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderBottom: "none", paddingTop: "0px" }}>52,000.00</td>
               </tr>
               <tr>
-                <td style={{ border: "1px solid #000", padding: "10px", height: "150px",borderRight: "none", borderBottom: "none" , paddingTop :"0px" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", textAlign: "right", verticalAlign: "middle",borderRight: "none", borderBottom: "none" , paddingTop :"0px"}}>
+                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", borderRight: "none", borderBottom: "none", paddingTop: "0px" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", textAlign: "right", verticalAlign: "middle", borderRight: "none", borderBottom: "none", paddingTop: "0px" }}>
                   <strong>CGST@ 0% </strong><br />
                   <strong>SGST@ 0% </strong><br />
                 </td>
-                <td style={{ border: "1px solid #000", padding: "10px", paddingTop :"0px", height: "150px", textAlign: "center", verticalAlign: "middle",borderRight: "none", borderBottom: "none" }}>
+                <td style={{ border: "1px solid #000", padding: "10px", paddingTop: "0px", height: "150px", textAlign: "center", verticalAlign: "middle", borderRight: "none", borderBottom: "none" }}>
                   0.00<br />
                   0.00
                 </td>
-                <td style={{ border: "1px solid #000", padding: "10px", height: "150px",borderRight: "none", borderBottom: "none", verticalAlign: "middle" }}  />
-                <td style={{ border: "1px solid #000", padding: "10px", height: "150px",borderRight: "none", borderBottom: "none", verticalAlign: "middle" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", height: "150px",borderRight: "none", borderBottom: "none", verticalAlign: "middle" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", height: "150px",borderRight: "none", borderBottom: "none" , verticalAlign: "middle" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", borderRight: "none", borderBottom: "none", verticalAlign: "middle" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", borderRight: "none", borderBottom: "none", verticalAlign: "middle" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", borderRight: "none", borderBottom: "none", verticalAlign: "middle" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", height: "150px", borderRight: "none", borderBottom: "none", verticalAlign: "middle" }} />
                 <td style={{ border: "1px solid #000", padding: "10px", height: "150px", textAlign: "center", verticalAlign: "middle", borderBottom: "none" }}>
                   0.00
                 </td>
               </tr>
               <tr>
                 <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center",borderRight: "none", paddingTop :"0px", paddingBottom :"12px" }}><strong>Total</strong></td>
-                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop :"0px", paddingBottom :"12px" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop :"0px", paddingBottom :"12px" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center",borderRight: "none" , paddingTop :"0px", paddingBottom :"12px" }}><strong>20 Nos.</strong></td>
-                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop :"0px", paddingBottom :"12px" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop :"0px", paddingBottom :"12px" }} />
-                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", paddingTop :"0px", paddingBottom :"12px" }}><strong>52,000.00</strong></td>
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", paddingTop: "0px", paddingBottom: "12px" }}><strong>Total</strong></td>
+                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop: "0px", paddingBottom: "12px" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop: "0px", paddingBottom: "12px" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", borderRight: "none", paddingTop: "0px", paddingBottom: "12px" }}><strong>20 Nos.</strong></td>
+                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop: "0px", paddingBottom: "12px" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", borderRight: "none", paddingTop: "0px", paddingBottom: "12px" }} />
+                <td style={{ border: "1px solid #000", padding: "10px", textAlign: "center", paddingTop: "0px", paddingBottom: "12px" }}><strong>52,000.00</strong></td>
               </tr>
             </tbody>
           </table>
 
-          <div style={{ textAlign: "right", marginBottom: "20px", fontSize: "13px", fontWeight:"500", marginTop: "-6px" }}>E. &amp; O.E</div>
+          <div style={{ textAlign: "right", marginBottom: "20px", fontSize: "13px", fontWeight: "500", marginTop: "-6px" }}>E. &amp; O.E</div>
           <div style={{ fontSize: "11px", margin: 0 }}>Amount Chargeable (In words)</div>
           <div style={{ fontSize: "11px", margin: "5px 0 20px" }}><strong>INR Fifty-Two Thousand Only</strong></div>
 
           {/* {hasJsHealthPoints ? ( */}
- 
+
           {true ? (
-  <table
-    style={{
-      width: "100%",
-      borderCollapse: "collapse",
-      marginBottom: "20px",
-      fontSize: "11px",
-    }}
-  >
-    <thead>
-      <tr>
-        <th
-          style={{
-            border: "1px solid #000",
-            padding: "6px",
-            background: "#d0ebff",
-            borderRight: "none",
-            textAlign: "center",
-            borderBottom: "none",
-            paddingTop :"4px",
-            paddingBottom :"16px",
-            fontWeight:400,
-          }}
-        >
-         JS Health Card No.
-        </th>
-        <th
-          style={{
-            border: "1px solid #000",
-            padding: "6px",
-            textAlign: "center",
-            borderBottom: "none",
-            paddingTop :"4px",
-            paddingBottom :"16px",
-            fontWeight:400,
-          }}
-        >
-          505030305253
-        </th>
-      </tr>
-    </thead>
-
-    <tbody>
-      <tr>
-        <td colSpan={2} style={{ padding: 0 }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              marginTop:"-2px",
-            }}
-          >
-            <thead>
-              <tr>
-                {[
-                  "Initial Balance",
-                  "Redeemed",
-                  "Point Earned",
-                  "Closing Balance",
-                ].map((heading, i) => (
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                marginBottom: "20px",
+                fontSize: "11px",
+              }}
+            >
+              <thead>
+                <tr>
                   <th
-                    key={i}
                     style={{
                       border: "1px solid #000",
                       padding: "6px",
+                      background: "#d0ebff",
+                      borderRight: "none",
                       textAlign: "center",
-                      borderRight: [0, 1, 2].includes(i) ? "none" : "1px solid #000",
-                      borderBottom: [0, 1, 2, 3].includes(i) ? "none" : "1px solid #000",
-                      paddingTop :"4px",
-                      paddingBottom :"16px",
-                      fontWeight:400,
+                      borderBottom: "none",
+                      paddingTop: "4px",
+                      paddingBottom: "16px",
+                      fontWeight: 400,
                     }}
                   >
-                    {heading}
+                    Health Card No.
                   </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr>
-                {["0", "0", "2600", "2600"].map((val, i) => (
-                  <td
-                    key={i}
+                  <th
                     style={{
                       border: "1px solid #000",
                       padding: "6px",
                       textAlign: "center",
-                      borderRight: [0, 1, 2].includes(i) ? "none" : "1px solid #000",
-                      paddingTop :"4px",
-                      paddingBottom :"16px",
-                 
+                      borderBottom: "none",
+                      paddingTop: "4px",
+                      paddingBottom: "16px",
+                      fontWeight: 400,
                     }}
                   >
-                    {val}
+                    505030305253
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr>
+                  <td colSpan={2} style={{ padding: 0 }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        marginTop: "-2px",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          {[
+                            "Initial Balance",
+                            "Redeemed",
+                            "Point Earned",
+                            "Closing Balance",
+                          ].map((heading, i) => (
+                            <th
+                              key={i}
+                              style={{
+                                border: "1px solid #000",
+                                padding: "6px",
+                                textAlign: "center",
+                                borderRight: [0, 1, 2].includes(i) ? "none" : "1px solid #000",
+                                borderBottom: [0, 1, 2, 3].includes(i) ? "none" : "1px solid #000",
+                                paddingTop: "4px",
+                                paddingBottom: "16px",
+                                fontWeight: 400,
+                              }}
+                            >
+                              {heading}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        <tr>
+                          {["0", "0", "2600", "2600"].map((val, i) => (
+                            <td
+                              key={i}
+                              style={{
+                                border: "1px solid #000",
+                                padding: "6px",
+                                textAlign: "center",
+                                borderRight: [0, 1, 2].includes(i) ? "none" : "1px solid #000",
+                                paddingTop: "4px",
+                                paddingBottom: "16px",
+
+                              }}
+                            >
+                              {val}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
                   </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-) : null}
+                </tr>
+              </tbody>
+            </table>
+          ) : null}
 
 
           {/* <div style={{ borderTop: "1px solid #000", marginTop: "10px", paddingTop: "6px", textAlign: "center", fontSize: "11px" }}>-- 1 of 2 --</div> */}
@@ -442,74 +444,106 @@ const BillOfSupplyPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(functi
           </table> */}
 
 
-<table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", marginTop: "10px" }}>
-  <thead>
-    <tr>
-      <th rowSpan={2} style={{ borderTop: "1px solid #000", borderLeft: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", textAlign: "center", background: "#d0ebff",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:"900"}}>HSN/SAC</th>
-      
-      <th rowSpan={2} style={{ borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", textAlign: "center", background: "#d0ebff",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:"900"}}>Taxable Value</th>
-      
-      <th colSpan={2} style={{ borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "none", textAlign: "center", background: "#d0ebff",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:"900"}}>CGST</th>
-      
-      <th colSpan={2} style={{ borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "none", textAlign: "center", background: "#d0ebff",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:"900"}}>SGST/UTGST</th>
-      
-      <th rowSpan={2} style={{ borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:"900", textAlign: "center", background: "#d0ebff" }}>Total Tax</th>
-    </tr>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", marginTop: "10px" }}>
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{
+                  borderTop: "1px solid #000", borderLeft: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", textAlign: "center", background: "#d0ebff", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: "900"
+                }}>HSN/SAC</th>
 
-    <tr style={{ paddingBottom: "20px" }}>
-      <th style={{  borderBottom: "1px solid #000", padding: "0px", textAlign: "right", background: "#d0ebff", borderRight: "none",  paddingTop: "0px",
-                                paddingBottom: "0px", fontWeight:"900"}}>
-                                  
-       <div style={{ margin: 0, fontSize: "11px", marginTop: "-24px", paddingTop: "8px", paddingBottom: "16px",  paddingRight: "10px", fontWeight:"900" }}>Rate</div>               
-                                  </th>
-      <th style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "0px", textAlign: "left", background: "#d0ebff", paddingTop:"0px"}}>
-        <div style={{ margin: 0, fontSize: "11px",marginTop: "-24px",  paddingTop: "-10px", fontWeight:"900", paddingLeft: "0px"  }}>Amount</div> </th>
-        
-      <th style={{ borderRight: "none", borderBottom: "1px solid #000", padding: "0px", textAlign: "right", background: "#d0ebff", paddingTop:"0px" }}>
-        <div style={{ margin: 0, fontSize: "11px",marginTop: "-24px",  paddingTop: "-10px", fontWeight:"900", paddingRight: "10px"  }}>Rate</div> 
-      </th>
-      <th style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "0px", textAlign: "left", background: "#d0ebff", paddingTop:"0px"}}>
-      <div style={{ margin: 0, fontSize: "11px",marginTop: "-24px",  paddingTop: "-10px", fontWeight:"900", paddingLeft: "0px"  }}>Amount</div> </th>
-    </tr>
-  </thead>
+                <th rowSpan={2} style={{
+                  borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", textAlign: "center", background: "#d0ebff", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: "900"
+                }}>Taxable Value</th>
 
-  <tbody>
-    <tr>
-      <td style={{ borderLeft: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>999311</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>52,000.00</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>0%</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>0.00</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>0%</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>0.00</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",  paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:400}}>0.00</td>
-    </tr>
+                <th colSpan={2} style={{
+                  borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "none", textAlign: "center", background: "#d0ebff", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: "900"
+                }}>CGST</th>
 
-    <tr>
-      <td style={{ borderLeft: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
-                                paddingBottom: "16px", fontWeight:"bold" }}>Total</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",paddingTop: "4px",
-                                paddingBottom: "16px" }}>52000</td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
-      <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center",paddingTop: "4px",
-                                paddingBottom: "16px" }}>2,288.56</td>
-    </tr>
-  </tbody>
-</table>
+                <th colSpan={2} style={{
+                  borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "none", textAlign: "center", background: "#d0ebff", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: "900"
+                }}>SGST/UTGST</th>
+
+                <th rowSpan={2} style={{
+                  borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: "900", textAlign: "center", background: "#d0ebff"
+                }}>Total Tax</th>
+              </tr>
+
+              <tr style={{ paddingBottom: "20px" }}>
+                <th style={{
+                  borderBottom: "1px solid #000", padding: "0px", textAlign: "right", background: "#d0ebff", borderRight: "none", paddingTop: "0px",
+                  paddingBottom: "0px", fontWeight: "900"
+                }}>
+
+                  <div style={{ margin: 0, fontSize: "11px", marginTop: "-24px", paddingTop: "8px", paddingBottom: "16px", paddingRight: "10px", fontWeight: "900" }}>Rate</div>
+                </th>
+                <th style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "0px", textAlign: "left", background: "#d0ebff", paddingTop: "0px" }}>
+                  <div style={{ margin: 0, fontSize: "11px", marginTop: "-24px", paddingTop: "-10px", fontWeight: "900", paddingLeft: "0px" }}>Amount</div> </th>
+
+                <th style={{ borderRight: "none", borderBottom: "1px solid #000", padding: "0px", textAlign: "right", background: "#d0ebff", paddingTop: "0px" }}>
+                  <div style={{ margin: 0, fontSize: "11px", marginTop: "-24px", paddingTop: "-10px", fontWeight: "900", paddingRight: "10px" }}>Rate</div>
+                </th>
+                <th style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "0px", textAlign: "left", background: "#d0ebff", paddingTop: "0px" }}>
+                  <div style={{ margin: 0, fontSize: "11px", marginTop: "-24px", paddingTop: "-10px", fontWeight: "900", paddingLeft: "0px" }}>Amount</div> </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr>
+                <td style={{
+                  borderLeft: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>999311</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>52,000.00</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>0%</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>0.00</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>0%</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>0.00</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: 400
+                }}>0.00</td>
+              </tr>
+
+              <tr>
+                <td style={{
+                  borderLeft: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px", fontWeight: "bold"
+                }}>Total</td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px"
+                }}>52000</td>
+                <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
+                <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
+                <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
+                <td style={{ borderRight: "1px solid #000", borderBottom: "1px solid #000" }}></td>
+                <td style={{
+                  borderRight: "1px solid #000", borderBottom: "1px solid #000", padding: "8px", textAlign: "center", paddingTop: "4px",
+                  paddingBottom: "16px"
+                }}>2,288.56</td>
+              </tr>
+            </tbody>
+          </table>
 
           <div style={{ margin: "10px 0 20px", fontSize: "11px" }}>
             Tax Amount (In words): <strong>INR zero Only</strong>
@@ -521,7 +555,7 @@ const BillOfSupplyPDF = forwardRef<BillOfSupplyHandle, BillOfSupplyProps>(functi
                 <td style={{ width: "70%", paddingBottom: "10px", textDecoration: "underline" }}><strong>Declaration:</strong></td>
                 <td style={{ width: "30%" }} />
               </tr> */}
-                 <tr>
+              <tr>
                 <td style={{ width: "70%", paddingBottom: "10px" }}>
                   <span
                     style={{

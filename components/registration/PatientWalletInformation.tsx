@@ -4,28 +4,27 @@ import { useState } from "react";
 import Image from "next/image";
 import { ScrollableContainer } from "../ui";
 import NoDataBox from "./NoDataBox";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
-interface WalletData {
-    remainingAmount?: string | number;
-    packageName?: string;
-    amount?: string | number;
-    discount?: string | number;
-    expireDate?: string;
+export interface WalletData {
+    currentBalance?: string | number | null;
+    remainingAmount?: string | number | null;
+    availableBalance?: string | number | null;
+    packageName?: string | null;
+    amount?: string | number | null;
+    packageAmount?: string | number | null;
+    discount?: string | number | null;
+    expireDate?: string | null;
+    walletExists?: boolean;
 }
 
 interface PatientWalletInformationProps {
-    walletData?: WalletData;
+    walletData?: WalletData | null;
     onViewDetails?: () => void;
 }
 
 export default function PatientWalletInformation({
-    walletData = {
-        remainingAmount: "7000.00",
-        packageName: "Madhumeh Mukt",
-        amount: "33000",
-        discount: "0%",
-        expireDate: "01 May 2026",
-    },
+    walletData,
     onViewDetails,
 }: PatientWalletInformationProps) {
     const [isExpanded, setIsExpanded] = useState(true);
@@ -34,19 +33,38 @@ export default function PatientWalletInformation({
         setIsExpanded(!isExpanded);
     };
 
-    const hasWalletData = walletData && (
-        walletData.remainingAmount !== undefined ||
-        walletData.packageName ||
-        walletData.amount !== undefined ||
-        walletData.discount !== undefined ||
-        walletData.expireDate
-    );
-
-    const formatAmount = (amount: string | number | undefined) => {
-        if (amount === undefined || amount === null) return "N/A";
-        const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
-        return `Rs. ${numAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formatAmount = (val: string | number | undefined | null) => {
+        if (val === undefined || val === null || val === "") return "NA";
+        const str = String(val).replace(/[Rs.\s,]/gi, "").trim();
+        if (!str || isNaN(parseFloat(str))) return "NA";
+        return `Rs. ${formatIndianAmount(str)}`;
     };
+
+    const formatDiscount = (val: string | number | undefined | null) => {
+        if (val === undefined || val === null || val === "") return "NA";
+        if (typeof val === "number") return `${val}%`;
+        const str = String(val).trim();
+        if (!str) return "NA";
+        return str.includes("%") ? str : `${str}%`;
+    };
+
+    const remainingVal = walletData?.currentBalance ?? walletData?.availableBalance ?? walletData?.remainingAmount;
+    const amountVal = walletData?.packageAmount ?? walletData?.amount;
+
+    const hasWalletData = Boolean(
+        walletData &&
+        walletData.walletExists !== false &&
+        (
+            (walletData.currentBalance !== undefined && walletData.currentBalance !== null && walletData.currentBalance !== "") ||
+            (walletData.availableBalance !== undefined && walletData.availableBalance !== null && walletData.availableBalance !== "") ||
+            (walletData.remainingAmount !== undefined && walletData.remainingAmount !== null && walletData.remainingAmount !== "") ||
+            Boolean(walletData.packageName) ||
+            (walletData.amount !== undefined && walletData.amount !== null && walletData.amount !== "") ||
+            (walletData.packageAmount !== undefined && walletData.packageAmount !== null && walletData.packageAmount !== "") ||
+            (walletData.discount !== undefined && walletData.discount !== null && walletData.discount !== "") ||
+            Boolean(walletData.expireDate)
+        )
+    );
 
     return (
         <div className="mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
@@ -83,49 +101,46 @@ export default function PatientWalletInformation({
                                             Remaining Amount
                                         </h5>
                                         <h4 className="font-bold text-2xl leading-[28px] text-center text-[#1D1B23]">
-                                            {formatAmount(walletData?.remainingAmount)}
+                                            {formatAmount(remainingVal)}
                                         </h4>
                                     </div>
                                     <div className="border border-[#EBECED] rounded-md divide-y divide-gray-200 bg-white">
                                         <div className="flex justify-between items-center px-5 py-[18px]">
                                             <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">Package</p>
                                             <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
-                                                {walletData?.packageName || "N/A"}
+                                                {walletData?.packageName || "NA"}
                                             </p>
                                         </div>
                                         <div className="flex justify-between items-center px-5 py-[18px]">
                                             <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">Amount</p>
                                             <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
-                                                {formatAmount(walletData?.amount)}
+                                                {formatAmount(amountVal)}
                                             </p>
                                         </div>
                                         <div className="flex justify-between items-center px-5 py-[18px]">
                                             <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">Discount</p>
                                             <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
-                                                {walletData?.discount !== undefined
-                                                    ? typeof walletData.discount === "number"
-                                                        ? `${walletData.discount}%`
-                                                        : walletData.discount
-                                                    : "N/A"}
+                                                {formatDiscount(walletData?.discount)}
                                             </p>
                                         </div>
                                         <div className="flex justify-between items-center px-5 py-[18px]">
                                             <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">Expire</p>
                                             <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
-                                                {walletData?.expireDate || "N/A"}
+                                                {walletData?.expireDate || "NA"}
                                             </p>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex justify-center mt-4">
+                                {/* <div className="flex justify-center mt-4">
                                     <button
+                                        type="button"
                                         onClick={onViewDetails}
                                         className="cursor-pointer flex flex-row justify-center items-center px-3 py-1.5 gap-2 bg-[rgba(11,140,0,0.15)] rounded-[32px] font-inter font-medium text-xs leading-[120%] text-center text-[#0B8C00] hover:bg-[rgba(11,140,0,0.25)] transition-colors"
                                     >
                                         <Image src="/icons/Eye.svg" alt="Eye icon" width={16} height={16} />
                                         View Details
                                     </button>
-                                </div>
+                                </div> */}
                             </ScrollableContainer>
                         </div>
                     ) : (

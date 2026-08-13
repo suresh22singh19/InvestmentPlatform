@@ -25,7 +25,7 @@ function formatBillDateDdMmYyyy(iso: string | undefined): string {
  * Maps appointments-list row → Payment Receipt PDF props.
  * When `payment` is null, all amounts are 0 (invoice number shows "-").
  */
-export function buildListInvoiceReceiptProps(apt: AppointmentRegistration): PaymentReceiptCaptureProps {
+export function buildListInvoiceReceiptProps(apt: AppointmentRegistration, branch?: any): PaymentReceiptCaptureProps {
     const reg = apt.registration;
     const payment = apt.payment;
     const hasPayment = payment != null;
@@ -81,6 +81,8 @@ export function buildListInvoiceReceiptProps(apt: AppointmentRegistration): Paym
     const cityDisplay = city !== "" ? city : "N/A";
     const stateDisplay = state !== "" ? state : "N/A";
 
+    const resolvedBranch = branch ?? (apt as any)?.branch ?? (apt?.registration as any)?.branch ?? null;
+
     return {
         captureId: "registration-list-invoice-capture",
         patientName,
@@ -99,5 +101,6 @@ export function buildListInvoiceReceiptProps(apt: AppointmentRegistration): Paym
         transactionId: payment?.transactionId ?? undefined,
         paymentMode: payment?.mode ?? undefined,
         gstBilling: false,
+        branch: resolvedBranch,
     };
 }

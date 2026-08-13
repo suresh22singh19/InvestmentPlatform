@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -14,7 +14,7 @@ import PatientAlreadyExistsDialog from "@/components/registration/PatientAlready
 import { MessageDialog } from "@/components/ui/MessageDialog";
 import ScrollableContainer from "@/components/ui/ScrollableContainer";
 import { baseApi } from "@/store/api/baseApi";
-import { useLazyGlobalPatientSearchQuery } from "@/store/api/registrationApi";
+import { useLazyGlobalPatientSearchQuery, useGetArogyaCardSeriesQuery } from "@/store/api/registrationApi";
 import type { GlobalPatientSearchAppointment } from "@/store/api/registrationApi";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -25,6 +25,9 @@ import {
 } from "@/store/slices/authSlice";
 import { useLogoutMutation } from "@/store/api/authApi";
 import { logoutJatayu } from "@/store/api/jatayuApi";
+import { ThreeDotLoader } from "@/components/ui/ThreeDotLoader";
+import { FaCrown } from "react-icons/fa";
+import { FiBell, FiChevronDown } from "react-icons/fi";
 
 const GLOBAL_SEARCH_TYPE_OPTIONS: SelectOption[] = [
   { label: "None", value: "" },
@@ -32,122 +35,12 @@ const GLOBAL_SEARCH_TYPE_OPTIONS: SelectOption[] = [
   { label: "Phone No.", value: "phone" },
   { label: "Patient Name", value: "patientname" },
   { label: "Pre-booking", value: "prebooking" },
-  { label: "JS Health Card No.", value: "jsHealthCardNo" },
+  { label: "Health Card No.", value: "jsHealthCardNo" },
   { label: "OPD Number", value: "opdNumber" },
 
 ];
 
-const searchValidationSchema = Yup.object().shape({
-  searchType: Yup.string().nullable().test(
-    "required-when-search-has-value",
-    "Please select a option",
-    function (value) {
-      const { searchValue } = this.parent;
-      // Only require searchType if searchValue has text
-      if (searchValue && searchValue.trim().length > 0) {
-        // Empty string (None) is not a valid option when there's a search value
-        return value !== null && value !== undefined && value !== "";
-      }
-      return true;
-    }
-  ),
-  searchValue: Yup.string()
-    .optional()
-    .test(
-      "validate-by-search-type",
-      function (value) {
-        const { searchType } = this.parent;
-        
-        // No validation needed if no search type selected or search value is empty
-        if (!searchType || searchType === "" || !value || value.trim().length === 0) {
-          return true;
-        }
-        
-        // Validate based on search type
-        if (searchType === "uhid") {
-          if (value.length !== 11) {
-            return this.createError({
-              message: "UHID must be exactly 11 characters",
-            });
-          }
-          // UHID allows alphanumeric (characters and digits)
-          if (!/^[a-zA-Z0-9]+$/.test(value)) {
-            return this.createError({
-              message: "UHID must contain only letters and digits",
-            });
-          }
-        } else if (searchType === "phone") {
-          if (value.length !== 10) {
-            return this.createError({
-              message: "Phone No. must be exactly 10 digits",
-            });
-          }
-          if (!/^\d+$/.test(value)) {
-            return this.createError({
-              message: "Phone No. must contain only digits",
-            });
-          }
-        } else if (searchType === "prebooking") {
-          // Pre-booking requires minimum 2 characters
-          if (value.length < 2) {
-            return this.createError({
-              message: "Pre-booking must be at least 2 characters",
-            });
-          }
-          // Pre-booking allows alphanumeric (characters and digits)
-          if (!/^[a-zA-Z0-9]+$/.test(value)) {
-            return this.createError({
-              message: "Pre-booking must contain only letters and digits",
-            });
-          }
-        } else if (searchType === "patientname") {
-          // Patient Name allows letters and spaces only, no special characters or digits
-          if (!/^[a-zA-Z\s]+$/.test(value)) {
-            return this.createError({
-              message: "Patient Name must contain only letters and spaces",
-            });
-          }
-          // Minimum 2 characters required
-          if (value.trim().length < 2) {
-            return this.createError({
-              message: "Patient Name must be at least 2 characters",
-            });
-          }
-        } else if (searchType === "jsHealthCardNo") {
-          // JS Health Card No. must be exactly 12 digits starting with 50503030
-          if (value.length !== 12) {
-            return this.createError({
-              message: "JS Health Card No. must be exactly 12 digits",
-            });
-          }
-          if (!/^\d+$/.test(value)) {
-            return this.createError({
-              message: "JS Health Card No. must contain only digits",
-            });
-          }
-          if (!/^50503030\d{4}$/.test(value)) {
-            return this.createError({
-              message: "JS Health Card No. must start with 50503030 followed by 4 digits",
-            });
-          }
-        } else if (searchType === "opdNumber") {
-          // OPD Number must be between 1 and 11 digits
-          if (value.length < 1 || value.length > 11) {
-            return this.createError({
-              message: "OPD Number must be between 1 and 11 digits",
-            });
-          }
-          if (!/^\d+$/.test(value)) {
-            return this.createError({
-              message: "OPD Number must contain only digits",
-            });
-          }
-        }
-        
-        return true;
-      }
-    ),
-});
+
 
 type HeaderAction = {
   key: string;
@@ -170,9 +63,10 @@ export function HeaderBar({
   userRole = "",
   onLogout,
   actions,
-   onToggleNav,
+  onToggleNav,
 }: HeaderBarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectUser);
   const branchAccess = useAppSelector(selectBranchAccess) ?? [];
@@ -186,11 +80,125 @@ export function HeaderBar({
   const [errorMessage, setErrorMessage] = useState("");
   const [showLogoutSuccess, setShowLogoutSuccess] = useState(false);
   const [profileImageFailed, setProfileImageFailed] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const notificationRef = useRef<HTMLDivElement | null>(null);
-  
+
   const [triggerGlobalSearch, { isLoading: isSearching }] = useLazyGlobalPatientSearchQuery();
   const [logoutApi] = useLogoutMutation();
+
+  const { data: arogyaCardSeries } = useGetArogyaCardSeriesQuery(
+    { id: 21, branchId: selectedBranch?.id ? Number(selectedBranch?.id) : undefined },
+    { skip: !selectedBranch?.id || Number(selectedBranch?.id) === 0 || !pathname?.startsWith("/registration") }
+  );
+
+  const cardLengthInfo = useMemo(() => {
+    const d = arogyaCardSeries?.data;
+    if (Array.isArray(d) && d.length > 0) {
+      let absoluteMin = 12;
+      let absoluteMax = 12;
+      d.forEach((series, idx) => {
+        const s = String(series.seriesStart || "").replace(/\D/g, "");
+        const e = series.seriesEnd != null ? String(series.seriesEnd || "").replace(/\D/g, "") : s;
+        if (s) {
+          const currentMin = Math.min(s.length, e.length);
+          const currentMax = Math.max(s.length, e.length);
+          if (idx === 0) {
+            absoluteMin = currentMin;
+            absoluteMax = currentMax;
+          } else {
+            absoluteMin = Math.min(absoluteMin, currentMin);
+            absoluteMax = Math.max(absoluteMax, currentMax);
+          }
+        }
+      });
+      return { min: absoluteMin, max: absoluteMax };
+    }
+
+    const singleSeries = d as any;
+    if (singleSeries && singleSeries.seriesStart) {
+      const s = String(singleSeries.seriesStart).replace(/\D/g, "");
+      const e = singleSeries.seriesEnd != null ? String(singleSeries.seriesEnd).replace(/\D/g, "") : s;
+      return {
+        min: Math.min(s.length, e.length),
+        max: Math.max(s.length, e.length),
+      };
+    }
+
+    return { min: 12, max: 12 };
+  }, [arogyaCardSeries]);
+
+  const searchValidationSchema = useMemo(() => {
+    return Yup.object().shape({
+      searchType: Yup.string().nullable().test(
+        "required-when-search-has-value",
+        "Please select a option",
+        function (value) {
+          const { searchValue } = this.parent;
+          if (searchValue && searchValue.trim().length > 0) {
+            return value !== null && value !== undefined && value !== "";
+          }
+          return true;
+        }
+      ),
+      searchValue: Yup.string()
+        .optional()
+        .test(
+          "validate-by-search-type",
+          function (value) {
+            const { searchType } = this.parent;
+            if (!searchType || searchType === "" || !value || value.trim().length === 0) {
+              return true;
+            }
+            if (searchType === "uhid") {
+              if (value.length < 2 || value.length > 20) {
+                return this.createError({ message: "UHID must be between 2 and 20 characters" });
+              }
+            } else if (searchType === "phone") {
+              if (value.length !== 10) {
+                return this.createError({ message: "Phone No. must be exactly 10 digits" });
+              }
+              if (!/^\d+$/.test(value)) {
+                return this.createError({ message: "Phone No. must contain only digits" });
+              }
+            } else if (searchType === "prebooking") {
+              if (value.length < 2) {
+                return this.createError({ message: "Pre-booking must be at least 2 characters" });
+              }
+              if (!/^[a-zA-Z0-9]+$/.test(value)) {
+                return this.createError({ message: "Pre-booking must contain only letters and digits" });
+              }
+            } else if (searchType === "patientname") {
+              if (!/^[a-zA-Z\s]+$/.test(value)) {
+                return this.createError({ message: "Patient Name must contain only letters and spaces" });
+              }
+              if (value.trim().length < 2) {
+                return this.createError({ message: "Patient Name must be at least 2 characters" });
+              }
+            } else if (searchType === "jsHealthCardNo") {
+              const { min, max } = cardLengthInfo;
+              if (value.length < min || value.length > max) {
+                const msg = min === max
+                  ? `Health Card No. must be exactly ${min} digits`
+                  : `Health Card No. must be ${min}-${max} digits`;
+                return this.createError({ message: msg });
+              }
+              if (!/^\d+$/.test(value)) {
+                return this.createError({ message: "Health Card No. must contain only digits" });
+              }
+            } else if (searchType === "opdNumber") {
+              if (value.length < 1 || value.length > 11) {
+                return this.createError({ message: "OPD Number must be between 1 and 11 digits" });
+              }
+              if (!/^\d+$/.test(value)) {
+                return this.createError({ message: "OPD Number must contain only digits" });
+              }
+            }
+            return true;
+          }
+        )
+    });
+  }, [cardLengthInfo]);
 
   // Map frontend search types to API search types
   const mapSearchTypeToAPI = (searchType: string | null): string => {
@@ -209,27 +217,27 @@ export function HeaderBar({
     if (!searchType || !searchValue || searchType === "") {
       return false;
     }
-    
+
     const trimmedValue = searchValue.trim();
     if (trimmedValue.length === 0) {
       return false;
     }
-    
+
     // Check based on search type
     if (searchType === "phone") {
       return trimmedValue.length === 10 && /^\d+$/.test(trimmedValue);
     } else if (searchType === "uhid") {
-      return trimmedValue.length === 11 && /^[a-zA-Z0-9]+$/.test(trimmedValue);
+      return trimmedValue.length >= 2 && trimmedValue.length <= 20;
     } else if (searchType === "prebooking") {
       return trimmedValue.length >= 2 && /^[a-zA-Z0-9]+$/.test(trimmedValue);
     } else if (searchType === "patientname") {
       return trimmedValue.length >= 2 && /^[a-zA-Z\s]+$/.test(trimmedValue);
     } else if (searchType === "jsHealthCardNo") {
-      return trimmedValue.length === 12 && /^50503030\d{4}$/.test(trimmedValue);
+      return trimmedValue.length >= cardLengthInfo.min && trimmedValue.length <= cardLengthInfo.max && /^\d+$/.test(trimmedValue);
     } else if (searchType === "opdNumber") {
       return trimmedValue.length >= 1 && trimmedValue.length <= 11 && /^\d+$/.test(trimmedValue);
     }
-    
+
     return false;
   };
 
@@ -258,7 +266,7 @@ export function HeaderBar({
               ? { branchId: effectiveBranchId }
               : {}),
           }).unwrap();
-          
+
           if (result.success && result.data) {
             setSearchResults(result.data);
             setIsPatientDialogOpen(true);
@@ -297,11 +305,11 @@ export function HeaderBar({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      
+
       if (accountMenuRef.current && !accountMenuRef.current.contains(target)) {
         setIsAccountMenuOpen(false);
       }
-      
+
       if (notificationRef.current && !notificationRef.current.contains(target)) {
         setIsNotificationOpen(false);
       }
@@ -333,7 +341,9 @@ export function HeaderBar({
   }, [user?.role?.name, userRole]);
 
   const headerActions = actions?.length
-    ? actions.map((action) => {
+    ? actions
+      .filter((action) => action.key !== "chat")
+      .map((action) => {
         // Override badge for bell icon with dynamic count
         if (action.key === "bell") {
           return { ...action, badge: notificationCount > 0 ? notificationCount : undefined };
@@ -341,136 +351,33 @@ export function HeaderBar({
         return action;
       })
     : [
-        {
-          key: "chat",
-          iconSrc: "/icons/Message.svg",
-          alt: "Messages",
-        },
-        // {
-        //   key: "night",
-        //   iconSrc: "/icons/NightIcon.svg",
-        //   alt: "Night mode",
-        // },
-        {
-          key: "bell",
-          iconSrc: "/icons/Bell.svg",
-          alt: "Notifications",
-          badge: notificationCount > 0 ? notificationCount : undefined,
-        },
-        // {
-        //   key: "settings",
-        //   iconSrc: "/icons/Settings.svg",
-        //   alt: "Settings",
-        // },
-      ];
+      // {
+      //   key: "night",
+      //   iconSrc: "/icons/NightIcon.svg",
+      //   alt: "Night mode",
+      // },
+      {
+        key: "bell",
+        iconSrc: "/icons/Bell.svg",
+        alt: "Notifications",
+        badge: notificationCount > 0 ? notificationCount : undefined,
+      },
+      // {
+      //   key: "settings",
+      //   iconSrc: "/icons/Settings.svg",
+      //   alt: "Settings",
+      // },
+    ];
 
   return (
-    <header className="flex w-full items-center justify-between gap-4 px-5 py-3 border-b border-[#E6E6E6]">
+    <header className="flex w-full items-center justify-between gap-4 px-6 py-3 bg-slate-950 border-b border-slate-800 shadow-md text-white">
       {/* Logo on left */}
       <div className="flex items-center">
-        <Logo width={140} height={53} />
-      </div>
-
-      {/* Search in center */}
-      <div className="flex flex-1 items-start justify-center gap-2 md:hidden lg:flex">
-        <div className="max-w-[347px]">
-          <FormSelectField
-            label=""
-            hideLabel
-            options={GLOBAL_SEARCH_TYPE_OPTIONS}
-            placeholder="Select"
-            value={formik.values.searchType}
-            onChange={(value) => {
-              const selectedValue = typeof value === "string" ? value : null;
-              formik.setFieldValue("searchType", selectedValue);
-              // Clear search value whenever select option changes
-              formik.setFieldValue("searchValue", "");
-              // Clear error when valid option is selected
-              if (selectedValue && selectedValue !== "") {
-                formik.setFieldError("searchType", undefined);
-              }
-              // Validate to ensure error is cleared
-              formik.validateField("searchType");
-            }}
-            onBlur={() => {
-              formik.setFieldTouched("searchType", true);
-              // Trigger validation on blur
-              formik.validateField("searchType");
-              formik.validateField("searchValue");
-            }}
-            error={formik.touched.searchType && formik.errors.searchType ? formik.errors.searchType : undefined}
-            width={320}
-            height={44}
-            background="white"
-          />
-        </div>
-      
-        <div className="min-w-0 flex-1 max-w-[320px] self-start">
-          <SearchBar 
-            className="w-full"
-            value={formik.values.searchValue}
-            onChange={(value) => {
-              const hasSearchType = formik.values.searchType && formik.values.searchType !== "";
-              
-              // Only set value if search type is selected
-              if (hasSearchType) {
-                formik.setFieldValue("searchValue", value, false);
-              }
-            }}
-            onAttemptInput={() => {
-              // When user tries to type without selecting an option, show error
-              const hasSearchType = formik.values.searchType && formik.values.searchType !== "";
-              if (!hasSearchType) {
-                formik.setFieldTouched("searchType", true, false);
-                // Set error directly since validation schema requires searchValue to have text
-                formik.setFieldError("searchType", "Please select a option");
-              }
-            }}
-            onBlur={() => {
-              formik.setFieldTouched("searchValue", true);
-              formik.setFieldTouched("searchType", true);
-              // Trigger validation on blur
-              formik.validateField("searchType");
-              formik.validateField("searchValue");
-            }}
-            onSubmit={() => {
-              // Only submit if search is ready
-              if (isSearchReady) {
-                formik.validateForm().then(() => {
-                  if (formik.isValid && formik.values.searchType && formik.values.searchValue) {
-                    formik.submitForm();
-                  }
-                });
-              }
-            }}
-            error={formik.touched.searchValue && formik.errors.searchValue ? formik.errors.searchValue : undefined}
-            allowOnlyDigits={
-              formik.values.searchType === "phone" || 
-              formik.values.searchType === "jsHealthCardNo" || 
-              formik.values.searchType === "opdNumber"
-            }
-            allowLettersAndSpaces={formik.values.searchType === "patientname"}
-            maxLength={
-              formik.values.searchType === "phone" 
-                ? 10 
-                : formik.values.searchType === "uhid" 
-                ? 11 
-                : formik.values.searchType === "jsHealthCardNo"
-                ? 9
-                : formik.values.searchType === "opdNumber"
-                ? 11
-                : formik.values.searchType === "prebooking"
-                ? undefined // No max length for prebooking
-                : undefined
-            }
-            disabled={!formik.values.searchType || formik.values.searchType === ""}
-            searchButtonDisabled={!isSearchReady || isSearching}
-          />
-        </div>
+        <Logo />
       </div>
 
       {/* Icons and User on right */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3.5">
         {headerActions.map((action) => {
           // Special handling for notification bell icon
           if (action.key === "bell") {
@@ -482,16 +389,16 @@ export function HeaderBar({
               >
                 <button
                   type="button"
-                  className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#262D3B] shadow-[0px_15px_30px_rgba(34,56,43,0.08)] transition hover:bg-[#E8F0EA]"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-amber-400 border border-slate-800 shadow-md transition hover:bg-slate-800 hover:border-amber-400/50"
                   aria-label={action.alt}
                   onClick={() => {
                     setIsNotificationOpen((prev) => !prev);
                     action.onClick?.();
                   }}
                 >
-                  <Image src={action.iconSrc} alt={action.alt} width={20} height={20} />
+                  <FiBell className="text-lg text-amber-400" />
                   {action.badge ? (
-                    <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#F3696F] px-1 text-xs font-semibold text-white">
+                    <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white shadow animate-pulse">
                       {action.badge}
                     </span>
                   ) : null}
@@ -502,25 +409,24 @@ export function HeaderBar({
                   notificationCount={notificationCount}
                   onNotificationCountChange={setNotificationCount}
                   onMarkAllAsRead={() => {
-                    // Handle mark all as read
                     console.log("Mark all as read");
                   }}
                 />
               </div>
             );
           }
-          
+
           return (
             <button
               key={action.key}
               type="button"
-              className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#262D3B] shadow-[0px_15px_30px_rgba(34,56,43,0.08)] transition hover:bg-[#E8F0EA]"
+              className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-amber-400 border border-slate-800 shadow-md transition hover:bg-slate-800"
               aria-label={action.alt}
               onClick={action.onClick}
             >
-              <Image src={action.iconSrc} alt={action.alt} width={20} height={20} />
+              <Image src={action.iconSrc} alt={action.alt} width={18} height={18} />
               {action.badge ? (
-                <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#F3696F] px-1 text-xs font-semibold text-white">
+                <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white shadow">
                   {action.badge}
                 </span>
               ) : null}
@@ -528,49 +434,46 @@ export function HeaderBar({
           );
         })}
 
+        {/* User VIP Profile Card */}
         <div
           ref={accountMenuRef}
-          className="relative flex items-center gap-3"
+          className="relative flex items-center gap-3 p-1.5 px-3 rounded-2xl bg-slate-900 border border-slate-800 hover:border-amber-400/80 transition-all cursor-pointer shadow-md group"
+          onClick={() => setIsAccountMenuOpen((prev) => !prev)}
         >
           {user?.imgUrl && !profileImageFailed ? (
             <Image
               src={user.imgUrl}
               alt=""
-              width={44}
-              height={44}
-              className="h-11 w-11 rounded-full object-cover"
+              width={40}
+              height={40}
+              className="h-9 w-9 rounded-xl object-cover border border-amber-400"
               unoptimized
               onError={() => setProfileImageFailed(true)}
             />
           ) : (
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#0B8C00] text-base font-semibold text-white">
-              {userEmail?.[0]?.toUpperCase() ?? "A"}
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-black text-sm border border-amber-300 shadow">
+              {userEmail?.[0]?.toUpperCase() ?? "S"}
             </div>
           )}
-          <div className="text-left text-sm" aria-expanded={isAccountMenuOpen}
-            onClick={() => setIsAccountMenuOpen((prev) => !prev)}>
-            <p className="font-semibold text-[#262D3B]">{displayName}</p>
-            {roleDisplayName ? (
-              <p className="text-xs text-[#8A8F9B]">{roleDisplayName}</p>
-            ) : null}
+
+          <div className="text-left text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-white group-hover:text-amber-400 transition-colors">
+                {displayName}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-400 border border-amber-400/40 text-[9px] font-black uppercase flex items-center gap-0.5">
+                <FaCrown className="text-[9px] text-amber-400" /> VIP
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+              {roleDisplayName || "Super Admin Shareholder"}
+            </span>
           </div>
-          <button
-            type="button"
-            className="flex h-9 w-9 items-center justify-center text-[#262D3B] transition "
-            aria-label="Account menu"
-            aria-expanded={isAccountMenuOpen}
-            onClick={() => setIsAccountMenuOpen((prev) => !prev)}
-          >
-            <Image
-              src="/icons/ArrowDown.svg"
-              alt="Expand menu"
-              width={16}
-              height={16}
-              className={`transition-transform ${isAccountMenuOpen ? "rotate-180" : ""}`}
-            />
-          </button>
+
+          <FiChevronDown className={`text-slate-400 group-hover:text-amber-400 text-sm transition-transform ${isAccountMenuOpen ? "rotate-180" : ""}`} />
+
           {isAccountMenuOpen ? (
-            <div className="absolute right-0 top-full mt-3 w-[200px] overflow-hidden rounded-2xl border border-[#ECF0ED] bg-white shadow-[0px_24px_48px_rgba(34,56,43,0.12)] z-50">
+            <div className="absolute right-0 top-full mt-3 w-[220px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 text-white shadow-2xl z-50">
               {branchAccess.length > 0 ? (
                 <div className="px-2 py-2 border-b border-[#ECF0ED]">
                   <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8A8F9B]">
@@ -583,11 +486,10 @@ export function HeaderBar({
                         <button
                           key={branch.id}
                           type="button"
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs transition ${
-                            isActiveBranch
-                              ? "bg-[#E9F8E8] text-[#0B8C00] font-semibold"
-                              : "text-[#434956] hover:bg-[#F2F8F2]"
-                          }`}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs transition ${isActiveBranch
+                            ? "bg-[#E9F8E8] text-[#0B8C00] font-semibold"
+                            : "text-[#434956] hover:bg-[#F2F8F2]"
+                            }`}
                           onClick={() => {
                             dispatch(setSelectedBranch(branch.id));
                             dispatch(baseApi.util.resetApiState());
@@ -609,46 +511,49 @@ export function HeaderBar({
                   </ScrollableContainer>
                 </div>
               ) : null}
+
               <button
                 type="button"
-                className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#262D3B] transition hover:bg-[#F2F8F2] cursor-pointer"
-                onClick={() => {
-                  setIsAccountMenuOpen(false);
-                  router.push("/profile");
-                }}
-              >
-                <Image src="/icons/ProfileIcon.svg" alt="My profile" width={20} height={20} />
-                My Profile
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#D14D4F] transition hover:bg-[#FFF2F2] cursor-pointer"
+                className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#D14D4F] transition hover:bg-[#FFF2F2] cursor-pointer disabled:cursor-not-allowed disabled:opacity-75"
+                disabled={isLoggingOut}
                 onClick={async () => {
-                  setIsAccountMenuOpen(false);
+                  setIsLoggingOut(true);
                   try {
-                    await logoutJatayu();
-                  } catch (e) {
-                    console.error("Jatayu logout failed:", e);
-                  }
-                  try {
+                    try {
+                      await logoutJatayu();
+                    } catch (e) {
+                      console.error("Jatayu logout failed:", e);
+                    }
                     await logoutApi().unwrap();
-                  } catch {
-                    // proceed with logout even if API fails
+                    setIsAccountMenuOpen(false);
+                    setShowLogoutSuccess(true);
+                  } catch (err: any) {
+                    const errMsg = err?.data?.message || err?.message || "Failed to logout. Please try again.";
+                    setErrorMessage(errMsg);
+                    setShowErrorDialog(true);
+                  } finally {
+                    setIsLoggingOut(false);
                   }
-                  setShowLogoutSuccess(true);
                 }}
               >
-                <Image src="/icons/LogOutIcon.svg" alt="Logout" width={20} height={20} />
-                Logout
+                <div className="flex w-full items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Image src="/icons/LogOutIcon.svg" alt="Logout" width={20} height={20} />
+                    <span>Logout</span>
+                  </div>
+                  {isLoggingOut && (
+                    <ThreeDotLoader color="green" size="small" className="ml-auto" />
+                  )}
+                </div>
               </button>
             </div>
           ) : null}
         </div>
-        <button onClick={onToggleNav}  className="web-hide relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#262D3B] shadow-[0px_15px_30px_rgba(34,56,43,0.08)] transition hover:bg-[#E8F0EA]">
+        <button onClick={onToggleNav} className="web-hide relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#262D3B] shadow-[0px_15px_30px_rgba(34,56,43,0.08)] transition hover:bg-[#E8F0EA]">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#262D3B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
         </button>
       </div>
-      
+
       {/* Patient Details Dialog */}
       <PatientAlreadyExistsDialog
         open={isPatientDialogOpen}

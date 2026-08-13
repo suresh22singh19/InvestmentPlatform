@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { Formik, Form } from "formik";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -114,7 +115,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           />
 
           {/* Remember Me Toggle and Forgot Password */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pt-1">
             <Toggle
               checked={values.rememberMe}
               onChange={(checked) => {
@@ -126,24 +127,35 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             <button
               type="button"
               onClick={onForgotPassword}
-              className="text-[#0B8C00] text-base font-normal leading-[120%] hover:underline focus:outline-none transition-colors cursor-pointer"
+              className="text-amber-400 text-sm font-extrabold hover:text-amber-300 focus:outline-none transition-colors cursor-pointer"
             >
               Forgot Password
             </button>
           </div>
 
           {/* Sign In Button */}
-          <Button
+          <button
             type="submit"
-            variant="primary"
-            size="large"
-            fullWidth
-            className="mt-4"
             disabled={isSubmitting || isLoading || isNavigating}
-            isLoading={isSubmitting || isLoading || isNavigating}
+            className="w-full mt-6 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 text-slate-950 font-black text-base tracking-wide shadow-lg shadow-amber-500/20 hover:from-amber-300 hover:to-yellow-300 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
           >
-            Sign In
-          </Button>
+            {isSubmitting || isLoading || isNavigating ? (
+              <span className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-slate-950 border-t-transparent" />
+            ) : (
+              "Sign In"
+            )}
+          </button>
+
+          {/* Sign Up Navigation Link */}
+          <div className="pt-2 text-center">
+            <span className="text-sm text-slate-400 font-medium">Don't have an account? </span>
+            <Link
+              href="/signup"
+              className="text-amber-400 font-extrabold hover:text-amber-300 text-sm inline-block transition-colors underline cursor-pointer ml-1"
+            >
+              Sign Up
+            </Link>
+          </div>
         </Form>
       )}
     </Formik>

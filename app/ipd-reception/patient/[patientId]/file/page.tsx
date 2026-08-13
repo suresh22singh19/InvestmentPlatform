@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeading } from "@/components/layout/PageHeading";
 import { MessageDialog, SpinnerLoader } from "@/components/ui";
-import { ReceptionAdmissionStepper } from "./ReceptionAdmissionStepper";
+import { ReceptionFilePatientHeader } from "./ReceptionFilePatientHeader";
 import { Step1PatientFileVerification } from "./Step1PatientFileVerification";
 import { Step2IpdAdmission } from "./Step2IpdAdmission";
 import {
@@ -18,24 +17,33 @@ import { mapAwaitingPatientToOpenFile } from "@/lib/ipd-reception/mapAwaitingPat
 import { getRtkErrorMessage } from "@/lib/ipd-reception/mapIpdAwaitingPatients";
 import { resolveReceptionBranchId } from "@/lib/ipd-reception/resolveReceptionBranchId";
 import {
-  buildSelectedDocumentsMap,
+  allDocumentsSelected,
+  buildDocumentSelectionsMap,
   findAwaitingPatientById,
-  hasAtLeastOneSelectedDocument,
+  hasAtLeastOneRequiredDocument,
   sortRequiredDocuments,
 } from "@/lib/ipd-reception/requiredDocumentsUtils";
+import type { DocumentSelection } from "@/lib/ipd-reception/requiredDocumentsUtils";
 import { useAppSelector } from "@/store/hooks";
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
-import type { OpenFileStep, OpenFileStep1Form } from "@/lib/ipd-reception/types";
+import type { OpenFileStep1Form } from "@/lib/ipd-reception/types";
 
 const INITIAL_STEP1_FORM: OpenFileStep1Form = {
-  vitals: {
-    bloodPressure: "",
-    sugarLevel: "",
-    temperature: "",
-    pulseRate: "",
-    spo2: "",
-  },
-  dietary: { dietPlanRequest: "", clinicalNote: "" },
+  // vitals: {
+  //   bloodPressure: "",
+  //   sugarLevel: "",
+  //   temperature: "",
+  //   pulseRate: "",
+  //   spo2: "",
+  // },
+  patientIdTagNumber:"",
+  // _dietary: { dietPlanRequest: "", clinicalNote: "" },
+  // get dietary() {
+  //   return this._dietary;
+  // },
+  // set dietary(value) {
+  //   this._dietary = value;
+  // },
 };
 
 const LISTING_QUERY_OPTIONS = {
@@ -55,7 +63,7 @@ function createUniqueAdmissionNumber(): string {
 
 export default function ReceptionOpenFilePage() {
   const params = useParams();
-  const patientId = typeof params.patientId === "string" ? params.patientId : "";
+  const patientId = typeof params?.patientId === "string" ? params?.patientId : "";
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,7 +71,7 @@ export default function ReceptionOpenFilePage() {
   const userBranchId = useAppSelector(selectUserBranchId);
   const numericPatientId = Number(patientId);
   const isValidPatientId = Number.isFinite(numericPatientId) && numericPatientId > 0;
-  const nonCompliantMode = searchParams.get("mode") === "non-compliant";
+  const nonCompliantMode = searchParams?.get("mode") === "non-compliant";
 
   const {
     data: awaitingListingResponse,
@@ -100,13 +108,15 @@ export default function ReceptionOpenFilePage() {
     [patientDetails?.branchId, listingPatient?.branchId, selectedBranch?.id, userBranchId]
   );
 
-  const [currentStep, setCurrentStep] = useState<OpenFileStep>(nonCompliantMode ? 2 : 1);
   const [admissionNumberGenerated, setAdmissionNumberGenerated] = useState(false);
   const [generatedAdmissionNumber, setGeneratedAdmissionNumber] = useState("");
   const [step1Form, setStep1Form] = useState<OpenFileStep1Form>(INITIAL_STEP1_FORM);
-  const [selectedDocuments, setSelectedDocuments] = useState<Record<string, boolean>>({});
+  const [confirmPatientIdTagIssued, setConfirmPatientIdTagIssued] = useState(false);
+  const [submitValidationAttempted, setSubmitValidationAttempted] = useState(false);
+  const [documentSelections, setDocumentSelections] = useState<
+    Record<number, DocumentSelection | undefined>
+  >({});
   const [confirmConsentsReceived, setConfirmConsentsReceived] = useState(false);
-  const [confirmIdTag, setConfirmIdTag] = useState(false);
   const [finalizeDialog, setFinalizeDialog] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -124,64 +134,131 @@ export default function ReceptionOpenFilePage() {
     if (!listingPatient) return;
 
     setStep1Form({
-      vitals: { ...INITIAL_STEP1_FORM.vitals },
-      dietary: {
-        dietPlanRequest: "",
-        clinicalNote: "",
-      },
+      // vitals: { ...INITIAL_STEP1_FORM.vitals },
+      // dietary: {
+      //   dietPlanRequest: "",
+      //   clinicalNote: "",
+      // },
+        patientIdTagNumber:"",
     });
+    setConfirmPatientIdTagIssued(false);
+    setSubmitValidationAttempted(false);
     setAdmissionNumberGenerated(false);
     setGeneratedAdmissionNumber("");
-    setCurrentStep(nonCompliantMode ? 2 : 1);
     setConfirmConsentsReceived(false);
-    setConfirmIdTag(false);
     setFinalizeDialog({ open: false, variant: "success", message: "" });
     setDocumentsValidationError(null);
   }, [listingPatient?.patientId, nonCompliantMode]);
 
   useEffect(() => {
-    setSelectedDocuments(buildSelectedDocumentsMap(requiredDocuments));
+    setDocumentSelections(buildDocumentSelectionsMap(requiredDocuments));
   }, [requiredDocuments]);
 
-  useEffect(() => {
-    if (requiredDocuments.length > 0 && !hasAtLeastOneSelectedDocument(requiredDocuments, selectedDocuments)) {
-      setDocumentsValidationError("Please select at least one document.");
-    } else {
-      setDocumentsValidationError(null);
-    }
-  }, [requiredDocuments, selectedDocuments]);
-
-  const pageTitle = useMemo(
-    () => {
-      if (nonCompliantMode) return "Documents";
-      return currentStep === 1 ? "Patient File & Verification" : "IPD Admission";
-    },
-    [currentStep, nonCompliantMode]
-  );
-
-  const handleToggleDocument = (documentMasterId: number) => {
-    const key = String(documentMasterId);
-    setSelectedDocuments((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (hasAtLeastOneSelectedDocument(requiredDocuments, next)) {
-        setDocumentsValidationError(null);
+  const handleRequiredChange = (documentMasterId: number, checked: boolean) => {
+    setDocumentSelections((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        next[documentMasterId] = "required";
+      } else if (prev[documentMasterId] === "required") {
+        delete next[documentMasterId];
       }
       return next;
     });
+    setDocumentsValidationError(null);
   };
 
-  const hasSelectedRequiredDocument = useMemo(
-    () => hasAtLeastOneSelectedDocument(requiredDocuments, selectedDocuments),
-    [requiredDocuments, selectedDocuments]
+  const handleNotRequiredChange = (documentMasterId: number, checked: boolean) => {
+    setDocumentSelections((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        next[documentMasterId] = "not_required";
+      } else if (prev[documentMasterId] === "not_required") {
+        delete next[documentMasterId];
+      }
+      return next;
+    });
+    setDocumentsValidationError(null);
+  };
+
+  const allDocumentsHaveSelection = useMemo(
+    () => allDocumentsSelected(requiredDocuments, documentSelections),
+    [requiredDocuments, documentSelections]
   );
 
-  const canFinalize = confirmConsentsReceived && hasSelectedRequiredDocument;
+  const hasSelectedRequiredDocument = useMemo(
+    () => hasAtLeastOneRequiredDocument(requiredDocuments, documentSelections),
+    [requiredDocuments, documentSelections]
+  );
+
+  const canFinalize =
+    confirmConsentsReceived &&
+    allDocumentsHaveSelection &&
+    hasSelectedRequiredDocument;
+
+  const isNonCompliantValid = canFinalize;
+
+  const canUpdateDocument = !submitValidationAttempted || isNonCompliantValid;
+
+  const isStep1Valid =
+    nonCompliantMode ||
+    (admissionNumberGenerated &&
+      Boolean(step1Form.patientIdTagNumber?.trim()) &&
+      confirmPatientIdTagIssued);
+
+  const canSubmit = !submitValidationAttempted || isStep1Valid;
+
+  const handleSubmit = async () => {
+    if (nonCompliantMode) {
+      setSubmitValidationAttempted(true);
+
+      if (!allDocumentsHaveSelection) {
+        setDocumentsValidationError(
+          "Please select Required or Not Required for all documents."
+        );
+      } else if (!hasSelectedRequiredDocument) {
+        setDocumentsValidationError("Please select at least one required document.");
+      } else {
+        setDocumentsValidationError(null);
+      }
+
+      if (!isNonCompliantValid) return;
+
+      await handleFinalize();
+      return;
+    }
+
+    setSubmitValidationAttempted(true);
+
+    if (!isStep1Valid) return;
+
+    await handleFinalize();
+  };
 
   const handleFinalize = async () => {
-    if (!confirmConsentsReceived || !patientDetails || !listingPatient) return;
+    if (!patientDetails || !listingPatient) return;
 
-    if (!hasSelectedRequiredDocument) {
-      setDocumentsValidationError("Please select at least one document.");
+    if (nonCompliantMode) {
+      try {
+        const documents = requiredDocuments.map((doc) => ({
+          documentMasterId: doc.documentMasterId,
+          isSubmitted: documentSelections[doc.documentMasterId] === "required",
+        }));
+        await submitPendingDocuments({
+          patientId: numericPatientId,
+          documents,
+        }).unwrap();
+        setFinalizeDialog({
+          open: true,
+          variant: "success",
+          message: "Documents updated successfully.",
+        });
+      } catch (err) {
+        setFinalizeDialog({
+          open: true,
+          variant: "error",
+          message: getRtkErrorMessage(err, "Failed to update documents."),
+        });
+      }
       return;
     }
 
@@ -195,44 +272,24 @@ export default function ReceptionOpenFilePage() {
     }
 
     try {
-      if (nonCompliantMode) {
-        const documents = requiredDocuments.map((doc) => ({
-          documentMasterId: doc.documentMasterId,
-          isSubmitted: Boolean(selectedDocuments[String(doc.documentMasterId)]),
-        }));
-        await submitPendingDocuments({
-          patientId: numericPatientId,
-          documents,
-        }).unwrap();
-        setFinalizeDialog({
-          open: true,
-          variant: "success",
-          message: "Documents updated successfully.",
-        });
-      } else {
-        const payload = buildCreateIpdAdmissionPayload({
-          patientId: numericPatientId,
-          branchId,
-          patientName: patientDetails.patientName,
-          step1Form,
-          requiredDocuments,
-          selectedDocuments,
-        });
-        await createIpdAdmission(payload).unwrap();
-        setFinalizeDialog({
-          open: true,
-          variant: "success",
-          message: "Admission finalized successfully.",
-        });
-      }
+      const payload = buildCreateIpdAdmissionPayload({
+        patientId: numericPatientId,
+        branchId,
+        patientName: patientDetails.patientName,
+        admissionNo: generatedAdmissionNumber,
+        step1Form,
+      });
+      await createIpdAdmission(payload).unwrap();
+      setFinalizeDialog({
+        open: true,
+        variant: "success",
+        message: "Admission finalized successfully.",
+      });
     } catch (err) {
       setFinalizeDialog({
         open: true,
         variant: "error",
-        message: getRtkErrorMessage(
-          err,
-          nonCompliantMode ? "Failed to update documents." : "Failed to finalize IPD admission."
-        ),
+        message: getRtkErrorMessage(err, "Failed to finalize IPD admission."),
       });
     }
   };
@@ -270,48 +327,55 @@ export default function ReceptionOpenFilePage() {
       </AppShell>
     );
   }
-
   return (
     <AppShell>
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <PageHeading title={pageTitle} />
-        {!nonCompliantMode ? <ReceptionAdmissionStepper currentStep={currentStep} /> : null}
+      <div className="mb-0">
+        <ReceptionFilePatientHeader patient={patientDetails} />
       </div>
 
-      {currentStep === 1 ? (
-        <Step1PatientFileVerification
-          patient={patientDetails}
-          admissionNumber={generatedAdmissionNumber}
-          admissionNumberGenerated={admissionNumberGenerated}
-          form={step1Form}
-          onFormChange={setStep1Form}
-          onGenerateAdmissionNumber={() => {
-            setGeneratedAdmissionNumber(createUniqueAdmissionNumber());
-            setAdmissionNumberGenerated(true);
-          }}
-          onBack={() => router.back()}
-          onSaveDraft={() => undefined}
-          onSaveAndNext={() => setCurrentStep(2)}
-        />
-      ) : (
-        <Step2IpdAdmission
-          admissionSummary={patientDetails.admissionSummary}
-          requiredDocuments={requiredDocuments}
-          isDocumentsLoading={false}
-          selectedDocuments={selectedDocuments}
-          onToggleDocument={handleToggleDocument}
-          confirmConsentsReceived={confirmConsentsReceived}
-          onConfirmConsentsReceivedChange={setConfirmConsentsReceived}
-          confirmIdTag={confirmIdTag}
-          onConfirmIdTagChange={setConfirmIdTag}
-          onBack={nonCompliantMode ? () => router.back() : () => setCurrentStep(1)}
-          onFinalize={() => void handleFinalize()}
-          canFinalize={canFinalize}
-          isFinalizing={nonCompliantMode ? isSubmittingDocuments : isCreatingAdmission}
-          documentsValidationError={documentsValidationError}
-          nonCompliantMode={nonCompliantMode}
-        />
-      )}
+      <div className="space-y-6">
+        {!nonCompliantMode ? (
+          <Step1PatientFileVerification
+            patient={patientDetails}
+            admissionNumber={generatedAdmissionNumber}
+            admissionNumberGenerated={admissionNumberGenerated}
+            form={step1Form}
+            onFormChange={setStep1Form}
+            confirmPatientIdTagIssued={confirmPatientIdTagIssued}
+            onConfirmPatientIdTagIssuedChange={setConfirmPatientIdTagIssued}
+            onGenerateAdmissionNumber={() => {
+              setGeneratedAdmissionNumber(createUniqueAdmissionNumber());
+              setAdmissionNumberGenerated(true);
+            }}
+            onBack={() => router.back()}
+            validationAttempted={submitValidationAttempted}
+            onSubmit={() => void handleSubmit()}
+            canSubmit={canSubmit}
+            isSubmitting={isCreatingAdmission}
+          />
+        ) : null}
+
+        {nonCompliantMode ? (
+          <Step2IpdAdmission
+            admissionSummary={patientDetails.admissionSummary}
+            requiredDocuments={requiredDocuments}
+            isDocumentsLoading={false}
+            documentSelections={documentSelections}
+            onRequiredChange={handleRequiredChange}
+            onNotRequiredChange={handleNotRequiredChange}
+            confirmConsentsReceived={confirmConsentsReceived}
+            onConfirmConsentsReceivedChange={setConfirmConsentsReceived}
+            onBack={() => router.back()}
+            onFinalize={() => void handleSubmit()}
+            canFinalize={canUpdateDocument}
+            isFinalizing={isSubmittingDocuments}
+            documentsValidationError={documentsValidationError}
+            validationAttempted={submitValidationAttempted}
+            nonCompliantMode
+            hideActions
+          />
+        ) : null}
+      </div>
 
       <MessageDialog
         open={finalizeDialog.open}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Image from "next/image";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -17,44 +17,135 @@ import {
     ViewAppointment,
     BackToPreviousPageButton,
     SpinnerLoader,
+    Tooltip,
+    PatientWalletDetailItem,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
 import {
     useGetPatientAdmissionsQuery,
     PatientAdmissionItem,
     useLazyGetPatientDetailQuery,
 } from "@/store/api/counsellorApi";
-import { useAppSelector } from "@/store/hooks";
-import { selectUserBranchId } from "@/store/slices/authSlice";
 import {
     useGetBuildingDropdownQuery,
     useGetFloorDropdownQuery,
     useGetDoctorDropdownQuery,
+    useLazyGetPresignedUrlQuery,
+    useGetPatientFilesQuery,
+    useGetPatientHealthCardByUhidQuery,
 } from "@/store/api/commonApi";
+
+function TruncatedTableCell({ text, className = "" }: { text: string | null | undefined; className?: string }) {
+    const value = text?.trim() ? text.trim() : "N/A";
+    const textRef = useRef<HTMLSpanElement>(null);
+    const [isTruncated, setIsTruncated] = useState(false);
+
+    useEffect(() => {
+        const element = textRef.current;
+        if (!element) return;
+
+        const checkTruncation = () => {
+            setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+        };
+
+        checkTruncation();
+
+        const observer = new ResizeObserver(checkTruncation);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [value]);
+
+    if (value === "N/A" || value === "—") {
+        return <span className={className}>N/A</span>;
+    }
+
+    return (
+        <Tooltip
+            position="top"
+            maxWidth={360}
+            disabled={!isTruncated}
+            className="!overflow-visible !py-2.5"
+            content={
+                <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+                    {value}
+                </p>
+            }
+        >
+            <span
+                ref={textRef}
+                className={`block max-w-[130px] sm:max-w-[150px] truncate whitespace-nowrap ${className}`}
+            >
+                {value}
+            </span>
+        </Tooltip>
+    );
+}
+
+// Helper function to extract S3 key from image URL or key string
+const extractS3Key = (imageStr: string | null | undefined): string | null => {
+    if (!imageStr || !imageStr.trim()) return null;
+    let raw = imageStr.trim().split('?')[0];
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+        try {
+            const urlObj = new URL(raw);
+            return urlObj.pathname.replace(/^\//, "");
+        } catch {
+            const match = raw.match(/amazonaws\.com\/(.+)/);
+            if (match && match[1]) return match[1];
+        }
+    }
+    return raw;
+};
 
 
 
 export default function CurrentInpatientRegistryPage() {
+    const {
+        selectedBranchFilter: selectedBranch,
+        setSelectedBranchFilter: setSelectedBranch,
+        branchFilterOptions: hookBranchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        resolvedFilterBranchId,
+    } = useCounsellorResolvedBranchId();
+
     // Search and dynamic filtering states
     const [searchTerm, setSearchTerm] = useState("");
     const debouncedSearch = useDebounce(searchTerm, 500);
     const [selectedDoctor, setSelectedDoctor] = useState("");
     const [selectedFloor, setSelectedFloor] = useState("");
     const [selectedBuilding, setSelectedBuilding] = useState("");
-    const [type, setType] = useState<"ipd" | "day_care">("ipd");
+    const [type, setType] = useState<"ipd" | "day_care">("day_care");
 
-    const userBranchId = useAppSelector(selectUserBranchId);
+    const userBranchId = resolvedFilterBranchId;
 
     // Fetch building, floor, doctor dropdown options from common api
-    const { data: buildingData } = useGetBuildingDropdownQuery({ branchId: userBranchId });
-    const { data: floorData } = useGetFloorDropdownQuery({ branchId: userBranchId });
-    const { data: doctorData } = useGetDoctorDropdownQuery({ branchId: userBranchId });
+    const { data: buildingData } = useGetBuildingDropdownQuery(
+        { branchId: userBranchId },
+        { skip: !userBranchId }
+    );
+    const { data: floorData } = useGetFloorDropdownQuery(
+        { branchId: userBranchId },
+        { skip: !userBranchId }
+    );
+    const { data: doctorData } = useGetDoctorDropdownQuery(
+        { branchId: userBranchId },
+        { skip: !userBranchId }
+    );
 
     // Pagination & Sorting states
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
     const [sortBy, setSortBy] = useState<"patientName" | "">("patientName");
+
+    useEffect(() => {
+        setSelectedDoctor("");
+        setSelectedFloor("");
+        setSelectedBuilding("");
+        setCurrentPage(1);
+    }, [selectedBranch]);
 
     // Interactive overlays states
     const [selectedPatient, setSelectedPatient] = useState<PatientAdmissionItem | null>(null);
@@ -69,6 +160,125 @@ export default function CurrentInpatientRegistryPage() {
     const [fetchedPatientData, setFetchedPatientData] = useState<any>(null);
     const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
     const [apiErrorMessage, setApiErrorMessage] = useState("");
+    const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+    const [isFetchingPresignedImage, setIsFetchingPresignedImage] = useState<boolean>(false);
+
+    const [getPresignedUrl] = useLazyGetPresignedUrlQuery();
+    const { data: patientFilesResponse } = useGetPatientFilesQuery(
+        { uhid: fetchedPatientData?.appointmentDetail?.uhid || "" },
+        { skip: !fetchedPatientData?.appointmentDetail?.uhid , refetchOnMountOrArgChange: true }
+    );
+
+    // Fetch health card details by UHID
+            const { data: healthCardResponse, isLoading: isFetchingHealthCard } = useGetPatientHealthCardByUhidQuery(
+                { uhid: fetchedPatientData?.appointmentDetail?.uhid },
+                { skip: !fetchedPatientData?.appointmentDetail?.uhid }
+            );
+            const healthCardData = healthCardResponse?.data;
+    
+            useEffect(() => {
+                    const rawImage = healthCardData?.image;
+                    if (!rawImage) {
+                        setCardImageUrl(null);
+                        return;
+                    }
+            
+                    const key = extractS3Key(rawImage);
+                    if (!key) {
+                        setCardImageUrl(null);
+                        return;
+                    }
+            
+                    let isMounted = true;
+                    setIsFetchingPresignedImage(true);
+            
+                    getPresignedUrl({ key })
+                        .unwrap()
+                        .then((res) => {
+                            if (isMounted) {
+                                if (res?.data?.signedUrl) {
+                                    setCardImageUrl(res.data.signedUrl);
+                                } else {
+                                    setCardImageUrl(null);
+                                }
+                            }
+                        })
+                        .catch((err) => {
+                            console.error("Failed to fetch presigned URL for health card image:", err);
+                            if (isMounted) setCardImageUrl(null);
+                        })
+                        .finally(() => {
+                            if (isMounted) setIsFetchingPresignedImage(false);
+                        });
+            
+                    return () => {
+                        isMounted = false;
+                    };
+                }, [healthCardData?.image, getPresignedUrl]);
+    
+            const isHealthCardLoading = isFetchingHealthCard || isFetchingPresignedImage;
+        
+
+    const handleViewFile = async (filePath: string) => {
+        try {
+            const result = await getPresignedUrl({ key: filePath }).unwrap();
+            const signedUrl = result?.data?.signedUrl;
+            if (signedUrl) {
+                window.open(signedUrl, "_blank", "noopener,noreferrer");
+            }
+        } catch (err) {
+            console.error("Failed to get presigned URL:", err);
+            alert("Failed to open file. Please try again.");
+        }
+    };
+
+    const patientFilesItems = useMemo(() => {
+        const files = patientFilesResponse?.data;
+        if (!Array.isArray(files)) return [];
+        return files.map((file) => {
+            const formattedDate = file.createdAt
+                ? new Date(file.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                : "";
+            return {
+                name: file.fileName || "File",
+                size: `${file.fileType || "Document"} • ${formattedDate}`,
+                onClick: () => handleViewFile(file.path),
+                actionIconSrc: "/icons/ViewEyeIcon.svg",
+                actionIconAlt: "View File",
+            };
+        });
+    }, [patientFilesResponse]);
+
+    const handleViewPatient = async (item: PatientAdmissionItem) => {
+        const idToFetch = item.patientId || item.id;
+        if (!idToFetch) {
+            setApiErrorMessage("Patient ID not found.");
+            setShowApiErrorDialog(true);
+            return;
+        }
+
+        setLoadingPatientId(idToFetch);
+        try {
+            const res = await getPatientDetail(idToFetch).unwrap();
+            if (res?.success) {
+                setFetchedPatientData(res.data);
+                setSelectedPatient(item);
+                setViewAppointmentMode(true);
+            } else {
+                setApiErrorMessage(res?.message || "Failed to load patient details.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setApiErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while fetching patient details."
+            );
+            setShowApiErrorDialog(true);
+        } finally {
+            setLoadingPatientId(null);
+        }
+    };
+
 
     // Direct admission and export simulation
     const handleDirectAdmission = async () => {
@@ -145,11 +355,13 @@ export default function CurrentInpatientRegistryPage() {
         limit: itemsPerPage,
         search: debouncedSearch.trim() || undefined,
         type: type,
-        branchId: undefined, // Branch ID can be set if needed
+        ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
     };
 
     // Query Hook call
-    const { data: apiResponse, isLoading: isAdmissionsLoading } = useGetPatientAdmissionsQuery(queryParams);
+    const { data: apiResponse, isLoading: isAdmissionsLoading } = useGetPatientAdmissionsQuery(queryParams, {
+        skip: !resolvedFilterBranchId,
+    });
 
     const listingData = apiResponse?.data || [];
     const listingTotal = apiResponse?.total || 0;
@@ -239,6 +451,7 @@ export default function CurrentInpatientRegistryPage() {
         {
             label: "Patient Name",
             sortable: true,
+            className: "w-[150px] max-w-[150px]",
             sortDirection: sortBy === "patientName" ? sortOrder : null,
             onSort: () => {
                 setSortBy("patientName");
@@ -249,10 +462,10 @@ export default function CurrentInpatientRegistryPage() {
         { label: "Patient UHID" },
         { label: "Type" },
         { label: "Room & Floor" },
-        { label: "Diagnosis" },
+        { label: "Diagnosis", className: "w-[150px] max-w-[150px]"},
         { label: "Attending Doctor" },
         { label: "Admission Date" },
-        { label: "Exp. Discharge" },
+        { label: "Exp. Discharge", className: "w-[150px] max-w-[150px]"},
         { label: "Status" },
         { label: "Action", position: "last" as const },
     ];
@@ -261,13 +474,19 @@ export default function CurrentInpatientRegistryPage() {
     const rows = paginatedList.map((item, index) => {
         const sr = (currentPage - 1) * itemsPerPage + index + 1;
 
+        const rowPatientId = item.patientId || item.id;
+        const isRowLoading = loadingPatientId === rowPatientId;
+
         const patientUhidLink = (
-            <span
-                onClick={() => setSelectedPatient(item)}
-                className="text-[#0B8C00] font-medium cursor-pointer hover:underline"
+            <button
+                type="button"
+                onClick={() => void handleViewPatient(item)}
+                disabled={isRowLoading}
+                className="inline-flex items-center gap-1.5 text-[#0B8C00] font-medium cursor-pointer hover:underline disabled:opacity-60"
             >
+                {isRowLoading ? <SpinnerLoader size={14} /> : null}
                 {item.uhid}
-            </span>
+            </button>
         );
 
         const typeBadge = (
@@ -301,56 +520,34 @@ export default function CurrentInpatientRegistryPage() {
             </Badge>
         );
 
-        const isButtonLoading = loadingPatientId === (item.patientId || item.id);
         const viewActionBtn = (
             <Button
                 variant="primary"
                 size="xsmall"
-                onClick={async () => {
-                    const idToFetch = item.patientId || item.id;
-                    if (!idToFetch) return;
-                    setLoadingPatientId(idToFetch);
-                    try {
-                        const res = await getPatientDetail(idToFetch).unwrap();
-                        if (res && res.success) {
-                            setFetchedPatientData(res.data);
-                            setSelectedPatient(item);
-                            setViewAppointmentMode(true);
-                        } else {
-                            setApiErrorMessage(res?.message || "Failed to load patient details.");
-                            setShowApiErrorDialog(true);
-                        }
-                    } catch (err: any) {
-                        console.error("Error fetching patient details:", err);
-                        const msg = err?.data?.message || err?.message || "An error occurred while fetching patient details.";
-                        setApiErrorMessage(msg);
-                        setShowApiErrorDialog(true);
-                    } finally {
-                        setLoadingPatientId(null);
-                    }
-                }}
-                disabled={isButtonLoading}
+                onClick={() => void handleViewPatient(item)}
+                disabled={isRowLoading}
                 className="!font-normal min-w-[70px] flex items-center justify-center"
                 width={80}
             >
-                {isButtonLoading ? (
+                {isRowLoading ? (
                     <SpinnerLoader size={16} color="white" />
                 ) : (
                     "View"
                 )}
             </Button>
         );
+        // console.log("dysdygds",item)
 
         return [
             sr,
-            item.patientName || "N/A",
+            <TruncatedTableCell key={`pn-${item.id ?? index}`} text={`${item.patientTitle ? item.patientTitle.trim() + " " : ""}${item.patientName || "N/A"}`} />,
             patientUhidLink,
             typeBadge,
             roomAndFloorCol,
-            item.diagnosis || "N/A",
-            item.doctorName || "N/A",
+            <TruncatedTableCell key={`diag-${item.id ?? index}`} text={item.diagnosis || "N/A"} />,
+            <TruncatedTableCell key={`doc-${item.id ?? index}`} text={item.doctorName || "N/A"} />,
             formatAdmissionDate(item.admissionDate),
-            "N/A",
+            formatAdmissionDate(item.expectedDischargeDate || "N/A"),
             statusBadge,
             viewActionBtn,
         ];
@@ -364,6 +561,11 @@ export default function CurrentInpatientRegistryPage() {
                 const refDetail = fetchedPatientData?.referralDetail || {};
                 const medInfo = fetchedPatientData?.medicalInfo || {};
                 const otherInfo = fetchedPatientData?.otherInformation || {};
+                const walletInfo = fetchedPatientData?.wallet || {};
+                const walletExists = !!fetchedPatientData?.wallet;
+                const packageDetails = fetchedPatientData?.patientPackage || {};
+
+                // console.log("packageDetails", walletInfo?.currentBalance);
 
                 const appointmentItems = [
                     { label: "UHID", value: appDetail.uhid || "N/A" },
@@ -386,7 +588,10 @@ export default function CurrentInpatientRegistryPage() {
                     { label: "Mobile", value: refDetail.mobile || "N/A" },
                 ];
 
-                const patientName = patDetails.name || "N/A";
+                // const patientName = patDetails.name || "N/A";
+             const patientName = patDetails?.name
+                ? `${patDetails?.patientTitle || ""} ${patDetails.name}`.trim()
+                : "N/A";
                 const patientSubtitle = `Contact Number: ${patDetails.contactNumber || "N/A"} • Age : ${patDetails.age || "N/A"} Years • Gender : ${patDetails.gender || "N/A"}`;
 
                 const patientBadges = [
@@ -405,7 +610,10 @@ export default function CurrentInpatientRegistryPage() {
                         iconSrc: "/icons/UserGear.svg",
                         iconAlt: "Father/Husband",
                         label: "Father’s/Husband’s Name",
-                        value: patDetails.fatherHusbandName || "N/A",
+                        // value: patDetails.fatherHusbandName || "N/A",
+                        value:  `${patDetails?.guardianTitle || ""} ${
+                            patDetails?.fatherHusbandName || patDetails?.guardianName || ""
+                        }`.trim() || "N/A",  
                     },
                     {
                         iconSrc: "/icons/gendericon.svg",
@@ -433,6 +641,77 @@ export default function CurrentInpatientRegistryPage() {
                     { label: "Temperature", value: patDetails.temperature || "N/A", unit: "" },
                     { label: "Heart Rate", value: patDetails.heartRate || "N/A", unit: "bpm" },
                 ];
+
+                    //Patient Wallet Information Card
+                    // const remainingAmount =  walletInfo?.walletExists && walletInfo.availableBalance !== undefined
+                    //     ? `Rs. ${walletInfo.availableBalance}`
+                    //     : "N/A";
+                
+                    // const walletDetails: PatientWalletDetailItem[] = walletInfo?.walletExists
+                    //     ? [
+                    //         { label: "Current Balance", value: `Rs. ${walletInfo.currentBalance ?? 0}` },
+                    //         { label: "Hold Amount", value: `Rs. ${walletInfo.holdAmount ?? 0}` },
+                    //         { label: "Total Credit", value: `Rs. ${walletInfo.totalCredit ?? 0}` },
+                    //         { label: "Total Debit", value: `Rs. ${walletInfo.totalDebit ?? 0}` },
+                    //         { label: "Last Updated", value: walletInfo.lastUpdated ? new Date(walletInfo.lastUpdated).toLocaleDateString('en-GB') : "N/A" },
+                    //     ]
+                    //     : [
+                    //         { label: "Package", value: "N/A" },
+                    //         { label: "Amount", value: "N/A" },
+                    //         { label: "Discount", value: "N/A" },
+                    //         { label: "Expire", value: "N/A" },
+                    //     ];
+
+                        // const remainingAmount =  walletExists && walletInfo.availableBalance !== undefined ? `Rs. ${walletInfo.availableBalance}`  : "N/A";
+                        // const walletDetails: PatientWalletDetailItem[] = walletExists
+                        //     ? [
+                        //         { label: "Current Balance", value: `Rs. ${walletInfo.currentBalance ?? 0}` },
+                        //         { label: "Hold Amount", value: `Rs. ${walletInfo.holdAmount ?? 0}` },
+                        //         { label: "Total Credit", value: `Rs. ${walletInfo.totalCredit ?? 0}` },
+                        //         { label: "Total Debit", value: `Rs. ${walletInfo.totalDebit ?? 0}` },
+                        //         {
+                        //             label: "Last Updated",
+                        //             value: walletInfo.lastUpdated
+                        //                 ? new Date(walletInfo.lastUpdated).toLocaleDateString("en-GB")
+                        //                 : "N/A",
+                        //         },
+                        //     ]
+                        //     : [
+                        //         { label: "Package", value: "N/A" },
+                        //         { label: "Amount", value: "N/A" },
+                        //         { label: "Discount", value: "N/A" },
+                        //         { label: "Expire", value: "N/A" },
+                        //     ];
+
+                        const remainingAmount =  walletInfo?.currentBalance !== undefined ? `Rs. ${walletInfo.currentBalance}`  : "N/A";
+                        const walletDetails: PatientWalletDetailItem[] =
+                             [
+                                { label: "Package", value: packageDetails?.packageName || "N/A" },
+                               {
+                                    label: "Amount",
+                                    value: packageDetails?.packagePrice != null
+                                        ? `Rs. ${packageDetails.packagePrice}`
+                                        : "N/A",
+                                    },
+                                { label: "Discount",
+                                  value: packageDetails?.discountPercentage != null
+                                    ? `${packageDetails.discountPercentage}%`
+                                    : packageDetails?.discountFixed != null
+                                    ? `${packageDetails.discountFixed}`
+                                    : "N/A",
+                                },
+                                // { label: "Expire", value: packageDetails?.expireDate || "N/A" },
+                                  {
+                                    label: "Expire",
+                                    value: packageDetails?.expireDate
+                                        ? new Date(packageDetails.expireDate).toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                        })
+                                        : "N/A",
+                                    }
+                            ]
 
                 const medicalItems = [
                     { label: "Diagnosis", value: medInfo.diagnosis || "N/A" },
@@ -478,13 +757,14 @@ export default function CurrentInpatientRegistryPage() {
                                 onClick={() => {
                                     setViewAppointmentMode(false);
                                     setSelectedPatient(null);
+                                    setFetchedPatientData(null);
                                 }}
                             />
                         </div>
                         <ViewAppointment
                             appointmentItems={appointmentItems}
-                            walletRemainingAmount="Rs. 0"
-                            walletDetails={undefined}
+                            walletRemainingAmount={remainingAmount}
+                            walletDetails={walletDetails}
                             referralItems={referralItems}
                             patientName={patientName}
                             patientSubtitle={patientSubtitle}
@@ -494,8 +774,10 @@ export default function CurrentInpatientRegistryPage() {
                             vitalsItems={vitalsItems}
                             timelineItems={timelineItems.length > 0 ? timelineItems : undefined}
                             healthCardNo={healthCardNo}
+                            healthCardImageUrl={cardImageUrl || undefined}
+                            isHealthCardLoading={isHealthCardLoading}
                             medicalItems={medicalItems}
-                            fileItems={[]}
+                            fileItems={patientFilesItems}
                             otherInfoItems={otherInfoItems}
                         />
                     </div>
@@ -511,8 +793,8 @@ export default function CurrentInpatientRegistryPage() {
                         <div className="w-[280px]">
                             <Tabs
                                 options={[
-                                    { label: "IPD", value: "ipd" },
                                     { label: "Day Care", value: "day_care" },
+                                    { label: "IPD", value: "ipd" },
                                 ]}
                                 value={type}
                                 onChange={(val) => {
@@ -547,6 +829,21 @@ export default function CurrentInpatientRegistryPage() {
                                     // ),
                                     titleRightContent: (
                                         <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
+                                            <FormSelectField
+                                                label=""
+                                                hideLabel
+                                                options={hookBranchFilterOptions}
+                                                value={selectedBranch}
+                                                onChange={(value) => {
+                                                    setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                                                    setCurrentPage(1);
+                                                }}
+                                                placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                                mode="single"
+                                                background="normal"
+                                                width={280}
+                                                disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                            />
                                             {/* Attending Doctor dropdown selector */}
                                             <FormSelectField
                                                 label=""
@@ -657,7 +954,8 @@ export default function CurrentInpatientRegistryPage() {
                                 </div>
                                 <div className="flex flex-col gap-1">
                                     <h4 className="font-extrabold text-[32px] leading-[120%] text-[#262D3B]">
-                                        84% Capacity
+                                        {/* 84% Capacity */}
+                                        {"-"}
                                     </h4>
                                     <p className="text-xs font-medium text-[#787E8C]">
                                         Current occupancy of admitted inpatients.
@@ -698,7 +996,8 @@ export default function CurrentInpatientRegistryPage() {
                                 </div>
                                 <div className="flex flex-col gap-1">
                                     <h4 className="font-extrabold text-[32px] leading-[120%] text-[#262D3B]">
-                                        12 Discharges
+                                        {/* 12 Discharges */}
+                                        {"-"}
                                     </h4>
                                     <p className="text-xs font-medium text-[#787E8C]">
                                         Admitted patients scheduled for release today.

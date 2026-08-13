@@ -7,6 +7,7 @@ import type { SelectOption } from "@/components/ui/FormSelectField";
 import type { BranchFacilityFormValues } from "@/lib/validation/branchFacilitySchemas";
 import PhotoCapture, { type PhotoCaptureFormData, type PhotoCaptureRef } from "@/components/forms/PhotoCapture";
 import { useGetModulesForBranchSetupQuery, useGetBranchListByTypeQuery } from "@/store/api/branchSetupApi";
+import { formatIndianAmount, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 import {
   BRANCH_TEXT_INPUT_MAX_LENGTH,
   clampBranchTextInput,
@@ -29,6 +30,9 @@ type Props = {
     hasErrors: boolean,
     errors: { vehiclePhoto?: string; aadharPhoto?: string }
   ) => void;
+  moduleOptions?: SelectOption[];
+  isLoadingModules?: boolean;
+  isEditing?: boolean;
 };
 
 function err(
@@ -76,6 +80,9 @@ export default function BranchBasicInformation({
   formik,
   photoCaptureRef,
   onPhotoValidationChange,
+  moduleOptions,
+  isLoadingModules = false,
+  isEditing = false,
 }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const { values, handleBlur, setFieldValue } = formik;
@@ -116,7 +123,7 @@ export default function BranchBasicInformation({
     }
   }, [values.facilityType, setFieldValue]);
 
-  const moduleSelectOptions: SelectOption[] = useMemo(() => {
+  const defaultModuleSelectOptions: SelectOption[] = useMemo(() => {
     const rows = modulesRes?.success && Array.isArray(modulesRes.data) ? modulesRes.data : [];
     return rows
       .filter((m) => m.isActive)
@@ -125,6 +132,9 @@ export default function BranchBasicInformation({
         value: String(m.id),
       }));
   }, [modulesRes]);
+
+  const effectiveModuleOptions = moduleOptions ?? defaultModuleSelectOptions;
+  const isModulesBusy = Boolean(isLoadingModules || modulesLoading || modulesFetching);
 
   return (
     <div className="space-y-4 rounded-[16px] border border-[#E3EEE1] bg-white px-5 py-5 shadow-[0px_6px_40px_rgba(34,56,43,0.08)]">
@@ -137,9 +147,10 @@ export default function BranchBasicInformation({
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
           <button
             type="button"
-            onClick={() => setFieldValue("facilityType", "Hospital")}
+            disabled={isEditing}
+            onClick={() => !isEditing && setFieldValue("facilityType", "Hospital")}
             className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${values.facilityType === "Hospital" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
-              }`}
+              } ${isEditing ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             <div className="flex w-full items-center gap-2">
               <div className={`h-2 w-2 flex-shrink-0 rounded-full ${values.facilityType === "Hospital" ? "bg-green-600" : "bg-gray-300"}`} />
@@ -154,9 +165,10 @@ export default function BranchBasicInformation({
           </button>
           <button
             type="button"
-            onClick={() => setFieldValue("facilityType", "Clinic")}
+            disabled={isEditing}
+            onClick={() => !isEditing && setFieldValue("facilityType", "Clinic")}
             className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${values.facilityType === "Clinic" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
-              }`}
+              } ${isEditing ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             <div className="flex w-full items-center gap-2">
               <div className={`h-2 w-2 flex-shrink-0 rounded-full ${values.facilityType === "Clinic" ? "bg-green-600" : "bg-gray-300"}`} />
@@ -171,30 +183,6 @@ export default function BranchBasicInformation({
               <span className="text-xs text-gray-500">Smaller practice</span>
             </div>
           </button>
-          {/* <button
-            type="button"
-            onClick={() => setFieldValue("facilityType", "Daycare")}
-            className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 transition-all ${
-              values.facilityType === "Daycare" ? "border-green-600 bg-white" : "border-gray-200 bg-white hover:border-gray-300"
-            }`}
-          >
-            <div className="flex w-full items-center gap-2">
-              <div className={`h-2 w-2 flex-shrink-0 rounded-full ${values.facilityType === "Daycare" ? "bg-green-600" : "bg-gray-300"}`} />
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={values.facilityType === "Daycare" ? "text-green-700" : "text-gray-400"}>
-                <path
-                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-            <div className="flex w-full flex-col items-start">
-              <span className="text-sm font-medium text-gray-900">Daycare</span>
-              <span className="text-xs text-gray-500">Day care services</span>
-            </div>
-          </button> */}
         </div>
       </div>
 
@@ -206,6 +194,7 @@ export default function BranchBasicInformation({
             placeholder="e.g., City General Hospital"
             value={values.name}
             maxLength={TX}
+            disabled={isEditing}
             onChange={(e) => setFieldValue("name", filterLettersAndSpacesOnly(e.target.value))}
             onBlur={handleBlur}
             error={err(formik, "name")}
@@ -231,6 +220,7 @@ export default function BranchBasicInformation({
             placeholder="branch@example.com"
             value={values.emailAddress}
             maxLength={TX}
+            disabled={isEditing}
             onChange={(e) => setFieldValue("emailAddress", clampBranchTextInput(e.target.value))}
             onBlur={handleBlur}
             type="email"
@@ -244,7 +234,7 @@ export default function BranchBasicInformation({
             placeholder="Enter firm name"
             value={values.firmName}
             maxLength={TX}
-            onChange={(e) => setFieldValue("firmName", filterFirmNameChars(e.target.value))}
+            onChange={(e) => setFieldValue("firmName", filterLettersAndSpacesOnly(e.target.value))}
             onBlur={handleBlur}
             error={err(formik, "firmName")}
           />
@@ -255,6 +245,7 @@ export default function BranchBasicInformation({
             name="panNo"
             placeholder="ABCDE1234F"
             value={values.panNo}
+            disabled={isEditing}
             onChange={(e) => setFieldValue("panNo", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10))}
             onBlur={handleBlur}
             maxLength={10}
@@ -268,7 +259,7 @@ export default function BranchBasicInformation({
             placeholder="Enter the description"
             value={values.description}
             maxLength={TX}
-            onChange={(e) => setFieldValue("description", filterDescriptionChars(e.target.value))}
+            onChange={(e) => setFieldValue("description", filterLettersAndSpacesOnly(e.target.value))}
             onBlur={handleBlur}
             error={err(formik, "description")}
           />
@@ -293,16 +284,15 @@ export default function BranchBasicInformation({
             name="creditLimit"
             placeholder="Enter credit limit"
             value={values.creditLimit}
-            maxLength={15}
+            maxLength={18}
             inputMode="numeric"
-            onChange={(e) => setFieldValue("creditLimit", filterDigitsOnly(e.target.value, 15))}
+            onChange={(e) => {
+              const raw = parseIndianAmount(e.target.value).replace(/\D/g, "").slice(0, 15);
+              const formatted = raw ? formatIndianAmount(raw) : "";
+              setFieldValue("creditLimit", formatted);
+            }}
             onBlur={handleBlur}
             error={err(formik, "creditLimit")}
-          // helperText={
-          //   values.isFranchise === "yes"
-          //     ? "Required for franchise branches. Numbers only, max 15 digits."
-          //     : "Optional when Is Franchise is No. Numbers only, max 15 digits if filled."
-          // }
           />
         </div>
         <div data-field="tat" className="scroll-mt-4">
@@ -339,6 +329,7 @@ export default function BranchBasicInformation({
             placeholder="15-character GST"
             value={values.gstNumber}
             maxLength={15}
+            disabled={isEditing}
             onChange={(e) => setFieldValue("gstNumber", filterGstInput(e.target.value))}
             onBlur={handleBlur}
             error={err(formik, "gstNumber")}
@@ -379,6 +370,7 @@ export default function BranchBasicInformation({
             placeholder="Enter state code"
             value={values.stateCode}
             maxLength={10}
+            disabled={isEditing}
             onChange={(e) => setFieldValue("stateCode", filterAlphanumericUpper(e.target.value, 10))}
             onBlur={handleBlur}
             error={err(formik, "stateCode")}
@@ -415,6 +407,7 @@ export default function BranchBasicInformation({
             placeholder="Enter branch code"
             value={values.branchCode}
             maxLength={4}
+            disabled={isEditing}
             onChange={(e) =>
               // Replace everything that is NOT a letter (a-z, A-Z) with an empty string
               setFieldValue("branchCode", e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4))
@@ -432,6 +425,7 @@ export default function BranchBasicInformation({
             value={values.branchId}
             maxLength={20}
             inputMode="numeric"
+            disabled={isEditing}
             onChange={(e) => setFieldValue("branchId", filterDigitsOnly(e.target.value, 20))}
             onBlur={handleBlur}
             error={err(formik, "branchId")}
@@ -495,14 +489,15 @@ export default function BranchBasicInformation({
             name="advancedReferralAmount"
             placeholder="Enter advanced referral amount"
             value={values.advancedReferralAmount}
-            maxLength={9}
+            maxLength={12}
             inputMode="numeric"
-            onChange={(e) =>
-              setFieldValue("advancedReferralAmount", filterDigitsOnly(e.target.value, 9))
-            }
+            onChange={(e) => {
+              const raw = parseIndianAmount(e.target.value).replace(/\D/g, "").slice(0, 9);
+              const formatted = raw ? formatIndianAmount(raw) : "";
+              setFieldValue("advancedReferralAmount", formatted);
+            }}
             onBlur={handleBlur}
             error={err(formik, "advancedReferralAmount")}
-          // helperText="Optional. Digits only, maximum 9 digits if filled."
           />
         </div>
         <div data-field="referralAmountInPercent" className="scroll-mt-4">
@@ -605,53 +600,55 @@ export default function BranchBasicInformation({
             error={err(formik, "maplink")}
           />
         </div>
-        <div className="scroll-mt-4 md:col-span-2 flex w-full min-w-0 flex-row flex-nowrap items-start gap-4">
-          <div data-field="moduleIds" className="min-w-0 flex-1">
-            <FormSelectField
-              label="Select Module *"
-              mode="multiple"
-              options={moduleSelectOptions}
-              placeholder={
-                modulesLoading || modulesFetching ? "Loading modules…" : "Select one or more modules"
-              }
-              background="white"
-              width="100%"
-              disabled={modulesLoading || modulesFetching}
-              emptyMessage="No modules available"
-              value={values.moduleIds}
-              onChange={(v) =>
-                setFieldValue(
-                  "moduleIds",
-                  Array.isArray(v) ? v : v != null && v !== "" ? [v] : [],
-                  true
-                )
-              }
-              onBlur={() => void handleBlur("moduleIds")}
-              error={err(formik, "moduleIds")}
-            />
-          </div>
-          {cloneBranchTypeArg != null ? (
-            <div data-field="cloneBranchId" className="min-w-0 flex-1">
+        {!isEditing ? (
+          <div className="scroll-mt-4 md:col-span-2 flex w-full min-w-0 flex-row flex-nowrap items-start gap-4">
+            <div data-field="moduleIds" className="min-w-0 flex-1">
               <FormSelectField
-                label="Copy Branch"
-                options={copyBranchOptions}
+                label="Select Module *"
+                mode="multiple"
+                options={effectiveModuleOptions}
                 placeholder={
-                  cloneListFetching ? "Loading branches…" : "Copy infrastructure from an existing branch"
+                  isModulesBusy ? "Loading modules…" : "Select one or more modules"
                 }
                 background="white"
                 width="100%"
-                disabled={cloneListFetching}
-                emptyMessage="No branches found"
-                value={values.cloneBranchId || null}
+                disabled={isModulesBusy}
+                emptyMessage="No modules available"
+                value={values.moduleIds}
                 onChange={(v) =>
-                  setFieldValue("cloneBranchId", Array.isArray(v) ? (v[0] ?? "") : (v ?? ""), true)
+                  setFieldValue(
+                    "moduleIds",
+                    Array.isArray(v) ? v : v != null && v !== "" ? [v] : [],
+                    true
+                  )
                 }
-                onBlur={() => void handleBlur("cloneBranchId")}
-                error={err(formik, "cloneBranchId")}
+                onBlur={() => void handleBlur("moduleIds")}
+                error={err(formik, "moduleIds")}
               />
             </div>
-          ) : null}
-        </div>
+            {cloneBranchTypeArg != null ? (
+              <div data-field="cloneBranchId" className="min-w-0 flex-1">
+                <FormSelectField
+                  label="Copy Branch"
+                  options={copyBranchOptions}
+                  placeholder={
+                    cloneListFetching ? "Loading branches…" : "Copy infrastructure from an existing branch"
+                  }
+                  background="white"
+                  width="100%"
+                  disabled={cloneListFetching}
+                  emptyMessage="No branches found"
+                  value={values.cloneBranchId || null}
+                  onChange={(v) =>
+                    setFieldValue("cloneBranchId", Array.isArray(v) ? (v[0] ?? "") : (v ?? ""), true)
+                  }
+                  onBlur={() => void handleBlur("cloneBranchId")}
+                  error={err(formik, "cloneBranchId")}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="scroll-mt-4 md:col-span-2 flex w-full min-w-0 flex-row flex-nowrap items-start gap-4">
           <FormSelectField
             label="Lab Test Source *"

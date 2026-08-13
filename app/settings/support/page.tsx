@@ -1,810 +1,756 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useMemo } from "react";
-import type { FetchBaseQueryError } from "@reduxjs/toolkit/query";
+import { useState, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Button, Dialog, FormInputField, FormSelectField, MessageDialog } from "@/components/ui";
-import { ListBorder } from "@/components/ui/ListBorder";
 import {
-  useGetConfigurationQuery,
-  useGetAdminSupportContactsQuery,
-  useLazyGetSupportContactByPhoneQuery,
-  useCreateSupportContactsMutation,
-  useUpdateSupportContactMutation,
-  useUpdateConfigurationMutation,
-  type SupportCategoryWithContacts,
-  type SupportContactItem,
-} from "@/store/api/settingsApi";
-import {
-  filterSupportNameInput,
-  filterSupportPhoneInput,
-  filterSupportRoleInput,
-  validateSupportContactName,
-  validateSupportContactPhone,
-  validateSupportContactRole,
-} from "@/lib/validation/supportContactForm";
+  FormInputField,
+  FormTextareaField,
+  TableSearchInput,
+  Dialog,
+  MessageDialog,
+  Badge,
+} from "@/components/ui";
 import { usePermission } from "@/hooks/usePermission";
+import {
+  FiMessageSquare,
+  FiSend,
+  FiClock,
+  FiCheckCircle,
+  FiHelpCircle,
+  FiPlusCircle,
+  FiPhoneCall,
+  FiShield,
+  FiZap,
+  FiSearch,
+  FiChevronDown,
+  FiChevronUp,
+  FiPaperclip,
+  FiUser,
+  FiAlertCircle,
+  FiMail,
+} from "react-icons/fi";
+import { FaCrown, FaTelegramPlane, FaWhatsapp, FaHeadset, FaWallet } from "react-icons/fa";
 
-type SupportDraftRow = {
-  rowKey: string;
-  serverId?: number;
-  name: string;
-  phone: string;
-  role: string;
+// ─── Support Ticket Data Types ────────────────────────────────────────────────
+export type TicketPriority = "Normal" | "High" | "Urgent";
+export type TicketStatus = "Open" | "In Progress" | "Resolved";
+
+export type TicketReply = {
+  id: string;
+  sender: "User" | "VIP Support Specialist";
+  senderName: string;
+  message: string;
+  timestamp: string;
 };
 
-type SupportFieldTouched = { name?: boolean; phone?: boolean; role?: boolean };
-
-function normalizePhone(phone: string): string {
-  return phone.trim().replace(/\s+/g, "");
-}
-
-/** Row keys whose Contact matches another row (non-empty phone only). */
-function getDuplicatePhoneRowKeys(rows: SupportDraftRow[]): Set<string> {
-  const byPhone = new Map<string, string[]>();
-  for (const r of rows) {
-    const p = normalizePhone(r.phone);
-    if (!p) continue;
-    if (!byPhone.has(p)) byPhone.set(p, []);
-    byPhone.get(p)!.push(r.rowKey);
-  }
-  const dup = new Set<string>();
-  for (const keys of byPhone.values()) {
-    if (keys.length > 1) {
-      for (const k of keys) dup.add(k);
-    }
-  }
-  return dup;
-}
-
-const SUPPORT_CATEGORY_IDS: readonly [1, 2, 3] = [1, 2, 3];
-
-const FALLBACK_SUPPORT_TITLE: Record<number, string> = {
-  1: "Support Level 1",
-  2: "Support Level 2",
+export type SupportTicket = {
+  id: string;
+  subject: string;
+  category: "Withdrawal / Deposit" | "Product Plans & ROI" | "Referral Commission (Levels 1-6)" | "Account Security";
+  priority: TicketPriority;
+  status: TicketStatus;
+  createdAt: string;
+  lastUpdated: string;
+  messages: TicketReply[];
 };
 
-const LEVEL_OTHER_SECTION_HEADING =
-  "If there is no response, kindly call the below-mentioned number.";
+// ─── Pre-Populated High-Yield / Gaming Platform Support Tickets ────────────────
+const MOCK_TICKETS: SupportTicket[] = [
+  {
+    id: "TICK-8921",
+    subject: "USDT Withdrawal Payout Status Confirmation",
+    category: "Withdrawal / Deposit",
+    priority: "Urgent",
+    status: "In Progress",
+    createdAt: "2026-08-11 10:30 AM",
+    lastUpdated: "2026-08-11 11:15 AM",
+    messages: [
+      {
+        id: "m1",
+        sender: "User",
+        senderName: "Rajesh Kumar",
+        message: "Hello team, I submitted a withdrawal request of $1,450 to my USDT TRC20 wallet TX9z...kP3a9. Please confirm processing time.",
+        timestamp: "2026-08-11 10:30 AM",
+      },
+      {
+        id: "m2",
+        sender: "VIP Support Specialist",
+        senderName: "Alex - VIP Concierge",
+        message: "Hello Rajesh, your withdrawal request of $1,450 is currently being verified by our finance department. It will be dispatched within 15-30 minutes.",
+        timestamp: "2026-08-11 11:15 AM",
+      },
+    ],
+  },
+  {
+    id: "TICK-8920",
+    subject: "Level 4 Milestone Cash Unlock Bonus Claim",
+    category: "Referral Commission (Levels 1-6)",
+    priority: "High",
+    status: "Open",
+    createdAt: "2026-08-11 09:10 AM",
+    lastUpdated: "2026-08-11 09:10 AM",
+    messages: [
+      {
+        id: "m1",
+        sender: "User",
+        senderName: "Vikram Malhotra",
+        message: "I reached 25 direct active referrals today for Level 4 Platinum Executive! Want to confirm when the $750 cash unlock bonus will reflect in my wallet balance.",
+        timestamp: "2026-08-11 09:10 AM",
+      },
+    ],
+  },
+  {
+    id: "TICK-8918",
+    subject: "Gold Shareholder Plan Daily ROI Interest Query",
+    category: "Product Plans & ROI",
+    priority: "Normal",
+    status: "Resolved",
+    createdAt: "2026-08-10 02:45 PM",
+    lastUpdated: "2026-08-10 03:20 PM",
+    messages: [
+      {
+        id: "m1",
+        sender: "User",
+        senderName: "Anita Sharma",
+        message: "Hi, I purchased the Gold Shareholder Plan ($1,000) yesterday. Does the daily 2.2% interest credit at midnight GMT?",
+        timestamp: "2026-08-10 02:45 PM",
+      },
+      {
+        id: "m2",
+        sender: "VIP Support Specialist",
+        senderName: "Sarah - Helpdesk Lead",
+        message: "Hello Anita! Yes, daily ROI interest of $22.00 (+2.2%) is automatically credited to your withdrawable balance every 24 hours from purchase time.",
+        timestamp: "2026-08-10 03:20 PM",
+      },
+    ],
+  },
+];
 
-function chunkContactsIntoPairs(contacts: SupportContactItem[]): Array<[SupportContactItem, SupportContactItem?]> {
-  const rows: Array<[SupportContactItem, SupportContactItem?]> = [];
-  for (let i = 0; i < contacts.length; i += 2) {
-    rows.push([contacts[i], contacts[i + 1]]);
-  }
-  return rows;
-}
+// ─── FAQ Knowledge Base Accordion Data ───────────────────────────────────────
+const FAQ_ITEMS = [
+  {
+    question: "How is my daily product interest ROI calculated and credited?",
+    answer: "Daily interest yield is calculated automatically based on your active purchased product plan percentage (e.g. 1.5% for Starter, 2.2% for Gold Shareholder, 3.0% for Platinum, 4.0% for VIP Diamond). ROI is credited to your withdrawable balance every 24 hours for 60 days.",
+  },
+  {
+    question: "What are the withdrawal limits and processing times?",
+    answer: "The minimum withdrawal threshold is $50.00 USD. Instant crypto withdrawals via USDT (TRC20 / BEP20) are processed within 15-30 minutes. Bank wire payouts are completed within 1-3 business hours.",
+  },
+  {
+    question: "How do Level 1 to Level 6 Referral Rewards & Cash Unlock Bonuses work?",
+    answer: "When members purchase plans through your network, you earn multi-level commissions down to Level 6 (L1: up to 12%, L2: 6%, L3: 5%, L4: 4%, L5: 3%, L6: 2%). Additionally, reaching target direct invite milestones unlocks cash bonuses up to $3,000.00 USD!",
+  },
+  {
+    question: "How do I contact my dedicated VIP Account Manager?",
+    answer: "Members holding Gold Shareholder, Platinum, or VIP Diamond tiers receive a dedicated VIP Concierge Manager available 24/7 on Telegram and WhatsApp for priority withdrawal assistance and strategy advice.",
+  },
+];
 
-function getSupportSectionTitle(
-  categoryId: number,
-  apiCategory: SupportCategoryWithContacts | undefined,
-): string {
-  if (categoryId === 3) return LEVEL_OTHER_SECTION_HEADING;
-  const fromApi = apiCategory?.title?.trim();
-  if (fromApi) return fromApi;
-  return FALLBACK_SUPPORT_TITLE[categoryId] ?? `Support (${categoryId})`;
-}
-
-function formatContactLabel(contact: SupportContactItem): string {
-  const role = contact.role?.trim();
-  return role ? `${contact.name} (${role})` : contact.name;
-}
-
-export default function SettingsConfigurationPage() {
+export default function SupportPage() {
   const supportPermission = usePermission("settings", { subModule: "support" });
   const canView = supportPermission.canView;
-  const canAdd = supportPermission.canAdd;
-  const canEdit = supportPermission.canEdit;
 
-  const { data: configurationData, isLoading, refetch } = useGetConfigurationQuery(undefined, {
-    skip: !canView,
-  });
-  const {
-    data: supportContactsResponse,
-    isLoading: isSupportContactsLoading,
-    isError: isSupportContactsError,
-    error: supportContactsError,
-  } = useGetAdminSupportContactsQuery(undefined, { skip: !canView });
-  const [triggerLookupPhone] = useLazyGetSupportContactByPhoneQuery();
-  const [createSupportContacts] = useCreateSupportContactsMutation();
-  const [updateSupportContact] = useUpdateSupportContactMutation();
-  const [updateConfiguration, { isLoading: isUpdating }] = useUpdateConfigurationMutation();
-  const [supportmodal, setSupportmodal] = useState(false);
-  const [supportAddCategoryId, setSupportAddCategoryId] = useState<number | null>(null);
-  const [supportModalMode, setSupportModalMode] = useState<"add" | "edit">("add");
-  const [supportDraftRows, setSupportDraftRows] = useState<SupportDraftRow[]>([]);
-  const [supportFormError, setSupportFormError] = useState("");
-  const [supportFormSubmitting, setSupportFormSubmitting] = useState(false);
-  const duplicatePhoneRowKeys = useMemo(
-    () => getDuplicatePhoneRowKeys(supportDraftRows),
-    [supportDraftRows],
-  );
-  const hasDuplicatePhonesInForm = duplicatePhoneRowKeys.size > 0;
+  // Tickets & Tab State
+  const [tickets, setTickets] = useState<SupportTicket[]>(MOCK_TICKETS);
+  const [activeTab, setActiveTab] = useState<"All" | "Open" | "In Progress" | "Resolved">("All");
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const [supportFieldsTouched, setSupportFieldsTouched] = useState<
-    Record<string, SupportFieldTouched>
-  >({});
-  const [supportSubmitAttempted, setSupportSubmitAttempted] = useState(false);
+  // Create Ticket Dialog State
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newSubject, setNewSubject] = useState("");
+  const [newCategory, setNewCategory] = useState<SupportTicket["category"]>("Withdrawal / Deposit");
+  const [newPriority, setNewPriority] = useState<TicketPriority>("Normal");
+  const [newDescription, setNewDescription] = useState("");
 
-  const shouldShowDuplicateFormBanner =
-    hasDuplicatePhonesInForm &&
-    (supportSubmitAttempted ||
-      [...duplicatePhoneRowKeys].some((rk) => supportFieldsTouched[rk]?.phone));
+  // Inspect Ticket Modal State
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+  const [replyMessage, setReplyMessage] = useState("");
 
-  const supportRowFieldErrors = useMemo(() => {
-    const m: Record<string, { name?: string; phone?: string; role?: string }> = {};
-    for (const r of supportDraftRows) {
-      const t = supportFieldsTouched[r.rowKey] ?? {};
-      const showName = supportSubmitAttempted || Boolean(t.name);
-      const showRole = supportSubmitAttempted || Boolean(t.role);
-      const showPhone = supportSubmitAttempted || Boolean(t.phone);
+  // FAQ Expanded State
+  const [expandedFaqIndex, setExpandedFaqIndex] = useState<number | null>(0);
 
-      let phoneMsg: string | undefined;
-      if (showPhone) {
-        phoneMsg = duplicatePhoneRowKeys.has(r.rowKey)
-          ? "This number is already used in another row."
-          : validateSupportContactPhone(r.phone) || undefined;
-      }
-
-      m[r.rowKey] = {
-        name: showName ? validateSupportContactName(r.name) || undefined : undefined,
-        role: showRole ? validateSupportContactRole(r.role) || undefined : undefined,
-        phone: phoneMsg,
-      };
-    }
-    return m;
-  }, [supportDraftRows, duplicatePhoneRowKeys, supportFieldsTouched, supportSubmitAttempted]);
-
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [apiErrorMessage, setApiErrorMessage] = useState("");
-  const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
-  const [invoiceLockedDaysError, setInvoiceLockedDaysError] = useState("");
-  const [formValues, setFormValues] = useState({
-    id: 0,
-    invoiceLockedDays: "",
-    smsChannel: "off",
-    branchId: 1,
+  // Toast Notification State
+  const [toastState, setToastState] = useState<{ open: boolean; message: string }>({
+    open: false,
+    message: "",
   });
 
-  // Update form values when configuration data is loaded
-  useEffect(() => {
-    if (configurationData?.data) {
-      const data = configurationData.data;
-      setFormValues({
-        id: data.id,
-        invoiceLockedDays: String(data.invoiceLockedDays),
-        smsChannel: data.sms.toLowerCase(),
-        branchId: data.branchId,
-      });
-    }
-  }, [configurationData]);
+  const showToast = (message: string) => {
+    setToastState({ open: true, message });
+  };
 
-  const smsChannelOptions = [
-    { value: "off", label: "Off" },
-    { value: "on", label: "On" },
-  ];
-
-  const handleInvoiceDaysChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value;
-
-    // Only allow numeric input (0-9)
-    if (value === "" || /^\d+$/.test(value)) {
-      // Limit to 3 digits
-      if (value.length <= 3) {
-        setFormValues((prev) => ({
-          ...prev,
-          invoiceLockedDays: value,
-        }));
-        // Clear error when valid input is entered
-        if (invoiceLockedDaysError) {
-          setInvoiceLockedDaysError("");
-        }
+  // Filtered Tickets List
+  const filteredTickets = useMemo(() => {
+    return tickets.filter((t) => {
+      if (activeTab !== "All" && t.status !== activeTab) return false;
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        return (
+          t.id.toLowerCase().includes(term) ||
+          t.subject.toLowerCase().includes(term) ||
+          t.category.toLowerCase().includes(term)
+        );
       }
-    }
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canEdit) return;
-
-    // Clear previous errors
-    setInvoiceLockedDaysError("");
-
-    // Validate invoice locked days field
-    if (!formValues.invoiceLockedDays.trim()) {
-      setInvoiceLockedDaysError("Invoice locked days is required");
-      return;
-    }
-
-    const daysValue = Number(formValues.invoiceLockedDays);
-
-    // Validate it's a valid number
-    if (isNaN(daysValue)) {
-      setInvoiceLockedDaysError("Please enter a valid number");
-      return;
-    }
-
-    // Validate range (0-999)
-    if (daysValue < 0 || daysValue > 999) {
-      setInvoiceLockedDaysError("Please enter a number between 0 and 999");
-      return;
-    }
-
-    if (formValues.id === 0) {
-      setApiErrorMessage("Configuration data not loaded. Please refresh the page.");
-      setShowApiErrorDialog(true);
-      return;
-    }
-
-    try {
-      const result = await updateConfiguration({
-        id: formValues.id,
-        invoiceLockedDays: Number(formValues.invoiceLockedDays),
-        sms: formValues.smsChannel,
-        regCrone: configurationData?.data?.regCrone ?? 0,
-        saleCron: configurationData?.data?.saleCron ?? 0,
-        branchId: formValues.branchId,
-      }).unwrap();
-
-      setSuccessMessage(result?.message || "Configuration saved successfully");
-      setShowSuccessDialog(true);
-      setIsDialogOpen(false);
-
-      // Refetch configuration data to update the display
-      refetch();
-    } catch (error: any) {
-      console.error("Update configuration error:", error);
-      const errorMessage = error?.data?.message || error?.data?.error || "Failed to update configuration";
-      setApiErrorMessage(errorMessage);
-      setShowApiErrorDialog(true);
-    }
-  };
-
-  const supportCategories = supportContactsResponse?.data ?? [];
-  const supportCategoryById = new Map<number, SupportCategoryWithContacts>(
-    supportCategories.map((c) => [c.id, c]),
-  );
-
-  const verifyPhoneNotRegistered = async (
-    phone: string,
-    excludeContactId?: number,
-  ): Promise<string | null> => {
-    const trimmed = normalizePhone(phone);
-    if (!trimmed) return "Phone is required";
-    const result = await triggerLookupPhone(trimmed);
-    if ("error" in result && result.error) {
-      const fe = result.error as FetchBaseQueryError;
-      if (fe.status === 404) return null;
-      return "Unable to verify if this phone number is already in use.";
-    }
-    const payload = "data" in result ? result.data : undefined;
-    if (payload?.success && payload.data && typeof payload.data.id === "number") {
-      if (excludeContactId != null && payload.data.id === excludeContactId) return null;
-      const catTitle = payload.data.category?.title;
-      return `This phone number is already registered${catTitle ? ` (${catTitle})` : ""}.`;
-    }
-    return null;
-  };
-
-  const openSupportModal = (categoryId: number) => {
-    setSupportAddCategoryId(categoryId);
-    const cat = supportCategoryById.get(categoryId);
-    const list = cat?.contacts ?? [];
-    if (list.length > 0 && !canEdit) return;
-    if (list.length === 0 && !canAdd) return;
-    if (list.length === 0) {
-      setSupportModalMode("add");
-      setSupportDraftRows([{ rowKey: `r-${Date.now()}`, name: "", phone: "", role: "" }]);
-    } else {
-      setSupportModalMode("edit");
-      setSupportDraftRows(
-        list.map((c) => ({
-          rowKey: `srv-${c.id}`,
-          serverId: c.id,
-          name: c.name,
-          phone: c.phone,
-          role: c.role ?? "",
-        })),
-      );
-    }
-    setSupportFormError("");
-    setSupportFieldsTouched({});
-    setSupportSubmitAttempted(false);
-    setSupportmodal(true);
-  };
-
-  const closeSupportModal = () => {
-    setSupportmodal(false);
-    setSupportAddCategoryId(null);
-    setSupportDraftRows([]);
-    setSupportModalMode("add");
-    setSupportFormError("");
-    setSupportFieldsTouched({});
-    setSupportSubmitAttempted(false);
-    setInvoiceLockedDaysError("");
-  };
-
-  const markSupportFieldTouched = (rowKey: string, field: keyof SupportFieldTouched) => {
-    setSupportFieldsTouched((prev: Record<string, SupportFieldTouched>) => ({
-      ...prev,
-      [rowKey]: { ...prev[rowKey], [field]: true },
-    }));
-  };
-
-  const addSupportDraftRow = () => {
-    setSupportDraftRows((prev) => [
-      ...prev,
-      { rowKey: `r-${Date.now()}-${prev.length}`, name: "", phone: "", role: "" },
-    ]);
-  };
-
-  const removeSupportDraftRow = (rowKey: string) => {
-    setSupportDraftRows((prev) => {
-      const row = prev.find((r) => r.rowKey === rowKey);
-      if (row?.serverId != null) return prev;
-      const next = prev.filter((r) => r.rowKey !== rowKey);
-      return next.length > 0 ? next : prev;
+      return true;
     });
-  };
+  }, [tickets, activeTab, searchTerm]);
 
-  const updateSupportDraftRow = (
-    rowKey: string,
-    field: keyof Pick<SupportDraftRow, "name" | "phone" | "role">,
-    value: string,
-  ) => {
-    setSupportFormError("");
-    let next = value;
-    if (field === "name") next = filterSupportNameInput(value);
-    else if (field === "role") next = filterSupportRoleInput(value);
-    else if (field === "phone") next = filterSupportPhoneInput(value);
-    setSupportDraftRows((prev) =>
-      prev.map((r) => (r.rowKey === rowKey ? { ...r, [field]: next } : r)),
-    );
-  };
-
-  const handleSupportFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (supportAddCategoryId == null) return;
-    if (supportModalMode === "add" && !canAdd) return;
-    if (supportModalMode === "edit" && !canEdit) return;
-
-    setSupportSubmitAttempted(true);
-    setSupportFormError("");
-
-    if (duplicatePhoneRowKeys.size > 0) {
-      setSupportFormError("Please fix duplicate phone numbers in the form.");
+  // Open Ticket Creation
+  const handleCreateTicket = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubject.trim() || !newDescription.trim()) {
+      showToast("Please enter a ticket subject and description.");
       return;
     }
 
-    for (const r of supportDraftRows) {
-      if (
-        validateSupportContactName(r.name) ||
-        validateSupportContactRole(r.role) ||
-        validateSupportContactPhone(r.phone)
-      ) {
-        setSupportFormError("Please fix the errors highlighted below.");
-        return;
-      }
-    }
+    const createdTicket: SupportTicket = {
+      id: `TICK-${Math.floor(1000 + Math.random() * 9000)}`,
+      subject: newSubject.trim(),
+      category: newCategory,
+      priority: newPriority,
+      status: "Open",
+      createdAt: "Just Now",
+      lastUpdated: "Just Now",
+      messages: [
+        {
+          id: `m-${Date.now()}`,
+          sender: "User",
+          senderName: "You (Member)",
+          message: newDescription.trim(),
+          timestamp: "Just Now",
+        },
+      ],
+    };
 
-    setSupportFormSubmitting(true);
-    try {
-      for (const r of supportDraftRows) {
-        const msg = await verifyPhoneNotRegistered(r.phone, r.serverId);
-        if (msg) {
-          setSupportFormError(msg);
-          setSupportFormSubmitting(false);
-          return;
-        }
-      }
-
-      if (supportModalMode === "add") {
-        const result = await createSupportContacts({
-          categoryId: supportAddCategoryId,
-          contacts: supportDraftRows.map((r) => ({
-            name: r.name.trim(),
-            phone: normalizePhone(r.phone),
-            role: r.role.trim(),
-          })),
-        }).unwrap();
-        setSuccessMessage(result?.message || "Support contacts created successfully");
-        setShowSuccessDialog(true);
-        closeSupportModal();
-        return;
-      }
-
-      const original = supportCategoryById.get(supportAddCategoryId)?.contacts ?? [];
-      const origById = new Map(original.map((c) => [c.id, c]));
-
-      for (const r of supportDraftRows) {
-        if (r.serverId == null) continue;
-        const o = origById.get(r.serverId);
-        if (!o) continue;
-        const changed =
-          o.name !== r.name.trim() ||
-          normalizePhone(o.phone) !== normalizePhone(r.phone) ||
-          (o.role ?? "") !== r.role.trim();
-        if (changed) {
-          await updateSupportContact({
-            id: r.serverId,
-            name: r.name.trim(),
-            phone: normalizePhone(r.phone),
-            role: r.role.trim(),
-          }).unwrap();
-        }
-      }
-
-      const newOnly = supportDraftRows.filter((r) => r.serverId == null);
-      if (newOnly.length > 0) {
-        const result = await createSupportContacts({
-          categoryId: supportAddCategoryId,
-          contacts: newOnly.map((row) => ({
-            name: row.name.trim(),
-            phone: normalizePhone(row.phone),
-            role: row.role.trim(),
-          })),
-        }).unwrap();
-        setSuccessMessage(result?.message || "Support contacts saved successfully");
-      } else {
-        setSuccessMessage("Support contacts updated successfully");
-      }
-      setShowSuccessDialog(true);
-      closeSupportModal();
-    } catch (err: unknown) {
-      console.error("Support contacts save error:", err);
-      const e = err as { data?: { message?: string; error?: string } };
-      setApiErrorMessage(
-        e?.data?.message || e?.data?.error || "Failed to save support contacts",
-      );
-      setShowApiErrorDialog(true);
-    } finally {
-      setSupportFormSubmitting(false);
-    }
+    setTickets((prev) => [createdTicket, ...prev]);
+    showToast(`Support Ticket #${createdTicket.id} submitted! A VIP Specialist will respond shortly.`);
+    setIsCreateDialogOpen(false);
+    setNewSubject("");
+    setNewDescription("");
   };
 
-  const supportDialogTitle =
-    supportAddCategoryId === 1
-      ? supportModalMode === "add"
-        ? "Add Support — Support Level 1"
-        : "Edit Support — Support Level 1"
-      : supportAddCategoryId === 2
-        ? supportModalMode === "add"
-          ? "Add Support — Support Level 2"
-          : "Edit Support — Support Level 2"
-        : supportAddCategoryId === 3
-          ? supportModalMode === "add"
-            ? "Add Support — Other"
-            : "Edit Support — Other"
-          : "Support";
+  // Submit Ticket Reply
+  const handleSendReply = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyMessage.trim() || !selectedTicket) return;
+
+    const newReply: TicketReply = {
+      id: `m-${Date.now()}`,
+      sender: "User",
+      senderName: "You (Member)",
+      message: replyMessage.trim(),
+      timestamp: "Just Now",
+    };
+
+    const updated = {
+      ...selectedTicket,
+      messages: [...selectedTicket.messages, newReply],
+      lastUpdated: "Just Now",
+    };
+
+    setSelectedTicket(updated);
+    setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setReplyMessage("");
+    showToast("Reply sent to VIP Support Concierge.");
+  };
 
   return (
     <AppShell>
- 
+      {/* Toast Alert */}
+      <MessageDialog
+        open={toastState.open}
+        onClose={() => setToastState((p) => ({ ...p, open: false }))}
+        showCancel={false}
+        confirmText="OK"
+        message={toastState.message}
+      />
 
-      {/* Support  */}
-      <div className="space-y-8">
-        <div className="flex items-start justify-between">
-          <PageHeading title="Support" />
+      <div className="space-y-6">
+        {/* Page Heading */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-950 font-black text-xs uppercase tracking-wider flex items-center gap-1">
+                <FaHeadset className="text-amber-600" /> 24/7 VIP Support Concierge
+              </span>
+            </div>
+            <PageHeading title="VIP Support & Ticket Helpdesk" />
+            <p className="text-xs text-slate-500 mt-1">
+              Get instant help with withdrawals, product ROI returns, level milestone bonuses, or connect with your VIP Account Manager.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsCreateDialogOpen(true)}
+            className="flex h-11 items-center justify-center gap-2 rounded-[32px] bg-slate-900 px-6 text-xs font-black text-amber-400 shadow-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+          >
+            <FiPlusCircle className="text-base text-amber-400" />
+            <span>Create Support Ticket</span>
+          </button>
         </div>
 
-        <ListBorder as="section" className="px-4 py-4">
-          {!canView ? (
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
-              You don&apos;t have permission to view support.
+        {/* HERO BANNER & SLA METRICS */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950 rounded-2xl p-6 shadow-xl border border-slate-700 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+            <FaHeadset className="text-9xl text-amber-400" />
+          </div>
+
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-6">
+            <div>
+              <span className="px-3 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full text-[10px] font-black uppercase tracking-wider">
+                ✨ PREMIUM GAMING & YIELD HELPDESK
+              </span>
+              <h2 className="text-2xl font-black text-white mt-2">How Can We Help You Today?</h2>
+              <p className="text-xs text-slate-300 font-medium mt-0.5 max-w-2xl">
+                Our dedicated VIP support specialists and automated engines are online 24 hours a day, 7 days a week to ensure instant ticket resolution.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-3.5 py-2 bg-emerald-500/20 text-emerald-400 font-black rounded-xl text-xs border border-emerald-500/30 flex items-center gap-1.5 shadow">
+                <FiZap className="text-emerald-400" /> Live Chat Online
+              </span>
+            </div>
+          </div>
+
+          {/* SLA Performance Badges Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700">
+              <span className="text-[10px] font-bold text-slate-400 uppercase block">Avg. Response SLA</span>
+              <span className="text-lg font-black text-amber-400 mt-0.5 block flex items-center gap-1">
+                <FiClock /> &lt; 2 Minutes
+              </span>
+            </div>
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700">
+              <span className="text-[10px] font-bold text-slate-400 uppercase block">Ticket Resolution</span>
+              <span className="text-lg font-black text-emerald-400 mt-0.5 block flex items-center gap-1">
+                <FiCheckCircle /> 99.8% Success
+              </span>
+            </div>
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700">
+              <span className="text-[10px] font-bold text-slate-400 uppercase block">VIP Coverage</span>
+              <span className="text-lg font-black text-white mt-0.5 block flex items-center gap-1">
+                <FaCrown className="text-amber-400" /> 24/7 Priority
+              </span>
+            </div>
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700">
+              <span className="text-[10px] font-bold text-slate-400 uppercase block">Security Protocol</span>
+              <span className="text-lg font-black text-amber-300 mt-0.5 block flex items-center gap-1">
+                <FiShield /> 100% Encrypted
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 SUPPORT CHANNELS CARDS */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {/* Card 1: 24/7 Live Chat */}
+          <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200 hover:border-amber-400 transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-900 font-black flex items-center justify-center mb-3">
+                <FiMessageSquare className="text-2xl" />
+              </div>
+              <h3 className="font-extrabold text-slate-900 text-base">24/7 Live Chat Concierge</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">Instant real-time chat assistance with support specialists.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => showToast("Opening 24/7 Live Chat widget...")}
+              className="mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-black text-xs rounded-xl transition-colors shadow flex items-center justify-center gap-2"
+            >
+              <FiZap className="text-amber-400" /> Start Live Chat
+            </button>
+          </div>
+
+          {/* Card 2: Official Telegram Channel */}
+          <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200 hover:border-blue-400 transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-900 font-black flex items-center justify-center mb-3">
+                <FaTelegramPlane className="text-2xl text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-slate-900 text-base">Official Telegram VIP Channel</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">Join 45,000+ members for daily yield updates & community perks.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => showToast("Redirecting to Telegram VIP Channel...")}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl transition-colors shadow flex items-center justify-center gap-2"
+            >
+              <FaTelegramPlane className="text-white" /> Join Telegram VIP
+            </button>
+          </div>
+
+          {/* Card 3: VIP Dedicated Manager */}
+          <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200 hover:border-emerald-400 transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-900 font-black flex items-center justify-center mb-3">
+                <FaWhatsapp className="text-2xl text-emerald-600" />
+              </div>
+              <h3 className="font-extrabold text-slate-900 text-base">VIP Account Manager</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">Dedicated 1-on-1 concierge for Gold Shareholder & VIP tiers.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => showToast("Connecting to Dedicated VIP Manager via WhatsApp...")}
+              className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition-colors shadow flex items-center justify-center gap-2"
+            >
+              <FaWhatsapp className="text-white" /> WhatsApp Concierge
+            </button>
+          </div>
+
+          {/* Card 4: Ticket Helpdesk */}
+          <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200 hover:border-indigo-400 transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-900 font-black flex items-center justify-center mb-3">
+                <FiMail className="text-2xl text-indigo-600" />
+              </div>
+              <h3 className="font-extrabold text-slate-900 text-base">Submit Ticket Helpdesk</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">Submit detailed technical or payout inquiry support tickets.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsCreateDialogOpen(true)}
+              className="mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-black text-xs rounded-xl transition-colors shadow flex items-center justify-center gap-2"
+            >
+              <FiPlusCircle className="text-amber-400" /> Open New Ticket
+            </button>
+          </div>
+        </div>
+
+        {/* TICKET MANAGEMENT HUB */}
+        <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                <FiMessageSquare className="text-amber-500" /> Your Support Tickets
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Track ticket responses and communicate with support specialists.</p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              {/* Status Tabs */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                {(["All", "Open", "In Progress", "Resolved"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      activeTab === tab
+                        ? "bg-slate-900 text-amber-400 shadow"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              <TableSearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Search ticket ID or subject..."
+                className="!w-[220px] min-w-[220px] shrink-0"
+              />
+            </div>
+          </div>
+
+          {/* Tickets List Table */}
+          {filteredTickets.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+              No support tickets found matching your filter criteria.
             </div>
           ) : (
-            <>
-              {isSupportContactsError ? (
-                <div className="mb-4 rounded-[20px] border border-[#F6776E]/40 bg-[#FFF5F5] px-6 py-4 text-sm text-[#434956]">
-                  {(supportContactsError as { data?: { message?: string } })?.data?.message ||
-                    "Could not load support contacts. Please try again."}
-                </div>
-              ) : null}
+            <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-900 text-amber-400 font-black text-[11px] uppercase">
+                  <tr>
+                    <th className="p-3.5">Ticket ID</th>
+                    <th className="p-3.5">Subject</th>
+                    <th className="p-3.5">Category</th>
+                    <th className="p-3.5">Priority</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5">Last Updated</th>
+                    <th className="p-3.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white font-medium text-slate-800">
+                  {filteredTickets.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50">
+                      <td className="p-3.5 font-mono font-extrabold text-slate-900">{t.id}</td>
+                      <td className="p-3.5 font-bold text-slate-900 max-w-[220px] truncate">{t.subject}</td>
+                      <td className="p-3.5 text-slate-600">{t.category}</td>
+                      <td className="p-3.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                            t.priority === "Urgent"
+                              ? "bg-rose-100 text-rose-700"
+                              : t.priority === "High"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {t.priority}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            t.status === "Resolved"
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                              : t.status === "In Progress"
+                              ? "bg-amber-100 text-amber-900 border border-amber-300"
+                              : "bg-blue-100 text-blue-800 border border-blue-300"
+                          }`}
+                        >
+                          {t.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-slate-500 text-[11px]">{t.lastUpdated}</td>
+                      <td className="p-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTicket(t)}
+                          className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl text-xs font-black transition-colors shadow"
+                        >
+                          Inspect Ticket
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-              {SUPPORT_CATEGORY_IDS.map((categoryId) => {
-            const apiCategory = supportCategoryById.get(categoryId);
-            const contacts = apiCategory?.contacts ?? [];
-            const sectionTitle = getSupportSectionTitle(categoryId, apiCategory);
-            const pairs = chunkContactsIntoPairs(contacts);
+        {/* FAQ KNOWLEDGE BASE ACCORDION */}
+        <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div>
+              <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                <FiHelpCircle className="text-amber-500" /> Frequently Asked Questions (FAQ)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Quick answers to common questions about payouts, plans, and referral rewards.</p>
+            </div>
+          </div>
 
-            return (
-              <div
-                key={categoryId}
-                className="mb-4 w-full rounded-[20px] border border-[#E3EEE1] bg-white p-6 last:mb-0"
-              >
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <h2 className="text-base font-semibold leading-snug text-[#262D3B]">{sectionTitle}</h2>
+          <div className="space-y-3">
+            {FAQ_ITEMS.map((faq, index) => {
+              const isExpanded = expandedFaqIndex === index;
+              return (
+                <div
+                  key={index}
+                  className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50 transition-all"
+                >
                   <button
                     type="button"
-                    onClick={() => openSupportModal(categoryId)}
-                    disabled={
-                      isSupportContactsLoading ||
-                      (contacts.length > 0 ? !canEdit : !canAdd)
-                    }
-                    className="flex h-11 w-11 shrink-0 cursor-pointer flex-row items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] transition-colors hover:bg-[#0B8C00]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label={
-                      contacts.length > 0
-                        ? `Edit contacts for category ${categoryId}`
-                        : `Add contact for category ${categoryId}`
-                    }
+                    onClick={() => setExpandedFaqIndex(isExpanded ? null : index)}
+                    className="w-full p-4 text-left font-black text-sm text-slate-900 flex justify-between items-center hover:bg-slate-100 transition-colors"
                   >
-                    {contacts.length > 0 ? (
-                      <Image src="/icons/EditPencil.svg" alt="Edit" width={20} height={20} className="shrink-0" />
-                    ) : (
-                      <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    )}
+                    <span>{faq.question}</span>
+                    {isExpanded ? <FiChevronUp className="text-amber-600 text-lg" /> : <FiChevronDown className="text-slate-400 text-lg" />}
                   </button>
+                  {isExpanded && (
+                    <div className="p-4 bg-white border-t border-slate-200 text-xs text-slate-600 font-medium leading-relaxed">
+                      {faq.answer}
+                    </div>
+                  )}
                 </div>
-
-                {isSupportContactsLoading ? (
-                  <div className="border-b border-t border-[#E9F3E6] px-5 py-[18px] text-sm text-[#8B939E]">
-                    Loading…
-                  </div>
-                ) : pairs.length === 0 ? (
-                  <div className="border-b border-t border-[#E9F3E6] px-5 py-[18px] text-sm text-[#8B939E]">
-                    No contacts added yet.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[#EDF3EA] border-b border-t border-[#E9F3E6]">
-                    {pairs.map(([left, right], rowIdx) => (
-                      <div key={`${categoryId}-${rowIdx}-${left.id}`} className="grid grid-cols-2 items-center text-sm">
-                        <div className="flex items-center justify-between border-r border-[#EBECED] px-5 py-[18px]">
-                          <span className="text-sm text-[#434956]">{formatContactLabel(left)}</span>
-                          <span className="text-sm font-medium text-[#434956]">{left.phone}</span>
-                        </div>
-                        {right ? (
-                          <div className="flex items-center justify-between px-5 py-[18px]">
-                            <span className="text-sm text-[#434956]">{formatContactLabel(right)}</span>
-                            <span className="text-sm font-medium text-[#434956]">{right.phone}</span>
-                          </div>
-                        ) : (
-                          <div className="px-5 py-[18px]" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-              })}
-            </>
-          )}
-        </ListBorder>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-
-
+      {/* CREATE NEW SUPPORT TICKET DIALOG */}
       <Dialog
-        open={supportmodal && ((supportModalMode === "add" && canAdd) || (supportModalMode === "edit" && canEdit))}
-        onClose={closeSupportModal}
-        title={supportDialogTitle}
-        width={950}
+        open={isCreateDialogOpen}
+        onClose={() => setIsCreateDialogOpen(false)}
+        title="Submit New VIP Support Ticket"
+        width={680}
+        closeOnOutsideClick={false}
       >
-        <form onSubmit={handleSupportFormSubmit} className="space-y-6">
-          {shouldShowDuplicateFormBanner ? (
-            <p className="text-sm text-[#C62828]" role="alert">
-              Each contact must have a unique phone number. Change or remove duplicate values in the
-              highlighted fields.
-            </p>
-          ) : null}
-          {supportFormError ? (
-            <p className="text-sm text-[#C62828]" role="alert">
-              {supportFormError}
-            </p>
-          ) : null}
-          <div className="container_support">
-            {supportDraftRows.map((row, index) => (
-              <div
-                key={row.rowKey}
-                className="mb-4 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-4 max-md:grid-cols-1"
-              >
-                <FormInputField
-                  label="Name *"
-                  placeholder="Name"
-                  type="text"
-                  maxLength={100}
-                  height={44}
-                  value={row.name}
-                  onChange={(e) => updateSupportDraftRow(row.rowKey, "name", e.target.value)}
-                  onBlur={() => markSupportFieldTouched(row.rowKey, "name")}
-                  disabled={supportFormSubmitting}
-                  error={supportRowFieldErrors[row.rowKey]?.name}
-                />
-                <FormInputField
-                  label="Contact *"
-                  placeholder="10-digit mobile number"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  maxLength={10}
-                  height={44}
-                  value={row.phone}
-                  onChange={(e) => updateSupportDraftRow(row.rowKey, "phone", e.target.value)}
-                  onBlur={() => markSupportFieldTouched(row.rowKey, "phone")}
-                  disabled={supportFormSubmitting}
-                  error={supportRowFieldErrors[row.rowKey]?.phone}
-                />
-                <FormInputField
-                  label="Role *"
-                  placeholder="Role"
-                  type="text"
-                  maxLength={100}
-                  height={44}
-                  value={row.role}
-                  onChange={(e) => updateSupportDraftRow(row.rowKey, "role", e.target.value)}
-                  onBlur={() => markSupportFieldTouched(row.rowKey, "role")}
-                  disabled={supportFormSubmitting}
-                  error={supportRowFieldErrors[row.rowKey]?.role}
-                />
-                {index === 0 ? (
-                  <button
-                    type="button"
-                    onClick={addSupportDraftRow}
-                    disabled={supportFormSubmitting}
-                    className="flex h-11 w-11 cursor-pointer items-center justify-center self-end rounded-[32px] bg-[#0B8C00] disabled:opacity-50 max-md:self-start"
-                    aria-label="Add another row"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M17.5 8.125H11.875V2.5C11.875 1.80977 11.3152 1.25 10.625 1.25H9.375C8.68477 1.25 8.125 1.80977 8.125 2.5V8.125H2.5C1.80977 8.125 1.25 8.68477 1.25 9.375V10.625C1.25 11.3152 1.80977 11.875 2.5 11.875H8.125V17.5C8.125 18.1902 8.68477 18.75 9.375 18.75H10.625C11.3152 18.75 11.875 18.1902 11.875 17.5V11.875H17.5C18.1902 11.875 18.75 11.3152 18.75 10.625V9.375C18.75 8.68477 18.1902 8.125 17.5 8.125Z"
-                        fill="white"
-                      />
-                    </svg>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => removeSupportDraftRow(row.rowKey)}
-                    disabled={supportFormSubmitting || row.serverId != null}
-                    title={row.serverId != null ? "Saved contacts cannot be removed here" : "Remove row"}
-                    className="flex h-11 w-11 cursor-pointer items-center justify-center self-end rounded-[32px] bg-[#F6776E] disabled:cursor-not-allowed disabled:opacity-50 max-md:self-start"
-                    aria-label="Remove row"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M13.3333 5.0013V4.33464C13.3333 3.40121 13.3333 2.9345 13.1517 2.57798C12.9919 2.26438 12.7369 2.00941 12.4233 1.84962C12.0668 1.66797 11.6001 1.66797 10.6667 1.66797H9.33333C8.39991 1.66797 7.9332 1.66797 7.57668 1.84962C7.26308 2.00941 7.00811 2.26438 6.84832 2.57798C6.66667 2.9345 6.66667 3.40121 6.66667 4.33464V5.0013M8.33333 9.58464V13.7513M11.6667 9.58464V13.7513M2.5 5.0013H17.5M15.8333 5.0013V14.3346C15.8333 15.7348 15.8333 16.4348 15.5608 16.9696C15.3212 17.44 14.9387 17.8225 14.4683 18.0622C13.9335 18.3346 13.2335 18.3346 11.8333 18.3346H8.16667C6.76654 18.3346 6.06647 18.3346 5.53169 18.0622C5.06129 17.8225 4.67883 17.44 4.43915 16.9696C4.16667 16.4348 4.16667 15.7348 4.16667 14.3346V5.0013"
-                        stroke="white"
-                        strokeWidth="1.66667"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                )}
+        <form noValidate className="space-y-4 text-xs" onSubmit={handleCreateTicket}>
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+            <div>
+              <FormInputField
+                label="Ticket Subject *"
+                value={newSubject}
+                onChange={(e) => setNewSubject(e.target.value)}
+                placeholder="e.g. USDT Withdrawal Payout Status Confirmation"
+                height={42}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Category *</label>
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value as SupportTicket["category"])}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="Withdrawal / Deposit">Withdrawal / Deposit</option>
+                  <option value="Product Plans & ROI">Product Plans & ROI</option>
+                  <option value="Referral Commission (Levels 1-6)">Referral Commission (Levels 1-6)</option>
+                  <option value="Account Security">Account Security</option>
+                </select>
               </div>
-            ))}
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Priority Level *</label>
+                <select
+                  value={newPriority}
+                  onChange={(e) => setNewPriority(e.target.value as TicketPriority)}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="Normal">Normal</option>
+                  <option value="High">High</option>
+                  <option value="Urgent">Urgent (VIP Priority)</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <FormTextareaField
+                label="Detailed Description *"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Please describe your issue or query in detail..."
+                rows={4}
+              />
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="submit"
-              variant="primary"
-              isLoading={supportFormSubmitting}
-              disabled={supportFormSubmitting}
-            >
-              {supportModalMode === "add" ? "Add Support" : "Save changes"}
-            </Button>
-            <Button
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
               type="button"
-              variant="outline"
-              onClick={closeSupportModal}
-              disabled={supportFormSubmitting}
+              onClick={() => setIsCreateDialogOpen(false)}
+              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-xs"
             >
               Cancel
-            </Button>
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 font-black rounded-xl shadow-lg transition-colors text-xs"
+            >
+              Submit Ticket to VIP Concierge
+            </button>
           </div>
         </form>
       </Dialog>
 
-      {/* Support  */}
-
-
-
-
-
-
+      {/* INSPECT TICKET & REPLY DIALOG */}
       <Dialog
-        open={isDialogOpen}
-        onClose={() => {
-          setIsDialogOpen(false);
-          setInvoiceLockedDaysError("");
-        }}
-        title="Edit Configuration"
-        width={686}
+        open={selectedTicket !== null}
+        onClose={() => setSelectedTicket(null)}
+        title={`Support Ticket Thread: ${selectedTicket?.id || ""}`}
+        width={750}
+        closeOnOutsideClick={false}
       >
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 gap-4">
-            <FormInputField
-              label="Invoice locked After days *"
-              type="number"
-              min="0"
-              max="999"
-              maxLength={3}
-              required
-              value={formValues.invoiceLockedDays}
-              onChange={handleInvoiceDaysChange}
-              height={44}
-              disabled={isUpdating}
-              error={invoiceLockedDaysError}
-            />
+        {selectedTicket && (
+          <div className="space-y-4 text-xs">
+            {/* Header Ticket Info */}
+            <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <span className="px-2.5 py-0.5 bg-amber-500 text-slate-900 rounded font-black text-[10px] uppercase">
+                  {selectedTicket.category}
+                </span>
+                <h3 className="text-base font-black text-white mt-1">{selectedTicket.subject}</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Created: {selectedTicket.createdAt}</p>
+              </div>
 
-            <FormSelectField
-              label="SMS/Whatsapp"
-              options={smsChannelOptions}
-              value={formValues.smsChannel}
-              onChange={(value) => {
-                if (typeof value === "string") {
-                  setFormValues((prev) => ({
-                    ...prev,
-                    smsChannel: value,
-                  }));
-                }
-              }}
-              background="white"
-              disabled={isUpdating}
-            />
-          </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                    selectedTicket.status === "Resolved"
+                      ? "bg-emerald-500 text-white"
+                      : selectedTicket.status === "In Progress"
+                      ? "bg-amber-500 text-slate-900"
+                      : "bg-blue-500 text-white"
+                  }`}
+                >
+                  {selectedTicket.status}
+                </span>
+              </div>
+            </div>
 
-       
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="submit"
-              variant="primary"
-              isLoading={isUpdating}
-              disabled={isUpdating}
-            >
-              Update
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setIsDialogOpen(false);
-                setInvoiceLockedDaysError("");
-              }}
-              disabled={isUpdating}
-            >
-              Cancel
-            </Button>
+            {/* Conversation Messages Thread */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 max-h-[320px] overflow-y-auto space-y-3">
+              {selectedTicket.messages.map((msg) => {
+                const isUser = msg.sender === "User";
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-500 font-bold">
+                      <span>{msg.senderName}</span>
+                      <span>•</span>
+                      <span>{msg.timestamp}</span>
+                    </div>
+                    <div
+                      className={`p-3 rounded-2xl max-w-[85%] leading-relaxed ${
+                        isUser
+                          ? "bg-slate-900 text-white rounded-tr-none shadow-sm"
+                          : "bg-amber-100 text-amber-950 border border-amber-200 rounded-tl-none font-medium"
+                      }`}
+                    >
+                      {msg.message}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Submit Follow-up Reply Form */}
+            <form onSubmit={handleSendReply} className="space-y-3 pt-1">
+              <FormTextareaField
+                label="Reply to VIP Support Concierge"
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                placeholder="Type your reply or additional details here..."
+                rows={2}
+              />
+
+              <div className="flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = { ...selectedTicket, status: "Resolved" as const };
+                    setSelectedTicket(updated);
+                    setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+                    showToast(`Ticket #${selectedTicket.id} marked as RESOLVED.`);
+                  }}
+                  className="px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-extrabold rounded-xl transition-colors text-xs"
+                >
+                  Mark as Resolved
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTicket(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-xs"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-black rounded-xl transition-colors text-xs flex items-center gap-1.5 shadow"
+                  >
+                    <FiSend /> Send Reply
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
-        </form>
+        )}
       </Dialog>
-
-      {/* Success Dialog */}
-      <MessageDialog
-        open={showSuccessDialog}
-        onClose={() => {
-          setShowSuccessDialog(false);
-        }}
-        icon="/icons/SuccessCheck.svg"
-        iconBgColor="#E8F5E9"
-        message={successMessage}
-        confirmText="Success"
-        showCancel={false}
-        onConfirm={() => {
-          setShowSuccessDialog(false);
-        }}
-      />
-
-      {/* API Error Dialog - Only for API errors, not validation errors */}
-      <MessageDialog
-        open={showApiErrorDialog}
-        onClose={() => {
-          setShowApiErrorDialog(false);
-        }}
-        icon="/icons/CrossIcon.svg"
-        iconBgColor="#FFEBEE"
-        message={apiErrorMessage}
-        confirmText="OK"
-        showCancel={false}
-        onConfirm={() => {
-          setShowApiErrorDialog(false);
-        }}
-      />
     </AppShell>
   );
 }
-

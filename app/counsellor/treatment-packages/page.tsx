@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useGetTreatmentPackagesQuery, useLazyGetPackageDetailQuery } from "@/store/api/counsellorApi";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 // Helper component to render the package category icon
 interface PackageIconProps {
@@ -322,8 +323,8 @@ export default function TreatmentPackagesPage() {
 
                     const desc = selectedPackage.remark || selectedPackage.description || "No description provided.";
 
-                    const formatPrice = (amount: number) => {
-                        return `₹ ${amount.toLocaleString("en-IN")}`;
+                    const formatPrice = (amount: number | string) => {
+                        return `₹ ${formatIndianAmount(amount)}`;
                     };
 
                     return (

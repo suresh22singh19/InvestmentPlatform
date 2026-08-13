@@ -26,7 +26,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { useBranchFilter, REGISTRATION_LIST_BRANCH_STORAGE_KEY } from "@/hooks/useBranchFilter";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import { useAppSelector } from "@/store/hooks";
-import { selectLoginType, selectUser } from "@/store/slices/authSlice";
+import { selectLoginType, selectUser, selectSelectedBranch } from "@/store/slices/authSlice";
 import PatientCGHS, {
     DEFAULT_STATIC_BRANCH_INFO,
     type PatientCGHSHandle,
@@ -60,6 +60,7 @@ type PatientRegistration = {
     gender?: string; // Patient gender for conditional field display
     /** Appointment createdAt (ISO) — invoice download UI only for first 24h after this */
     createdAt?: string;
+    patientType: "opd" | "ipd" | "daycare";
 };
 
 const INVOICE_DOWNLOAD_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -427,6 +428,19 @@ export default function RegistrationListPage() {
         persistSuperAdminSelectionKey: REGISTRATION_LIST_BRANCH_STORAGE_KEY,
     });
     const { data: branchesListData } = useGetBranchesQuery(undefined);
+    const reduxSelectedBranch = useAppSelector(selectSelectedBranch);
+
+    const currentSelectedBranch = useMemo(() => {
+        const rows = branchesListData?.data;
+        if (isBranchFilterSuperAdmin && Array.isArray(rows)) {
+            if (filterBranchId) {
+                const found = rows.find((b) => Number(b.id) === filterBranchId);
+                if (found) return found;
+            }
+            if (rows.length > 0) return rows[0];
+        }
+        return reduxSelectedBranch;
+    }, [isBranchFilterSuperAdmin, filterBranchId, branchesListData?.data, reduxSelectedBranch]);
 
     /** Superadmin: no "All Branches"; labels include facility type. */
     const registrationListBranchOptions = useMemo((): SelectOption[] => {
@@ -804,6 +818,26 @@ export default function RegistrationListPage() {
             // Get gender from registration
             const gender = appointment.registration?.gender || "";
 
+            // Extract patientType (default to "opd" if missing or empty)
+            const rawType = (
+                appointment.patientType ||
+                appointment.registration?.patientType ||
+                (appointment as any).patient_type ||
+                (appointment as any).type ||
+                (appointment.registration as any)?.patient_type ||
+                (appointment.registration as any)?.type ||
+                ""
+            ).toString().toLowerCase().trim();
+
+            let patientTypeVal: "opd" | "ipd" | "daycare" = "opd";
+            if (rawType === "ipd") {
+                patientTypeVal = "ipd";
+            } else if (rawType === "daycare") {
+                patientTypeVal = "daycare";
+            } else {
+                patientTypeVal = "opd";
+            }
+
             return {
                 id: Number(appointment.id) || index + 1,
                 registrationId: appointment.registration?.id || appointment.registrationId || null,
@@ -819,6 +853,7 @@ export default function RegistrationListPage() {
                 patientStatus: patientStatus,
                 gender: gender,
                 createdAt: anchorDate,
+                patientType: patientTypeVal,
             };
         });
     }, [appointmentsData, filters.currentPage, filters.itemsPerPage]);
@@ -862,7 +897,7 @@ export default function RegistrationListPage() {
         setFilters((prev) => ({ ...prev, itemsPerPage: items, currentPage: 1 }));
     };
 
-    const handleVitalsAction = (patientId: number, currentStatus: "add" | "done", patientName: string, gender?: string) => {
+    const handleVitalsAction = (patientId: number, currentStatus: "add" | "done", patientName: string, gender?: string, patientType?: string) => {
         if (!canAdd) return;
         // Navigate to vitals & medical info page if status is "add"
         // patientId here is actually the appointment ID
@@ -870,6 +905,7 @@ export default function RegistrationListPage() {
             const queryParams = new URLSearchParams();
             if (gender) queryParams.set("gender", gender);
             if (patientName) queryParams.set("patientName", patientName);
+            if (patientType) queryParams.set("patientType", patientType);
             const queryString = queryParams.toString();
             router.push(`/registration/registrationList/vitals-medical/${patientId}${queryString ? `?${queryString}` : ""}`);
         } else {
@@ -981,6 +1017,7 @@ export default function RegistrationListPage() {
         formData.append("file", uploadFile!);
         formData.append("masterSettingId", uploadFileType);
         formData.append("uhid", selectedUploadPatient.uhid);
+        formData.append("fileName", uploadFileName.trim());
         formData.append("description", uploadDescription.trim());
 
         const appointment = appointmentsData?.data?.find(
@@ -1125,21 +1162,23 @@ export default function RegistrationListPage() {
                             <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
                             <div className="flex items-center gap-3 relative">
-                                <FormSelectField
-                                    label=""
-                                    hideLabel
-                                    options={registrationListBranchOptions}
-                                    value={selectedBranchFilter}
-                                    onChange={(value) => {
-                                        setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
-                                        setFilters((prev) => ({ ...prev, currentPage: 1 }));
-                                    }}
-                                    placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
-                                    mode="single"
-                                    background="normal"
-                                    width={300}
-                                    disabled={isBranchFilterDisabled || isLoadingBranches}
-                                />
+                                {isBranchFilterSuperAdmin && (
+                                    <FormSelectField
+                                        label=""
+                                        hideLabel
+                                        options={registrationListBranchOptions}
+                                        value={selectedBranchFilter}
+                                        onChange={(value) => {
+                                            setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                                            setFilters((prev) => ({ ...prev, currentPage: 1 }));
+                                        }}
+                                        placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                                        mode="single"
+                                        background="normal"
+                                        width={300}
+                                        disabled={isBranchFilterDisabled || isLoadingBranches}
+                                    />
+                                )}
                                 <div className="relative" ref={filterRef}>
                                     <button
                                         onClick={handleFilterClick}
@@ -1212,26 +1251,20 @@ export default function RegistrationListPage() {
                                         Token
                                     </TableHead>
                                     <TableHead>
+                                        Type
+                                    </TableHead>
+                                    <TableHead>
                                         Vitals & Medical
                                     </TableHead>
                                     <TableHead
-                                    // sortable
-                                    // onSort={() => handleSort("doctorName")}
-                                    // sortDirection={getSortDirection("doctorName")}
                                     >
                                         Doctor Name
                                     </TableHead>
                                     <TableHead
-                                    // sortable
-                                    // onSort={() => handleSort("appointmentTime")}
-                                    // sortDirection={getSortDirection("appointmentTime")}
                                     >
                                         Appointment Time
                                     </TableHead>
                                     <TableHead
-                                    // sortable
-                                    // onSort={() => handleSort("checkInTime")}
-                                    // sortDirection={getSortDirection("checkInTime")}
                                     >
                                         Check-In Time
                                     </TableHead>
@@ -1250,7 +1283,7 @@ export default function RegistrationListPage() {
                                 {isLoading ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
+                                            colSpan={canView || canAdd || canEdit || canDownload ? 12 : 11}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             <div className="flex items-center justify-center">
@@ -1261,7 +1294,7 @@ export default function RegistrationListPage() {
                                 ) : isError ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
+                                            colSpan={canView || canAdd || canEdit || canDownload ? 12 : 11}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             Error loading appointments
@@ -1270,7 +1303,7 @@ export default function RegistrationListPage() {
                                 ) : filteredData.length === 0 ? (
                                     <TableRow>
                                         <TableData
-                                            colSpan={canView || canAdd || canEdit || canDownload ? 11 : 10}
+                                            colSpan={canView || canAdd || canEdit || canDownload ? 12 : 11}
                                             className="py-12 text-center text-sm text-[#9CA3AF]"
                                         >
                                             No patient registrations found
@@ -1303,7 +1336,14 @@ export default function RegistrationListPage() {
                                                 )}
                                             </TableData>
                                             <TableData>
-                                                {patient.vitalsStatus === "done" ? (
+                                                <span className="uppercase text-xs font-medium text-[#434956]">
+                                                    {patient.patientType}
+                                                </span>
+                                            </TableData>
+                                            <TableData>
+                                                {patient.patientType === "ipd" ? (
+                                                    <span className="text-xs font-normal text-[#434956]">-</span>
+                                                ) : patient.vitalsStatus === "done" ? (
                                                     <button
                                                         type="button"
                                                         disabled={!canAdd}
@@ -1314,7 +1354,8 @@ export default function RegistrationListPage() {
                                                                         patient.id,
                                                                         patient.vitalsStatus,
                                                                         patient.patientName,
-                                                                        patient.gender
+                                                                        patient.gender,
+                                                                        patient.patientType,
                                                                     )
                                                                 : undefined
                                                         }
@@ -1334,6 +1375,7 @@ export default function RegistrationListPage() {
                                                                 patient.vitalsStatus,
                                                                 patient.patientName,
                                                                 patient.gender,
+                                                                patient.patientType,
                                                             )
                                                         }
                                                         className="flex items-center justify-center gap-1 h-6 px-3 py-2 rounded-[32px] text-xs font-medium text-white bg-[#0B8C00] border border-[#0B8C00] cursor-pointer hover:opacity-90"
@@ -1354,7 +1396,17 @@ export default function RegistrationListPage() {
                                             <TableData>{patient.doctorName}</TableData>
                                             <TableData>{patient.appointmentTime}</TableData>
                                             <TableData>{patient.checkInTime}</TableData>
-                                            <TableData>{patient.diagnosis ? patient.diagnosis : "-"}</TableData>
+                                            <TableData>
+                                                {patient.diagnosis ? (
+                                                    <Tooltip content={patient.diagnosis} position="top" delay={0}>
+                                                        <div className="max-w-[180px] truncate inline-block align-top">
+                                                            {patient.diagnosis}
+                                                        </div>
+                                                    </Tooltip>
+                                                ) : (
+                                                    "-"
+                                                )}
+                                            </TableData>
                                             <TableData>
                                                 <span className={getStatusBadgeClasses(patient.patientStatus)}>
                                                     {patient.patientStatus}
@@ -1693,8 +1745,15 @@ export default function RegistrationListPage() {
                             label="File Name *"
                             value={uploadFileName}
                             onChange={(e) => {
-                                setUploadFileName(e.target.value);
-                                if (e.target.value.trim()) {
+                                let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                value = value.replace(/^\s+/, "");
+                                value = value.replace(/(.)\1{2,}/g, "$1$1");
+                                if (value.length > 0) {
+                                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                                }
+                                value = value.slice(0, 100);
+                                setUploadFileName(value);
+                                if (value.trim()) {
                                     setUploadFileErrors((prev) => {
                                         const next = { ...prev };
                                         delete next.fileName;
@@ -1738,7 +1797,16 @@ export default function RegistrationListPage() {
                         placeholder="Description"
                         height={100}
                         value={uploadDescription}
-                        onChange={(e) => setUploadDescription(e.target.value)}
+                        onChange={(e) => {
+                            let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                            value = value.replace(/^\s+/, "");
+                            value = value.replace(/(.)\1{2,}/g, "$1$1");
+                            if (value.length > 0) {
+                                value = value.charAt(0).toUpperCase() + value.slice(1);
+                            }
+                            value = value.slice(0, 100);
+                            setUploadDescription(value);
+                        }}
                     />
 
                     {/* Action Buttons */}
@@ -1801,7 +1869,7 @@ export default function RegistrationListPage() {
                     aria-hidden
                 >
                     <div className="invoice-content flex w-full min-w-0 flex-col gap-[16px]">
-                        <PaymentReceiptCapture {...buildListInvoiceReceiptProps(invoicePdfAppointment)} />
+                        <PaymentReceiptCapture {...buildListInvoiceReceiptProps(invoicePdfAppointment, currentSelectedBranch)} />
                     </div>
                 </div>
             ) : null}

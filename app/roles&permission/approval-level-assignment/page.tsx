@@ -764,7 +764,7 @@ export default function ApprovalLevelAssignmentPage() {
 
                     {formRoleGroup === "facility" ? (
                         <FormSelectField
-                            label="Branch"
+                            label="Branch *"
                             value={formDialogBranchId}
                             options={branchOptions}
                             placeholder={loadingBranches ? "Loading…" : "Select branch"}
@@ -782,7 +782,7 @@ export default function ApprovalLevelAssignmentPage() {
                     ) : null}
 
                     <FormSelectField
-                        label="Role"
+                        label="Role *"
                         value={formRoleId}
                         options={roleOptions}
                         placeholder={
@@ -816,7 +816,7 @@ export default function ApprovalLevelAssignmentPage() {
                     />
 
                     <FormSelectField
-                        label="User"
+                        label="User *"
                         value={formUserId}
                         options={userOptions}
                         placeholder={
@@ -847,7 +847,7 @@ export default function ApprovalLevelAssignmentPage() {
                     />
 
                     <FormSelectField
-                        label="Assign Level"
+                        label="Assign Level *"
                         value={formLevelId}
                         options={levelOptions}
                         placeholder={

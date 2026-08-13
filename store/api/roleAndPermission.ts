@@ -19,6 +19,24 @@ export interface RolePermissionApiEnvelope<T> {
     statusCode: number;
 }
 
+export interface RoleSubTypeItem {
+    id: number;
+    roleTypeId: number;
+    subRoleType: string;
+    description?: string;
+    isActive: boolean;
+}
+
+export interface RoleTypeItem {
+    id: number;
+    roleType: string;
+    sortOrder?: number | null;
+    isActive: boolean;
+    roleSubTypes?: RoleSubTypeItem[];
+}
+
+export type GetRoleTypesListResponse = RolePermissionApiEnvelope<RoleTypeItem[]>;
+
 /* ---------- Create role ---------- */
 
 /** For zonal/regional corporate: `roleScopeType` "Hospital" | "Clinic" + `stateIds`. For specific/all: same as `mainScope` + `branchIds`. */
@@ -37,6 +55,11 @@ export interface RolePermissionPayload {
     canDelete: boolean;
 }
 
+export interface RoleType {
+    roleTypeId: number;
+    roleSubTypeId?: number;
+}
+
 export interface CreateRolesRequest {
     name: string;
     /** e.g. "FACILITY" | "CORPORATE" — send as your backend expects */
@@ -46,6 +69,8 @@ export interface CreateRolesRequest {
     roleAccess: RoleAccessPayload[];
     permissions: RolePermissionPayload[];
     roleDescription?: string;
+    roleTypes?: RoleType[];
+    isCustom?: boolean;
 }
 
 export type CreateRolesResponse = RolePermissionApiEnvelope<null>;
@@ -133,6 +158,23 @@ export interface RoleAccessItem {
     branch: unknown | null;
 }
 
+export interface RoleTypeAssignment {
+    id: number;
+    roleTypeId: number;
+    roleSubTypeId?: number;
+    isActive: boolean;
+    roleType: {
+        id: number;
+        roleType: string;
+        isActive: boolean;
+    };
+    roleSubType?: {
+        id: number;
+        subRoleType: string;
+        isActive: boolean;
+    } | null;
+}
+
 export interface RoleByIdData {
     id: number;
     name: string;
@@ -145,12 +187,16 @@ export interface RoleByIdData {
     updatedBy: string | null;
     permissions: RolePermissionDetail[];
     roleAccess: RoleAccessItem[];
+    roleTypeIds?: number[];
+    roleSubTypeId?: number;
+    roleTypeAssignments?: RoleTypeAssignment[];
 }
 
 export type GetRoleByIdResponse = RolePermissionApiEnvelope<RoleByIdData>;
 
 export interface GetRoleByIdParams {
     roleId: number | string;
+    roleCategoryType?: string;
 }
 
 /* ---------- Role list dropdown (search) ---------- */
@@ -164,6 +210,7 @@ export interface GetRoleListDropdownParams {
     search?: string;
     /** Scoped search: `facility_doctor` | `facility_nurse` | `facility_therapist` | `facility` | `corporate`. */
     roleCategoryType?: string;
+    isCustom?: boolean;
 }
 
 export type GetRoleListDropdownResponse = RolePermissionApiEnvelope<RoleDropdownItem[]>;
@@ -177,6 +224,8 @@ export interface UpdateRoleRequest {
     isActive: boolean;
     permissions: RolePermissionPayload[];
     roleDescription?: string;
+    roleTypes?: RoleType[];
+    isCustom?: boolean;
 }
 
 export interface UpdateRoleData {
@@ -568,8 +617,8 @@ function normalizeAssignApprovalLevelRow(row: Record<string, unknown>): AssignAp
         typeof isActiveRaw === "boolean"
             ? isActiveRaw
             : isActiveRaw === 1 ||
-                isActiveRaw === "1" ||
-                String(isActiveRaw).toLowerCase() === "true";
+            isActiveRaw === "1" ||
+            String(isActiveRaw).toLowerCase() === "true";
     const modulesRaw = approvalLevel?.modules;
     return {
         id: Number.isFinite(id) ? id : 0,
@@ -727,10 +776,10 @@ function normalizeApprovalLevelRow(row: Record<string, unknown>): ApprovalLevelS
             typeof activeRaw === "boolean"
                 ? activeRaw
                 : activeRaw === 1 || activeRaw === "1" || String(activeRaw).toLowerCase() === "true"
-                  ? true
-                  : activeRaw === 0 || activeRaw === "0"
-                    ? false
-                    : undefined,
+                    ? true
+                    : activeRaw === 0 || activeRaw === "0"
+                        ? false
+                        : undefined,
     };
 }
 
@@ -850,6 +899,16 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
         }),
 
         /**
+         * GET /admin/role-and-permissions/getRoleTypesList
+         */
+        getRoleTypesList: builder.query<GetRoleTypesListResponse, void>({
+            query: () => ({
+                url: "/admin/role-and-permissions/getRoleTypesList",
+                method: "GET",
+            }),
+        }),
+
+        /**
          * GET /admin/role-and-permissions/getRole?page=&limit=&sort=&order=&search=&roleCatType=&branchId=
          */
         getRoles: builder.query<GetRolesResponse, GetRolesParams | void>({
@@ -887,10 +946,13 @@ export const roleAndPermissionApi = baseApi.injectEndpoints({
          * GET /admin/role-and-permissions/getRoleById?roleId=
          */
         getRoleById: builder.query<GetRoleByIdResponse, GetRoleByIdParams>({
-            query: ({ roleId }) => ({
+            query: ({ roleId, roleCategoryType }) => ({
                 url: "/admin/role-and-permissions/getRoleById",
                 method: "GET",
-                params: { roleId },
+                params: {
+                    roleId,
+                    ...(roleCategoryType ? { roleCategoryType } : {}),
+                },
             }),
             providesTags: (result, _err, { roleId }) => [ROLE_TAGS.role(roleId)],
         }),
@@ -1249,4 +1311,6 @@ export const {
     useCreateApprovalLeaveAssignmentMutation,
     useUpdateApprovalLeaveAssignmentMutation,
     useLazyGetRoleListDropdownQuery,
+    useGetRoleTypesListQuery,
+    useLazyGetRoleTypesListQuery,
 } = roleAndPermissionApi;

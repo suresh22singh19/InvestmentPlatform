@@ -1,13 +1,21 @@
+import { PatientWalletDetailItem } from "@/components/ui";
+import type { getPatientWalletDataResponse } from "@/store/api/commonApi";
 import type { AppointmentDetailItem } from "@/components/ui/AppointmentDetailCard";
 import type { DietPlanEntry } from "@/components/ui/DietPlanCard";
 import type { MedicalInformationItem } from "@/components/ui/MedicalInformationCard";
 import type { OtherInformationItem } from "@/components/ui/OtherInformationCard";
 import type { PatientDetailsBadge, PatientDetailsInfoItem } from "@/components/ui/PatientDetailsCard";
-import type { PatientInformationTimelineItem } from "@/components/ui/PatientInformationTimelineCard";
 import type { ReferralPatientInfoItem } from "@/components/ui/referralPatientInfo";
 import type { VitalItem } from "@/components/ui/VitalsCard";
 
 type IpdPatientOverviewData = {
+  patientReferral?: {
+    source?: string | null;
+    sub_source?: string | null;
+    referral_doctor?: string | null;
+    referral_name?: string | null;
+    referral_mobile?: string | null;
+  } | null;
   registration?: {
     patient_title?: string | null;
     patient_name?: string | null;
@@ -42,6 +50,17 @@ type IpdPatientOverviewData = {
     doctor_fee?: string | null;
     diagnosis_symptoms?: string | null;
     created_at?: string | null;
+
+    blood_group?: string | null;
+    blood_pressure?: string | null;
+    sugar_level?: string | null;
+    temperature?: string | null;
+    pulse?: string | null;
+    spo2?: string | null;
+    height?: string | number | null;
+    weight?: string | number | null;
+    diet_type?: string | null;
+    notes?: string | null;
     allergies?: string | null;
     surgeries?: string | null;
   } | null;
@@ -97,28 +116,40 @@ function capitalizeWords(value: string): string {
     .join(" ");
 }
 
+function parseToDate(value: string): Date | null {
+  const trimmed = value.trim();
+  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "N/A";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  const parsed = parseToDate(value);
+  if (!parsed) return value;
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = parsed.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "N/A";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const parsed = parseToDate(value);
+  if (!parsed) return value;
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = parsed.getFullYear();
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
 }
 
 function formatBloodGroup(value: string | null | undefined): string {
@@ -148,7 +179,11 @@ const BLOOD_GROUP_BADGE_CLASS =
 const PATIENT_TYPE_BADGE_CLASS =
   "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] border-[#0B8C00]/20 bg-white text-[#0B8C00]";
 
+export type PatientWalletData = getPatientWalletDataResponse["data"];
+
 export type ReceptionViewPatientViewModel = {
+  remainingAmount: string;
+  walletItems: PatientWalletDetailItem[];
   name: string;
   subtitle: string;
   uhid: string;
@@ -162,19 +197,53 @@ export type ReceptionViewPatientViewModel = {
   referralItems: ReferralPatientInfoItem[];
   dietDecoction: string;
   dietRows: DietPlanEntry[][];
-  timelineItems: PatientInformationTimelineItem[];
 };
 
+export function mapPatientWalletToView(
+  wallet: PatientWalletData | undefined | null
+): Pick<ReceptionViewPatientViewModel, "remainingAmount" | "walletItems"> {
+  const walletExists = wallet && wallet !== undefined && wallet !== null;
+
+  // console.log("dbhsbdhbdsh", walletExists, wallet);
+
+  const remainingAmount =
+    walletExists && wallet.availableBalance !== undefined
+      ? `Rs. ${wallet.availableBalance}`
+      : "N/A";
+
+  const walletItems: PatientWalletDetailItem[] = walletExists
+    ? [
+        { label: "Total Deposits", value: `Rs. ${wallet.totalDeposits ?? 0}` },
+        { label: "Total Withdrawals", value: `Rs. ${wallet.totalWithdrawals ?? 0}` },
+        { label: "Available Balance", value: `Rs. ${wallet.availableBalance ?? 0}` },
+        {
+          label: "Last Updated",
+          value: wallet.updatedAt ? formatDateTime(wallet.updatedAt) : "N/A",
+        },
+      ]
+    : [
+        { label: "Package", value: "N/A" },
+        { label: "Amount", value: "N/A" },
+        { label: "Discount", value: "N/A" },
+        { label: "Expire", value: "N/A" },
+      ];
+
+  return { remainingAmount, walletItems };
+}
+
 export function mapIpdPatientOverviewToView(
-  data: IpdPatientOverviewData | undefined
+  data: IpdPatientOverviewData | undefined,
+  walletData?: PatientWalletData | null
 ): ReceptionViewPatientViewModel | null {
   if (!data) return null;
 
   const reg = data.registration;
   const appt = data.appointment;
-  const vitals = data.vitals;
+  const vitals = data.appointment;
   const room = data.assignedRoom;
-  const referral = data.patientRefferal;
+  const referral = data.patientReferral;
+  const { remainingAmount, walletItems } = mapPatientWalletToView(walletData);
+  // console.log("dshdvdh",remainingAmount,walletData)
 
   const patientName = [reg?.patient_title, reg?.patient_name].filter(Boolean).join(" ").trim() || "N/A";
   const contact = reg?.contact_number ?? reg?.whatsapp_no;
@@ -292,7 +361,7 @@ export function mapIpdPatientOverviewToView(
     { label: "Sub Source", value: na(referral?.sub_source) },
     { label: "Referral Doctor", value: na(referral?.referral_doctor) },
     { label: "Referral Name", value: na(referral?.referral_name) },
-    { label: "Mobile", value: na(referral?.mobile) },
+    { label: "Mobile", value: na(referral?.referral_mobile) },
   ];
 
   const dietType = vitals?.diet_type ?? reg?.diet_type ?? "N/A";
@@ -309,8 +378,9 @@ export function mapIpdPatientOverviewToView(
     medicalItems,
     otherItems,
     referralItems,
+    walletItems,
+    remainingAmount,
     dietDecoction: dietType !== "N/A" ? dietType : "—",
     dietRows: [],
-    timelineItems: [],
   };
 }

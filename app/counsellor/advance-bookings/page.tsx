@@ -16,15 +16,18 @@ import {
     ViewAppointment,
     BackToPreviousPageButton,
     SpinnerLoader,
+    Tooltip,
+    PatientWalletDetailItem,
+    FormSelectField,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 import {
     useGetAdvanceBookingListQuery,
     useLazyGetAdvanceBookingDetailQuery,
 } from "@/store/api/counsellorApi";
-import { selectUserBranchId } from "@/store/slices/authSlice";
-import { useAppSelector } from "@/store/hooks";
+import { useGetPatientFilesQuery, useLazyGetPresignedUrlQuery } from "@/store/api/commonApi";
 
 
 // Helper to parse "18 May 2026" to "2026-05-18" for the DatePicker input
@@ -64,17 +67,76 @@ const formatDateToDisplayFormat = (dateStr: string) => {
     return dateStr;
 };
 
+    const TRUNCATED_TABLE_CELL_WIDTH = 150;
+
+    function TruncatedTableCell({ text }: { text: string }) {
+    const value = text?.trim() ? text.trim() : "N/A";
+    const textRef = useRef<HTMLSpanElement>(null);
+    const [isTruncated, setIsTruncated] = useState(false);
+
+    useEffect(() => {
+        const element = textRef.current;
+        if (!element) return;
+
+        const checkTruncation = () => {
+        setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+        };
+
+        checkTruncation();
+
+        const observer = new ResizeObserver(checkTruncation);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [value]);
+
+    return (
+        <Tooltip
+        position="top"
+        maxWidth={360}
+        disabled={!isTruncated}
+        className="!overflow-visible !py-2.5"
+        content={
+            <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+            {value}
+            </p>
+        }
+        >
+        <div
+            className="flex min-w-0 items-center"
+            style={{ width: TRUNCATED_TABLE_CELL_WIDTH, maxWidth: TRUNCATED_TABLE_CELL_WIDTH }}
+        >
+            <span
+            ref={textRef}
+            className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+            >
+            {value}
+            </span>
+            {isTruncated ? <span className="shrink-0 pl-1.5 text-[#434956]">...</span> : null}
+        </div>
+        </Tooltip>
+    );
+    }
 
 
 export default function CounsellorAdvanceBookingsPage() {
     const router = useRouter();
+
+    const {
+        selectedBranchFilter: selectedBranch,
+        setSelectedBranchFilter: setSelectedBranch,
+        branchFilterOptions: hookBranchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        resolvedFilterBranchId,
+    } = useCounsellorResolvedBranchId();
+
     const [bookingsList, setBookingsList] = useState<any[]>([]);
 
     const [searchTerm, setSearchTerm] = useState("");
     const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
     const debouncedSearch = useDebounce(searchTerm, 500);
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(6);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
     const [sortBy, setSortBy] = useState<"patientName" | "">("patientName");
 
@@ -111,18 +173,18 @@ export default function CounsellorAdvanceBookingsPage() {
         setIsFilterOpen(false);
     };
 
-    const authBranchId = useAppSelector(selectUserBranchId);
-    const branchId = authBranchId ? Number(authBranchId) : undefined;
-
     const { data: bookingsRes, isLoading, isError, refetch } = useGetAdvanceBookingListQuery({
         page: currentPage,
         limit: itemsPerPage,
         search: debouncedSearch.trim() || undefined,
         sortBy: sortBy || undefined,
         order: sortOrder.toUpperCase() as "ASC" | "DESC",
-        branchId,
+        ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
+    },{
+      skip: resolvedFilterBranchId == null, 
+      refetchOnMountOrArgChange: true 
     });
 
     useEffect(() => {
@@ -149,17 +211,84 @@ export default function CounsellorAdvanceBookingsPage() {
     const [loadingBookingId, setLoadingBookingId] = useState<number | string | null>(null);
     const [fetchedBookingData, setFetchedBookingData] = useState<any>(null);
 
+    const handleViewBooking = async (item: { id?: number | string }) => {
+        if (!item.id) {
+            setApiErrorMessage("Booking ID not found.");
+            setShowApiErrorDialog(true);
+            return;
+        }
+
+        setLoadingBookingId(item.id);
+        try {
+            const res = await getAdvanceBookingDetail(item.id).unwrap();
+            if (res?.success) {
+                setFetchedBookingData(res.data);
+                setSelectedItem(item);
+                setViewAppointmentMode(true);
+            } else {
+                setApiErrorMessage(res?.message || "Failed to load booking details.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setApiErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while fetching booking details."
+            );
+            setShowApiErrorDialog(true);
+        } finally {
+            setLoadingBookingId(null);
+        }
+    };
+
+       const [getPresignedUrl] = useLazyGetPresignedUrlQuery();
+        const { data: patientFilesResponse } = useGetPatientFilesQuery(
+            { uhid: fetchedBookingData?.appointmentDetail?.uhid || "" },
+            { skip: !fetchedBookingData?.appointmentDetail?.uhid, refetchOnMountOrArgChange: true }
+        );
+    
+        const handleViewFile = async (filePath: string) => {
+            try {
+                const result = await getPresignedUrl({ key: filePath }).unwrap();
+                const signedUrl = result?.data?.signedUrl;
+                if (signedUrl) {
+                    window.open(signedUrl, "_blank", "noopener,noreferrer");
+                }
+            } catch (err) {
+                console.error("Failed to get presigned URL:", err);
+                alert("Failed to open file. Please try again.");
+            }
+        };
+    
+        const patientFilesItems = useMemo(() => {
+            const files = patientFilesResponse?.data;
+            if (!Array.isArray(files)) return [];
+            return files.map((file) => {
+                const formattedDate = file.createdAt
+                    ? new Date(file.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                    : "";
+                return {
+                    name: file.fileName || "File",
+                    size: `${file.fileType || "Document"} • ${formattedDate}`,
+                    onClick: () => handleViewFile(file.path),
+                    actionIconSrc: "/icons/ViewEyeIcon.svg",
+                    actionIconAlt: "View File",
+                };
+            });
+        }, [patientFilesResponse]);
+
+
     // Client-side filtering, sorting, and pagination
     const totalItems = bookingsRes?.total ?? 0;
     const paginatedList = bookingsList;
 
     // Setup columns matching the reference screenshot
     const columns = [
-        { label: "Sr no.", position: "first" as const },
+        { label: "Sr no.", position: "first" as const, className: "w-[90px] max-w-[90px]" },
         {
             label: "Patient Name",
             sortable: true,
             sortDirection: sortBy === "patientName" ? sortOrder : null,
+            className: "w-[150px] max-w-[150px]",
             onSort: () => {
                 setSortBy("patientName");
                 setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -169,7 +298,7 @@ export default function CounsellorAdvanceBookingsPage() {
         { label: "Package Name" },
         { label: "Patient UHID" },
         { label: "Referring Doctor" },
-        { label: "Chief Complaint" },
+        { label: "Chief Complaint", className: "w-[150px] max-w-[150px]"},
         { label: "Last Visit Date" },
         { label: "Admission Date" },
         { label: "Action", position: "last" as const, className: "cursor-pointer" },
@@ -229,68 +358,56 @@ export default function CounsellorAdvanceBookingsPage() {
     const rows = paginatedList.map((item, index) => {
         const sr = (currentPage - 1) * itemsPerPage + index + 1;
 
+        const isRowLoading = loadingBookingId === item.id;
+
         // Custom green styled link for patient UHID
         const uhid = (
-            <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
-                {item.patientUhid}
-            </span>
+            <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-[#0B8C00] font-medium hover:underline cursor-pointer disabled:opacity-60"
+                onClick={() => void handleViewBooking(item)}
+                disabled={isRowLoading}
+            >
+                {isRowLoading ? <SpinnerLoader size={14} /> : null}
+                {item.patientUhid || "N/A"}
+            </button>
         );
 
-        const isButtonLoading = loadingBookingId === item.id;
         const actions = (
             <div className="flex items-center gap-2">
                 <Button
                     variant="outline"
                     size="xsmall"
                     className="whitespace-nowrap flex items-center justify-center min-w-[50px]"
-                    onClick={async () => {
-                        if (!item.id) return;
-                        setLoadingBookingId(item.id);
-                        try {
-                            const res = await getAdvanceBookingDetail(item.id).unwrap();
-                            if (res && res.success) {
-                                setFetchedBookingData(res.data);
-                                setSelectedItem(item);
-                                setViewAppointmentMode(true);
-                            } else {
-                                setApiErrorMessage(res?.message || "Failed to load booking details.");
-                                setShowApiErrorDialog(true);
-                            }
-                        } catch (err: any) {
-                            console.error("Error fetching booking details:", err);
-                            const msg = err?.data?.message || err?.message || "An error occurred while fetching booking details.";
-                            setApiErrorMessage(msg);
-                            setShowApiErrorDialog(true);
-                        } finally {
-                            setLoadingBookingId(null);
-                        }
-                    }}
-                    disabled={isButtonLoading}
+                    onClick={() => void handleViewBooking(item)}
+                    disabled={isRowLoading}
                 >
-                    {isButtonLoading ? (
+                    {isRowLoading ? (
                         <SpinnerLoader size={16} />
                     ) : (
                         "View"
                     )}
                 </Button>
-                <Button
+                {/* <Button
                     variant="primary"
                     size="xsmall"
                     className="whitespace-nowrap"
                     onClick={() => router.push(`/counsellor/start-counselling?id=${item.id}`)}
                 >
                     StartCounselling
-                </Button>
+                </Button> */}
             </div>
         );
 
         return [
             sr,
-            item.patientName,
+            // item.patientName,
+            <TruncatedTableCell key={`advance-booking-${item.id ?? index}`} text={`${item.patientTitle || ""} ${item.patientName || "N/A"}`} />,
             item.packageName,
             uhid,
             item.doctorName,
-            item.chiefComplaint,
+            // item.chiefComplaint,
+            <TruncatedTableCell key={`advance-booking-${item.id ?? index}`} text={item.chiefComplaint || "N/A"} />,
             item.lastVisitDate,
             item.admissionDate,
             actions,
@@ -308,6 +425,7 @@ export default function CounsellorAdvanceBookingsPage() {
                             onClick={() => {
                                 setViewAppointmentMode(false);
                                 setSelectedItem(null);
+                                setFetchedBookingData(null);
                             }}
                         />
                     </div>
@@ -317,6 +435,27 @@ export default function CounsellorAdvanceBookingsPage() {
                         const referralDetail = fetchedBookingData?.referralDetail || {};
                         const medicalInfo = fetchedBookingData?.medicalInfo || {};
                         const packageInfo = fetchedBookingData?.packageInfo || {};
+                        const walletInfo = fetchedBookingData?.wallet || {};
+
+                           //Patient Wallet Information Card
+                            const remainingAmount =  walletInfo?.walletExists && walletInfo.availableBalance !== undefined
+                                ? `Rs. ${walletInfo.availableBalance}`
+                                : "N/A";
+
+                            const walletDetails: PatientWalletDetailItem[] = walletInfo?.walletExists
+                            ? [
+                                { label: "Current Balance", value: `Rs. ${walletInfo.currentBalance ?? 0}` },
+                                { label: "Hold Amount", value: `Rs. ${walletInfo.holdAmount ?? 0}` },
+                                { label: "Total Credit", value: `Rs. ${walletInfo.totalCredit ?? 0}` },
+                                { label: "Total Debit", value: `Rs. ${walletInfo.totalDebit ?? 0}` },
+                                { label: "Last Updated", value: walletInfo.lastUpdated ? new Date(walletInfo.lastUpdated).toLocaleDateString('en-GB') : "N/A" },
+                            ]
+                            : [
+                                { label: "Package", value: "N/A" },
+                                { label: "Amount", value: "N/A" },
+                                { label: "Discount", value: "N/A" },
+                                { label: "Expire", value: "N/A" },
+                            ];
 
                         const appointmentItems = [
                             { label: "UHID", value: bookingDetail.uhid || "N/A" },
@@ -339,8 +478,10 @@ export default function CounsellorAdvanceBookingsPage() {
                             { label: "Mobile", value: referralDetail.mobile || "N/A" },
                         ];
 
-                        const patientName = patDetails.name || "N/A";
-                        const patientSubtitle = `Contact Number: ${patDetails.contactNumber || "N/A"} • WhatsApp: ${patDetails.whatsappNumber || "N/A"} • Age : ${patDetails.age || "N/A"} Years • Gender : ${patDetails.gender || "N/A"}`;
+                       const patientName = patDetails?.name
+                        ? `${patDetails?.patientTitle || ""} ${patDetails.name}`.trim()
+                        : "N/A";
+                        const patientSubtitle = `Contact Number: ${patDetails.contactNumber || "N/A"} • Age : ${patDetails.age || "N/A"} Years • Gender : ${patDetails.gender || "N/A"}`;
 
                         const patientBadges = [
                             ...(patDetails.bloodGroup && patDetails.bloodGroup !== "N/A" ? [{
@@ -358,7 +499,9 @@ export default function CounsellorAdvanceBookingsPage() {
                                 iconSrc: "/icons/UserGear.svg",
                                 iconAlt: "Father/Husband",
                                 label: "Father’s/Husband’s Name",
-                                value: patDetails.guardianName || "N/A",
+                                  value:  `${patDetails?.guardianTitle || ""} ${
+                                        patDetails?.fatherHusbandName || patDetails?.guardianName || ""
+                                    }`.trim() || "N/A",
                             },
                             {
                                 iconSrc: "/icons/gendericon.svg",
@@ -418,16 +561,16 @@ export default function CounsellorAdvanceBookingsPage() {
                             { label: "Ayush Covered", value: "N/A" },
                         ];
 
-                        const walletDetails = [
-                            { label: "Package", value: packageInfo.packageName || "N/A" },
-                            { label: "Start Date", value: packageInfo.startDate || "N/A" },
-                            { label: "End Date", value: packageInfo.endDate || "N/A" },
-                        ];
+                        // const walletDetails = [
+                        //     { label: "Package", value: packageInfo.packageName || "N/A" },
+                        //     { label: "Start Date", value: packageInfo.startDate || "N/A" },
+                        //     { label: "End Date", value: packageInfo.endDate || "N/A" },
+                        // ];
 
                         return (
                             <ViewAppointment
                                 appointmentItems={appointmentItems}
-                                walletRemainingAmount="Rs. 0"
+                                walletRemainingAmount={remainingAmount}
                                 walletDetails={walletDetails}
                                 referralItems={referralItems}
                                 patientName={patientName}
@@ -439,7 +582,7 @@ export default function CounsellorAdvanceBookingsPage() {
                                 timelineItems={undefined}
                                 healthCardNo="N/A"
                                 medicalItems={medicalItems}
-                                fileItems={[]}
+                                fileItems={patientFilesItems}
                                 otherInfoItems={otherInfoItems}
                             />
                         );
@@ -459,7 +602,22 @@ export default function CounsellorAdvanceBookingsPage() {
                                 id: "advance-bookings-list",
                                 title: "Advance Bookings",
                                 titleRightContent: (
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <FormSelectField
+                                            label=""
+                                            hideLabel
+                                            options={hookBranchFilterOptions}
+                                            value={selectedBranch}
+                                            onChange={(value) => {
+                                                setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                                                setCurrentPage(1);
+                                            }}
+                                            placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                            mode="single"
+                                            background="normal"
+                                            width={280}
+                                            disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                        />
                                         <div className="relative" ref={filterRef}>
                                             <button
                                                 onClick={handleFilterClick}
@@ -505,7 +663,8 @@ export default function CounsellorAdvanceBookingsPage() {
                                         setItemsPerPage(items);
                                         setCurrentPage(1);
                                     },
-                                    itemsPerPageOptions: [6, 12, 24, 60],
+                                    // itemsPerPageOptions: [6, 12, 24, 60],
+                                    itemsPerPageOptions: [10, 20, 50, 100],
                                 },
                             },
                         ]}

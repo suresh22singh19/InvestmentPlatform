@@ -25,6 +25,7 @@ import {
 } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
+import { formatIndianAmount, formatIndianCurrency, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 
 const MASTER_CATEGORY = "service";
 const MASTER_SUBCATEGORY = "consultancy";
@@ -90,8 +91,8 @@ const saveState = (state: StoredState) => {
   }
 };
 
-function formatRupee(amount: number): string {
-  return `₹${Number.isFinite(amount) ? amount.toLocaleString("en-IN") : amount}`;
+function formatRupee(amount: number | string): string {
+  return formatIndianCurrency(amount);
 }
 
 export default function ConsultancyServiceSettingsPage() {
@@ -185,27 +186,26 @@ export default function ConsultancyServiceSettingsPage() {
   const openView = (service: MasterServiceRow) => {
     if (!canView && !canEdit) return;
     setSelectedService(service);
-    setFormValues({ price: String(service.price), status: String(service.status) });
+    setFormValues({ price: formatIndianAmount(service.price), status: String(service.status) });
     setFormErrors({});
     setDialogMode("view");
   };
 
   const openEdit = (service: MasterServiceRow) => {
-    debugger
     if (!canEdit) return;
     setSelectedService(service);
-    setFormValues({ price: String(service.price), status: String(service.status) });
+    setFormValues({ price: formatIndianAmount(service.price), status: String(service.status) });
     setFormErrors({});
     setDialogMode("edit");
   };
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    const raw = formValues.price.trim();
+    const raw = parseIndianAmount(formValues.price).trim();
     if (!raw) {
       errors.price = "Price is required";
-    } else if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
-      errors.price = "Enter a valid amount";
+    } else if (!/^\d{1,6}(\.\d{1,2})?$/.test(raw)) {
+      errors.price = "Enter a valid amount (max 6 digits before decimal)";
     } else {
       const n = Number(raw);
       if (n < 0) {
@@ -226,7 +226,7 @@ export default function ConsultancyServiceSettingsPage() {
     }
 
     try {
-      const price = Number(formValues.price.trim());
+      const price = Number(parseIndianAmount(formValues.price).trim());
       const result = await createMasterService({
         category: MASTER_CATEGORY,
         subCategory: MASTER_SUBCATEGORY,
@@ -288,7 +288,7 @@ export default function ConsultancyServiceSettingsPage() {
     }
 
     try {
-      const price = Number(formValues.price.trim());
+      const price = Number(parseIndianAmount(formValues.price).trim());
       const status = formValues.status === "true";
       const result = await updateMasterService({
         id: selectedService.id,
@@ -458,6 +458,7 @@ export default function ConsultancyServiceSettingsPage() {
               : "View Consultancy Fee"
         }
         width={686}
+        closeOnOutsideClick={false}
       >
         <form
           onSubmit={
@@ -485,11 +486,25 @@ export default function ConsultancyServiceSettingsPage() {
                 value={formValues.price}
                 onChange={(event) => {
                   if (dialogMode === "view") return;
-                  const value = event.target.value.replace(/[^\d.]/g, "");
-                  const parts = value.split(".");
+                  const raw = parseIndianAmount(event.target.value).replace(/[^\d.]/g, "");
+                  const parts = raw.split(".");
+                  let integerPart = parts[0];
+                  if (integerPart.startsWith("0")) {
+                    integerPart = integerPart.replace(/^0+/, "");
+                  }
+                  if (integerPart.length > 6) {
+                    integerPart = integerPart.slice(0, 6);
+                  }
+                  let fractionalPart = parts[1];
+                  if (fractionalPart !== undefined) {
+                    if (fractionalPart.length > 2) {
+                      fractionalPart = fractionalPart.slice(0, 2);
+                    }
+                  }
                   const normalized =
-                    parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : value;
-                  setFormValues((prev) => ({ ...prev, price: normalized }));
+                    fractionalPart !== undefined ? `${integerPart}.${fractionalPart}` : integerPart;
+                  const formatted = normalized ? formatIndianAmount(normalized) : "";
+                  setFormValues((prev) => ({ ...prev, price: formatted }));
                   setFormErrors((prev) => ({ ...prev, price: "" }));
                 }}
                 height={44}

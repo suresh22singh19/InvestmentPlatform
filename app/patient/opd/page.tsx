@@ -28,6 +28,8 @@ import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { usePermission } from "@/hooks/usePermission";
 import { useGetLegacyDoctorsByBranchQuery, useGetLegacyBranchListQuery } from "@/store/api/v3OldHiimsApis";
 import type { SelectOption } from "@/components/ui/FormSelectField";
+import { useAppSelector } from "@/store/hooks";
+import { selectSelectedBranch } from "@/store/slices/authSlice";
 import { downloadPaymentReceiptPdfFromElement } from "@/lib/utils/downloadPaymentReceiptPdf";
 import NewOPDPatientForm, {
     type NewOPDPatientFormHandle,
@@ -103,6 +105,7 @@ export default function IpdPage() {
         branchFilterPersistReady,
         filterBranchId,
     } = useBranchFilter();
+    const reduxSelectedBranch = useAppSelector(selectSelectedBranch);
     const { data: legacyBranchData, isLoading: isLoadingLegacyBranches } = useGetLegacyBranchListQuery(
         undefined,
         { skip: !isBranchFilterSuperAdmin }
@@ -832,6 +835,7 @@ export default function IpdPage() {
                             totalAmount={Number(invoiceCaptureRow.doctorFee) || 0}
                             billDate={invoiceCaptureRow.appointmentDate || "N/A"}
                             transactionId="N/A"
+                            branch={reduxSelectedBranch}
                         />
                     </div>
                 </div>

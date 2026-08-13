@@ -92,18 +92,18 @@ export function Tooltip({
 
     const fits = (pos: TooltipPosition): boolean => {
       switch (pos) {
-        case "top":    return tRect.top - gap - ttRect.height >= VIEWPORT_PADDING;
+        case "top": return tRect.top - gap - ttRect.height >= VIEWPORT_PADDING;
         case "bottom": return tRect.bottom + gap + ttRect.height <= window.innerHeight - VIEWPORT_PADDING;
-        case "left":   return tRect.left - gap - ttRect.width >= VIEWPORT_PADDING;
-        case "right":  return tRect.right + gap + ttRect.width <= window.innerWidth - VIEWPORT_PADDING;
+        case "left": return tRect.left - gap - ttRect.width >= VIEWPORT_PADDING;
+        case "right": return tRect.right + gap + ttRect.width <= window.innerWidth - VIEWPORT_PADDING;
       }
     };
 
     const order: Record<TooltipPosition, TooltipPosition[]> = {
-      top:    ["top", "bottom", "right", "left"],
+      top: ["top", "bottom", "right", "left"],
       bottom: ["bottom", "top", "right", "left"],
-      left:   ["left", "right", "top", "bottom"],
-      right:  ["right", "left", "top", "bottom"],
+      left: ["left", "right", "top", "bottom"],
+      right: ["right", "left", "top", "bottom"],
     };
 
     const resolved = order[position].find(fits) ?? position;
@@ -111,19 +111,19 @@ export function Tooltip({
 
     switch (resolved) {
       case "top":
-        top  = tRect.top  - gap - ttRect.height + window.scrollY;
+        top = tRect.top - gap - ttRect.height + window.scrollY;
         left = tRect.left + tRect.width / 2 - ttRect.width / 2 + window.scrollX;
         break;
       case "bottom":
-        top  = tRect.bottom + gap + window.scrollY;
+        top = tRect.bottom + gap + window.scrollY;
         left = tRect.left + tRect.width / 2 - ttRect.width / 2 + window.scrollX;
         break;
       case "left":
-        top  = tRect.top + tRect.height / 2 - ttRect.height / 2 + window.scrollY;
+        top = tRect.top + tRect.height / 2 - ttRect.height / 2 + window.scrollY;
         left = tRect.left - gap - ttRect.width + window.scrollX;
         break;
       case "right":
-        top  = tRect.top + tRect.height / 2 - ttRect.height / 2 + window.scrollY;
+        top = tRect.top + tRect.height / 2 - ttRect.height / 2 + window.scrollY;
         left = tRect.right + gap + window.scrollX;
         break;
     }
@@ -186,8 +186,34 @@ export function Tooltip({
     return () => document.removeEventListener("keydown", handler);
   }, [visible, setOpen]);
 
+  // Hide tooltip when trigger is clicked (e.g. when opening a dropdown)
+  useEffect(() => {
+    const triggerEl = triggerRef.current;
+    if (!triggerEl) return;
+
+    const handleTriggerClick = () => {
+      setOpen(false);
+      clearTimers();
+    };
+
+    triggerEl.addEventListener("click", handleTriggerClick);
+    return () => {
+      triggerEl.removeEventListener("click", handleTriggerClick);
+    };
+  }, [clearTimers, setOpen]);
+
   const show = useCallback(() => {
     if (disabled) return;
+
+    // Do not show tooltip if dropdown/menu is open
+    const triggerEl = triggerRef.current;
+    if (triggerEl) {
+      const button = triggerEl.tagName === "BUTTON" ? triggerEl : triggerEl.querySelector("button");
+      if (button && button.getAttribute("aria-expanded") === "true") {
+        return;
+      }
+    }
+
     clearTimers();
     if (delay > 0) {
       showTimer.current = setTimeout(() => setOpen(true), delay);
@@ -213,10 +239,10 @@ export function Tooltip({
     const b = `${ARROW_SIZE}px solid transparent`;
     const fill = `${ARROW_SIZE}px solid #F5F5F5`;
     switch (actualPosRef.current) {
-      case "top":    return { ...base, bottom: -ARROW_SIZE, left: "50%", transform: "translateX(-50%)", borderLeft: b, borderRight: b, borderTop: fill };
+      case "top": return { ...base, bottom: -ARROW_SIZE, left: "50%", transform: "translateX(-50%)", borderLeft: b, borderRight: b, borderTop: fill };
       case "bottom": return { ...base, top: -ARROW_SIZE, left: "50%", transform: "translateX(-50%)", borderLeft: b, borderRight: b, borderBottom: fill };
-      case "left":   return { ...base, right: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderLeft: fill };
-      case "right":  return { ...base, left: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderRight: fill };
+      case "left": return { ...base, right: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderLeft: fill };
+      case "right": return { ...base, left: -ARROW_SIZE, top: "50%", transform: "translateY(-50%)", borderTop: b, borderBottom: b, borderRight: fill };
     }
   };
 
@@ -229,41 +255,46 @@ export function Tooltip({
   const tooltipNode =
     visible && mounted
       ? createPortal(
-          <div
-            ref={tooltipRef}
-            role="tooltip"
-            style={{
-              position: "absolute",
-              zIndex,
-              width: "max-content",
-              maxWidth,
-              wordWrap: "break-word",
-              overflowWrap: "break-word",
-              top: coordsRef.current.top,
-              left: coordsRef.current.left,
-              visibility: hasCoords ? "visible" : "hidden",
-              opacity: hasCoords ? 1 : 0,
-              transition: hasCoords ? "opacity 150ms ease-out" : "none",
-            }}
-            className={`rounded-lg bg-[#F5F5F5] px-3 py-2 text-xs leading-[1.5] text-[#262D3B] shadow-[0px_4px_16px_rgba(0,0,0,0.12)] border border-[#E3EEE1] ${className}`}
-            onMouseEnter={trigger === "hover" || trigger === "both" ? show : undefined}
-            onMouseLeave={trigger === "hover" || trigger === "both" ? hide : undefined}
-          >
-            {content}
-            {arrow && <span style={arrowStyle()} />}
-          </div>,
-          document.body,
-        )
+        <div
+          ref={tooltipRef}
+          role="tooltip"
+          style={{
+            position: "absolute",
+            zIndex,
+            width: "max-content",
+            maxWidth,
+            wordWrap: "break-word",
+            overflowWrap: "break-word",
+            top: coordsRef.current.top,
+            left: coordsRef.current.left,
+            visibility: hasCoords ? "visible" : "hidden",
+            opacity: hasCoords ? 1 : 0,
+            transition: hasCoords ? "opacity 150ms ease-out" : "none",
+            cursor: "pointer",
+          }}
+          className={`rounded-lg bg-[#F5F5F5] px-3 py-2 text-xs leading-[1.5] text-[#262D3B] shadow-[0px_4px_16px_rgba(0,0,0,0.12)] border border-[#E3EEE1] ${className}`}
+          onMouseEnter={trigger === "hover" || trigger === "both" ? show : undefined}
+          onMouseLeave={trigger === "hover" || trigger === "both" ? hide : undefined}
+        >
+          {content}
+          {arrow && <span style={arrowStyle()} />}
+        </div>,
+        document.body,
+      )
       : null;
 
   // Attach handlers + ref to child via cloneElement (no wrapper DOM node at all)
   if (isValidElement(children)) {
     const child = children as ReactElement<Record<string, unknown>>;
+    const existingClass = (child.props as any).className || "";
     const childProps: Record<string, unknown> = {
+      className: existingClass.includes("cursor-pointer")
+        ? existingClass
+        : `${existingClass} cursor-pointer`.trim(),
       ref: (node: HTMLElement | null) => {
         triggerRef.current = node;
-        // Forward the child's own ref
-        const childRef = (child as any).ref;
+        // Forward the child's own ref (React 19 passes ref in props)
+        const childRef = (child.props as any)?.ref ?? (child as any).ref;
         if (typeof childRef === "function") childRef(node);
         else if (childRef && typeof childRef === "object") (childRef as { current: unknown }).current = node;
       },
@@ -288,7 +319,8 @@ export function Tooltip({
     <>
       <span
         ref={triggerRef as React.RefObject<HTMLSpanElement | null>}
-        style={{ display: "inline" }}
+        className="cursor-pointer"
+        style={{ display: "inline", cursor: "pointer" }}
         onMouseEnter={trigger === "hover" || trigger === "both" ? show : undefined}
         onMouseLeave={trigger === "hover" || trigger === "both" ? hide : undefined}
         onClick={trigger === "click" || trigger === "both" ? () => (visible ? hide() : show()) : undefined}

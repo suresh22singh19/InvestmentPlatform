@@ -66,6 +66,8 @@ interface PaymentDialogDetailsProps {
         status: string;
     }>;
     lineItemLabel?: string;
+    branch?: any;
+    branchAddress?: string;
 }
 
 export default function PaymentDialogDetails({
@@ -120,6 +122,8 @@ export default function PaymentDialogDetails({
     paymentStatus,
     paymentRecords,
     lineItemLabel,
+    branch,
+    branchAddress,
 }: PaymentDialogDetailsProps) {
     // Add print styles for proper spacing - single page only
     useEffect(() => {
@@ -280,6 +284,8 @@ export default function PaymentDialogDetails({
                     paymentStatus={paymentStatus}
                     paymentRecords={paymentRecords}
                     lineItemLabel={lineItemLabel}
+                    branch={branch}
+                    branchAddress={branchAddress}
                 />
 
                 {/* Action Buttons */}

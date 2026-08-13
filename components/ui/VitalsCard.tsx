@@ -14,6 +14,7 @@ interface VitalsCardProps {
     iconAlt?: string;
     items: VitalItem[];
     className?: string;
+    singleRow?: boolean;
 }
 
 export function VitalsCard({
@@ -22,6 +23,7 @@ export function VitalsCard({
     iconAlt = "Vitals Info Icon",
     items,
     className = "",
+    singleRow = false,
 }: VitalsCardProps) {
     const firstRow = items.slice(0, 2);
     const secondRow = items.slice(2, 4);
@@ -47,10 +49,16 @@ export function VitalsCard({
                 </div>
             </div>
 
-            <div className="space-y-3 mt-5">
-                <div className="grid grid-cols-2 gap-3">{firstRow.map(renderCard)}</div>
-                <div className="grid grid-cols-2 gap-3">{secondRow.map(renderCard)}</div>
-            </div>
+            {singleRow ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
+                    {items.map(renderCard)}
+                </div>
+            ) : (
+                <div className="space-y-3 mt-5">
+                    <div className="grid grid-cols-2 gap-3">{firstRow.map(renderCard)}</div>
+                    <div className="grid grid-cols-2 gap-3">{secondRow.map(renderCard)}</div>
+                </div>
+            )}
         </div>
     );
 }

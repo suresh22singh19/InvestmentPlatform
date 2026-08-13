@@ -2,65 +2,32 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { ScrollableContainer } from "../ui";
+import { ScrollableContainer, Tooltip } from "../ui";
 import NoDataBox from "./NoDataBox";
 
-interface MedicalCondition {
+export interface MedicalCondition {
     name: string;
-    status: "Yes" | "No" | "Other";
+    status: "Yes" | "No" | "Other" | string;
     remark: string;
 }
 
-interface DiagnosisSummary {
+export interface DiagnosisSummary {
     diagnosis?: string;
     subDiagnosis?: string;
     symptoms?: string;
 }
 
-interface MedicalDetailsData {
+export interface MedicalDetailsData {
     conditions?: MedicalCondition[];
     diagnosisSummary?: DiagnosisSummary;
 }
 
 interface MedicalDetailsProps {
-    medicalData?: MedicalDetailsData;
+    medicalData?: MedicalDetailsData | null;
 }
 
 export default function MedicalDetails({
-    medicalData = {
-        conditions: [
-            {
-                name: "Diabetes",
-                status: "Yes",
-                remark: "On medication",
-            },
-            {
-                name: "HTN (Hypertension)",
-                status: "No",
-                remark: "N/A",
-            },
-            {
-                name: "Coronary Artery Disease",
-                status: "No",
-                remark: "N/A",
-            },
-            {
-                name: "Thyroid",
-                status: "Yes",
-                remark: "Hypothyroidism",
-            },
-            {
-                name: "Addiction",
-                status: "Other",
-                remark: "Vaping (social use)",
-            },
-        ],
-        diagnosisSummary: {
-            diagnosis: "Asthma",
-            subDiagnosis: "Mild Persistent",
-            symptoms: "Shortness of breath, wheezing",
-        },
-    },
+    medicalData,
 }: MedicalDetailsProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
@@ -68,9 +35,29 @@ export default function MedicalDetails({
         setIsExpanded(!isExpanded);
     };
 
-    const hasMedicalData = medicalData && (
-        (medicalData.conditions && medicalData.conditions.length > 0) ||
-        medicalData.diagnosisSummary
+    const formatStatus = (status: string) => {
+        if (!status) return "";
+        return status
+            .split(",")
+            .map((word) => {
+                const trimmed = word.trim();
+                if (!trimmed) return "";
+                if (trimmed.toLowerCase() === "others") return "Other";
+                return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+            })
+            .filter(Boolean)
+            .join(", ");
+    };
+
+    const hasMedicalData = Boolean(
+        medicalData && (
+            (medicalData.conditions && medicalData.conditions.length > 0) ||
+            (medicalData.diagnosisSummary && (
+                Boolean(medicalData.diagnosisSummary.diagnosis) ||
+                Boolean(medicalData.diagnosisSummary.subDiagnosis) ||
+                Boolean(medicalData.diagnosisSummary.symptoms)
+            ))
+        )
     );
 
     return (
@@ -104,59 +91,69 @@ export default function MedicalDetails({
                             <ScrollableContainer maxHeight="800px" className="pr-2" showScrollbar={true}>
                                 <div>
                                     <div className="max-w-md space-y-3">
-                                        {/* Medical Conditions */}
+
                                         {medicalData?.conditions?.map((condition, index) => (
                                             <div key={index} className="rounded-lg border border-[#DFE0E2] bg-white">
-                                                <div className="flex justify-between px-4 py-3 border-b border-[#DFE0E2]">
-                                                    <span className="font-inter text-[14px] leading-[22px] font-semibold text-[#434956]">
+                                                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] gap-2">
+                                                    <span className="font-inter text-[14px] leading-[22px] font-semibold text-[#434956] shrink-0">
                                                         {condition.name}
                                                     </span>
-                                                    <span className="font-inter text-[14px] leading-[22px] font-bold text-[#262D3B]">
-                                                        {condition.status}
-                                                    </span>
+                                                    <Tooltip content={formatStatus(condition.status)}>
+                                                        <span className="font-inter text-[14px] leading-[22px] font-bold text-[#262D3B] truncate max-w-[160px] text-right block">
+                                                            {formatStatus(condition.status)}
+                                                        </span>
+                                                    </Tooltip>
                                                 </div>
                                                 <div className="px-4 py-3">
-                                                    <div className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                    <div className="font-inter text-[14px] leading-[120%] font-normal text-[#525763] mb-1">
                                                         Remark
                                                     </div>
-                                                    <div className="font-inter text-[14px] leading-[120%] font-medium text-[#434956]">
-                                                        {condition.remark}
-                                                    </div>
+                                                    <Tooltip content={condition.remark || "N/A"}>
+                                                        <div className="font-inter text-[14px] leading-[120%] font-medium text-[#434956] truncate w-full block">
+                                                            {condition.remark || "N/A"}
+                                                        </div>
+                                                    </Tooltip>
                                                 </div>
                                             </div>
                                         ))}
 
-                                        {/* Diagnosis Summary */}
+
                                         {medicalData?.diagnosisSummary && (
                                             <div className="rounded-lg border border-gray-200 bg-white">
                                                 {medicalData.diagnosisSummary.diagnosis && (
-                                                    <div className="flex justify-between px-4 py-3 border-b border-[#DFE0E2]">
-                                                        <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] gap-2">
+                                                        <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763] shrink-0">
                                                             Diagnosis
                                                         </span>
-                                                        <span className="font-inter text-[14px] leading-[120%] font-medium text-[#434956]">
-                                                            {medicalData.diagnosisSummary.diagnosis}
-                                                        </span>
+                                                        <Tooltip content={medicalData.diagnosisSummary.diagnosis}>
+                                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-[#434956] truncate max-w-[160px] text-right block">
+                                                                {medicalData.diagnosisSummary.diagnosis}
+                                                            </span>
+                                                        </Tooltip>
                                                     </div>
                                                 )}
                                                 {medicalData.diagnosisSummary.subDiagnosis && (
-                                                    <div className="flex justify-between px-4 py-3 border-b border-[#DFE0E2]">
-                                                        <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] gap-2">
+                                                        <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763] shrink-0">
                                                             Sub Diagnosis
                                                         </span>
-                                                        <span className="font-inter text-[14px] leading-[120%] font-medium text-[#434956]">
-                                                            {medicalData.diagnosisSummary.subDiagnosis}
-                                                        </span>
+                                                        <Tooltip content={medicalData.diagnosisSummary.subDiagnosis}>
+                                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-[#434956] truncate max-w-[160px] text-right block">
+                                                                {medicalData.diagnosisSummary.subDiagnosis}
+                                                            </span>
+                                                        </Tooltip>
                                                     </div>
                                                 )}
                                                 {medicalData.diagnosisSummary.symptoms && (
                                                     <div className="px-4 py-3">
-                                                        <div className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                        <div className="font-inter text-[14px] leading-[120%] font-normal text-[#525763] mb-1">
                                                             Symptoms
                                                         </div>
-                                                        <div className="font-inter text-[14px] leading-[120%] font-medium text-[#434956]">
-                                                            {medicalData.diagnosisSummary.symptoms}
-                                                        </div>
+                                                        <Tooltip content={medicalData.diagnosisSummary.symptoms}>
+                                                            <div className="font-inter text-[14px] leading-[120%] font-medium text-[#434956] truncate w-full block">
+                                                                {medicalData.diagnosisSummary.symptoms}
+                                                            </div>
+                                                        </Tooltip>
                                                     </div>
                                                 )}
                                             </div>

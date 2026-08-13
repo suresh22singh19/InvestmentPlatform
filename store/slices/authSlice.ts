@@ -68,6 +68,19 @@ export interface BranchAccess {
   id: number;
   name: string;
   type: string;
+  address?: string;
+  state?: string;
+  stateId?: number;
+  district?: string;
+  tehsil?: string;
+  area?: string;
+  areaId?: number;
+  pinCode?: string;
+  stateCode?: string;
+  maplink?: string;
+  phoneNumber?: string;
+  emailAddress?: string;
+  branchCode?: string;
 }
 
 interface AuthState {
@@ -97,11 +110,7 @@ function readPersistedSelectedBranch(): BranchAccess | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as BranchAccess;
     if (parsed && typeof parsed.id === "number" && typeof parsed.name === "string") {
-      return {
-        id: parsed.id,
-        name: parsed.name,
-        type: typeof parsed.type === "string" ? parsed.type : "",
-      };
+      return parsed;
     }
   } catch {
     /* ignore */

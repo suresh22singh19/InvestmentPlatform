@@ -75,7 +75,7 @@ export const nurseApi = baseApi.injectEndpoints({
                     order: params.order,
                 });
                 return {
-                    url: `/admin/nurse/getNurses${qs}`,
+                    url: `/admin/setting/nurse/getNurses${qs}`,
                     method: "GET",
                 };
             },
@@ -97,7 +97,7 @@ export const nurseApi = baseApi.injectEndpoints({
                 if (hasFile && files) {
                     const formData = buildNurseFormData(body, files);
                     return {
-                        url: "/admin/nurse/addNurse",
+                        url: "/admin/setting/nurse/addNurse",
                         method: "POST",
                         body: formData,
                         prepareHeaders: (headers: Headers) => {
@@ -107,7 +107,7 @@ export const nurseApi = baseApi.injectEndpoints({
                     };
                 }
                 return {
-                    url: "/admin/nurse/addNurse",
+                    url: "/admin/setting/nurse/addNurse",
                     method: "POST",
                     body,
                 };
@@ -124,7 +124,7 @@ export const nurseApi = baseApi.injectEndpoints({
                 if (hasFile && files) {
                     const formData = buildNurseFormData(body, files);
                     return {
-                        url: `/admin/nurse/updateNurse/${id}`,
+                        url: `/admin/setting/nurse/updateNurse/${id}`,
                         method: "PUT",
                         body: formData,
                         prepareHeaders: (headers: Headers) => {
@@ -134,7 +134,7 @@ export const nurseApi = baseApi.injectEndpoints({
                     };
                 }
                 return {
-                    url: `/admin/nurse/updateNurse/${id}`,
+                    url: `/admin/setting/nurse/updateNurse/${id}`,
                     method: "PUT",
                     body,
                 };
@@ -150,7 +150,7 @@ export const nurseApi = baseApi.injectEndpoints({
             { id: number; body: UpdateNursePasswordRequest }
         >({
             query: ({ id, body }) => ({
-                url: `/admin/nurse/updateNursePassword/${id}`,
+                url: `/admin/setting/nurse/updateNursePassword/${id}`,
                 method: "PUT",
                 body,
             }),
@@ -161,7 +161,7 @@ export const nurseApi = baseApi.injectEndpoints({
                 query: ({ branchId, search, page, limit }) => {
                     const qs = toQueryString({ branchId, search, page, limit });
                     return {
-                        url: `/admin/nurse/generateNursesPdf${qs}`,
+                        url: `/admin/setting/nurse/generateNursesPdf${qs}`,
                         method: "GET",
                     };
                 },
@@ -173,7 +173,7 @@ export const nurseApi = baseApi.injectEndpoints({
                 query: ({ branchId, search, page, limit }) => {
                     const qs = toQueryString({ branchId, search, page, limit });
                     return {
-                        url: `/admin/nurse/generateNursesCsv${qs}`,
+                        url: `/admin/setting/nurse/generateNursesCsv${qs}`,
                         method: "GET",
                     };
                 },

@@ -5,7 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
     SegmentedButtonGroup,
     SegmentedToggle,
+    Tabs,
+    Tooltip,
 } from "@/components/ui";
+import ScrollableContainer from "./ScrollableContainer";
 
 
 export interface PrescribedMedicine {
@@ -24,7 +27,7 @@ export interface PatientInformationTimelineDetail {
     detailsItems?: string[];
     actionsTitle?: string;
     actionItems?: string[];
-    
+
     // Structured support
     branch?: string;
     doctorName?: string;
@@ -33,6 +36,11 @@ export interface PatientInformationTimelineDetail {
     symptoms?: string;
     prescribedMedicines?: PrescribedMedicine[];
     opdAssessmentId?: number;
+    doctorNotes?: string;
+    opdNextFollowupDate?: string;
+    opdNextFollowupRemark?: string;
+    communicableDiseases?: string[] | string;
+    communicableDiseasesRemark?: string;
 }
 
 export interface PatientInformationTimelineItem {
@@ -215,8 +223,9 @@ export function PatientInformationTimelineCard({
 }: PatientInformationTimelineCardProps) {
     const [cardExpanded, setCardExpanded] = useState(true);
     const [internalTimeframe, setInternalTimeframe] = useState<"6m" | "1y" | "lifetime">("6m");
-    const [expandedKey, setExpandedKey] = useState<string | null>(null);
+    const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
     const [hasInteraction, setHasInteraction] = useState(false);
+    const [selectedDoctorNotes, setSelectedDoctorNotes] = useState<string | null>(null);
 
     const timeframe = propTimeframe !== undefined ? propTimeframe : internalTimeframe;
 
@@ -234,39 +243,62 @@ export function PatientInformationTimelineCard({
     }, [items, timeframe, disableClientSideFilter]);
 
     const filteredItemsWithKeys = useMemo(() => {
-        return filteredItems.map((item) => {
-            const originalIndex = items.indexOf(item);
+        return filteredItems.map((item, index) => {
             const key = item.detail?.opdAssessmentId
                 ? `id-${item.detail.opdAssessmentId}`
-                : `idx-${originalIndex}`;
+                : `idx-${item.dateLabel || index}`;
             return {
                 ...item,
                 uniqueKey: key
             };
         });
-    }, [filteredItems, items]);
+    }, [filteredItems]);
 
-    // Reset interaction on timeframe or items change so the first item expands by default
+    const itemsSignature = useMemo(() => {
+        if (!Array.isArray(items)) return "";
+        return items.map((it, idx) => it.detail?.opdAssessmentId ?? `${it.dateLabel}-${idx}`).join("|");
+    }, [items]);
+
+    // Reset interaction only on timeframe change or when the actual items content signature changes
     useEffect(() => {
         setHasInteraction(false);
-        setExpandedKey(null);
-    }, [timeframe, items]);
+        setExpandedKeys([]);
+    }, [timeframe, itemsSignature]);
 
-    const activeExpandedKey = useMemo(() => {
+    const activeExpandedKeys = useMemo(() => {
         if (hasInteraction) {
-            return expandedKey;
+            return expandedKeys;
         }
         const firstWithDetail = filteredItemsWithKeys.find(item => item.detail);
-        return firstWithDetail ? firstWithDetail.uniqueKey : null;
-    }, [hasInteraction, expandedKey, filteredItemsWithKeys]);
+        return firstWithDetail ? [firstWithDetail.uniqueKey] : [];
+    }, [hasInteraction, expandedKeys, filteredItemsWithKeys]);
 
     const isItemExpanded = (item: PatientInformationTimelineItem & { uniqueKey: string }) => {
-        return activeExpandedKey === item.uniqueKey;
+        return activeExpandedKeys.includes(item.uniqueKey);
     };
 
     const toggleItem = (key: string) => {
+        const current = activeExpandedKeys;
+        if (current.includes(key)) {
+            setExpandedKeys(current.filter(k => k !== key));
+        } else {
+            setExpandedKeys([...current, key]);
+        }
         setHasInteraction(true);
-        setExpandedKey(prev => (prev === key ? null : key));
+    };
+
+    const handleExpandAll = () => {
+        const allKeys = filteredItemsWithKeys.map(item => item.uniqueKey);
+        setExpandedKeys(allKeys);
+        setHasInteraction(true);
+        if (!cardExpanded) {
+            setCardExpanded(true);
+        }
+    };
+
+    const handleCollapseAll = () => {
+        setExpandedKeys([]);
+        setHasInteraction(true);
     };
 
     const handleTimeframeChange = (value: "6m" | "1y" | "lifetime") => {
@@ -278,10 +310,10 @@ export function PatientInformationTimelineCard({
     };
 
     return (
-        <div className={`mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] ${className}`}>
+        <div className={`mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] ${cardExpanded ? "pb-6 pt-5" : "py-4"} ${className}`}>
 
             {/* Header Area */}
-            <div className="flex items-center justify-between gap-4 mb-4 select-none">
+            <div className={`flex flex-wrap items-center justify-between gap-4 select-none ${cardExpanded ? "mb-4" : "mb-0"}`}>
                 <div
                     className="flex items-center gap-2 cursor-pointer"
                     onClick={() => setCardExpanded(!cardExpanded)}
@@ -290,7 +322,26 @@ export function PatientInformationTimelineCard({
                     <h2 className="font-inter font-semibold text-base leading-[120%] text-[#262D3B]">{title}</h2>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                    {filteredItemsWithKeys.length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleCollapseAll}
+                                className="h-9 px-4.5 rounded-full border border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C00]/10 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap bg-white shadow-xs flex items-center justify-center"
+                            >
+                                Collapse All
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleExpandAll}
+                                className="h-9 px-4.5 rounded-full border border-[#0B8C00] text-[#0B8C00] hover:bg-[#0B8C00]/10 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap bg-white shadow-xs flex items-center justify-center"
+                            >
+                                Expand All
+                            </button>
+                        </div>
+                    )}
+
                     <div className="flex">
                         <SegmentedToggle
                             options={timeframeOptions}
@@ -298,12 +349,11 @@ export function PatientInformationTimelineCard({
                             onChange={handleTimeframeChange}
                             width="440px"
                         />
-
                     </div>
                     <button
                         type="button"
                         onClick={() => setCardExpanded(!cardExpanded)}
-                        className="text-[#787E8C] transition-transform duration-200"
+                        className="text-[#787E8C] transition-transform duration-200 cursor-pointer"
                     >
                         <svg
                             className={`w-5 h-5 transform transition-transform duration-200 ${cardExpanded ? "" : "rotate-180"}`}
@@ -321,15 +371,19 @@ export function PatientInformationTimelineCard({
             </div>
 
             {cardExpanded && (
-                <div className="mt-6 relative">
+                <ScrollableContainer
+                    maxHeight="500px"
+                    overflowX="hidden"
+                    className="mt-4 pr-3 relative"
+                >
                     {filteredItemsWithKeys.length === 0 ? (
                         <div className="text-center py-8 text-sm font-semibold text-[#787E8C]">
                             No Data Available
                         </div>
                     ) : (
-                        <>
+                        <div className="relative pt-2 pb-2">
                             {/* Vertical Green Timeline Line */}
-                            <div className="absolute left-[15px] top-0 h-[calc(100%-16px)] w-[2px] bg-[#0B8C00]"></div>
+                            <div className="absolute left-4 -translate-x-1/2 top-4 bottom-4 w-[2px] bg-[#0B8C00]"></div>
 
                             {filteredItemsWithKeys.map((item, index) => {
                                 const isExpanded = isItemExpanded(item);
@@ -343,7 +397,7 @@ export function PatientInformationTimelineCard({
                                         <button
                                             type="button"
                                             onClick={() => toggleItem(item.uniqueKey)}
-                                            className="absolute left-0 top-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer bg-[#0B8C00] text-white transition-colors duration-200"
+                                            className="absolute left-0 top-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer bg-[#0B8C00] text-white transition-colors duration-200 z-10"
                                             aria-label={isExpanded ? "Collapse item" : "Expand item"}
                                             aria-expanded={isExpanded}
                                         >
@@ -358,12 +412,14 @@ export function PatientInformationTimelineCard({
                                             )}
                                         </button>
 
-                                        <p
-                                            className={`font-semibold text-sm leading-[120%] text-[#262D3B] not-italic cursor-pointer select-none ${detail && isExpanded ? "mb-3" : ""}`}
+                                        <div
+                                            className={`flex items-center min-h-[32px] cursor-pointer select-none ${detail && isExpanded ? "mb-3" : ""}`}
                                             onClick={() => toggleItem(item.uniqueKey)}
                                         >
-                                            {item.dateLabel}
-                                        </p>
+                                            <p className="font-semibold text-sm leading-[120%] text-[#262D3B] not-italic">
+                                                {item.dateLabel}
+                                            </p>
+                                        </div>
 
                                         {detail && isExpanded ? (
                                             <div className="rounded-[16px] bg-[#F5FAF5] border border-[#E3EEE1] p-5">
@@ -380,35 +436,142 @@ export function PatientInformationTimelineCard({
                                                             <span className="text-sm font-semibold text-[#434956]">{detail.doctorName || "N/A"}</span>
                                                         </div>
                                                     </div>
-                                                    {(detail.opdAssessmentId || detail.iafDate) && onViewIaf && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onViewIaf(String(detail.opdAssessmentId || detail.iafDate))}
-                                                            className="flex items-center gap-1 px-4 py-1 rounded-full bg-[#E8F5E9] text-[#0B8C00] hover:bg-[#C8E6C9]  text-xs transition-colors"
-                                                        >
-                                                            <Image src="/icons/Eye.svg" alt="Eye" width={14} height={14} className="mr-1" />
-                                                            <span>View IAF Form</span>
-                                                        </button>
-                                                    )}
+                                                    <div className="flex gap-2">
+                                                        {detail.doctorNotes && detail.doctorNotes.trim() !== "" && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedDoctorNotes(detail.doctorNotes || null)}
+                                                                className="px-4 py-2 cursor-pointer rounded-full bg-[#0B8C00] hover:bg-[#0A7F00] text-white text-xs font-semibold transition-colors whitespace-nowrap flex items-center gap-2 shadow-sm justify-center"
+                                                            >
+                                                                <svg
+                                                                    className="w-4 h-4 shrink-0"
+                                                                    fill="none"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth={2}
+                                                                    viewBox="0 0 24 24"
+                                                                >
+                                                                    <path
+                                                                        strokeLinecap="round"
+                                                                        strokeLinejoin="round"
+                                                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                                                    />
+                                                                </svg>
+                                                                <span>Doctor Notes</span>
+                                                            </button>
+                                                        )}
+                                                        {(detail.opdAssessmentId || detail.iafDate) && onViewIaf && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onViewIaf(String(detail.opdAssessmentId || detail.iafDate))}
+                                                                className="px-4 py-2 cursor-pointer rounded-full bg-[#0B8C00] hover:bg-[#0A7F00] text-white text-xs font-semibold transition-colors whitespace-nowrap flex items-center gap-2 shadow-sm justify-center"
+                                                            >
+                                                                <Image
+                                                                    src="/icons/Eye.svg"
+                                                                    alt="Eye"
+                                                                    width={16}
+                                                                    height={16}
+                                                                    className="w-4 h-4 shrink-0 brightness-0 invert"
+                                                                />
+                                                                <span>IAF Form</span>
+                                                            </button>
+                                                        )}
+
+
+                                                    </div>
                                                 </div>
 
-                                                {(detail.chiefComplaint || detail.primaryComplaintText) && (
-                                                    <div className="mb-4">
-                                                        <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">
-                                                            {detail.primaryComplaintTitle || "Chief Complaint"}
-                                                        </p>
-                                                        <p className="text-sm font-medium text-[#262D3B]">
-                                                            {detail.chiefComplaint || detail.primaryComplaintText}
-                                                        </p>
-                                                    </div>
-                                                )}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 min-w-0">
+                                                    <div className="min-w-0 space-y-4">
+                                                        {(detail.chiefComplaint || detail.primaryComplaintText) && (
+                                                            <div className="min-w-0">
+                                                                <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">
+                                                                    {detail.primaryComplaintTitle || "Chief Complaint"}
+                                                                </p>
+                                                                {(() => {
+                                                                    const text = detail.chiefComplaint || detail.primaryComplaintText || "";
+                                                                    return (
+                                                                        <Tooltip content={<div className="max-w-[320px] whitespace-pre-wrap text-xs leading-relaxed ">{text}</div>} position="top">
+                                                                            <p className="text-sm font-medium text-[#262D3B] line-clamp-2 break-words max-w-full cursor-pointer hover:text-[#0B8C00] transition-colors">
+                                                                                {text}
+                                                                            </p>
+                                                                        </Tooltip>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        )}
 
-                                                {detail.symptoms && (
-                                                    <div className="mb-4">
-                                                        <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">Symptoms</p>
-                                                        <p className="text-sm font-medium text-[#262D3B]">{detail.symptoms}</p>
+                                                        {detail.symptoms && (
+                                                            <div className="min-w-0">
+                                                                <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">Symptoms</p>
+                                                                <Tooltip content={<div className="max-w-[320px] whitespace-pre-wrap text-xs leading-relaxed">{detail.symptoms}</div>} position="top">
+                                                                    <p className="text-sm font-medium text-[#262D3B] line-clamp-2 break-words max-w-full cursor-pointer hover:text-[#0B8C00] transition-colors">
+                                                                        {detail.symptoms}
+                                                                    </p>
+                                                                </Tooltip>
+                                                            </div>
+                                                        )}
+
+                                                        {/* <div className="min-w-0">
+                                                            <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1.5">
+                                                                Infectious Disease Alerts
+                                                            </p>
+                                                            <div className="">
+                                                                <Tabs
+                                                                    className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                                                    options={[
+                                                                        { value: "hiv", label: "HIV" },
+                                                                        { value: "hepatitis", label: "Hepatitis" },
+                                                                        { value: "tb", label: "TB" },
+                                                                        { value: "normal", label: "Normal" },
+                                                                    ]}
+                                                                    value={detail.communicableDiseases ? detail.communicableDiseases : "normal"}
+                                                                    multiSelect={true}
+                                                                    onChange={() => { }}
+                                                                    disabled={true}
+                                                                />
+                                                            </div>
+                                                        </div> */}
                                                     </div>
-                                                )}
+
+                                                    {((detail.opdNextFollowupDate &&
+                                                        detail.opdNextFollowupDate.trim() !== "" &&
+                                                        detail.opdNextFollowupDate.trim().toUpperCase() !== "NA" &&
+                                                        detail.opdNextFollowupDate.trim().toUpperCase() !== "N/A") ||
+                                                        (detail.opdNextFollowupRemark &&
+                                                            detail.opdNextFollowupRemark.trim() !== "" &&
+                                                            detail.opdNextFollowupRemark.trim().toUpperCase() !== "NA" &&
+                                                            detail.opdNextFollowupRemark.trim().toUpperCase() !== "N/A")) && (
+                                                            <div className="min-w-0 space-y-4">
+                                                                {detail.opdNextFollowupDate &&
+                                                                    detail.opdNextFollowupDate.trim() !== "" &&
+                                                                    detail.opdNextFollowupDate.trim().toUpperCase() !== "NA" &&
+                                                                    detail.opdNextFollowupDate.trim().toUpperCase() !== "N/A" && (
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">Next FollowUp Date</p>
+                                                                            <p className="text-sm font-medium text-[#262D3B]">{detail.opdNextFollowupDate}</p>
+                                                                        </div>
+                                                                    )}
+                                                                {detail.opdNextFollowupRemark &&
+                                                                    detail.opdNextFollowupRemark.trim() !== "" &&
+                                                                    detail.opdNextFollowupRemark.trim().toUpperCase() !== "NA" &&
+                                                                    detail.opdNextFollowupRemark.trim().toUpperCase() !== "N/A" && (
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-xs font-bold text-[#787E8C] uppercase tracking-wider mb-1">FollowUp Remarks</p>
+                                                                            {(() => {
+                                                                                const text = detail.opdNextFollowupRemark;
+                                                                                return (
+                                                                                    <Tooltip content={<div className="max-w-[320px] whitespace-pre-wrap text-xs leading-relaxed">{text}</div>} position="top">
+                                                                                        <p className="text-sm font-medium text-[#262D3B] line-clamp-2 break-words max-w-full cursor-pointer hover:text-[#0B8C00] transition-colors">
+                                                                                            {text}
+                                                                                        </p>
+                                                                                    </Tooltip>
+                                                                                );
+                                                                            })()}
+                                                                        </div>
+                                                                    )}
+                                                            </div>
+                                                        )}
+                                                </div>
 
                                                 {detail.detailsItems && detail.detailsItems.length > 0 && (
                                                     <div className="mb-4">
@@ -427,7 +590,7 @@ export function PatientInformationTimelineCard({
                                                     <p className="text-xs font-bold text-[#787E8C] tracking-wider mb-3 uppercase">
                                                         {detail.actionsTitle || "Medicines Prescribed"}
                                                     </p>
-                                                    
+
                                                     {detail.prescribedMedicines && detail.prescribedMedicines.length > 0 ? (
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                             {detail.prescribedMedicines.map((medicine, medIdx) => (
@@ -508,8 +671,40 @@ export function PatientInformationTimelineCard({
                                     </div>
                                 );
                             })}
-                        </>
+                        </div>
                     )}
+                </ScrollableContainer>
+            )}
+            {selectedDoctorNotes !== null && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 transition-opacity">
+                    <div className="bg-white rounded-[16px] shadow-2xl max-w-[620px] w-full p-8 relative flex flex-col gap-6 animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-[20px] font-bold text-[#262D3B] font-[Inter]">
+                                Doctor's Notes (AI Generated)
+                            </h3>
+                            <button
+                                onClick={() => setSelectedDoctorNotes(null)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                            >
+                                <svg
+                                    className="w-6 h-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth={1.5}
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M6 18L18 6M6 6l12 12"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="text-[15px] leading-[1.6] text-[#4F5E74] font-medium font-[Inter] whitespace-pre-line overflow-y-auto max-h-[50vh]">
+                            {selectedDoctorNotes}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

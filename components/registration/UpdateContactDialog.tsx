@@ -304,6 +304,7 @@ export default function UpdateContactDialog({
                 onClose={handleClose}
                 title="Update Contact"
                 width={577}
+                closeOnOutsideClick={false}
             >
                 <form
                     onSubmit={formik.handleSubmit}
@@ -374,9 +375,13 @@ export default function UpdateContactDialog({
                             label="Remarks"
                             value={formik.values.remarks}
                             onChange={(e) => {
-                                const value = e.target.value
-                                    .replace(/[^A-Za-z\s]/g, "")
-                                    .slice(0, 100);
+                                let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                value = value.replace(/^\s+/, "");
+                                value = value.replace(/(.)\1{2,}/g, "$1$1");
+                                if (value.length > 0) {
+                                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                                }
+                                value = value.slice(0, 100);
                                 formik.setFieldValue("remarks", value, false);
                             }}
                             onBlur={() => {

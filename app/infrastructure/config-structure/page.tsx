@@ -207,8 +207,8 @@ function readQueryMetric(
 }
 
 const page = () => {
-  const modulePermission = usePermission("Infrastructure");
-  const subModulePermission = usePermission("Infrastructure", { subModule: "Add Hospital/Clinic" });
+  const modulePermission = usePermission("Settings");
+  const subModulePermission = usePermission("Settings", { subModule: "Add Hospital/Clinic" });
   const canView = modulePermission.canView || subModulePermission.canView;
   const canAdd = modulePermission.canAdd || subModulePermission.canAdd;
   const canEdit = modulePermission.canEdit || subModulePermission.canEdit;

@@ -42,11 +42,15 @@ type DietCategory = {
   remark: string;
 };
 
-const sanitizeAlphaText = (value: string) =>
-  value
-    .replace(/[^a-zA-Z\s]/g, "")
-    .replace(/\s{2,}/g, " ")
-    .slice(0, 100);
+const sanitizeAlphaText = (raw: string, maxLen = 100) => {
+  let value = raw.replace(/[^a-zA-Z\s]/g, "");
+  value = value.replace(/^\s+/, "");
+  value = value.replace(/(.)\1{2,}/g, "$1$1");
+  if (value.length > 0) {
+    value = value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  return value.slice(0, maxLen);
+};
 
 function capitalizeFirst(str: string | null | undefined): string {
   if (str == null || str === "") return "";
@@ -168,15 +172,16 @@ const DynamicFoodItems = ({ foodItems, onViewAll }: { foodItems: string[]; onVie
   return (
     <div ref={containerRef} className="flex flex-wrap items-center gap-2 w-full min-w-0">
       {visibleItems.map((food, index) => (
-        <span
-          key={`${food}-${index}`}
-          ref={(el) => {
-            itemsRef.current[index] = el;
-          }}
-          className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
-        >
-          {food}
-        </span>
+        <Tooltip key={`${food}-${index}`} content={food} position="top">
+          <span
+            ref={(el) => {
+              itemsRef.current[index] = el;
+            }}
+            className="inline-block h-[30px] max-w-[140px] truncate rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 py-1.5 text-xs font-semibold leading-[120%] text-[#9A7909] align-middle"
+          >
+            {food}
+          </span>
+        </Tooltip>
       ))}
       {isOverflowing && remainingCount > 0 && (
         <button
@@ -213,7 +218,7 @@ export default function DietCategoryPage() {
   });
   // Ref to track latest form values to avoid stale state issues
   const formValuesRef = useRef(formValues);
-  
+
   // Update ref whenever formValues changes
   useEffect(() => {
     formValuesRef.current = formValues;
@@ -431,7 +436,7 @@ export default function DietCategoryPage() {
     const trimmedInput = dietFoodInput.trim();
     if (trimmedInput) {
       const newFood = trimmedInput;
-      
+
       setFormValues((prev) => {
         const updated = {
           ...prev,
@@ -462,24 +467,24 @@ export default function DietCategoryPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    
+
     // Use ref to get the latest form values to avoid stale state issues
     // Also check state as fallback to ensure we have the latest data
     let currentFormValues = formValuesRef.current;
-    
+
     // Double-check: if ref seems stale, use state (though ref should always be up-to-date)
     // This is a safety measure
     if (!currentFormValues || !Array.isArray(currentFormValues.dietFoodItems)) {
       console.warn("Ref appears stale, using state instead");
       currentFormValues = formValues;
     }
-    
+
     // Final safety: ensure we have the latest from state if ref is empty but state has data
     if (currentFormValues.dietFoodItems.length === 0 && formValues.dietFoodItems.length > 0) {
       console.warn("Ref has empty array but state has items, using state");
       currentFormValues = formValues;
     }
-    
+
     // Re-validate with latest values
     const errors: Record<string, string> = {};
     if (!currentFormValues.dietCategory.trim()) {
@@ -504,10 +509,10 @@ export default function DietCategoryPage() {
       errors.remark = "Remark is required";
     } else if (!/^[a-zA-Z\s]+$/.test(currentFormValues.remark.trim())) {
       errors.remark = "Remark must contain only letters and spaces";
-    } else if (currentFormValues.remark.trim().length > 100) {
-      errors.remark = "Remark cannot exceed 100 characters";
+    } else if (currentFormValues.remark.trim().length > 150) {
+      errors.remark = "Remark cannot exceed 150 characters";
     }
-    
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
@@ -518,9 +523,9 @@ export default function DietCategoryPage() {
 
     const branchId = isBranchFilterSuperAdmin
       ? (() => {
-          const n = parseInt(formBranchId, 10);
-          return Number.isFinite(n) && n >= 1 ? n : undefined;
-        })()
+        const n = parseInt(formBranchId, 10);
+        return Number.isFinite(n) && n >= 1 ? n : undefined;
+      })()
       : filterBranchId;
 
     if (branchId === undefined || !Number.isFinite(branchId) || branchId < 1) {
@@ -539,14 +544,14 @@ export default function DietCategoryPage() {
         // Update existing category
         // For updates, we need to map existing foods with their IDs if they exist
         const existingCategory = dietCategoriesData?.data?.find((cat) => cat.id === selectedDietCategory.id);
-        
+
         // Debug: Log current form values from ref
-        
+
         // Ensure we have a valid array
-        const foodItems = Array.isArray(currentFormValues.dietFoodItems) 
-          ? currentFormValues.dietFoodItems 
+        const foodItems = Array.isArray(currentFormValues.dietFoodItems)
+          ? currentFormValues.dietFoodItems
           : [];
-        
+
         const updatedDietFoods = foodItems.map((food) => {
           if (!food || typeof food !== 'string') {
             console.warn("Invalid food item:", food);
@@ -578,7 +583,7 @@ export default function DietCategoryPage() {
           dietFoods: updatedDietFoods,
           branchId,
         };
-        
+
         // Debug log to verify payload
 
         result = await updateDietCategory(payload).unwrap();
@@ -593,7 +598,7 @@ export default function DietCategoryPage() {
           dietFoods: dietFoods,
           branchId,
         };
-        
+
         // Debug log to verify payload
 
         result = await createDietCategory(payload).unwrap();
@@ -705,7 +710,7 @@ export default function DietCategoryPage() {
       } else if (err?.message) {
         errorMsg = err.message;
       }
-      
+
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
     }
@@ -726,145 +731,157 @@ export default function DietCategoryPage() {
               You don&apos;t have permission to view diet category.
             </div>
           ) : (
-          <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
-              <div className="relative shrink-0">
-                <FormSelectField
-                  label=""
-                  hideLabel
-                  options={dietCategoryBranchOptions}
-                  value={selectedBranchFilter}
-                  onChange={(value) => {
-                    setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
-                    setCurrentPage(1);
-                  }}
-                  placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
-                  mode="single"
-                  background="normal"
-                  width={300}
-                  disabled={isBranchFilterDisabled || isLoadingBranches}
-                />
-              </div>
-              <div className="w-[280px] shrink-0 min-w-[200px]">
-                <TableSearchInput
-                  value={searchTerm}
-                  onChange={(value) => {
-                    setSearchTerm((prev) => {
-                      if (prev !== value) setCurrentPage(1);
-                      return value;
-                    });
-                  }}
-                  placeholder="Search Here..."
-                />
+            <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+              <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
+                <div className="relative shrink-0">
+                  <FormSelectField
+                    label=""
+                    hideLabel
+                    options={dietCategoryBranchOptions}
+                    value={selectedBranchFilter}
+                    onChange={(value) => {
+                      setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                      setCurrentPage(1);
+                    }}
+                    placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                    mode="single"
+                    background="normal"
+                    width={300}
+                    disabled={isBranchFilterDisabled || isLoadingBranches}
+                  />
+                </div>
+                <div className="w-[280px] shrink-0 min-w-[200px]">
+                  <TableSearchInput
+                    value={searchTerm}
+                    onChange={(value) => {
+                      setSearchTerm((prev) => {
+                        if (prev !== value) setCurrentPage(1);
+                        return value;
+                      });
+                    }}
+                    placeholder="Search Here..."
+                  />
+                </div>
+
+                {canAdd ? (
+                  <button
+                    type="button"
+                    className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={handleAdd}
+                    disabled={isSubmitting}
+                  >
+                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                    <span className="text-hide">Add Diet Category</span>
+                  </button>
+                ) : null}
               </div>
 
-              {canAdd ? (
-                <button
-                  type="button"
-                  className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={handleAdd}
-                  disabled={isSubmitting}
-                >
-                  <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  <span className="text-hide">Add Diet Category</span>
-                </button>
-              ) : null}
-            </div>
-
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead position="first" className="whitespace-nowrap w-[80px]">
-                    Sr no.
-                  </TableHead>
-                  <TableHead sortable sortDirection={getSortDirection("dietCategory")} onSort={() => handleSort("dietCategory")} className="w-[200px]">
-                    Diet Category
-                  </TableHead>
-                  <TableHead sortable sortDirection={getSortDirection("dietFood")} onSort={() => handleSort("dietFood")} className="w-[300px]">
-                    Diet Food
-                  </TableHead>
-                  <TableHead sortable sortDirection={getSortDirection("remark")} onSort={() => handleSort("remark")} className="w-[250px]">
-                    Remark
-                  </TableHead>
-                  <TableHead position="last" className="w-[120px]">
-                    Action
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoadingDietCategories ? (
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
-                      Loading...
-                    </TableData>
+                    <TableHead position="first" className="whitespace-nowrap w-[80px]">
+                      Sr no.
+                    </TableHead>
+                    <TableHead sortable sortDirection={getSortDirection("dietCategory")} onSort={() => handleSort("dietCategory")} className="w-[200px]">
+                      Diet Category
+                    </TableHead>
+                    <TableHead sortable sortDirection={getSortDirection("dietFood")} onSort={() => handleSort("dietFood")} className="w-[300px]">
+                      Diet Food
+                    </TableHead>
+                    <TableHead sortable sortDirection={getSortDirection("remark")} onSort={() => handleSort("remark")} className="w-[250px]">
+                      Remark
+                    </TableHead>
+                    <TableHead position="last" className="w-[120px]">
+                      Action
+                    </TableHead>
                   </TableRow>
-                ) : paginatedDietCategories.length === 0 ? (
-                  <TableRow>
-                    <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
-                      No diet categories found
-                    </TableData>
-                  </TableRow>
-                ) : (
-                  paginatedDietCategories.map((category, index) => (
-                    <TableRow key={category.id}>
-                      <TableData position="first" className="w-[80px]">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                      <TableData className="w-[200px]">{category.dietCategory}</TableData>
-                      <TableData className="w-[300px]">
-                        <DynamicFoodItems foodItems={category.dietFood} onViewAll={handleViewFood} />
-                      </TableData>
-                      <TableData className="w-[250px]">{category.remark}</TableData>
-                      <TableData position="last" className="w-[120px]">
-                        <div className="flex items-center gap-3">
-                          {canEdit ? (
-                            <Tooltip content="Edit" position="top" delay={0}>
-                              <button
-                                type="button"
-                                onClick={() => handleEdit(category)}
-                                className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
-                                aria-label="Edit diet category"
-                                disabled={isSubmitting}
-                              >
-                                <Image
-                                  src="/icons/EditIconBlack.svg"
-                                  alt="Edit"
-                                  width={20}
-                                  height={20}
-                                />
-                              </button>
-                            </Tooltip>
-                          ) : null}
-                          {canDelete ? (
-                            <Tooltip content="Delete" position="top" delay={0}>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(category.id)}
-                                className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
-                                aria-label="Delete diet category"
-                                disabled={isDeleting || isSubmitting}
-                              >
-                                <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
-                              </button>
-                            </Tooltip>
-                          ) : null}
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {isLoadingDietCategories ? (
+                    <TableRow>
+                      <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
+                        Loading...
                       </TableData>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : paginatedDietCategories.length === 0 ? (
+                    <TableRow>
+                      <TableData colSpan={5} className="py-12 text-center text-sm text-[#9CA3AF]">
+                        No diet categories found
+                      </TableData>
+                    </TableRow>
+                  ) : (
+                    paginatedDietCategories.map((category, index) => (
+                      <TableRow key={category.id}>
+                        <TableData position="first" className="w-[80px]">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
+                        <TableData className="w-[200px]">
+                          <Tooltip content={category.dietCategory} position="top">
+                            <span className="inline-block max-w-[180px] truncate align-middle">
+                              {category.dietCategory}
+                            </span>
+                          </Tooltip>
+                        </TableData>
+                        <TableData className="w-[300px]">
+                          <DynamicFoodItems foodItems={category.dietFood} onViewAll={handleViewFood} />
+                        </TableData>
+                        <TableData className="w-[250px]">
+                          <Tooltip content={category.remark} position="top">
+                            <span className="inline-block max-w-[230px] truncate align-middle">
+                              {category.remark}
+                            </span>
+                          </Tooltip>
+                        </TableData>
+                        <TableData position="last" className="w-[120px]">
+                          <div className="flex items-center gap-3">
+                            {canEdit ? (
+                              <Tooltip content="Edit" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(category)}
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                                  aria-label="Edit diet category"
+                                  disabled={isSubmitting}
+                                >
+                                  <Image
+                                    src="/icons/EditIconBlack.svg"
+                                    alt="Edit"
+                                    width={20}
+                                    height={20}
+                                  />
+                                </button>
+                              </Tooltip>
+                            ) : null}
+                            {canDelete ? (
+                              <Tooltip content="Delete" position="top" delay={0}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(category.id)}
+                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                                  aria-label="Delete diet category"
+                                  disabled={isDeleting || isSubmitting}
+                                >
+                                  <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
+                                </button>
+                              </Tooltip>
+                            ) : null}
+                          </div>
+                        </TableData>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
 
-            {!isLoadingDietCategories && totalItems > 0 && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={totalItems}
-                itemsPerPage={itemsPerPage}
-                onPageChange={handlePageChange}
-                onItemsPerPageChange={handleItemsPerPageChange}
-                itemsPerPageOptions={[10, 20, 50,100]}
-              />
-            )}
-          </div>
+              {!isLoadingDietCategories && totalItems > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={totalItems}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={handlePageChange}
+                  onItemsPerPageChange={handleItemsPerPageChange}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
+                />
+              )}
+            </div>
           )}
         </ListBorder>
       </div>
@@ -904,6 +921,7 @@ export default function DietCategoryPage() {
         }}
         title="Add Diet Category"
         width={949}
+        closeOnOutsideClick={false}
       >
         <form ref={addFormRef} onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -924,7 +942,7 @@ export default function DietCategoryPage() {
 
           <div>
             <FormInputField
-              label="Diet Category"
+              label="Diet Category *"
               value={formValues.dietCategory}
               onChange={(event) => {
                 const value = sanitizeAlphaText(event.target.value);
@@ -948,7 +966,7 @@ export default function DietCategoryPage() {
             <div className="flex items-end gap-3">
               <div className="flex-1">
                 <FormInputField
-                  label="Diet Food"
+                  label="Diet Food *"
                   value={dietFoodInput}
                   onChange={(event) => {
                     const value = sanitizeAlphaText(event.target.value);
@@ -979,7 +997,7 @@ export default function DietCategoryPage() {
             </div>
             {formValues.dietFoodItems.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Food</label>
+                <label className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Food *</label>
                 <div className="flex flex-wrap gap-2">
                   {formValues.dietFoodItems.map((food, index) => (
                     <span
@@ -1006,10 +1024,10 @@ export default function DietCategoryPage() {
 
           <div>
             <FormTextareaField
-              label="Remark"
+              label="Remark *"
               value={formValues.remark}
               onChange={(event) => {
-                const value = sanitizeAlphaText(event.target.value);
+                const value = sanitizeAlphaText(event.target.value, 150);
                 setFormValues((prev) => {
                   const updated = { ...prev, remark: value };
                   formValuesRef.current = updated;
@@ -1019,7 +1037,7 @@ export default function DietCategoryPage() {
               }}
               height={73}
               placeholder="Remark"
-              maxLength={100}
+              maxLength={150}
               required
               disabled={isSubmitting}
             />
@@ -1061,6 +1079,7 @@ export default function DietCategoryPage() {
         }}
         title="Edit Diet Category"
         width={949}
+        closeOnOutsideClick={false}
       >
         <form ref={editFormRef} onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -1083,7 +1102,7 @@ export default function DietCategoryPage() {
 
           <div>
             <FormInputField
-              label="Diet Category"
+              label="Diet Category *"
               value={formValues.dietCategory}
               onChange={(event) => {
                 const value = sanitizeAlphaText(event.target.value);
@@ -1107,7 +1126,7 @@ export default function DietCategoryPage() {
             <div className="flex items-end gap-3">
               <div className="flex-1">
                 <FormInputField
-                  label="Diet Food"
+                  label="Diet Food *"
                   value={dietFoodInput}
                   onChange={(event) => {
                     const value = sanitizeAlphaText(event.target.value);
@@ -1138,7 +1157,7 @@ export default function DietCategoryPage() {
             </div>
             {formValues.dietFoodItems.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Food</label>
+                <label className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Food *</label>
                 <div className="flex flex-wrap gap-2">
                   {formValues.dietFoodItems.map((food, index) => (
                     <span
@@ -1165,10 +1184,10 @@ export default function DietCategoryPage() {
 
           <div>
             <FormTextareaField
-              label="Remark"
+              label="Remark *"
               value={formValues.remark}
               onChange={(event) => {
-                const value = sanitizeAlphaText(event.target.value);
+                const value = sanitizeAlphaText(event.target.value, 150);
                 setFormValues((prev) => {
                   const updated = { ...prev, remark: value };
                   formValuesRef.current = updated;
@@ -1178,7 +1197,7 @@ export default function DietCategoryPage() {
               }}
               height={73}
               placeholder="Remark"
-              maxLength={100}
+              maxLength={150}
               required
               disabled={isSubmitting}
             />

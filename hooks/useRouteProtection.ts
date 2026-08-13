@@ -10,7 +10,7 @@ import {
     selectUserGroupName,
     selectUserEmail,
 } from "@/store/slices/authSlice";
-import type { NormalizedPermissionsMap } from "@/utils/permission";
+import type { NormalizedModulePermission, NormalizedPermissionsMap } from "@/utils/permission";
 
 // Email-based registration route restrictions for special admin accounts.
 // Key: lowercase email  →  Value: the ONLY registration page they may access.
@@ -53,11 +53,58 @@ const MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     /** `slugify("IPD Reception")` */
     "ipd-reception": ["/ipd-reception"],
     "today-appointment": ["/today-appointment"],
+    counsellor: ["/counsellor"],
+    "ipd-head-nurse": ["/ipd-head-nurse"],
+    "ipd-staff-nurse": ["/ipd-staff-nurse"],
+};
+
+const COUNSELLOR_SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
+    dashboard: ["/counsellor/dashboard", "/counsellor/start-counselling"],
+    "future-bookings": ["/counsellor/future-admissions"],
+    "future-admissions": ["/counsellor/future-admissions"],
+    "tentative-bookings": ["/counsellor/tentative-admissions"],
+    "tentative-booking": ["/counsellor/tentative-admissions"],
+    "archived-bookings": ["/counsellor/archived"],
+    archived: ["/counsellor/archived"],
+    "treatment-packages": ["/counsellor/packages"],
+    packages: ["/counsellor/packages"],
+    "advance-bookings": ["/counsellor/advance-bookings"],
+    "advance-booking": ["/counsellor/advance-bookings"],
+    "manage-rooms": ["/counsellor/manage-room"],
+    "manage-room": ["/counsellor/manage-room"],
+    "admitted-patients": ["/counsellor/current-inpatient-registry"],
+    "admitted-patient": ["/counsellor/current-inpatient-registry"],
+};
+
+const IPD_HEAD_NURSE_SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
+    dashboard: ["/ipd-head-nurse/dashboard"],
+    "allocation": ["/ipd-head-nurse/allocation"],
+    "medication": ["/ipd-head-nurse/medication"],
+    "patient": ["/ipd-head-nurse/patient"],
+    "patient-referral": ["/ipd-head-nurse/patient-referral"],
+    "staff-roster": ["/ipd-head-nurse/staff-roster"],
+    // "unit-batch-handover": ["/ipd-head-nurse/unit-batch-handover"],
+    "vitals": ["/ipd-head-nurse/vitals"],
+    "ward-therapy-timetable": ["/ipd-head-nurse/ward-therapy-timetable"],
+    "therapies": ["/ipd-head-nurse/therapies"],
+    "nurse-coverage": ["nurse-coverage", "nurse-coverage"],
+};
+
+const IPD_STAFF_NURSE_SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
+    dashboard: ["/ipd-staff-nurse/dashboard"],
+    "medication": ["/ipd-staff-nurse/medication"],
+    "patient": ["/ipd-staff-nurse/patient"],
+    "unit-lab-orders": ["/ipd-staff-nurse/unit-lab-orders"],
+    "nurse-history": ["/ipd-staff-nurse/nurse-history"],
+    "therapies": ["/ipd-staff-nurse/therapies"],
 };
 
 const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
-    nurse: ["/nurse"],
-    therapist: ["/settings/therapist"],
+    doctor: ["/doctor", "/settings/users"],
+    "camp-doctor": ["/doctor"],
+    "doctor-visit": ["/doctor"],
+    nurse: ["/nurse", "/settings/users"],
+    therapist: ["/settings/therapist", "/settings/users"],
     /** Matches login `moduleName` / `subModule.moduleName` "Tokens" → slug `tokens` */
     tokens: ["/token"],
     dashboard: ["/dashboard"],
@@ -71,7 +118,7 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "manage-contact-updates": ["/settings/manage-contact-updates"],
     "discount-approval": ["/settings/discount-approval"],
     "refund-approval": ["/settings/refund-approval"],
-    users: ["/settings/users"],
+    users: ["/settings/users", "/settings/doctor", "/settings/nurse", "/settings/therapist", "/doctor", "/nurse"],
     panel: ["/settings/panel"],
     document: ["/settings/document"],
     "document-master": ["/settings/document"],
@@ -80,6 +127,7 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     "lab-test": ["/settings/lab-tests"],
     package: ["/settings/package"],
     packages: ["/settings/package"],
+    "razorpay-pos-machine": ["/settings/razorpay-pos-machine"],
     "package-master": ["/settings/package"],
     "package-settings": ["/settings/package"],
     "package-management": ["/settings/package"],
@@ -88,9 +136,13 @@ const SUB_MODULE_ROUTE_PREFIXES: Record<string, string[]> = {
     diagnosis: ["/settings/diagnosis"],
     "sub-diagnosis": ["/settings/sub-diagnosis"],
     "health-card-management": ["/settings/health-card-management"],
+    "healthcard-exceptions": ["/settings/healthcard-exceptions"],
+    "health-card-approval-management": ["/settings/healthcard-exceptions"],
+    "health-card-approval": ["/settings/healthcard-exceptions"],
     support: ["/settings/support"],
     "misc-settings": ["/settings/misc-settings"],
     facilities: ["/settings/facilities"],
+    "floor-master": ["/settings/floor-master"],
     hardware: ["/settings/hardware"],
     "room-type-master": ["/settings/room-type"],
     "consultancy-service": ["/settings/consultancy-service"],
@@ -143,6 +195,8 @@ const RESTRICTED_ROOT_PREFIXES = [
     "/nurse",
     "/ipd-reception",
     "/today-appointment",
+    "/counsellor",
+    "/doctor",
 ];
 
 /**
@@ -158,11 +212,67 @@ const SETTINGS_URL_SEGMENT_SUBMODULE_SLUGS: Record<string, string[]> = {
         "package-management",
     ],
     "lab-tests": ["lab-tests", "lab-test"],
+    "healthcard-exceptions": [
+        "healthcard-exceptions",
+        "health-card-approval-management",
+        "health-card-approval",
+    ],
+    "razorpay-pos-machine": ["razorpay-pos-machine", "razorpay-pos-machine"],
 };
 
 const IPD_RECEPTION_MODULE_KEYS = new Set(["reception", "ipd-reception"]);
+const COUNSELLOR_LANDING_ROUTE = "/counsellor/dashboard";
+const IPD_HEAD_NURSE_LANDING_ROUTE = "/ipd-head-nurse/dashboard";
+const IPD_STAFF_NURSE_LANDING_ROUTE = "/ipd-staff-nurse/dashboard";
+
+const getCounsellorLandingRoute = (
+    modulePermission?: NormalizedModulePermission | null
+): string | null => {
+    if (!modulePermission?.isActive) return null;
+    const dashboardSub = modulePermission.subModules?.dashboard;
+    if (dashboardSub?.isActive && dashboardSub?.canView) {
+        return COUNSELLOR_LANDING_ROUTE;
+    }
+    return null;
+};
+
+const getIPDHeadNurseLandingRoute = (
+    modulePermission?: NormalizedModulePermission | null
+): string | null => {
+    // console.log("modulePermission",modulePermission)
+    if (!modulePermission?.isActive) return null;
+    const dashboardSub = modulePermission.subModules?.dashboard;
+    if (dashboardSub?.isActive && dashboardSub?.canView) {
+        return IPD_HEAD_NURSE_LANDING_ROUTE;
+    }
+    return null;
+};
+
+
+const getIPDStaffNurseLandingRoute = (
+    modulePermission?: NormalizedModulePermission | null
+): string | null => {
+    if (!modulePermission?.isActive) return null;
+    const dashboardSub = modulePermission.subModules?.dashboard;
+    if (dashboardSub?.isActive && dashboardSub?.canView) {
+        return IPD_STAFF_NURSE_LANDING_ROUTE;
+    }
+    return null;
+};
 
 const getSubModuleRoutePrefixes = (moduleKey: string, subModuleKey: string): string[] => {
+    if (moduleKey === "counsellor") {
+        return COUNSELLOR_SUB_MODULE_ROUTE_PREFIXES[subModuleKey] ?? ["/counsellor"];
+    }
+     
+    if (moduleKey === "ipd-head-nurse") {
+        return IPD_HEAD_NURSE_SUB_MODULE_ROUTE_PREFIXES[subModuleKey] ?? ["/ipd-head-nurse"];
+    }
+
+    if (moduleKey === "ipd-staff-nurse") {
+        return IPD_STAFF_NURSE_SUB_MODULE_ROUTE_PREFIXES[subModuleKey] ?? ["/ipd-staff-nurse"];
+    }
+
     if (IPD_RECEPTION_MODULE_KEYS.has(moduleKey) && subModuleKey === "dashboard") {
         return ["/ipd-reception/dashboard", "/ipd-reception/patient"];
     }
@@ -237,6 +347,18 @@ const getFirstAccessibleRouteFromPermissions = (
     permissionsMap: NormalizedPermissionsMap,
     selectedBranchType: string | null
 ): string | null => {
+    // console.log("permissionsMap",permissionsMap)
+    const counsellorLanding = getCounsellorLandingRoute(permissionsMap.counsellor);
+    if (counsellorLanding) return counsellorLanding;
+
+       const ipdheadnurseLanding = getIPDHeadNurseLandingRoute(permissionsMap["ipd-head-nurse"]);
+    if (ipdheadnurseLanding) return ipdheadnurseLanding;
+
+
+       const ipdstaffnurseLanding = getIPDStaffNurseLandingRoute(permissionsMap["ipd-staff-nurse"]);
+    if (ipdstaffnurseLanding) return ipdstaffnurseLanding;
+
+
     for (const modulePermission of Object.values(permissionsMap)) {
         if (!modulePermission?.isActive) continue;
 

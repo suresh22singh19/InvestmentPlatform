@@ -57,12 +57,14 @@ body.dialog-scroll-lock [data-app-shell-scroll] {
     background-size: cover;
   }
 
-  .scrollbar-hidden {
+  .scrollbar-hidden,
+  .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
 
-  .scrollbar-hidden::-webkit-scrollbar {
+  .scrollbar-hidden::-webkit-scrollbar,
+  .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
 
@@ -97,6 +99,20 @@ body.dialog-scroll-lock [data-app-shell-scroll] {
   50% {
     border-color: rgba(11, 140, 0, 1);
     box-shadow: 0 0 20px rgba(11, 140, 0, 0.7), 0 0 35px rgba(11, 140, 0, 0.4), 0 0 50px rgba(11, 140, 0, 0.2);
+  }
+}
+
+@keyframes pulse-border-inset {
+
+  0%,
+  100% {
+    border-color: rgba(11, 140, 0, 0.8);
+    box-shadow: inset 0 0 6px rgba(11, 140, 0, 0.3);
+  }
+
+  50% {
+    border-color: rgba(11, 140, 0, 1);
+    box-shadow: inset 0 0 14px rgba(11, 140, 0, 0.6);
   }
 }
 
@@ -290,15 +306,18 @@ body.dialog-scroll-lock [data-app-shell-scroll] {
     right: 113px;
   }
 }
+
 @media (max-width:1280px) {
   .hide-text-overflow {
     display: none;
   }
 }
-.yesnotab button{
+
+.yesnotab button {
   height: 24px;
 }
-.yesnotab div{
+
+.yesnotab div {
   height: 24px;
   border: 0;
   padding: 0;
@@ -306,10 +325,10 @@ body.dialog-scroll-lock [data-app-shell-scroll] {
 
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
- -webkit-appearance: none;
- margin: 0;
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 input[type=number] {
- -moz-appearance: textfield;
+  -moz-appearance: textfield;
 }

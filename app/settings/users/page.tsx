@@ -1,1106 +1,799 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
-import { Button, Dialog, FormInputField, FormSelectField, TableSearchInput, Pagination, ExportButton, UserCard, MessageDialog } from "@/components/ui";
-import { ListBorder } from "@/components/ui/ListBorder";
-import type { SelectOption } from "@/components/ui/FormSelectField";
 import {
-  useGetBranchesQuery,
-  useGetBranchRoleByCategoryTypeQuery,
-  useGetUsersQuery,
-  useAddUserMutation,
-  useUpdateUserMutation,
-  useLazyGenerateUsersPdfQuery,
-  normalizeGetUsersResponse,
-  type GetBranchRoleByCategoryTypeParams,
-  type SettingsApiUser,
-  type UpdateUserBody,
-  type GetUsersParams,
-} from "@/store/api/settingsApi";
-import { API_BASE_URL } from "@/lib/config/api";
-import { sanitizePatientNameInput, sanitizeDigitsOnlyInput } from "@/lib/utils/common";
-import { sanitizeEmailInput, isValidEmailAddress } from "@/lib/utils/emailValidation";
+  TableSearchInput,
+  Dialog,
+  MessageDialog,
+  Badge,
+  Pagination,
+} from "@/components/ui";
 import { usePermission } from "@/hooks/usePermission";
-import { useBranchFilter } from "@/hooks/useBranchFilter";
+import {
+  FiUsers,
+  FiUserCheck,
+  FiUserX,
+  FiDollarSign,
+  FiCheckCircle,
+  FiXCircle,
+  FiEye,
+  FiToggleLeft,
+  FiToggleRight,
+  FiPackage,
+  FiActivity,
+  FiCheck,
+  FiX,
+  FiClock,
+  FiMail,
+} from "react-icons/fi";
+import { FaCrown, FaWallet, FaCoins, FaUserClock } from "react-icons/fa";
 
-type User = {
-  id: number;
-  name: string;
-  email: string;
-  branch: string;
-  phone: string;
-  groupRole: string;
-  assignableRoleId: number | null;
-  permissionDate: string;
-  lastLogin: string;
-  status: "Active" | "Inactive";
-  userType: "Facility" | "Corporate";
-  branches: string[];
-  employeeId: string;
-  loginType: "no-auth" | "ip" | "otp" | "ip-otp";
+// ─── Data Types for Super Admin User Portal ─────────────────────────────────
+export type PurchasedPackage = {
+  id: string;
+  packageName: string;
+  priceAmount: number;
+  dailyInterestPercent: number;
+  durationDays: number;
+  daysRemaining: number;
+  purchasedDate: string;
+  status: "Active" | "Completed";
 };
 
-function normalizeContactNumberForForm(phone: string): string {
-  return sanitizeDigitsOnlyInput(phone, 10);
-}
+export type MemberTransaction = {
+  id: string;
+  type: "Deposit" | "Daily ROI" | "Referral Bonus" | "Level Reward" | "Withdrawal";
+  amount: number;
+  date: string;
+  status: "Completed" | "Pending" | "Rejected";
+  details: string;
+};
 
-function formatPhoneForApi(digitsField: string): string {
-  const digits = digitsField.replace(/\D/g, "");
-  if (digits.length === 10) return `+91${digits}`;
-  return digitsField.trim().startsWith("+") ? digitsField.trim() : `+${digits}`;
-}
+export type SuperAdminUser = {
+  id: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  joinedDate: string;
+  avatarInitials: string;
+  status: "Active" | "Inactive" | "Pending";
+  roleTier: string; // e.g. "Gold Shareholder (Level 3)"
+  levelNumber: number; // 1 to 6
+  lifetimeEarnings: number;
+  withdrawableBalance: number;
+  totalWithdrawals: number;
+  pendingWithdrawals: number;
+  directReferralsCount: number;
+  purchasedPackages: PurchasedPackage[];
+  transactions: MemberTransaction[];
+};
 
-function formatApiDateDisplay(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-}
+// ─── 25+ Comprehensive Realistic User Records (Including Pending Requests) ──
+const INITIAL_MOCK_USERS: SuperAdminUser[] = [
+  // PENDING REGISTRATION REQUESTS
+  {
+    id: 1099,
+    fullName: "Ramesh Patel",
+    email: "ramesh.patel@gmail.com",
+    phone: "+91 99887 76655",
+    joinedDate: "2026-08-11 (10 mins ago)",
+    avatarInitials: "RP",
+    status: "Pending",
+    roleTier: "Bronze Partner (Level 1)",
+    levelNumber: 1,
+    lifetimeEarnings: 0.00,
+    withdrawableBalance: 0.00,
+    totalWithdrawals: 0.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 0,
+    purchasedPackages: [],
+    transactions: [],
+  },
+  {
+    id: 1098,
+    fullName: "Deepa Verma",
+    email: "deepa.verma@yahoo.com",
+    phone: "+91 98776 65544",
+    joinedDate: "2026-08-11 (45 mins ago)",
+    avatarInitials: "DV",
+    status: "Pending",
+    roleTier: "Bronze Partner (Level 1)",
+    levelNumber: 1,
+    lifetimeEarnings: 0.00,
+    withdrawableBalance: 0.00,
+    totalWithdrawals: 0.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 0,
+    purchasedPackages: [],
+    transactions: [],
+  },
+  {
+    id: 1097,
+    fullName: "Karan Malhotra",
+    email: "karan.m@outlook.com",
+    phone: "+91 97665 54433",
+    joinedDate: "2026-08-11 (2 hours ago)",
+    avatarInitials: "KM",
+    status: "Pending",
+    roleTier: "Bronze Partner (Level 1)",
+    levelNumber: 1,
+    lifetimeEarnings: 0.00,
+    withdrawableBalance: 0.00,
+    totalWithdrawals: 0.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 0,
+    purchasedPackages: [],
+    transactions: [],
+  },
+  {
+    id: 1096,
+    fullName: "Alok Sharma",
+    email: "alok.sharma@techin.com",
+    phone: "+91 96554 43322",
+    joinedDate: "2026-08-10",
+    avatarInitials: "AS",
+    status: "Pending",
+    roleTier: "Bronze Partner (Level 1)",
+    levelNumber: 1,
+    lifetimeEarnings: 0.00,
+    withdrawableBalance: 0.00,
+    totalWithdrawals: 0.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 0,
+    purchasedPackages: [],
+    transactions: [],
+  },
 
-function formatApiDateTimeDisplay(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
+  // ACTIVE USERS
+  {
+    id: 1001,
+    fullName: "Suresh Menon",
+    email: "suresh.menon@dventures.com",
+    phone: "+91 98765 43210",
+    joinedDate: "2026-01-15",
+    avatarInitials: "SM",
+    status: "Active",
+    roleTier: "Master Crown (Level 6)",
+    levelNumber: 6,
+    lifetimeEarnings: 34080.50,
+    withdrawableBalance: 4850.00,
+    totalWithdrawals: 29230.50,
+    pendingWithdrawals: 0,
+    directReferralsCount: 142,
+    purchasedPackages: [
+      { id: "PK-901", packageName: "VIP Diamond Master", priceAmount: 5000, dailyInterestPercent: 4.0, durationDays: 60, daysRemaining: 32, purchasedDate: "2026-07-10", status: "Active" },
+      { id: "PK-902", packageName: "Platinum Executive Plan", priceAmount: 2500, dailyInterestPercent: 3.0, durationDays: 60, daysRemaining: 15, purchasedDate: "2026-06-20", status: "Active" },
+    ],
+    transactions: [
+      { id: "TX-101", type: "Daily ROI", amount: 200.00, date: "2026-08-11", status: "Completed", details: "Daily 4.0% yield on VIP Diamond Plan" },
+      { id: "TX-102", type: "Referral Bonus", amount: 150.00, date: "2026-08-10", status: "Completed", details: "Level 1 invite reward from Rajesh K." },
+      { id: "TX-103", type: "Withdrawal", amount: 3000.00, date: "2026-08-05", status: "Completed", details: "Withdrawal to USDT (TRC20)" },
+    ],
+  },
+  {
+    id: 1002,
+    fullName: "Rajesh Kumar",
+    email: "rajesh.k@gmail.com",
+    phone: "+91 98123 45678",
+    joinedDate: "2026-02-10",
+    avatarInitials: "RK",
+    status: "Active",
+    roleTier: "Gold Shareholder (Level 3)",
+    levelNumber: 3,
+    lifetimeEarnings: 14250.00,
+    withdrawableBalance: 1450.00,
+    totalWithdrawals: 12800.00,
+    pendingWithdrawals: 1450.00,
+    directReferralsCount: 48,
+    purchasedPackages: [
+      { id: "PK-801", packageName: "Gold Shareholder Plan", priceAmount: 1000, dailyInterestPercent: 2.2, durationDays: 60, daysRemaining: 33, purchasedDate: "2026-07-15", status: "Active" },
+    ],
+    transactions: [
+      { id: "TX-201", type: "Withdrawal", amount: 1450.00, date: "2026-08-11", status: "Pending", details: "Withdrawal request pending admin approval" },
+      { id: "TX-202", type: "Daily ROI", amount: 22.00, date: "2026-08-11", status: "Completed", details: "Daily 2.2% yield on Gold Shareholder Plan" },
+    ],
+  },
+  {
+    id: 1003,
+    fullName: "Kavita Rao",
+    email: "kavita.rao@gmail.com",
+    phone: "+91 97654 32109",
+    joinedDate: "2026-02-18",
+    avatarInitials: "KR",
+    status: "Active",
+    roleTier: "Diamond VIP (Level 5)",
+    levelNumber: 5,
+    lifetimeEarnings: 23400.00,
+    withdrawableBalance: 3200.00,
+    totalWithdrawals: 20200.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 98,
+    purchasedPackages: [
+      { id: "PK-701", packageName: "Platinum Executive Plan", priceAmount: 2500, dailyInterestPercent: 3.0, durationDays: 60, daysRemaining: 41, purchasedDate: "2026-07-22", status: "Active" },
+    ],
+    transactions: [
+      { id: "TX-301", type: "Level Reward", amount: 1500.00, date: "2026-08-08", status: "Completed", details: "Level 5 Milestone Cash Unlock Bonus" },
+    ],
+  },
+  {
+    id: 1004,
+    fullName: "Anita Sharma",
+    email: "anita.s@yahoo.com",
+    phone: "+91 95432 10987",
+    joinedDate: "2026-03-05",
+    avatarInitials: "AS",
+    status: "Active",
+    roleTier: "Silver Leader (Level 2)",
+    levelNumber: 2,
+    lifetimeEarnings: 4820.00,
+    withdrawableBalance: 820.50,
+    totalWithdrawals: 4000.00,
+    pendingWithdrawals: 820.50,
+    directReferralsCount: 24,
+    purchasedPackages: [
+      { id: "PK-601", packageName: "Starter Yield Plan", priceAmount: 250, dailyInterestPercent: 1.5, durationDays: 60, daysRemaining: 28, purchasedDate: "2026-07-09", status: "Active" },
+    ],
+    transactions: [
+      { id: "TX-401", type: "Withdrawal", amount: 820.50, date: "2026-08-11", status: "Pending", details: "Requested payout via Bank Wire" },
+    ],
+  },
 
-function parseLoginTypeFromApi(raw: string): User["loginType"] {
-  const v = raw?.toLowerCase();
-  if (v === "ip-otp" || v === "no-auth" || v === "ip" || v === "otp") return v;
-  return "no-auth";
-}
-
-function mapApiUserToCardUser(u: SettingsApiUser): User {
-  const branchLabel = u.branch?.name ?? "—";
-  const branchIdStr =
-    u.branch?.id != null
-      ? String(u.branch.id)
-      : u.branchId != null && u.branchId > 0
-        ? String(u.branchId)
-        : "";
-  const roleId = u.roleId ?? u.role?.id ?? null;
-  const rc = (u.roleCategoryType ?? "").toLowerCase();
-  const userType: User["userType"] = rc === "corporate" ? "Corporate" : "Facility";
-  const phoneDigits = u.phone ? u.phone.replace(/\D/g, "") : "";
-  const phone10 = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : phoneDigits;
-  const empTrim = (u.empId ?? "").replace(/\s+/g, " ").trim();
-  return {
-    id: u.id,
-    name: (u.userName ?? "").trim() || u.email,
-    email: u.email,
-    branch: branchLabel,
-    phone: phone10 || u.phone || "",
-    groupRole: u.role?.name ?? "—",
-    assignableRoleId: roleId,
-    permissionDate: formatApiDateDisplay(u.permissionDate ?? u.createdAt),
-    lastLogin: formatApiDateTimeDisplay(u.lastLogin),
-    status: u.status?.toLowerCase() === "active" ? "Active" : "Inactive",
-    userType,
-    branches: branchIdStr ? [branchIdStr] : [],
-    employeeId: empTrim,
-    loginType: parseLoginTypeFromApi(u.loginType),
-  };
-}
-
-function getRtkErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "data" in err) {
-    const d = (err as { data?: { message?: string | string[] } }).data;
-    const m = d?.message;
-    if (typeof m === "string" && m.trim()) return m.trim();
-    if (Array.isArray(m) && m.length > 0) {
-      const parts = m.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
-      if (parts.length) return parts.join(" ");
-    }
-  }
-  return fallback;
-}
-
-/** Map GET /branches `type` to getBranchRoleByCategoryType `branchType` (API: hospital | clinic). */
-function branchRecordTypeToRoleApiBranchType(apiType: string | undefined): "hospital" | "clinic" {
-  const t = (apiType ?? "").toLowerCase().trim();
-  if (t === "clinic") return "clinic";
-  return "hospital";
-}
-
-function resolveAbsolutePdfUrl(url: string): string {
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
-  }
-  try {
-    const base = new URL(API_BASE_URL);
-    const path = url.startsWith("/") ? url : `/${url}`;
-    return `${base.origin}${path}`;
-  } catch {
-    return new URL(url, window.location.origin).href;
-  }
-}
-
-async function blobLooksLikePdf(blob: Blob): Promise<boolean> {
-  if (blob.size < 5) return false;
-  const head = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
-  return head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46;
-}
-
-/**
- * Prefer blob download (same-origin or CORS-friendly). If fetch fails (typical: localhost → API host CORS),
- * fall back to opening the file URL in a new tab so the user can view/save the PDF.
- */
-async function downloadPdfFromApiUrl(url: string, filename: string) {
-  const absoluteUrl = resolveAbsolutePdfUrl(url);
-  const safeName = filename?.trim() ? filename.trim() : "users-report.pdf";
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("authToken") || sessionStorage.getItem("authToken")
-      : null;
-
-  const saveBlob = (blob: Blob) => {
-    const objectUrl = URL.createObjectURL(blob);
-    try {
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = safeName;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } finally {
-      URL.revokeObjectURL(objectUrl);
-    }
-  };
-
-  const tryFetchBlob = async (withBearer: boolean): Promise<Blob | null> => {
-    const headers: HeadersInit = {};
-    if (withBearer && token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(absoluteUrl, {
-      credentials: "include",
-      headers,
-      mode: "cors",
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return res.blob();
-  };
-
-  for (const withBearer of [true, false]) {
-    try {
-      const blob = await tryFetchBlob(withBearer);
-      if (blob && blob.size > 0 && (await blobLooksLikePdf(blob))) {
-        saveBlob(blob);
-        return;
-      }
-    } catch {
-      /* CORS, network, blocked */
-    }
-  }
-
-  const w = window.open(absoluteUrl, "_blank", "noopener,noreferrer");
-  if (!w) {
-    const a = document.createElement("a");
-    a.href = absoluteUrl;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-}
-
-const EMPLOYEE_ID_MAX_LEN = 25;
-
-/** Letters, digits, space, hyphen, underscore only (Employee Id); no more than 2 identical chars in a row; API max 25 characters. */
-function sanitizeEmployeeIdInput(raw: string): string {
-  let value = raw.replace(/[^a-zA-Z0-9 _-]/g, "");
-  value = value.replace(/(.)\1{2,}/g, "$1$1");
-  return value.slice(0, EMPLOYEE_ID_MAX_LEN);
-}
-
-const loginTypeOptions: SelectOption[] = [
-  { value: "no-auth", label: "No auth" },
-  { value: "ip", label: "IP" },
-  { value: "otp", label: "OTP" },
-  { value: "ip-otp", label: "IP + OTP" },
+  // INACTIVE USERS
+  {
+    id: 1006,
+    fullName: "Sunil Reddy",
+    email: "sunil.reddy@gmail.com",
+    phone: "+91 93210 98765",
+    joinedDate: "2026-04-01",
+    avatarInitials: "SR",
+    status: "Inactive",
+    roleTier: "Bronze Partner (Level 1)",
+    levelNumber: 1,
+    lifetimeEarnings: 350.00,
+    withdrawableBalance: 0.00,
+    totalWithdrawals: 350.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 5,
+    purchasedPackages: [],
+    transactions: [],
+  },
+  {
+    id: 1011,
+    fullName: "Meenakshi Sundaram",
+    email: "meena.s@gmail.com",
+    phone: "+91 88765 43210",
+    joinedDate: "2026-05-20",
+    avatarInitials: "MS",
+    status: "Inactive",
+    roleTier: "Bronze Partner (Level 1)",
+    levelNumber: 1,
+    lifetimeEarnings: 120.00,
+    withdrawableBalance: 120.00,
+    totalWithdrawals: 0.00,
+    pendingWithdrawals: 0,
+    directReferralsCount: 2,
+    purchasedPackages: [],
+    transactions: [],
+  },
 ];
 
-const statusOptions: SelectOption[] = [
-  { value: "Active", label: "Active" },
-  { value: "Inactive", label: "Inactive" },
-];
+export default function UsersSettingsPage() {
+  const usersPermission = usePermission("settings", { subModule: "user" });
 
-const userTypeOptions: SelectOption[] = [
-  { value: "Facility", label: "Facility" },
-  { value: "Corporate", label: "Corporate" },
-];
-
-export default function UsersPage() {
-  const usersPermission = usePermission("settings", { subModule: "users" });
-  const canView = usersPermission.canView;
-  const canAdd = usersPermission.canAdd;
-  const canEdit = usersPermission.canEdit;
-  const canDownload = usersPermission.canDownload;
-
-  const { data: branchesRes, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined, {
-    skip: !canView && !canAdd && !canEdit,
-  });
-
-  const branchOptions: SelectOption[] = useMemo(() => {
-    const rows = branchesRes?.success && Array.isArray(branchesRes.data) ? branchesRes.data : [];
-    return rows.map((b) => {
-      const typeLabel = b.type ? b.type.charAt(0).toUpperCase() + b.type.slice(1).toLowerCase() : "";
-      const label = typeLabel ? `${b.name} (${typeLabel})` : b.name;
-      return { value: String(b.id), label };
-    });
-  }, [branchesRes]);
-
-  /** None + API branches: toolbar filter and facility user branch field */
-  const branchOptionsWithNone: SelectOption[] = useMemo(
-    () => [{ value: "", label: "None" }, ...branchOptions],
-    [branchOptions]
-  );
-
-  const resolveBranchFormValue = (stored: string): string => {
-    if (!stored || stored === "None") return "";
-    if (branchOptions.some((o) => o.value === stored)) return stored;
-    return branchOptions.find((o) => o.label === stored)?.value ?? "";
-  };
-
+  // Tabs & Search State
+  const [activeTab, setActiveTab] = useState<"Active" | "Inactive" | "Pending">("Active");
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  /** Toolbar: none (all) | facility | corporate — matches getUsers `roleCategoryType`. */
-  const [listRoleCatFilter, setListRoleCatFilter] = useState<"facility" | "corporate" | null>(null);
-  const {
-    selectedBranchFilter: selectedBranch,
-    setSelectedBranchFilter: setSelectedBranch,
-    branchFilterOptions: hookBranchFilterOptions,
-    isLoadingBranches: isLoadingBranchFilter,
-    isBranchFilterDisabled,
-    filterBranchId: hookFilterBranchId,
-  } = useBranchFilter();
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState("All");
+
+  // Users Master List State
+  const [usersList, setUsersList] = useState<SuperAdminUser[]>(INITIAL_MOCK_USERS);
+
+  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(9);
-  const [dialogMode, setDialogMode] = useState<"add" | "edit" | "view" | null>(null);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [formValues, setFormValues] = useState({
-    assignableRoleId: "",
-    fullName: "",
-    username: "",
-    phone: "",
-    branch: "",
-    branches: [] as string[],
-    employeeId: "",
-    loginType: "no-auth",
-    status: "Active",
-    userType: "Facility",
+
+  // User Detail Inspection Dialog State
+  const [selectedUserModal, setSelectedUserModal] = useState<SuperAdminUser | null>(null);
+
+  // Toast State
+  const [toastState, setToastState] = useState<{ open: boolean; message: string }>({
+    open: false,
+    message: "",
   });
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [messageDialog, setMessageDialog] = useState<{
-    open: boolean;
-    variant: "success" | "error";
-    message: string;
-  }>({ open: false, variant: "success", message: "" });
 
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(searchTerm), 350);
-    return () => window.clearTimeout(t);
-  }, [searchTerm]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedSearch, selectedBranch, itemsPerPage, listRoleCatFilter]);
-
-  const listBranchId = hookFilterBranchId;
-
-  const getUsersQueryParams = useMemo((): GetUsersParams => {
-    const base: GetUsersParams = {
-      page: currentPage,
-      limit: itemsPerPage,
-      sort: "id",
-      order: "desc",
-      search: debouncedSearch.trim() || undefined,
-    };
-    if (listRoleCatFilter === "corporate") {
-      return { ...base, roleCategoryType: "corporate" };
-    }
-    if (listRoleCatFilter === "facility") {
-      return {
-        ...base,
-        roleCategoryType: "facility",
-        ...(listBranchId != null ? { branchId: listBranchId } : {}),
-      };
-    }
-    return {
-      ...base,
-      ...(listBranchId != null ? { branchId: listBranchId } : {}),
-    };
-  }, [currentPage, itemsPerPage, debouncedSearch, listBranchId, listRoleCatFilter]);
-
-  const { data: usersRes, isLoading: isLoadingUsers, isFetching: isFetchingUsers } = useGetUsersQuery(
-    getUsersQueryParams,
-    { skip: !canView }
-  );
-
-  const { usersList, totalUsers } = useMemo(() => {
-    const { rows, total: apiTotal } = normalizeGetUsersResponse(usersRes);
-    const list = rows.map(mapApiUserToCardUser);
-    let total: number;
-    if (apiTotal != null) {
-      total = apiTotal;
-    } else if (rows.length < itemsPerPage) {
-      total = (currentPage - 1) * itemsPerPage + rows.length;
-    } else {
-      total = currentPage * itemsPerPage + 1;
-    }
-    return { usersList: list, totalUsers: total };
-  }, [usersRes, itemsPerPage, currentPage]);
-
-  const [togglingStatusUserId, setTogglingStatusUserId] = useState<number | null>(null);
-
-  const [addUser, { isLoading: isAddingUser }] = useAddUserMutation();
-  const [updateUser, { isLoading: isUpdatingUser }] = useUpdateUserMutation();
-  const [triggerUsersPdf] = useLazyGenerateUsersPdfQuery();
-
-  /** Corporate: only `roleCategoryType` (no `branchId` key). Facility: include `branchId` only when a valid branch is selected. */
-  const assignableRolesQueryArgs = useMemo((): GetBranchRoleByCategoryTypeParams => {
-    if (formValues.userType === "Corporate") {
-      return { roleCategoryType: "corporate" };
-    }
-    if (!formValues.branch) {
-      return { roleCategoryType: "facility" };
-    }
-    const n = Number.parseInt(formValues.branch, 10);
-    if (!Number.isFinite(n)) {
-      return { roleCategoryType: "facility" };
-    }
-    const rows = branchesRes?.success && Array.isArray(branchesRes.data) ? branchesRes.data : [];
-    const branchRow = rows.find((b) => b.id === n);
-    const branchType = branchRecordTypeToRoleApiBranchType(branchRow?.type);
-    return { roleCategoryType: "facility", branchId: n, branchType };
-  }, [formValues.userType, formValues.branch, branchesRes]);
-
-  const { data: assignableRolesRes, isFetching: isLoadingAssignableRoles } = useGetBranchRoleByCategoryTypeQuery(
-    assignableRolesQueryArgs,
-    {
-      skip:
-        dialogMode === null ||
-        (formValues.userType === "Facility" && !("branchId" in assignableRolesQueryArgs)),
-      refetchOnMountOrArgChange: true,
-    }
-  );
-
-  const assignableRoleOptions: SelectOption[] = useMemo(() => {
-    const rows = Array.isArray(assignableRolesRes?.data) ? assignableRolesRes.data : [];
-    return rows
-      .filter((r) => r.isActive !== false)
-      .map((r) => ({ value: String(r.id), label: r.name }));
-  }, [assignableRolesRes]);
-
-  const dismissMessageDialog = () => {
-    setMessageDialog((m) => ({ ...m, open: false }));
+  const showToast = (message: string) => {
+    setToastState({ open: true, message });
   };
 
-  const handleAddNew = () => {
-    if (!canAdd) return;
-    setFormValues({
-      assignableRoleId: "",
-      fullName: "",
-      username: "",
-      phone: "",
-      branch: "",
-      branches: [],
-      employeeId: "",
-      loginType: "no-auth",
-      status: "Active",
-      userType: "Facility",
+  // Filtered Users
+  const filteredUsers = useMemo(() => {
+    return usersList.filter((u) => {
+      // Tab filter
+      if (u.status !== activeTab) return false;
+
+      // Role filter
+      if (selectedRoleFilter !== "All" && !u.roleTier.toLowerCase().includes(selectedRoleFilter.toLowerCase())) {
+        return false;
+      }
+
+      // Search filter
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        const matchesName = u.fullName.toLowerCase().includes(term);
+        const matchesEmail = u.email.toLowerCase().includes(term);
+        const matchesPhone = u.phone.toLowerCase().includes(term);
+        const matchesRole = u.roleTier.toLowerCase().includes(term);
+        return matchesName || matchesEmail || matchesPhone || matchesRole;
+      }
+
+      return true;
     });
-    setFormErrors({});
-    setSelectedUser(null);
-    setDialogMode("add");
-  };
+  }, [usersList, activeTab, selectedRoleFilter, searchTerm]);
 
-  const handleEdit = (user: User) => {
-    if (!canEdit) return;
-    setSelectedUser(user);
-    setFormValues({
-      assignableRoleId: user.assignableRoleId != null ? String(user.assignableRoleId) : "",
-      fullName: user.name,
-      username: user.email,
-      phone: normalizeContactNumberForForm(user.phone),
-      branch: resolveBranchFormValue(user.branches[0] || user.branch),
-      branches: user.branches.map((b) => resolveBranchFormValue(b)).filter(Boolean),
-      employeeId: user.employeeId,
-      loginType: user.loginType,
-      status: user.status,
-      userType: user.userType,
-    });
-    setFormErrors({});
-    setDialogMode("edit");
-  };
+  // Paginated Users
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredUsers.slice(start, start + itemsPerPage);
+  }, [filteredUsers, currentPage, itemsPerPage]);
 
-  const handleView = (user: User) => {
-    if (!canView) return;
-    setSelectedUser(user);
-    setFormValues({
-      assignableRoleId: user.assignableRoleId != null ? String(user.assignableRoleId) : "",
-      fullName: user.name,
-      username: user.email,
-      phone: normalizeContactNumberForForm(user.phone),
-      branch: resolveBranchFormValue(user.branches[0] || user.branch),
-      branches: user.branches,
-      employeeId: user.employeeId,
-      loginType: user.loginType,
-      status: user.status,
-      userType: user.userType,
-    });
-    setDialogMode("view");
-  };
+  // Platform Metrics
+  const stats = useMemo(() => {
+    const totalCount = usersList.length;
+    const activeCount = usersList.filter((u) => u.status === "Active").length;
+    const inactiveCount = usersList.filter((u) => u.status === "Inactive").length;
+    const pendingCount = usersList.filter((u) => u.status === "Pending").length;
+    const totalLifetimePaid = usersList.reduce((sum, u) => sum + u.lifetimeEarnings, 0);
 
-  const handleStatusToggle = async (user: User) => {
-    if (!canEdit || togglingStatusUserId !== null) return;
-    const newStatus = user.status === "Active" ? "inactive" : "active";
-    setTogglingStatusUserId(user.id);
-    try {
-      await updateUser({ id: user.id, body: { status: newStatus } }).unwrap();
-      setMessageDialog({ open: true, variant: "success", message: "Status updated successfully" });
-    } catch (err) {
-      setMessageDialog({ open: true, variant: "error", message: getRtkErrorMessage(err, "Failed to update status") });
-    } finally {
-      setTogglingStatusUserId(null);
-    }
-  };
+    return { totalCount, activeCount, inactiveCount, pendingCount, totalLifetimePaid };
+  }, [usersList]);
 
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-    const isEditMode = dialogMode === "edit";
+  // APPROVE PENDING REGISTRATION
+  const handleApproveUser = (user: SuperAdminUser) => {
+    setUsersList((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, status: "Active" } : u))
+    );
 
-    if (!isEditMode) {
-      if (formValues.userType === "Facility" && !formValues.branch) {
-        errors.branch = "Branch is required for facility users";
-      }
-
-      const roleIdParsed = Number.parseInt(formValues.assignableRoleId, 10);
-      if (!formValues.assignableRoleId.trim() || !Number.isFinite(roleIdParsed)) {
-        errors.role = "Role is required";
-      }
-
-      if (formValues.userType === "Facility" && formValues.branch) {
-        const bid = Number.parseInt(formValues.branch, 10);
-        if (!Number.isFinite(bid)) {
-          errors.branch = "Invalid branch selection";
-        }
-      }
+    if (selectedUserModal && selectedUserModal.id === user.id) {
+      setSelectedUserModal((prev) => (prev ? { ...prev, status: "Active" } : null));
     }
 
-    const fullNameTrim = formValues.fullName.trim();
-    if (!fullNameTrim) {
-      errors.fullName = "Full Name is required";
-    } else if (!/^[a-zA-Z\s]+$/.test(fullNameTrim)) {
-      errors.fullName = "Only letters and spaces are allowed";
-    } else if (fullNameTrim.length > 100) {
-      errors.fullName = "Patient Name cannot exceed 100 characters";
-    }
-
-    if (!isEditMode) {
-      const emailTrim = formValues.username.trim();
-      if (!emailTrim) {
-        errors.username = "Username/Email is required";
-      } else if (!isValidEmailAddress(emailTrim)) {
-        errors.username = "Please enter a valid email address";
-      } else if (emailTrim.length > 100) {
-        errors.username = "Email Address cannot exceed 100 characters";
-      }
-
-      const phoneDigits = formValues.phone.trim();
-      if (!phoneDigits) {
-        errors.phone = "Contact Number is required";
-      } else if (!/^\d+$/.test(phoneDigits) || phoneDigits.length < 10) {
-        errors.phone = "Contact Number must be at least 10 digits";
-      } else if (phoneDigits.length > 10) {
-        errors.phone = "Contact Number cannot exceed 10 digits";
-      }
-
-      const employeeIdTrim = formValues.employeeId.trim();
-      if (!employeeIdTrim) {
-        errors.employeeId = "Employee Id is required";
-      }
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    showToast(`Registration approved for "${user.fullName}". Account is now ACTIVE.`);
   };
 
-  const resetFormAfterClose = () => {
-    setFormValues({
-      assignableRoleId: "",
-      fullName: "",
-      username: "",
-      phone: "",
-      branch: "",
-      branches: [],
-      employeeId: "",
-      loginType: "no-auth",
-      status: "Active",
-      userType: "Facility",
-    });
-    setFormErrors({});
-    setSelectedUser(null);
-  };
+  // REJECT PENDING REGISTRATION / SET INACTIVE
+  const handleRejectUser = (user: SuperAdminUser) => {
+    setUsersList((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, status: "Inactive" } : u))
+    );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (dialogMode === "add" && !canAdd) return;
-    if (dialogMode === "edit" && !canEdit) return;
-
-    if (!validateForm()) {
-      return;
+    if (selectedUserModal && selectedUserModal.id === user.id) {
+      setSelectedUserModal((prev) => (prev ? { ...prev, status: "Inactive" } : null));
     }
 
-    const loginTypeSaved: User["loginType"] =
-      formValues.loginType === "no-auth" ||
-      formValues.loginType === "ip" ||
-      formValues.loginType === "otp" ||
-      formValues.loginType === "ip-otp"
-        ? formValues.loginType
-        : "no-auth";
+    showToast(`Registration request for "${user.fullName}" has been REJECTED.`);
+  };
 
-    const roleCategoryType = formValues.userType === "Facility" ? "facility" : "corporate";
-    const statusApi = formValues.status === "Active" ? "active" : "inactive";
-    const roleIdNum = Number.parseInt(formValues.assignableRoleId, 10);
-    if (!Number.isFinite(roleIdNum)) {
-      setFormErrors((prev) => ({ ...prev, role: "Please select a valid role." }));
-      return;
+  // Toggle User Active / Inactive Status
+  const handleToggleUserStatus = (user: SuperAdminUser) => {
+    const newStatus: "Active" | "Inactive" = user.status === "Active" ? "Inactive" : "Active";
+    setUsersList((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, status: newStatus } : u))
+    );
+
+    if (selectedUserModal && selectedUserModal.id === user.id) {
+      setSelectedUserModal((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
 
-    try {
-      if (dialogMode === "add") {
-        const base = {
-          empId: formValues.employeeId.trim() || null,
-          userName: formValues.fullName.trim(),
-          email: formValues.username.trim(),
-          phone: formatPhoneForApi(formValues.phone),
-          loginType: loginTypeSaved,
-          status: statusApi as "active" | "inactive",
-          roleId: roleIdNum,
-          roleCategoryType: roleCategoryType as "facility" | "corporate",
-        };
-        const payload =
-          formValues.userType === "Facility"
-            ? { ...base, branchId: Number.parseInt(formValues.branch, 10) }
-            : base;
-        await addUser(payload).unwrap();
-        setMessageDialog({ open: true, variant: "success", message: "User registered successfully" });
-      } else if (dialogMode === "edit" && selectedUser) {
-        const body: UpdateUserBody = {
-          userName: formValues.fullName.trim(),
-          email: formValues.username.trim(),
-          phone: formatPhoneForApi(formValues.phone),
-          empId: formValues.employeeId.trim() || null,
-          loginType: loginTypeSaved,
-          status: statusApi,
-          roleId: roleIdNum,
-          roleCategoryType,
-        };
-        if (formValues.userType === "Facility" && formValues.branch) {
-          body.branchId = Number.parseInt(formValues.branch, 10);
-        }
-        await updateUser({ id: selectedUser.id, body }).unwrap();
-        setMessageDialog({ open: true, variant: "success", message: "User updated successfully" });
-      }
-
-      setDialogMode(null);
-      resetFormAfterClose();
-    } catch (err) {
-      setMessageDialog({
-        open: true,
-        variant: "error",
-        message: getRtkErrorMessage(err, "Request failed"),
-      });
-    }
+    showToast(`Member "${user.fullName}" is now ${newStatus.toUpperCase()}.`);
   };
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
-
-  const handleItemsPerPageChange = (items: number) => {
-    setItemsPerPage(items);
-    setCurrentPage(1);
-  };
-
-  const handleExportPDF = async () => {
-    if (!canDownload) return;
-    try {
-      const res = await triggerUsersPdf(
-        listRoleCatFilter === "corporate"
-          ? undefined
-          : listBranchId != null
-            ? { branchId: listBranchId }
-            : undefined
-      ).unwrap();
-      if (res.success && res.data?.url) {
-        await downloadPdfFromApiUrl(res.data.url, res.data.filename ?? "users-report.pdf");
-      }
-    } catch (err) {
-      const fallback = "Could not generate or download PDF";
-      const message =
-        err instanceof Error && err.message ? err.message : getRtkErrorMessage(err, fallback);
-      setMessageDialog({
-        open: true,
-        variant: "error",
-        message: message || fallback,
-      });
-    }
-  };
-
-  const isEditMode = dialogMode === "edit";
-
-  const assignableRoleField = (
-    <div>
-      <FormSelectField
-        label="Role *"
-        value={formValues.assignableRoleId}
-        onChange={(value) => {
-          if (dialogMode === "view") return;
-          const id = Array.isArray(value) ? value[0] : value;
-          setFormValues((prev) => ({
-            ...prev,
-            assignableRoleId: id || "",
-          }));
-          setFormErrors((prev) => ({ ...prev, role: "" }));
-        }}
-        options={assignableRoleOptions}
-        placeholder={
-          isLoadingAssignableRoles
-            ? "Loading roles..."
-            : formValues.userType === "Facility" && !formValues.branch
-              ? "Select branch first"
-              : "Select role"
-        }
-        mode="single"
-        background="white"
-        disabled={
-          dialogMode === "view" ||
-          isEditMode ||
-          isLoadingAssignableRoles ||
-          assignableRoleOptions.length === 0 ||
-          (formValues.userType === "Facility" && !formValues.branch)
-        }
-      />
-      {formErrors.role && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.role}</p>}
-    </div>
-  );
 
   return (
     <AppShell>
+      {/* Toast Alert */}
       <MessageDialog
-        open={messageDialog.open}
-        onClose={dismissMessageDialog}
-        message={messageDialog.message}
-        icon={messageDialog.variant === "success" ? "/icons/SuccessCheck.svg" : "/icons/ErrorIcon.svg"}
-        iconBgColor={messageDialog.variant === "success" ? "#E8F5E9" : "#FFEBEE"}
+        open={toastState.open}
+        onClose={() => setToastState((p) => ({ ...p, open: false }))}
         showCancel={false}
         confirmText="OK"
-        onConfirm={dismissMessageDialog}
+        message={toastState.message}
       />
 
-      <div className="space-y-8">
-        <div className="flex items-start justify-between">
-          <PageHeading title="Users" />
+      <div className="space-y-6">
+        {/* Page Heading & Metrics Summary */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-950 font-black text-xs uppercase tracking-wider flex items-center gap-1">
+                <FaCrown className="text-amber-600" /> Super Admin Member Control
+              </span>
+            </div>
+            <PageHeading title="Member Management & Registration Approvals" />
+            <p className="text-xs text-slate-500 mt-1">
+              Approve new member registration requests, inspect earnings & withdrawals, and manage member statuses.
+            </p>
+          </div>
+
+          {/* Quick Stats Badges */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="px-3.5 py-1.5 bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow flex items-center gap-1.5 animate-pulse">
+              <FaUserClock /> Pending Approvals: {stats.pendingCount}
+            </span>
+            <span className="px-3.5 py-1.5 bg-slate-900 text-amber-400 font-black text-xs rounded-xl shadow flex items-center gap-1">
+              <FiUsers /> Total: {stats.totalCount}
+            </span>
+            <span className="px-3.5 py-1.5 bg-emerald-800 text-emerald-100 font-extrabold text-xs rounded-xl shadow flex items-center gap-1">
+              <FiUserCheck /> Active: {stats.activeCount}
+            </span>
+          </div>
         </div>
 
-        <ListBorder as="section" className="px-4 py-4">
-          {!canView ? (
-            <div className="rounded-[16px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
-              You don&apos;t have permission to view users.
+        {/* TOP STAT CARDS */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-gradient-to-br from-amber-500 to-yellow-500 text-slate-900 rounded-2xl p-5 shadow-lg border border-amber-400">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-950">Pending Approvals</span>
+              <FaUserClock className="text-2xl text-slate-900" />
+            </div>
+            <h3 className="text-3xl font-black text-slate-900">{stats.pendingCount} Requests</h3>
+            <p className="text-[11px] font-bold text-slate-900 mt-1">Requires Super Admin Approval</p>
+          </div>
+
+          <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-lg border border-slate-800">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider">Active Members</span>
+              <FiUserCheck className="text-xl text-amber-400" />
+            </div>
+            <h3 className="text-3xl font-black text-white">{stats.activeCount} Users</h3>
+            <p className="text-[11px] text-slate-400 mt-1">Full platform access</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Platform Lifetime Paid</span>
+              <FiDollarSign className="text-xl text-emerald-600" />
+            </div>
+            <h3 className="text-3xl font-black text-slate-900">${stats.totalLifetimePaid.toLocaleString("en-US", { maximumFractionDigits: 0 })}</h3>
+            <p className="text-[11px] text-emerald-600 font-bold mt-1">Total ROI & referral payouts</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Inactive Accounts</span>
+              <FiUserX className="text-xl text-rose-500" />
+            </div>
+            <h3 className="text-3xl font-black text-rose-600">{stats.inactiveCount} Users</h3>
+            <p className="text-[11px] text-rose-500 font-bold mt-1">Suspended or rejected</p>
+          </div>
+        </div>
+
+        {/* TABS & TOOLBAR SEARCH */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+            {/* Active || Inactive || Pending Tabs */}
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("Active");
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                  activeTab === "Active"
+                    ? "bg-slate-900 text-amber-400 shadow-md"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <FiUserCheck className="text-sm" />
+                <span>Active ({stats.activeCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("Pending");
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                  activeTab === "Pending"
+                    ? "bg-amber-500 text-slate-950 shadow-md font-black"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <FaUserClock className="text-sm text-slate-900" />
+                <span>Pending Approvals ({stats.pendingCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("Inactive");
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                  activeTab === "Inactive"
+                    ? "bg-rose-600 text-white shadow-md"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <FiUserX className="text-sm" />
+                <span>Inactive ({stats.inactiveCount})</span>
+              </button>
+            </div>
+
+            {/* Toolbar Filters & Search */}
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              <select
+                value={selectedRoleFilter}
+                onChange={(e) => {
+                  setSelectedRoleFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              >
+                <option value="All">All Role Tiers</option>
+                <option value="Bronze">Bronze Partner (L1)</option>
+                <option value="Silver">Silver Leader (L2)</option>
+                <option value="Gold">Gold Shareholder (L3)</option>
+                <option value="Platinum">Platinum Executive (L4)</option>
+                <option value="Diamond">Diamond VIP (L5)</option>
+                <option value="Master">Master Crown (L6)</option>
+              </select>
+
+              <TableSearchInput
+                value={searchTerm}
+                onChange={(val) => {
+                  setSearchTerm(val);
+                  setCurrentPage(1);
+                }}
+                placeholder="Search name, email, phone..."
+                className="!w-[240px] min-w-[240px] shrink-0"
+              />
+            </div>
+          </div>
+
+          {/* MEMBER CARDS GRID */}
+          {filteredUsers.length === 0 ? (
+            <div className="py-16 text-center text-slate-400 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+              No {activeTab.toLowerCase()} members match your search criteria.
             </div>
           ) : (
-          <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-3">
-                <div className="flex-shrink-0" style={{ width: 280 }}>
-                  <FormSelectField
-                    label=""
-                    hideLabel
-                    options={[
-                      { label: "None", value: "" },
-                      { label: "Facility", value: "facility" },
-                      { label: "Corporate", value: "corporate" },
-                    ]}
-                    placeholder="Select Group Role"
-                    mode="single"
-                    background="normal"
-                    width={280}
-                    value={listRoleCatFilter ?? ""}
-                    onChange={(val) => {
-                      const v = typeof val === "string" ? val : "";
-                      if (v === "facility" || v === "corporate") {
-                        setListRoleCatFilter(v);
-                      } else {
-                        setListRoleCatFilter(null);
-                      }
-                    }}
-                  />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {paginatedUsers.map((user) => (
+                <div
+                  key={user.id}
+                  className="w-full rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between relative group hover:border-amber-400"
+                >
+                  <div>
+                    {/* Header: User Avatar & Status Badge */}
+                    <div className="flex justify-between items-start gap-2 mb-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-11 h-11 rounded-full bg-slate-900 text-amber-400 font-black text-sm flex items-center justify-center border-2 border-amber-400 shrink-0 shadow-md">
+                          {user.avatarInitials}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="font-extrabold text-slate-900 text-base leading-tight truncate">
+                            {user.fullName}
+                          </h4>
+                          <p className="text-xs text-slate-500 font-medium truncate flex items-center gap-1 mt-0.5">
+                            <FiMail className="text-slate-400 shrink-0" /> {user.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${
+                          user.status === "Active"
+                            ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                            : user.status === "Pending"
+                            ? "bg-amber-400 text-slate-950 font-black border border-amber-500 animate-pulse"
+                            : "bg-rose-100 text-rose-800 border border-rose-300"
+                        }`}
+                      >
+                        {user.status === "Pending" ? "⏳ Pending Approval" : user.status}
+                      </span>
+                    </div>
+
+                    {/* Role Tier & Joined Date */}
+                    <div className="mb-4 flex items-center justify-between">
+                      <span className="px-3 py-1 bg-amber-100 text-amber-950 rounded-full text-[11px] font-extrabold inline-flex items-center gap-1 border border-amber-300">
+                        <FaCrown className="text-amber-600 text-xs" /> {user.roleTier}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-400">{user.joinedDate}</span>
+                    </div>
+
+                    {/* Financial Metrics Summary Grid */}
+                    <div className="grid grid-cols-2 gap-2.5 p-3.5 bg-slate-900 text-white rounded-2xl mb-4 text-xs">
+                      <div>
+                        <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Lifetime Earnings</span>
+                        <span className="text-base font-black text-amber-400 mt-0.5 block">
+                          ${user.lifetimeEarnings.toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Total Withdrawals</span>
+                        <span className="text-base font-black text-emerald-400 mt-0.5 block">
+                          ${user.totalWithdrawals.toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Withdrawable Balance</span>
+                        <span className="font-extrabold text-white text-xs mt-0.5 block">
+                          ${user.withdrawableBalance.toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Purchased Plans</span>
+                        <span className="font-extrabold text-amber-300 text-xs mt-0.5 block flex items-center gap-1">
+                          <FiPackage /> {user.purchasedPackages.length} Plans
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Bottom Controls (WITH APPROVE / REJECT FOR PENDING USERS) */}
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    {user.status === "Pending" ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <button
+                          type="button"
+                          onClick={() => handleApproveUser(user)}
+                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center justify-center gap-1 shadow-md transition-colors"
+                        >
+                          <FiCheck className="text-base" /> Approve User
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRejectUser(user)}
+                          className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs flex items-center justify-center gap-1 shadow-md transition-colors"
+                        >
+                          <FiX className="text-base" /> Reject Request
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserModal(user)}
+                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition-colors flex-1 justify-center"
+                        >
+                          <FiEye className="text-amber-400" /> Inspect Profile
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUserStatus(user)}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shrink-0 ${
+                            user.status === "Active"
+                              ? "bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white"
+                              : "bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white"
+                          }`}
+                          title={user.status === "Active" ? "Deactivate User" : "Activate User"}
+                        >
+                          {user.status === "Active" ? <FiToggleRight className="text-lg" /> : <FiToggleLeft className="text-lg" />}
+                          <span>{user.status === "Active" ? "Deactivate" : "Activate"}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {listRoleCatFilter !== "corporate" ? (
-                  <FormSelectField
-                    label=""
-                    hideLabel
-                    options={hookBranchFilterOptions}
-                    value={selectedBranch}
-                    onChange={(value) => setSelectedBranch(Array.isArray(value) ? value[0] : value || "")}
-                    placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
-                    mode="single"
-                    background="normal"
-                    width={280}
-                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                  />
-                ) : null}
-                <TableSearchInput
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  placeholder="Search Here..."
-                  className="!w-[280px] min-w-[280px] max-w-[280px] shrink-0"
-                />
-                {canDownload ? <ExportButton onExportPDF={handleExportPDF} /> : null}
-                {canAdd ? (
-                  <button
-                    type="button"
-                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
-                    onClick={handleAddNew}
-                  >
-                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    <span className="text-hide hide-text-overflow">Add User</span>
-                  </button>
-                ) : null}
-              </div>
+              ))}
             </div>
+          )}
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {(isLoadingUsers || isFetchingUsers) && usersList.length === 0 ? (
-                <div className="col-span-full py-12 text-center text-sm text-[#9CA3AF]">Loading users…</div>
-              ) : (
-                usersList.map((user) => (
-                  <UserCard
-                    key={user.id}
-                    id={user.id}
-                    name={user.name}
-                    email={user.email}
-                    branch={user.branch}
-                    phone={user.phone}
-                    groupRole={user.groupRole}
-                    permissionDate={user.permissionDate}
-                    lastLogin={user.lastLogin}
-                    status={user.status}
-                    onView={() => handleView(user)}
-                    onEdit={() => handleEdit(user)}
-                    onSetDate={() => {}}
-                    onStatusToggle={canEdit ? () => handleStatusToggle(user) : undefined}
-                    isTogglingStatus={togglingStatusUserId === user.id}
-                    showViewButton={canView}
-                    showEditButton={canEdit}
-                  />
-                ))
-              )}
-            </div>
-
-            {!isLoadingUsers && usersList.length === 0 && (
-              <div className="py-12 text-center text-sm text-[#9CA3AF]">No users found</div>
-            )}
-
-            {totalUsers > 0 && (
+          {/* Pagination */}
+          {filteredUsers.length > 0 && (
+            <div className="pt-4 border-t border-slate-200">
               <Pagination
                 currentPage={currentPage}
-                totalItems={totalUsers}
+                totalItems={filteredUsers.length}
                 itemsPerPage={itemsPerPage}
-                onPageChange={handlePageChange}
-                onItemsPerPageChange={handleItemsPerPageChange}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={setItemsPerPage}
+                itemsPerPageOptions={[9, 18, 36, 50]}
               />
-            )}
-          </div>
+            </div>
           )}
-        </ListBorder>
+        </div>
       </div>
 
-      {/* Unified User Dialog (Add/Edit/View) */}
+      {/* MEMBER ACTIVITY & REGISTRATION AUDIT MODAL */}
       <Dialog
-        open={
-          (dialogMode === "add" && canAdd) ||
-          (dialogMode === "edit" && canEdit) ||
-          (dialogMode === "view" && canView)
-        }
-        onClose={() => {
-          setDialogMode(null);
-          resetFormAfterClose();
-        }}
-        title={dialogMode === "add" ? "Add User" : dialogMode === "edit" ? "Edit User" : "View User"}
-        width={1601}
+        open={selectedUserModal !== null}
+        onClose={() => setSelectedUserModal(null)}
+        title={`Member Inspection: ${selectedUserModal?.fullName || ""}`}
+        width={850}
+        closeOnOutsideClick={false}
       >
-        <form
-          noValidate
-          onSubmit={dialogMode !== "view" ? handleSubmit : (e) => e.preventDefault()}
-          className="space-y-6"
-        >
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <FormSelectField
-                label="User Type"
-                value={formValues.userType}
-                onChange={(value) => {
-                  if (dialogMode === "view") return;
-                  const next = (Array.isArray(value) ? value[0] : value || "Facility") as "Facility" | "Corporate";
-                  setFormValues((prev) => ({
-                    ...prev,
-                    userType: next,
-                    assignableRoleId: "",
-                    ...(next === "Corporate" ? { branch: "", branches: [] } : {}),
-                  }));
-                  setFormErrors((prev) => ({ ...prev, branch: "", branches: "", role: "" }));
-                }}
-                options={userTypeOptions}
-                placeholder="User Type"
-                mode="single"
-                background="white"
-                disabled={dialogMode === "view" || isEditMode}
-              />
-            </div>
-
-            {formValues.userType === "Facility" ? (
-              <>
-                <div>
-                  <FormSelectField
-                    label="Branch *"
-                    value={formValues.branch}
-                    onChange={(value) => {
-                      if (dialogMode === "view") return;
-                      setFormValues((prev) => ({
-                        ...prev,
-                        branch: Array.isArray(value) ? value[0] : value || "",
-                        assignableRoleId: "",
-                        branches: [],
-                      }));
-                      setFormErrors((prev) => ({ ...prev, branch: "", role: "" }));
-                    }}
-                    options={branchOptionsWithNone}
-                    placeholder={isLoadingBranches ? "Loading branches..." : "Select branch"}
-                    mode="single"
-                    background="white"
-                    disabled={dialogMode === "view" || isEditMode || isLoadingBranches}
-                  />
-                  {formErrors.branch && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.branch}</p>}
+        {selectedUserModal && (
+          <div className="space-y-6 text-xs">
+            {/* Header Profile Summary */}
+            <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-amber-400 text-slate-900 font-black text-lg flex items-center justify-center border-2 border-white shadow">
+                  {selectedUserModal.avatarInitials}
                 </div>
-                {assignableRoleField}
-              </>
-            ) : (
-              assignableRoleField
-            )}
+                <div>
+                  <h3 className="text-lg font-black text-white">{selectedUserModal.fullName}</h3>
+                  <p className="text-xs text-slate-300 font-medium flex items-center gap-2 mt-0.5">
+                    <span>✉️ {selectedUserModal.email}</span>
+                    <span>📞 {selectedUserModal.phone}</span>
+                  </p>
+                </div>
+              </div>
 
-            <div>
-              <FormInputField
-                label="Full Name *"
-                value={formValues.fullName}
-                onChange={(event) => {
-                  if (dialogMode === "view") return;
-                  setFormValues((prev) => ({
-                    ...prev,
-                    fullName: sanitizePatientNameInput(event.target.value),
-                  }));
-                  setFormErrors((prev) => ({ ...prev, fullName: "" }));
-                }}
-                onBlur={(event) => {
-                  if (dialogMode === "view") return;
-                  const trimmed = event.target.value.trim();
-                  if (trimmed !== event.target.value) {
-                    setFormValues((prev) => ({ ...prev, fullName: trimmed }));
-                  }
-                }}
-                height={44}
-                placeholder="Full Name"
-                required={dialogMode !== "view"}
-                disabled={dialogMode === "view"}
-                maxLength={100}
-                type="text"
-              />
-              {formErrors.fullName && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.fullName}</p>}
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-amber-500 text-slate-900 font-extrabold text-xs rounded-full">
+                  {selectedUserModal.roleTier}
+                </span>
+
+                {selectedUserModal.status === "Pending" ? (
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleApproveUser(selectedUserModal)}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-lg text-xs transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectUser(selectedUserModal)}
+                      className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg text-xs transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleUserStatus(selectedUserModal)}
+                    className={`px-3 py-1 rounded-full text-xs font-black transition-colors ${
+                      selectedUserModal.status === "Active" ? "bg-rose-500 text-white" : "bg-emerald-500 text-white"
+                    }`}
+                  >
+                    {selectedUserModal.status === "Active" ? "Set Inactive" : "Set Active"}
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div>
-              <FormInputField
-                label="Email *"
-                value={formValues.username}
-                onChange={(event) => {
-                  if (dialogMode === "view") return;
-                  setFormValues((prev) => ({
-                    ...prev,
-                    username: sanitizeEmailInput(event.target.value),
-                  }));
-                  setFormErrors((prev) => ({ ...prev, username: "" }));
-                }}
-                onKeyDown={(event) => {
-                  if (dialogMode === "view") return;
-                  if (event.key === " ") {
-                    event.preventDefault();
-                  }
-                }}
-                onPaste={(event) => {
-                  if (dialogMode === "view") return;
-                  event.preventDefault();
-                  const pastedText = event.clipboardData.getData("text");
-                  const currentValue = formValues.username || "";
-                  setFormValues((prev) => ({
-                    ...prev,
-                    username: sanitizeEmailInput(`${currentValue}${pastedText}`),
-                  }));
-                  setFormErrors((prev) => ({ ...prev, username: "" }));
-                }}
-                height={44}
-                placeholder="Email Address"
-                required={dialogMode !== "view"}
-                disabled={dialogMode === "view" || isEditMode}
-                maxLength={100}
-                type="email"
-              />
-              {formErrors.username && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.username}</p>}
+            {/* Key Financial Snapshot */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 text-slate-900">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Lifetime Earnings</span>
+                <span className="text-lg font-black text-amber-600 mt-0.5 block">${selectedUserModal.lifetimeEarnings.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Withdrawals</span>
+                <span className="text-lg font-black text-emerald-600 mt-0.5 block">${selectedUserModal.totalWithdrawals.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Withdrawable Balance</span>
+                <span className="text-lg font-black text-slate-900 mt-0.5 block">${selectedUserModal.withdrawableBalance.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Direct Invites</span>
+                <span className="text-lg font-black text-indigo-600 mt-0.5 block">{selectedUserModal.directReferralsCount} Members</span>
+              </div>
             </div>
 
-            <div>
-              <FormInputField
-                label="Contact Number *"
-                value={formValues.phone}
-                onChange={(event) => {
-                  if (dialogMode === "view") return;
-                  setFormValues((prev) => ({
-                    ...prev,
-                    phone: sanitizeDigitsOnlyInput(event.target.value, 10),
-                  }));
-                  setFormErrors((prev) => ({ ...prev, phone: "" }));
-                }}
-                height={44}
-                placeholder="Contact Number"
-                required={dialogMode !== "view"}
-                disabled={dialogMode === "view" || isEditMode}
-                type="tel"
-                maxLength={10}
-              />
-              {formErrors.phone && <p className="mt-1 text-xs text-[#F6776E]">{formErrors.phone}</p>}
-            </div>
-
-            <div>
-              <FormInputField
-                label="Employee Id *"
-                value={formValues.employeeId}
-                onChange={(event) => {
-                  if (dialogMode === "view") return;
-                  setFormValues((prev) => ({
-                    ...prev,
-                    employeeId: sanitizeEmployeeIdInput(event.target.value),
-                  }));
-                  setFormErrors((prev) => ({ ...prev, employeeId: "" }));
-                }}
-                height={44}
-                placeholder="Employee Id"
-                maxLength={EMPLOYEE_ID_MAX_LEN}
-                required={dialogMode !== "view"}
-                disabled={dialogMode === "view" || isEditMode}
-              />
-              {formErrors.employeeId && (
-                <p className="mt-1 text-xs text-[#F6776E]">{formErrors.employeeId}</p>
-              )}
-            </div>
-
-            <div>
-              <FormSelectField
-                label="Login Type"
-                value={formValues.loginType}
-                onChange={(value) => {
-                  if (dialogMode === "view") return;
-                  const v = Array.isArray(value) ? value[0] : value;
-                  setFormValues((prev) => ({
-                    ...prev,
-                    loginType:
-                      v === "no-auth" || v === "ip" || v === "otp" || v === "ip-otp" ? v : "no-auth",
-                  }));
-                }}
-                options={loginTypeOptions}
-                placeholder="Login Type"
-                mode="single"
-                background="white"
-                disabled={dialogMode === "view"}
-              />
-            </div>
-
-            <div
-              className={
-                formValues.userType === "Facility" ? "col-span-2 w-full" : undefined
-              }
-            >
-              <FormSelectField
-                label="Status"
-                value={formValues.status}
-                onChange={(value) => {
-                  if (dialogMode === "view") return;
-                  setFormValues((prev) => ({
-                    ...prev,
-                    status: Array.isArray(value) ? value[0] : value || "Active",
-                  }));
-                }}
-                options={statusOptions}
-                placeholder="Status"
-                mode="single"
-                background="white"
-                disabled={dialogMode === "view" || isEditMode}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {dialogMode === "view" ? (
-              <Button
+            {/* Action Buttons */}
+            <div className="flex justify-end pt-2">
+              <button
                 type="button"
-                variant="outline"
-                onClick={() => {
-                  setDialogMode(null);
-                  resetFormAfterClose();
-                }}
+                onClick={() => setSelectedUserModal(null)}
+                className="px-6 py-2.5 bg-slate-900 text-amber-400 font-black rounded-xl hover:bg-slate-800 transition-colors text-xs shadow-md"
               >
-                Close
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  isLoading={dialogMode === "add" ? isAddingUser : isUpdatingUser}
-                >
-                  {dialogMode === "add" ? "Add User" : "Update User"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setDialogMode(null);
-                    resetFormAfterClose();
-                  }}
-                  disabled={isAddingUser || isUpdatingUser}
-                >
-                  Cancel
-                </Button>
-              </>
-            )}
+                Close Inspection Modal
+              </button>
+            </div>
           </div>
-        </form>
+        )}
       </Dialog>
     </AppShell>
   );
 }
-

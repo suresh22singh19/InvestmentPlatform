@@ -12,6 +12,13 @@ import RegistrationSteps from "@/components/registration/RegistrationSteps";
 import JSHealthCardPoints from "@/components/registration/JSHealthCardPoints";
 import PatientOldHistory from "@/components/registration/PatientOldHistory";
 import Vouchers from "@/components/registration/Vouchers";
+import RoomInformation from "@/components/registration/RoomInformation";
+import Doctor from "@/components/registration/Doctor";
+import MedicalDetails from "@/components/registration/MedicalDetails";
+import PatientWalletInformation from "@/components/registration/PatientWalletInformation";
+import PersonalDetailsReg from "@/components/registration/PersonalDetailsReg";
+import Vitals from "@/components/registration/Vitals";
+import Therapy from "@/components/registration/Therapy";
 import {
     createRegistrationPersonalDetailsSchema,
     DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH,
@@ -26,6 +33,7 @@ import {
 import PersonalForm from "./personal";
 import PaymentForm, {
     buildConsultancyVoucherRoot,
+    buildCompPackageRoot,
     type PaymentFormHandle,
     type RegistrationReceiptPayload,
 } from "./payment";
@@ -40,8 +48,14 @@ import {
 import { DEFAULT_REGISTRATION_VOUCHER_TYPE } from "@/lib/api/voucherApi";
 import { useAppSelector } from "@/store/hooks";
 import { selectUserId, selectUserBranchId, selectRoleCategoryType, selectSelectedBranch } from "@/store/slices/authSlice";
-import { useCreateClinicPatientMutation, useCreateAppointmentAndUpdateRegistrationMutation, type ClinicPatientRequest, type CreateAppointmentAndUpdateRegistrationRequest, useRequestDuplicateNumberPermissionMutation } from "@/store/api/registrationApi";
+import { useCreateClinicPatientMutation, useCreateAppointmentAndUpdateRegistrationMutation, useCreateAppointmentForAdmittedPatientMutation, type ClinicPatientRequest, type CreateAppointmentAndUpdateRegistrationRequest, useRequestDuplicateNumberPermissionMutation } from "@/store/api/registrationApi";
 import { useGetStatesQuery, useGetCitiesQuery, useGetCountriesQuery, useLazyGetTehsilsQuery, useLazyGetAreasQuery } from "@/store/api/publicApi";
+import {
+    useGetPatientWalletDataQuery,
+    useGetAdmittedPatientMedicalDetailsByPatientIdQuery,
+    useGetIpdPatienRoomAndDoctorDetailsQuery,
+    useGetAdmittedPatientTherapiesByPatientIdQuery,
+} from "@/store/api/commonApi";
 import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
 import { useGetPanelsQuery, useGetBranchesQuery } from "@/store/api/settingsApi";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -139,6 +153,11 @@ export default function RegistrationPage() {
     const [isUserLeadData, setIsUserLeadData] = useState(false); // User Lead Data from registrations-and-pre-bookings (show "User Lead Data" + Visit, send userLeadId in clinic-patient)
     const [userLeadId, setUserLeadId] = useState<number | null>(null);
     const [userLeadDialogTitle, setUserLeadDialogTitle] = useState<string | undefined>(undefined);
+    const [goldPackageState, setGoldPackageState] = useState<{
+        goldPackageStatus: "Accept" | "Decline" | "";
+        couponCode: string;
+        declineDescription: string;
+    }>({ goldPackageStatus: "", couponCode: "", declineDescription: "" });
     const isClosingDialogRef = useRef(false);
     const lastCheckedContactNumberRef = useRef<string>("");
     const lastCheckedAadharCardRef = useRef<string>(""); // Track last checked Aadhar Card to prevent duplicate calls
@@ -182,6 +201,7 @@ export default function RegistrationPage() {
 
     // Dialog state for duplicate pending registration (same contactNumber + patientName already saved)
     const [showDuplicatePendingDialog, setShowDuplicatePendingDialog] = useState(false);
+    const [showPatientNameRequiredDialog, setShowPatientNameRequiredDialog] = useState(false);
 
     // Duplicate exception patients state
     const [duplicateExceptionPatients, setDuplicateExceptionPatients] = useState<DuplicateExceptionPatient[]>([]);
@@ -192,8 +212,17 @@ export default function RegistrationPage() {
     const [patientUhid, setPatientUhid] = useState<string>(""); // Store patient UHID from existing patient
     const [patientRegistrationId, setPatientRegistrationId] = useState<number | null>(null); // Store registration ID from existing patient
     const [jsHealthCardAutoFilled, setJsHealthCardAutoFilled] = useState(false); // Track if jsHealthCardNo was auto-filled from API
+    const [hasActiveHealthCard, setHasActiveHealthCard] = useState(false); // Track if patient has an active card
+    const [jsHealthCardClosed, setJsHealthCardClosed] = useState(false); // True when patient has only closed (inactive) cards → allow assigning a new card
     // Store the selected patient data from API response for pending registration
     const [selectedRevisitedPatientData, setSelectedRevisitedPatientData] = useState<ExistingPatient | null>(null);
+    // Track admitted IPD/Daycare patient data
+    const [admittedPatientData, setAdmittedPatientData] = useState<{
+        patientId: number;
+        status: string;
+        type: "ipd" | "daycare";
+        branchId: number;
+    } | null>(null);
 
     const authUserBranchId = useAppSelector(selectUserBranchId);
     const headerSelectedBranch = useAppSelector(selectSelectedBranch);
@@ -205,6 +234,11 @@ export default function RegistrationPage() {
 
     const registrationBranchId = useMemo(() => {
         if (isRegistrationSuperAdmin) {
+            const q = searchParams?.get("regBranch");
+            if (q && /^\d+$/.test(q)) {
+                const urlVal = parseInt(q, 10);
+                if (Number.isFinite(urlVal) && urlVal > 0) return urlVal;
+            }
             const n = parseInt(superAdminRegistrationBranch, 10);
             if (Number.isFinite(n) && n > 0) return n;
             return headerSelectedBranch?.id ?? authUserBranchId ?? 1;
@@ -215,6 +249,7 @@ export default function RegistrationPage() {
         superAdminRegistrationBranch,
         headerSelectedBranch?.id,
         authUserBranchId,
+        searchParams,
     ]);
 
     const { data: branchesForSuperAdminReg, isLoading: isLoadingSuperAdminBranches } = useGetBranchesQuery(undefined, {
@@ -278,6 +313,7 @@ export default function RegistrationPage() {
         if (!isRegistrationSuperAdmin) return;
         if (!searchParams?.get("regBranch")) return;
         if (!pathname) return;
+        if (!superAdminRegListRouteSyncedRef.current) return;
         router.replace(pathname);
     }, [isRegistrationSuperAdmin, searchParams, pathname, router]);
 
@@ -286,18 +322,22 @@ export default function RegistrationPage() {
     // Lazy query for checking existing patients
     const [checkExistingPatientsQuery] = registrationApi.useLazyCheckExistingPatientsByPhoneQuery();
 
-    // Lazy query for checking JS Health Card assignment
+    // Lazy query for checking Health Card assignment
     const [checkJsHealthCardQuery] = registrationApi.useLazyCheckJsHealthCardAssignmentQuery();
     const [getArogyaCardSeriesQuery] = registrationApi.useLazyGetArogyaCardSeriesQuery();
     const [jsCardSeriesFetchEnabled, setJsCardSeriesFetchEnabled] = useState(false);
-    const { data: arogyaCardSeriesForValidation } = registrationApi.useGetArogyaCardSeriesQuery(
-        { id: 1 },
-        { skip: !jsCardSeriesFetchEnabled },
+    const { data: arogyaCardSeriesForValidation, refetch: refetchArogyaCardSeries } = registrationApi.useGetArogyaCardSeriesQuery(
+        { id: 21, branchId: registrationBranchId },
+        { skip: !registrationBranchId || Number(registrationBranchId) === 0 }
     );
+    const isCardSeriesNotAssigned = arogyaCardSeriesForValidation !== undefined &&
+        arogyaCardSeriesForValidation.success &&
+        (!arogyaCardSeriesForValidation.data || (Array.isArray(arogyaCardSeriesForValidation.data) && arogyaCardSeriesForValidation.data.length === 0));
     const jsHealthCardDigitLength = useMemo(() => {
         const d = arogyaCardSeriesForValidation?.data;
-        if (!d?.seriesStart) return DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH;
-        return getJsHealthCardDigitCountFromSeries(d.seriesStart, d.seriesEnd);
+        const singleSeries = Array.isArray(d) ? d[0] : d;
+        if (!singleSeries?.seriesStart) return DEFAULT_JS_HEALTH_CARD_DIGIT_LENGTH;
+        return getJsHealthCardDigitCountFromSeries(singleSeries.seriesStart, singleSeries.seriesEnd);
     }, [arogyaCardSeriesForValidation]);
 
     // Lazy query for checking referral patients by phone
@@ -309,6 +349,9 @@ export default function RegistrationPage() {
     // API mutation for clinic patient registration
     const [createClinicPatient, { isLoading: isSubmitting }] = useCreateClinicPatientMutation();
     const [createAppointmentAndUpdateRegistration, { isLoading: isUpdatingRegistration }] = useCreateAppointmentAndUpdateRegistrationMutation();
+    const [createAppointmentForAdmittedPatient, { isLoading: isSubmittingAdmitted }] = useCreateAppointmentForAdmittedPatientMutation();
+    const [isAdmittedSubmittingState, setIsAdmittedSubmittingState] = useState(false);
+    const isSubmittingAdmittedActive = isAdmittedSubmittingState || isSubmittingAdmitted;
 
     // Container ref for arrow key navigation (wraps all form steps)
     const formsContainerRef = useRef<HTMLDivElement>(null);
@@ -362,20 +405,42 @@ export default function RegistrationPage() {
     }, [isPreBookingOpen]);
 
     const registrationSteps = useMemo(
-        () =>
-            appliedConsultancyVoucher
+        () => {
+            if (admittedPatientData && admittedPatientData.branchId === registrationBranchId) {
+                if (admittedPatientData.type === "ipd") {
+                    return [{ number: "Step 01", label: "Personal" }];
+                }
+                if (admittedPatientData.type === "daycare") {
+                    if (formType === "hospital") {
+                        return [{ number: "Step 01", label: "Personal" }];
+                    } else {
+                        return [
+                            { number: "Step 01", label: "Personal" },
+                            { number: "Step 02", label: "Vitals" },
+                        ];
+                    }
+                }
+            }
+            if (appliedConsultancyVoucher) {
+                return [
+                    { number: "Step 01", label: "Personal" },
+                    { number: "Step 02", label: "Vitals" },
+                    { number: "Step 03", label: "Medical" },
+                ];
+            }
+            return formType === "hospital"
                 ? [
-                      { number: "Step 01", label: "Personal" },
-                      { number: "Step 02", label: "Vitals" },
-                      { number: "Step 03", label: "Medical" },
-                  ]
+                    { number: "Step 01", label: "Personal" },
+                    { number: "Step 02", label: "Payment" },
+                ]
                 : [
-                      { number: "Step 01", label: "Personal" },
-                      { number: "Step 02", label: "Vitals" },
-                      { number: "Step 03", label: "Medical" },
-                      { number: "Step 04", label: "Payment" },
-                  ],
-        [appliedConsultancyVoucher],
+                    { number: "Step 01", label: "Personal" },
+                    { number: "Step 02", label: "Vitals" },
+                    { number: "Step 03", label: "Medical" },
+                    { number: "Step 04", label: "Payment" },
+                ];
+        },
+        [appliedConsultancyVoucher, admittedPatientData, formType, registrationBranchId],
     );
 
     // Source options for Referral component
@@ -490,7 +555,7 @@ export default function RegistrationPage() {
     }, []);
 
     const savePendingRegistration = useCallback((formData: RegistrationPersonalDetailsFormValues, step: number, existingId?: string | null) => {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined" || admittedPatientData) return;
 
         try {
             // Get patient name for identification
@@ -878,8 +943,11 @@ export default function RegistrationPage() {
     };
 
     const registrationValidationSchema = useMemo(
-        () => createRegistrationPersonalDetailsSchema({ jsHealthCardDigitLength }),
-        [jsHealthCardDigitLength],
+        () => createRegistrationPersonalDetailsSchema({
+            jsHealthCardDigitLength,
+            arogyaCardSeries: arogyaCardSeriesForValidation?.data
+        }),
+        [jsHealthCardDigitLength, arogyaCardSeriesForValidation],
     );
 
     // Formik setup
@@ -893,6 +961,17 @@ export default function RegistrationPage() {
             // Handle form submission here
         },
     });
+
+    useEffect(() => {
+        if (formik.values.patientType?.toLowerCase() === "private") {
+            setJsCardSeriesFetchEnabled(true);
+            // Re-fetch the branch Arogya/Health card series every time Private is
+            // selected (fresh series on each registration), bypassing the cache.
+            if (registrationBranchId && Number(registrationBranchId) > 0) {
+                void refetchArogyaCardSeries();
+            }
+        }
+    }, [formik.values.patientType, registrationBranchId, refetchArogyaCardSeries]);
 
     const {
         vouchers: registrationVouchers,
@@ -982,6 +1061,188 @@ export default function RegistrationPage() {
     // Fetch countries data for pre-booking form pre-fill
     const { data: countriesData } = useGetCountriesQuery();
 
+    const effectiveUhid = patientUhid ||
+        selectedRevisitedPatientData?.uhid ||
+        (admittedPatientData as any)?.uhid ||
+        (selectedPreBooking as any)?.uhid ||
+        "";
+
+    const isOldPatient = Boolean(
+        isRevisitedPatient ||
+        patientUhid ||
+        selectedRevisitedPatientData ||
+        admittedPatientData ||
+        selectedApprovedPatientId
+    );
+
+    const { data: patientWalletResponse } = useGetPatientWalletDataQuery(
+        effectiveUhid && isOldPatient ? { uhid: effectiveUhid } : undefined,
+        { skip: !effectiveUhid || !isOldPatient }
+    );
+    const patientWalletData = isOldPatient && effectiveUhid ? patientWalletResponse?.data : null;
+
+    // Clear old patient state in real-time if contact number is changed to a different number
+    useEffect(() => {
+        if (!selectedRevisitedPatientData && !patientUhid) return;
+        const currentDigits = (formik.values.contactNumber || "").replace(/\D/g, "").slice(-10);
+        const originalDigits = (selectedRevisitedPatientData?.contactNumber || "").replace(/\D/g, "").slice(-10);
+        if (currentDigits && originalDigits && currentDigits !== originalDigits) {
+            setPatientUhid("");
+            setIsRevisitedPatient(false);
+            setSelectedRevisitedPatientData(null);
+            setPatientRegistrationId(null);
+        }
+    }, [formik.values.contactNumber, selectedRevisitedPatientData, patientUhid]);
+
+    const activePatientId = admittedPatientData?.patientId || patientRegistrationId || selectedRevisitedPatientData?.id || (formik.values as any).patientId || null;
+
+    const { data: medicalDetailsResponse } = useGetAdmittedPatientMedicalDetailsByPatientIdQuery(
+        activePatientId ? { patientId: activePatientId } : (undefined as any),
+        { skip: !activePatientId }
+    );
+
+    const { data: roomAndDoctorResponse } = useGetIpdPatienRoomAndDoctorDetailsQuery(
+        activePatientId ? { patientId: activePatientId } : (undefined as any),
+        { skip: !activePatientId }
+    );
+
+    const rawRoomDoctor = roomAndDoctorResponse?.data || roomAndDoctorResponse;
+    const roomDataFromApi = useMemo(() => {
+        if (!rawRoomDoctor) return undefined;
+        return {
+            building: rawRoomDoctor.buildingName || undefined,
+            floor: rawRoomDoctor.floorName || undefined,
+            roomType: rawRoomDoctor.roomType || undefined,
+            roomNumber: rawRoomDoctor.roomNumber || undefined,
+            bedNumber: rawRoomDoctor.bedNumber || undefined,
+        };
+    }, [rawRoomDoctor]);
+
+    const doctorDataFromApi = useMemo(() => {
+        if (!rawRoomDoctor && !(formik.values as any).doctorName) return undefined;
+        return {
+            opdDoctor: rawRoomDoctor?.opdDoctorName || (formik.values as any).doctorName || undefined,
+            ipdDoctor: rawRoomDoctor?.ipdDoctorName || undefined,
+        };
+    }, [rawRoomDoctor, formik.values]);
+
+    const rawMedicalApi = medicalDetailsResponse?.data || (medicalDetailsResponse as any);
+    const medicalDataFromApi = useMemo(() => {
+        if (!rawMedicalApi || typeof rawMedicalApi !== "object") return undefined;
+        if (rawMedicalApi.conditions) return rawMedicalApi;
+
+        const conditions = [];
+        if (rawMedicalApi.isDiabetes !== undefined) {
+            conditions.push({
+                name: "Diabetes",
+                status: rawMedicalApi.isDiabetes ? "Yes" : "No",
+                remark: rawMedicalApi.diabetesRemarks || "N/A",
+            });
+        }
+        if (rawMedicalApi.isHypertension !== undefined) {
+            conditions.push({
+                name: "HTN (Hypertension)",
+                status: rawMedicalApi.isHypertension ? "Yes" : "No",
+                remark: rawMedicalApi.hypertensionRemarks || "N/A",
+            });
+        }
+        if (rawMedicalApi.isCad !== undefined) {
+            conditions.push({
+                name: "Coronary Artery Disease",
+                status: rawMedicalApi.isCad ? "Yes" : "No",
+                remark: rawMedicalApi.cadRemarks || "N/A",
+            });
+        }
+        if (rawMedicalApi.isThyroid !== undefined) {
+            conditions.push({
+                name: "Thyroid",
+                status: rawMedicalApi.isThyroid ? "Yes" : "No",
+                remark: rawMedicalApi.thyroidRemarks || "N/A",
+            });
+        }
+        if (rawMedicalApi.addictionType !== undefined || rawMedicalApi.addictionSpecify !== undefined) {
+            const addTypes = Array.isArray(rawMedicalApi.addictionType) ? rawMedicalApi.addictionType : [];
+            const capitalizedTypes = addTypes.map((item: string) => {
+                const s = String(item).trim();
+                if (!s) return "";
+                if (s.toLowerCase() === "others") return "Other";
+                return s.charAt(0).toUpperCase() + s.slice(1);
+            }).filter(Boolean);
+            const statusStr = capitalizedTypes.length > 0
+                ? capitalizedTypes.join(", ")
+                : "No";
+            conditions.push({
+                name: "Addiction",
+                status: statusStr,
+                remark: rawMedicalApi.addictionSpecify || "N/A",
+            });
+        }
+
+        const diagName = typeof rawMedicalApi.diagnosis === "string"
+            ? rawMedicalApi.diagnosis
+            : rawMedicalApi.diagnosis?.name || "";
+        const subDiagName = typeof rawMedicalApi.subDiagnosis === "string"
+            ? rawMedicalApi.subDiagnosis
+            : rawMedicalApi.subDiagnosis?.name || "";
+
+        const diagnosisSummary = (diagName || subDiagName || rawMedicalApi.diagnosisSymptoms) ? {
+            diagnosis: diagName || undefined,
+            subDiagnosis: subDiagName || undefined,
+            symptoms: rawMedicalApi.diagnosisSymptoms || undefined,
+        } : undefined;
+
+        return {
+            conditions: conditions.length > 0 ? conditions : undefined,
+            diagnosisSummary,
+        };
+    }, [rawMedicalApi]);
+
+    const currentPatientType = (formik.values.patientType || "").toString().toLowerCase();
+    const isIpdOrDaycare = currentPatientType === "ipd" || currentPatientType === "daycare";
+
+    const { data: therapiesResponse } = useGetAdmittedPatientTherapiesByPatientIdQuery(
+        activePatientId && isIpdOrDaycare ? { patientId: activePatientId } : (undefined as any),
+        { skip: !activePatientId || !isIpdOrDaycare }
+    );
+
+    const rawTherapies = therapiesResponse?.data || (therapiesResponse as any)?.data || (Array.isArray(therapiesResponse) ? therapiesResponse : undefined);
+    const therapiesDataFromApi = useMemo(() => {
+        if (!rawTherapies || !Array.isArray(rawTherapies) || rawTherapies.length === 0) return undefined;
+        return rawTherapies.map((item: any, idx: number) => ({
+            id: item.sessionId || item.therapyId || item.id || idx + 1,
+            therapyName: item.therapyName || item.name || "N/A",
+            date: item.therapyDate || item.date || "N/A",
+            doctor: item.doctorName || item.doctor || "N/A",
+            therapist: item.therapistName || item.therapist || "N/A",
+            doctorRemark: item.doctorRemark || "N/A",
+            therapistRemark: item.therapistRemark || "N/A",
+            status: item.status,
+        }));
+    }, [rawTherapies]);
+
+    const vitalsDataFromApi = useMemo(() => {
+        if (!rawMedicalApi || typeof rawMedicalApi !== "object") return undefined;
+        const v = (rawMedicalApi as any).vitals || (rawMedicalApi as any).vital || rawMedicalApi;
+
+        const bp = v.bloodPressure || v.bp || (v.bpSystolic && v.bpDiastolic ? `${v.bpSystolic}/${v.bpDiastolic}` : undefined);
+        const sugar = v.sugarLevel || v.sugar || v.bloodSugar || v.randomBloodSugar;
+        const temp = v.temperature || v.temp;
+        const heart = v.heartRate || v.pulse || v.pulseRate;
+        const spo2Val = v.spo2 || v.oxigen || v.oxygen;
+
+        if (!bp && !sugar && !temp && !heart && !spo2Val) {
+            return undefined;
+        }
+
+        return {
+            bloodPressure: bp ? String(bp) : undefined,
+            sugarLevel: sugar ? String(sugar) : undefined,
+            temperature: temp ? String(temp) : undefined,
+            heartRate: heart ? String(heart) : undefined,
+            spo2: spo2Val ? String(spo2Val) : undefined,
+        };
+    }, [rawMedicalApi]);
+
     // Handle pre-booking click - pre-fill form with pre-booking data
     const handlePreBookingClick = useCallback((preBooking: PreBookingItem | null) => {
         if (!preBooking) {
@@ -1053,8 +1314,8 @@ export default function RegistrationPage() {
                 const { contactNumber, preBookingId, branchId: rawBid } = parsed;
                 const branchIdNum =
                     rawBid != null &&
-                    Number.isFinite(Number(rawBid)) &&
-                    Number(rawBid) > 0
+                        Number.isFinite(Number(rawBid)) &&
+                        Number(rawBid) > 0
                         ? Number(rawBid)
                         : null;
                 if (contactNumber) {
@@ -1087,8 +1348,8 @@ export default function RegistrationPage() {
                 const { contactNumber, source, branchId: rawLeadBid } = parsed;
                 const branchIdNum =
                     rawLeadBid != null &&
-                    Number.isFinite(Number(rawLeadBid)) &&
-                    Number(rawLeadBid) > 0
+                        Number.isFinite(Number(rawLeadBid)) &&
+                        Number(rawLeadBid) > 0
                         ? Number(rawLeadBid)
                         : null;
                 if (contactNumber) {
@@ -1833,16 +2094,22 @@ export default function RegistrationPage() {
         const vRoot = buildConsultancyVoucherRoot(
             appliedConsultancyVoucher
                 ? {
-                      voucherType: appliedConsultancyVoucher.voucherType,
-                      voucher: appliedConsultancyVoucher.voucher,
-                      benefitMessage: appliedConsultancyVoucher.benefitMessage,
-                  }
+                    voucherType: appliedConsultancyVoucher.voucherType,
+                    voucher: appliedConsultancyVoucher.voucher,
+                    benefitMessage: appliedConsultancyVoucher.benefitMessage,
+                }
                 : null,
+        );
+        const compRoot = buildCompPackageRoot(
+            goldPackageState.goldPackageStatus,
+            goldPackageState.couponCode,
+            goldPackageState.declineDescription
         );
         if (vRoot.isConsultancyVoucherApplied === "yes") {
             return {
                 ...payload,
                 ...vRoot,
+                ...compRoot,
                 payment: {
                     ...payload.payment,
                     doctorFee: 0,
@@ -1857,7 +2124,7 @@ export default function RegistrationPage() {
                 },
             };
         }
-        return { ...payload, ...vRoot };
+        return { ...payload, ...vRoot, ...compRoot };
     };
 
     // Map formik values to CreateAppointmentAndUpdateRegistration API payload (for clinic)
@@ -2052,10 +2319,10 @@ export default function RegistrationPage() {
         const vRoot = buildConsultancyVoucherRoot(
             appliedConsultancyVoucher
                 ? {
-                      voucherType: appliedConsultancyVoucher.voucherType,
-                      voucher: appliedConsultancyVoucher.voucher,
-                      benefitMessage: appliedConsultancyVoucher.benefitMessage,
-                  }
+                    voucherType: appliedConsultancyVoucher.voucherType,
+                    voucher: appliedConsultancyVoucher.voucher,
+                    benefitMessage: appliedConsultancyVoucher.benefitMessage,
+                }
                 : null,
         );
         if (vRoot.isConsultancyVoucherApplied === "yes") {
@@ -2090,8 +2357,169 @@ export default function RegistrationPage() {
     };
 
     const handleNextStep = () => {
+        if (admittedPatientData && admittedPatientData.branchId !== registrationBranchId) {
+            setErrorMessage("This patient is already admitted to another branch. Please complete the discharge/exit process at that branch before proceeding to the next step.");
+            setShowErrorDialog(true);
+            return;
+        }
         if (currentStep < registrationSteps.length - 1) {
             setCurrentStep(currentStep + 1);
+        }
+    };
+
+    const mapFormikToAdmittedPatientPayload = async (): Promise<Record<string, unknown>> => {
+        const values = formik.values;
+        const doctorUserId = parseInt(values.doctor || "0", 10) || 0;
+
+        let tehsilName: string | undefined = undefined;
+        let areaName: string | undefined = undefined;
+        const tehsilId = (values as any).tehsil;
+        const areaId = (values as any).area;
+
+        if (tehsilId && values.city) {
+            try {
+                const tehsilsResult = await getTehsilsQuery({ districtId: values.city });
+                if (tehsilsResult.data?.success && tehsilsResult.data?.data) {
+                    const tehsil = tehsilsResult.data.data.find((t: any) => t.id.toString() === values.tehsil);
+                    tehsilName = tehsil?.name;
+
+                    if (tehsilName && values.area) {
+                        try {
+                            const areasResult = await getAreasQuery({ tehsilId: values.tehsil });
+                            if (areasResult.data?.success && areasResult.data?.data) {
+                                const area = areasResult.data.data.find((a: any) => a.id.toString() === values.area);
+                                areaName = area?.name;
+                            }
+                        } catch (error) {
+                            areaName = values.area;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching tehsil/area name:", error);
+            }
+        }
+
+        const getCityNameStr = citiesData?.data?.find((c: any) => c.id.toString() === values.city)?.name || values.city || '';
+        const getStateNameStr = statesData?.data?.find((s: any) => s.id.toString() === values.state)?.name || values.state || '';
+        const getCountryNameStr = countriesData?.data?.find((c: any) => c.id.toString() === values.country)?.name || values.country || '';
+
+        const payload: Record<string, unknown> = {
+            patientId: admittedPatientData?.patientId,
+            branchId: registrationBranchId,
+            registrationId: patientRegistrationId || undefined,
+            uhid: patientUhid || undefined,
+            facilityType: formType,
+            registration: {
+                patientTitle: values.patientNameSelect || "",
+                patientName: values.patientName || "",
+                contactNumber: values.contactNumber || "",
+                whatsappNo: values.whatsappNo || values.contactNumber || "",
+                aadharCardNo: values.aadharCardNumber || undefined,
+                guardianTitle: values.fathersHusbandsNameSelect || "",
+                guardianName: values.fathersHusbandsName || "",
+                gender: values.gender || "",
+                age: values.age || "",
+                religion: values.religion || "",
+                specificRelegion: values.specificReligion || undefined,
+                occupation: values.occupation || "",
+                emailAddress: values.emailAddress || undefined,
+                jsHealthCardNo: values.jsHealthCardNo || undefined,
+                ayushCovered: values.ayushCovered || undefined,
+                panelId: values.panelId ? parseInt(values.panelId, 10) : undefined,
+                benificiaryId: values.benificiaryId || undefined,
+                insuranceCompany: values.insuranceCompany || undefined,
+                maritalStatus: values.maritalStatus || "",
+                doctorUserId: doctorUserId,
+                patientType: values?.patientType ? values.patientType.toUpperCase() : "",
+            },
+            address: {
+                address: values.address || "",
+                city: getCityNameStr === 'N/A' ? "" : getCityNameStr || "",
+                state: getStateNameStr === 'N/A' ? "" : getStateNameStr || "",
+                country: getCountryNameStr === 'N/A' ? "" : getCountryNameStr || "",
+                pinCode: values.pinCode || "",
+                tehsil: tehsilName,
+                area: areaName,
+                areaId: values.area ? values.area : undefined,
+                addressLine1: (values as any).addressLine1 || undefined,
+                addressLine2: (values as any).addressLine2 || undefined,
+            },
+            appointment: {
+                patientTokenSource: "reception",
+                isPreBooking: false,
+                appointmentDate: values.appointmentDate || "",
+                timeSlot: values.timeSlot || "",
+                doctorUserId: doctorUserId,
+                isDoctorChecked: false,
+            },
+        };
+
+        if (admittedPatientData?.type === "daycare" && formType === "clinic") {
+            const regObj = payload.registration as Record<string, unknown>;
+            regObj.lastDayFullDiet = values.lastDayFullDiet?.trim() || undefined;
+            regObj.dietType = values.dietType?.trim() || undefined;
+            regObj.height = (() => {
+                const feet = parseFloat(values.heightFeet || "0") || 0;
+                const inch = parseFloat(values.heightInch || "0") || 0;
+                if (feet <= 0 && inch <= 0) return undefined;
+                return (feet + inch / 12).toFixed(1);
+            })();
+            regObj.weight = values.weight?.trim() || undefined;
+            regObj.bloodGroup = values.bloodGroup?.trim() || undefined;
+            regObj.allergies = buildYesNoDetailsPayload(values.allergies, (values as any).allergiesDetails);
+            regObj.surgeries = buildYesNoDetailsPayload(values.surgeries, (values as any).surgeriesDetails);
+
+            const apptObj = payload.appointment as Record<string, unknown>;
+            apptObj.bloodPressure = values.bloodPressure || undefined;
+            apptObj.sugarLevel = values.sugarLevel || undefined;
+            apptObj.temperature = values.temperature || undefined;
+            apptObj.spo2 = values.spo2 || undefined;
+            apptObj.pulse = values.pulse || undefined;
+            apptObj.diagnosisId = values.diagnosis ? parseInt(values.diagnosis, 10) : undefined;
+            apptObj.diagnosisSymptoms = values.symptoms || undefined;
+            apptObj.subDiagnosisId = values.subDiagnosis ? parseInt(values.subDiagnosis, 10) : undefined;
+            apptObj.isDiabetes = values.diabetes?.toLowerCase() === "yes";
+            apptObj.diabetesRemarks = values.diabetesRemarks || undefined;
+            apptObj.isHypertension = values.htn?.toLowerCase() === "yes";
+            apptObj.hypertensionRemarks = values.htnRemarks || undefined;
+            apptObj.isCad = values.coronaryArteryDisease?.toLowerCase() === "yes";
+            apptObj.cadRemarks = values.coronaryArteryDiseaseRemarks || undefined;
+            apptObj.isThyroid = values.thyroid?.toLowerCase() === "yes";
+            apptObj.thyroidRemarks = values.thyroidRemarks || undefined;
+            apptObj.isMenstrual = values.menstrual?.toLowerCase() === "yes";
+            apptObj.menstrualRemarks = values.menstrualRemarks || undefined;
+        }
+
+        return payload;
+    };
+
+    const handleAdmittedPatientSubmit = async () => {
+        if (isSubmittingAdmittedActive) return;
+        if (admittedPatientData && admittedPatientData.branchId !== registrationBranchId) {
+            setErrorMessage("This patient is already admitted to another branch. Please complete the discharge/exit process at that branch before proceeding to the next step.");
+            setShowErrorDialog(true);
+            return;
+        }
+        setIsAdmittedSubmittingState(true);
+        try {
+            await formik.submitForm();
+            const payload = await mapFormikToAdmittedPatientPayload();
+            console.log("CreateAppointmentForAdmittedPatient Payload:", JSON.stringify(payload, null, 2));
+            const result = await createAppointmentForAdmittedPatient(payload).unwrap();
+            if (result.success !== false) {
+                setSuccessMessage(result.message || "Appointment created successfully for admitted patient!");
+                setShowSuccessDialog(true);
+                handleResetAfterSuccess();
+            } else {
+                setErrorMessage(result.message || "Failed to create appointment.");
+                setShowErrorDialog(true);
+            }
+        } catch (err: any) {
+            setErrorMessage(err?.data?.message || err?.message || "An error occurred.");
+            setShowErrorDialog(true);
+        } finally {
+            setIsAdmittedSubmittingState(false);
         }
     };
 
@@ -2205,9 +2633,11 @@ export default function RegistrationPage() {
         setPatientRegistrationId(null); // Clear registration ID
         setIsRevisitedPatient(false); // Clear revisited state
         setSelectedRevisitedPatientData(null); // Clear selected patient data
+        setAdmittedPatientData(null); // Clear admitted patient data
         setSelectedPreBookingId(null);
         setSelectedPreBooking(null);
         setAppliedConsultancyVoucher(null);
+        setGoldPackageState({ goldPackageStatus: "", couponCode: "", declineDescription: "" });
     };
 
     const resetRegistrationFormForSuperAdminBranchChange = () => {
@@ -2228,324 +2658,326 @@ export default function RegistrationPage() {
     // Check for existing patients by contact number
     const checkExistingPatients = useCallback(
         async (contactNumber: string, opts?: { branchId?: number }) => {
-        if (!contactNumber || contactNumber.length !== 10) {
-            lastCheckedContactNumberRef.current = "";
-            return;
-        }
-
-        // Don't check if dialog is being closed
-        if (isClosingDialogRef.current) return;
-
-        // Clear any pending timeout
-        if (checkTimeoutRef.current) {
-            clearTimeout(checkTimeoutRef.current);
-            checkTimeoutRef.current = null;
-        }
-
-        // Update the last checked contact number (for tracking, but don't prevent API calls)
-        lastCheckedContactNumberRef.current = contactNumber;
-
-        const branchForQuery =
-            opts?.branchId != null &&
-            Number.isFinite(Number(opts.branchId)) &&
-            Number(opts.branchId) > 0
-                ? Number(opts.branchId)
-                : registrationBranchId;
-
-        setIsContactLoading(true);
-        try {
-            const result = await checkExistingPatientsQuery({
-                branchId: branchForQuery,
-                phoneNumber: contactNumber,
-                // uhid is optional - only include if available
-            }).unwrap();
-
-            // Double-check if dialog is being closed after async operation
-            if (isClosingDialogRef.current) {
+            if (!contactNumber || contactNumber.length !== 10) {
                 lastCheckedContactNumberRef.current = "";
                 return;
             }
 
-            // Handle new response structure with registrations, preBookings, and userLead
-            const registrations = result.data?.registrations || [];
-            const preBookings = result.data?.preBookings || [];
-            const userLead = result.data?.userLead;
+            // Don't check if dialog is being closed
+            if (isClosingDialogRef.current) return;
 
-            // Map registrations
-            const mappedRegistrations: ExistingPatient[] = registrations.map((patient: any) => ({
-                id: patient.id,
-                sUhid: patient.sUhid || null,
-                uhid: patient.uhid || "",
-                branchId: patient.branchId,
-                patientName: patient.patientName || "",
-                patientTitle: patient.patientTitle,
-                doctorUserId: patient.doctorUserId || null,
-                gender: patient.gender,
-                age: patient.age,
-                contactNumber: patient.contactNumber || "",
-                whatsappNo: patient.whatsappNo,
-                emailAddress: patient.emailAddress,
-                maritalStatus: patient.maritalStatus,
-                aadharCardNo: patient.aadharCardNo,
-                occupation: patient.occupation,
-                religion: patient.religion,
-                specificReligion: patient.specificReligion || null,
-                jsHealthCardNo: patient.jsHealthCardNo || null,
-                guardianName: patient.guardianName,
-                guardianTitle: patient.guardianTitle,
-                patientType: patient.patientType || null,
-                panelId: patient.panelId || null,
-                patientSubType: patient.patientSubType || null,
-                benificiaryId: patient.benificiaryId || null,
-                insuranceCompany: patient.insuranceCompany || null,
-                ayushCovered: patient.ayushCovered || null,
-                height: patient.height,
-                weight: patient.weight,
-                bloodGroup: patient.bloodGroup,
-                allergies: patient.allergies,
-                surgeries: patient.surgeries,
-                dietType: patient.dietType,
-                isReferral: patient.isReferral,
-                referralClinic: patient.referralClinic || null,
-                referralSourceInfo: patient.referralSourceInfo || null,
-                referralUserId: patient.referralUserId || null,
-                referralName: patient.referralName || null,
-                referralMobile: patient.referralMobile || null,
-                address: patient.address ? {
-                    id: patient.address.id,
-                    address: patient.address.address || "",
-                    city: patient.address.city || "",
-                    pinCode: patient.address.pinCode || "",
-                    state: patient.address.state || "",
-                    country: patient.address.country === "101" ? "6" : (patient.address.country || "6"),
-                    tehsil: (patient.address as any)?.tehsil || undefined,
-                    area: (patient.address as any)?.area || undefined,
-                    addressLine1: (patient.address as any)?.addressLine1 ?? undefined,
-                    addressLine2: (patient.address as any)?.addressLine2 ?? undefined,
-                    addressableType: patient.address.addressableType,
-                    addressableId: patient.address.addressableId,
-                    addressType: patient.address.addressType,
-                    isActive: patient.address.isActive,
-                    createdAt: patient.address.createdAt,
-                    updatedAt: patient.address.updatedAt,
-                } : undefined,
-                name: patient.patientName || "",
-                branchName: "N/A",
-                isPreBooking: false,
-                preBookingId: null,
-            }));
-
-            // Map pre-bookings – support both snake_case (new API) and camelCase (old API).
-            // When pb.registration is present it means this pre-booking is linked to an
-            // existing patient record – merge those fields so Revisit fills them & locks them.
-            const mappedPreBookings: ExistingPatient[] = (preBookings as any[]).map((pb: any) => {
-                const reg = pb.registration ?? null; // nested registration object (may be null)
-                const patientName = pb.patient_name ?? pb.patientName ?? "";
-                const patientTitle = pb.patient_title ?? pb.patientTitle ?? undefined;
-                const guardianName = pb.guardian_name ?? pb.guardianName ?? "";
-                const guardianTitle = pb.guardian_title ?? pb.guardianTitle ?? undefined;
-                const contactNumber = pb.contact_number ?? pb.contactNumber ?? "";
-                const emailAddress = pb.email_address ?? pb.emailAddress ?? undefined;
-                const maritalStatus = pb.marital_status ?? pb.maritalStatus ?? "";
-                const patientType = pb.patient_type ?? pb.patientType ?? null;
-                const patientSubType = pb.patient_sub_type ?? pb.patientSubType ?? null;
-                const benificiaryId = pb.benificiary_id ?? pb.benificiaryId ?? null;
-                const insuranceCompany = pb.insurance_company ?? pb.insuranceCompany ?? null;
-                const ayushCovered = pb.ayush_covered ?? pb.ayushCovered ?? null;
-                const pinCode = pb.pin_code ?? pb.pinCode ?? "";
-                const addressLine1 = pb.address_line1 ?? pb.addressLine1 ?? undefined;
-                const addressLine2 = pb.address_line2 ?? pb.addressLine2 ?? undefined;
-                let addictionType: string[] | undefined;
-                try {
-                    if (Array.isArray(pb.addiction)) addictionType = pb.addiction;
-                    else if (typeof pb.addiction === "string" && pb.addiction) addictionType = JSON.parse(pb.addiction);
-                } catch { addictionType = undefined; }
-                // When a registration record is embedded, prefer its id/uhid so the submission
-                // targets the correct existing registration.
-                const entityId = reg ? (reg.id ?? pb.id ?? 0) : (pb.id ?? 0);
-                const entityUhid = reg ? (reg.uhid ?? pb.uhid ?? "") : (pb.uhid ?? "");
-                return {
-                    id: entityId,
-                    sUhid: null,
-                    uhid: entityUhid,
-                    branchId: pb.branch_id ?? pb.branchId ?? branchForQuery,
-                    patientName: reg?.patientName ?? patientName,
-                    patientTitle: reg?.patientTitle ?? patientTitle,
-                    doctorUserId: reg?.doctorUserId ?? pb.doctor_user_id ?? pb.doctorUserId ?? undefined,
-                    gender: reg?.gender ?? pb.gender ?? "",
-                    age: reg?.age ?? pb.age ?? "",
-                    contactNumber: reg?.contactNumber ?? contactNumber,
-                    whatsappNo: reg?.whatsappNo ?? contactNumber,
-                    emailAddress: reg?.emailAddress ?? emailAddress,
-                    maritalStatus: reg?.maritalStatus ?? maritalStatus,
-                    // Only set aadharCardNo / jsHealthCardNo when the registration record exists
-                    aadharCardNo: reg?.aadharCardNo ?? undefined,
-                    jsHealthCardNo: reg?.jsHealthCardNo ?? null,
-                    occupation: reg?.occupation ?? undefined,
-                    religion: reg?.religion ?? undefined,
-                    specificReligion: reg?.specificReligion ?? null,
-                    guardianName,
-                    guardianTitle,
-                    patientType: reg?.patientType ?? patientType,
-                    panelId: reg?.panelId ?? pb.panel_id ?? pb.panelId ?? null,
-                    patientSubType,
-                    benificiaryId,
-                    insuranceCompany,
-                    ayushCovered,
-                    addictionType,
-                    addictionSpecify: pb.addiction_specify ?? pb.addictionSpecify ?? undefined,
-                    diagnosis: String(pb.diagnosis_id ?? pb.diagnosisId ?? ""),
-                    subDiagnosis: String(pb.sub_diagnosis_id ?? pb.subDiagnosisId ?? ""),
-                    symptoms: pb.symptoms ?? undefined,
-                    address: {
-                        id: 0,
-                        address: pb.address || "",
-                        city: pb.city || "",
-                        pinCode,
-                        state: pb.state || "",
-                        country: pb.country === "101" ? "6" : (pb.country || "India"),
-                        tehsil: pb.tehsil || undefined,
-                        area: pb.area || undefined,
-                        addressLine1,
-                        addressLine2,
-                        areaId: pb.area_id ?? pb.areaId ?? undefined,
-                    },
-                    name: reg?.patientName ?? patientName,
-                    branchName: "N/A",
-                    isPreBooking: true,
-                    preBookingId: pb.id || null,
-                    // Extra fields used by handleRevisit (via [key: string]: unknown)
-                    appointmentTime: pb.appointment_time ?? pb.appointmentTime ?? undefined,
-                    appointmentDate: pb.appointment_date ?? pb.appointmentDate ?? undefined,
-                } as ExistingPatient;
-            });
-
-            // Priority: preBookings first. If preBookings exist, show ONLY preBookings.
-            // If no preBookings but registrations exist, show only registrations.
-            if (preBookings.length > 0) {
-                skipUserLeadDialogFromLeadRequestRef.current = false;
-                setExistingPatients(mappedPreBookings);
-                setIsUserLeadData(false);
-                setUserLeadId(null);
-                const pendingPbRaw = pendingAutoSelectPreBookingIdRef.current;
-                const pendingPbId =
-                    pendingPbRaw == null ? null : Number(pendingPbRaw);
-                if (pendingPbId != null && Number.isFinite(pendingPbId) && pendingPbId > 0) {
-                    const match =
-                        mappedPreBookings.find(
-                            (p) =>
-                                p.isPreBooking &&
-                                (Number(p.preBookingId) === pendingPbId ||
-                                    p.preBookingId === pendingPbId),
-                        ) ?? mappedPreBookings[0];
-                    pendingAutoSelectPreBookingIdRef.current = null;
-                    setPatientExistsDialogOpen(false);
-                    queueMicrotask(() => {
-                        handleRevisitRef.current?.(match);
-                    });
-                } else {
-                    setPatientExistsDialogOpen(true);
-                }
-            } else if (registrations.length > 0) {
-                skipUserLeadDialogFromLeadRequestRef.current = false;
-                setExistingPatients(mappedRegistrations);
-                setIsUserLeadData(false);
-                setUserLeadId(null);
-                setPatientExistsDialogOpen(true);
-            } else if (userLead && Object.keys(userLead).length > 0) {
-                // Both registrations and preBookings empty – show "User Lead Data" dialog and send userLeadId in clinic-patient POST
-                const userLeadData = userLead as any;
-                const nestedAddr = userLeadData.address;
-                const hasNestedAddress =
-                    nestedAddr != null &&
-                    typeof nestedAddr === "object" &&
-                    !Array.isArray(nestedAddr) &&
-                    Object.keys(nestedAddr as object).length > 0;
-                const flatLeadAddress = {
-                    id: 0,
-                    pinCode: userLeadData.pinCode,
-                    city: userLeadData.city,
-                    state: userLeadData.state,
-                    country: userLeadData.country,
-                    address:
-                        typeof userLeadData.address === "string"
-                            ? userLeadData.address
-                            : (nestedAddr as { address?: string } | undefined)?.address,
-                    areaId: userLeadData.areaId,
-                    area: userLeadData.area,
-                    tehsil: userLeadData.tehsil,
-                };
-                const userLeadAddress = hasNestedAddress
-                    ? { ...(nestedAddr as object), ...flatLeadAddress }
-                    : flatLeadAddress;
-                const transformedUserLead: ExistingPatient = {
-                    id: userLeadData.id || 0,
-                    sUhid: null,
-                    uhid: userLeadData.uhid || "",
-                    // Register under the branch selected in UI / query, not the lead's originating branchId from API
-                    branchId: branchForQuery,
-                    patientName: userLeadData.patientName || "",
-                    patientTitle: userLeadData.parentPrefix || undefined,
-                    doctorUserId: undefined,
-                    gender: userLeadData.gender || "",
-                    age: userLeadData.age || "",
-                    contactNumber: userLeadData.contactNumber || "",
-                    whatsappNo: userLeadData.alternateNumber || undefined,
-                    emailAddress: undefined,
-                    maritalStatus: undefined,
-                    aadharCardNo: undefined,
-                    occupation: undefined,
-                    religion: undefined,
-                    specificReligion: null,
-                    jsHealthCardNo: null,
-                    guardianName: userLeadData.parentName || "",
-                    guardianTitle: userLeadData.parentPrefix || undefined,
-                    patientType: userLeadData.patientType || null,
-                    panelId: null,
-                    patientSubType: userLeadData.patientSubType || null,
-                    benificiaryId: userLeadData.benificiaryId || null,
-                    insuranceCompany: undefined,
-                    ayushCovered: undefined,
-                    address: userLeadAddress,
-                    name: userLeadData.patientName || "",
-                    branchName: "N/A",
-                    diagnosis:
-                        userLeadData.diagnosis != null ? String(userLeadData.diagnosis) : undefined,
-                };
-                setExistingPatients([transformedUserLead]);
-                setIsUserLeadData(true);
-                if (userLeadData.id) {
-                    setUserLeadId(userLeadData.id);
-                }
-                const autoVisitFromLead = skipUserLeadDialogFromLeadRequestRef.current;
-                skipUserLeadDialogFromLeadRequestRef.current = false;
-                if (autoVisitFromLead) {
-                    setPatientExistsDialogOpen(false);
-                    queueMicrotask(() => {
-                        handleRevisitRef.current?.(transformedUserLead, { fromLeadRequestAuto: true });
-                    });
-                } else {
-                    setPatientExistsDialogOpen(true);
-                }
-            } else {
-                skipUserLeadDialogFromLeadRequestRef.current = false;
-                // Clear the ref if no patients found
-                lastCheckedContactNumberRef.current = "";
-                setIsUserLeadData(false);
-                setUserLeadId(null);
+            // Clear any pending timeout
+            if (checkTimeoutRef.current) {
+                clearTimeout(checkTimeoutRef.current);
+                checkTimeoutRef.current = null;
             }
-        } catch (error: any) {
-            // Handle different error types properly
-            const errorMessage = error?.message || error?.data?.message || error?.error || (typeof error === 'string' ? error : String(error));
-            console.error("Error checking existing patients:", errorMessage || "Unknown error", error);
-            skipUserLeadDialogFromLeadRequestRef.current = false;
-            // Clear the ref on error so we can retry if needed
-            lastCheckedContactNumberRef.current = "";
-            // If API fails, don't show dialog
-        } finally {
-            setIsContactLoading(false);
-        }
-    }, [checkExistingPatientsQuery, registrationBranchId]);
+
+            // Update the last checked contact number (for tracking, but don't prevent API calls)
+            lastCheckedContactNumberRef.current = contactNumber;
+
+            const branchForQuery =
+                opts?.branchId != null &&
+                    Number.isFinite(Number(opts.branchId)) &&
+                    Number(opts.branchId) > 0
+                    ? Number(opts.branchId)
+                    : registrationBranchId;
+
+            setIsContactLoading(true);
+            try {
+                const result = await checkExistingPatientsQuery({
+                    branchId: branchForQuery,
+                    phoneNumber: contactNumber,
+                    // uhid is optional - only include if available
+                }).unwrap();
+
+                // Double-check if dialog is being closed after async operation
+                if (isClosingDialogRef.current) {
+                    lastCheckedContactNumberRef.current = "";
+                    return;
+                }
+
+                // Handle new response structure with registrations, preBookings, and userLead
+                const registrations = result.data?.registrations || [];
+                const preBookings = result.data?.preBookings || [];
+                const userLead = result.data?.userLead;
+
+                // Map registrations
+                const mappedRegistrations: ExistingPatient[] = registrations.map((patient: any) => ({
+                    id: patient.id,
+                    sUhid: patient.sUhid || null,
+                    uhid: patient.uhid || "",
+                    branchId: patient.branchId,
+                    patientName: patient.patientName || "",
+                    patientTitle: patient.patientTitle,
+                    doctorUserId: patient.doctorUserId || null,
+                    gender: patient.gender,
+                    age: patient.age,
+                    contactNumber: patient.contactNumber || "",
+                    whatsappNo: patient.whatsappNo,
+                    emailAddress: patient.emailAddress,
+                    maritalStatus: patient.maritalStatus,
+                    aadharCardNo: patient.aadharCardNo,
+                    occupation: patient.occupation,
+                    religion: patient.religion,
+                    specificReligion: patient.specificReligion || null,
+                    jsHealthCardNo: patient.jsHealthCardNo || null,
+                    guardianName: patient.guardianName,
+                    guardianTitle: patient.guardianTitle,
+                    patientType: patient.patientType || null,
+                    panelId: patient.panelId || null,
+                    patientSubType: patient.patientSubType || null,
+                    benificiaryId: patient.benificiaryId || null,
+                    insuranceCompany: patient.insuranceCompany || null,
+                    ayushCovered: patient.ayushCovered || null,
+                    height: patient.height,
+                    weight: patient.weight,
+                    bloodGroup: patient.bloodGroup,
+                    allergies: patient.allergies,
+                    surgeries: patient.surgeries,
+                    dietType: patient.dietType,
+                    isReferral: patient.isReferral,
+                    referralClinic: patient.referralClinic || null,
+                    referralSourceInfo: patient.referralSourceInfo || null,
+                    referralUserId: patient.referralUserId || null,
+                    referralName: patient.referralName || null,
+                    referralMobile: patient.referralMobile || null,
+                    address: patient.address ? {
+                        id: patient.address.id,
+                        address: patient.address.address || "",
+                        city: patient.address.city || "",
+                        pinCode: patient.address.pinCode || "",
+                        state: patient.address.state || "",
+                        country: patient.address.country === "101" ? "6" : (patient.address.country || "6"),
+                        tehsil: (patient.address as any)?.tehsil || undefined,
+                        area: (patient.address as any)?.area || undefined,
+                        addressLine1: (patient.address as any)?.addressLine1 ?? undefined,
+                        addressLine2: (patient.address as any)?.addressLine2 ?? undefined,
+                        addressableType: patient.address.addressableType,
+                        addressableId: patient.address.addressableId,
+                        addressType: patient.address.addressType,
+                        isActive: patient.address.isActive,
+                        createdAt: patient.address.createdAt,
+                        updatedAt: patient.address.updatedAt,
+                    } : undefined,
+                    name: patient.patientName || "",
+                    branchName: "N/A",
+                    isPreBooking: false,
+                    preBookingId: null,
+                    patientData: patient.patientData || null,
+                }));
+
+                // Map pre-bookings – support both snake_case (new API) and camelCase (old API).
+                // When pb.registration is present it means this pre-booking is linked to an
+                // existing patient record – merge those fields so Revisit fills them & locks them.
+                const mappedPreBookings: ExistingPatient[] = (preBookings as any[]).map((pb: any) => {
+                    const reg = pb.registration ?? null; // nested registration object (may be null)
+                    const patientName = pb.patient_name ?? pb.patientName ?? "";
+                    const patientTitle = pb.patient_title ?? pb.patientTitle ?? undefined;
+                    const guardianName = pb.guardian_name ?? pb.guardianName ?? "";
+                    const guardianTitle = pb.guardian_title ?? pb.guardianTitle ?? undefined;
+                    const contactNumber = pb.contact_number ?? pb.contactNumber ?? "";
+                    const emailAddress = pb.email_address ?? pb.emailAddress ?? undefined;
+                    const maritalStatus = pb.marital_status ?? pb.maritalStatus ?? "";
+                    const patientType = pb.patient_type ?? pb.patientType ?? null;
+                    const patientSubType = pb.patient_sub_type ?? pb.patientSubType ?? null;
+                    const benificiaryId = pb.benificiary_id ?? pb.benificiaryId ?? null;
+                    const insuranceCompany = pb.insurance_company ?? pb.insuranceCompany ?? null;
+                    const ayushCovered = pb.ayush_covered ?? pb.ayushCovered ?? null;
+                    const pinCode = pb.pin_code ?? pb.pinCode ?? "";
+                    const addressLine1 = pb.address_line1 ?? pb.addressLine1 ?? undefined;
+                    const addressLine2 = pb.address_line2 ?? pb.addressLine2 ?? undefined;
+                    let addictionType: string[] | undefined;
+                    try {
+                        if (Array.isArray(pb.addiction)) addictionType = pb.addiction;
+                        else if (typeof pb.addiction === "string" && pb.addiction) addictionType = JSON.parse(pb.addiction);
+                    } catch { addictionType = undefined; }
+                    // When a registration record is embedded, prefer its id/uhid so the submission
+                    // targets the correct existing registration.
+                    const entityId = reg ? (reg.id ?? pb.id ?? 0) : (pb.id ?? 0);
+                    const entityUhid = reg ? (reg.uhid ?? pb.uhid ?? "") : (pb.uhid ?? "");
+                    return {
+                        id: entityId,
+                        sUhid: null,
+                        uhid: entityUhid,
+                        branchId: pb.branch_id ?? pb.branchId ?? branchForQuery,
+                        patientName: reg?.patientName ?? patientName,
+                        patientTitle: reg?.patientTitle ?? patientTitle,
+                        doctorUserId: reg?.doctorUserId ?? pb.doctor_user_id ?? pb.doctorUserId ?? undefined,
+                        gender: reg?.gender ?? pb.gender ?? "",
+                        age: reg?.age ?? pb.age ?? "",
+                        contactNumber: reg?.contactNumber ?? contactNumber,
+                        whatsappNo: reg?.whatsappNo ?? contactNumber,
+                        emailAddress: reg?.emailAddress ?? emailAddress,
+                        maritalStatus: reg?.maritalStatus ?? maritalStatus,
+                        // Only set aadharCardNo / jsHealthCardNo when the registration record exists
+                        aadharCardNo: reg?.aadharCardNo ?? undefined,
+                        jsHealthCardNo: reg?.jsHealthCardNo ?? null,
+                        occupation: reg?.occupation ?? undefined,
+                        religion: reg?.religion ?? undefined,
+                        specificReligion: reg?.specificReligion ?? null,
+                        guardianName,
+                        guardianTitle,
+                        patientType: reg?.patientType ?? patientType,
+                        panelId: reg?.panelId ?? pb.panel_id ?? pb.panelId ?? null,
+                        patientSubType,
+                        benificiaryId,
+                        insuranceCompany,
+                        ayushCovered,
+                        addictionType,
+                        addictionSpecify: pb.addiction_specify ?? pb.addictionSpecify ?? undefined,
+                        diagnosis: String(pb.diagnosis_id ?? pb.diagnosisId ?? ""),
+                        subDiagnosis: String(pb.sub_diagnosis_id ?? pb.subDiagnosisId ?? ""),
+                        symptoms: pb.symptoms ?? undefined,
+                        address: {
+                            id: 0,
+                            address: pb.address || "",
+                            city: pb.city || "",
+                            pinCode,
+                            state: pb.state || "",
+                            country: pb.country === "101" ? "6" : (pb.country || "India"),
+                            tehsil: pb.tehsil || undefined,
+                            area: pb.area || undefined,
+                            addressLine1,
+                            addressLine2,
+                            areaId: pb.area_id ?? pb.areaId ?? undefined,
+                        },
+                        name: reg?.patientName ?? patientName,
+                        branchName: "N/A",
+                        isPreBooking: true,
+                        preBookingId: pb.id || null,
+                        patientData: pb.patientData ?? pb.patient_data ?? reg?.patientData ?? reg?.patient_data ?? null,
+                        // Extra fields used by handleRevisit (via [key: string]: unknown)
+                        appointmentTime: pb.appointment_time ?? pb.appointmentTime ?? undefined,
+                        appointmentDate: pb.appointment_date ?? pb.appointmentDate ?? undefined,
+                    } as ExistingPatient;
+                });
+
+                // Priority: preBookings first. If preBookings exist, show ONLY preBookings.
+                // If no preBookings but registrations exist, show only registrations.
+                if (preBookings.length > 0) {
+                    skipUserLeadDialogFromLeadRequestRef.current = false;
+                    setExistingPatients(mappedPreBookings);
+                    setIsUserLeadData(false);
+                    setUserLeadId(null);
+                    const pendingPbRaw = pendingAutoSelectPreBookingIdRef.current;
+                    const pendingPbId =
+                        pendingPbRaw == null ? null : Number(pendingPbRaw);
+                    if (pendingPbId != null && Number.isFinite(pendingPbId) && pendingPbId > 0) {
+                        const match =
+                            mappedPreBookings.find(
+                                (p) =>
+                                    p.isPreBooking &&
+                                    (Number(p.preBookingId) === pendingPbId ||
+                                        p.preBookingId === pendingPbId),
+                            ) ?? mappedPreBookings[0];
+                        pendingAutoSelectPreBookingIdRef.current = null;
+                        setPatientExistsDialogOpen(false);
+                        queueMicrotask(() => {
+                            handleRevisitRef.current?.(match);
+                        });
+                    } else {
+                        setPatientExistsDialogOpen(true);
+                    }
+                } else if (registrations.length > 0) {
+                    skipUserLeadDialogFromLeadRequestRef.current = false;
+                    setExistingPatients(mappedRegistrations);
+                    setIsUserLeadData(false);
+                    setUserLeadId(null);
+                    setPatientExistsDialogOpen(true);
+                } else if (userLead && Object.keys(userLead).length > 0) {
+                    // Both registrations and preBookings empty – show "User Lead Data" dialog and send userLeadId in clinic-patient POST
+                    const userLeadData = userLead as any;
+                    const nestedAddr = userLeadData.address;
+                    const hasNestedAddress =
+                        nestedAddr != null &&
+                        typeof nestedAddr === "object" &&
+                        !Array.isArray(nestedAddr) &&
+                        Object.keys(nestedAddr as object).length > 0;
+                    const flatLeadAddress = {
+                        id: 0,
+                        pinCode: userLeadData.pinCode,
+                        city: userLeadData.city,
+                        state: userLeadData.state,
+                        country: userLeadData.country,
+                        address:
+                            typeof userLeadData.address === "string"
+                                ? userLeadData.address
+                                : (nestedAddr as { address?: string } | undefined)?.address,
+                        areaId: userLeadData.areaId,
+                        area: userLeadData.area,
+                        tehsil: userLeadData.tehsil,
+                    };
+                    const userLeadAddress = hasNestedAddress
+                        ? { ...(nestedAddr as object), ...flatLeadAddress }
+                        : flatLeadAddress;
+                    const transformedUserLead: ExistingPatient = {
+                        id: userLeadData.id || 0,
+                        sUhid: null,
+                        uhid: userLeadData.uhid || "",
+                        // Register under the branch selected in UI / query, not the lead's originating branchId from API
+                        branchId: branchForQuery,
+                        patientName: userLeadData.patientName || "",
+                        patientTitle: userLeadData.parentPrefix || undefined,
+                        doctorUserId: undefined,
+                        gender: userLeadData.gender || "",
+                        age: userLeadData.age || "",
+                        contactNumber: userLeadData.contactNumber || "",
+                        whatsappNo: userLeadData.alternateNumber || undefined,
+                        emailAddress: undefined,
+                        maritalStatus: undefined,
+                        aadharCardNo: undefined,
+                        occupation: undefined,
+                        religion: undefined,
+                        specificReligion: null,
+                        jsHealthCardNo: null,
+                        guardianName: userLeadData.parentName || "",
+                        guardianTitle: userLeadData.parentPrefix || undefined,
+                        patientType: userLeadData.patientType || null,
+                        panelId: null,
+                        patientSubType: userLeadData.patientSubType || null,
+                        benificiaryId: userLeadData.benificiaryId || null,
+                        insuranceCompany: undefined,
+                        ayushCovered: undefined,
+                        address: userLeadAddress,
+                        name: userLeadData.patientName || "",
+                        branchName: "N/A",
+                        diagnosis:
+                            userLeadData.diagnosis != null ? String(userLeadData.diagnosis) : undefined,
+                    };
+                    setExistingPatients([transformedUserLead]);
+                    setIsUserLeadData(true);
+                    if (userLeadData.id) {
+                        setUserLeadId(userLeadData.id);
+                    }
+                    const autoVisitFromLead = skipUserLeadDialogFromLeadRequestRef.current;
+                    skipUserLeadDialogFromLeadRequestRef.current = false;
+                    if (autoVisitFromLead) {
+                        setPatientExistsDialogOpen(false);
+                        queueMicrotask(() => {
+                            handleRevisitRef.current?.(transformedUserLead, { fromLeadRequestAuto: true });
+                        });
+                    } else {
+                        setPatientExistsDialogOpen(true);
+                    }
+                } else {
+                    skipUserLeadDialogFromLeadRequestRef.current = false;
+                    // Clear the ref if no patients found
+                    lastCheckedContactNumberRef.current = "";
+                    setIsUserLeadData(false);
+                    setUserLeadId(null);
+                }
+            } catch (error: any) {
+                // Handle different error types properly
+                const errorMessage = error?.message || error?.data?.message || error?.error || (typeof error === 'string' ? error : String(error));
+                console.error("Error checking existing patients:", errorMessage || "Unknown error", error);
+                skipUserLeadDialogFromLeadRequestRef.current = false;
+                // Clear the ref on error so we can retry if needed
+                lastCheckedContactNumberRef.current = "";
+                // If API fails, don't show dialog
+            } finally {
+                setIsContactLoading(false);
+            }
+        }, [checkExistingPatientsQuery, registrationBranchId]);
 
     // Check for existing patients by Aadhar Card number
     const checkExistingAadharCard = useCallback(async (aadharCardNo: string, contactNumber?: string) => {
@@ -2631,70 +3063,123 @@ export default function RegistrationPage() {
         }
     }, [checkExistingPatientsQuery, registrationBranchId, formik]);
 
-    // Check JS Health Card No.: allowed series (public API) then assignment (admin API)
+    // Check Health Card No.: allowed series (public API) then assignment (admin API)
+    // Check Health Card No.: allowed series (public API) then assignment (admin API)
     const checkJsHealthCard = useCallback(async (cardNumber: string) => {
         if (/\d/.test(cardNumber || "")) {
             setJsCardSeriesFetchEnabled(true);
         }
         const trimmedCard = cardNumber.trim();
-        if (!trimmedCard || trimmedCard.length !== jsHealthCardDigitLength) {
+        const cardSeriesArray = arogyaCardSeriesForValidation?.data;
+
+        // Skip validation if existing patient ALREADY has an active locked card
+        const isExistingOrRevisit = isRevisitedPatient || Boolean((formik.values as any).uhid) || Boolean((formik.values as any).patientRegistrationId) || Boolean(selectedRevisitedPatientData) || Boolean(patientUhid) || Boolean(patientRegistrationId);
+        if (isExistingOrRevisit && hasActiveHealthCard) {
+            const currentError = formik.errors.jsHealthCardNo;
+            if (isJsHealthCardSeriesRangeError(currentError) || currentError === "Please enter a valid Health Card number matching branch series" || currentError === "Health Card No. already assigned to another patient" || (typeof currentError === "string" && currentError.includes("Please match the series"))) {
+                formik.setFieldError("jsHealthCardNo", undefined);
+            }
+            return;
+        }
+
+        // Determine expected digit lengths across active series for this branch
+        let minLen = 12;
+        if (Array.isArray(cardSeriesArray) && cardSeriesArray.length > 0) {
+            let absoluteMin = 12;
+            cardSeriesArray.forEach((series: any, idx: number) => {
+                const s = String(series.seriesStart || "").replace(/\D/g, "");
+                const e = series.seriesEnd != null ? String(series.seriesEnd || "").replace(/\D/g, "") : s;
+                if (s) {
+                    const cMin = Math.min(s.length, e.length);
+                    if (idx === 0) absoluteMin = cMin;
+                    else absoluteMin = Math.min(absoluteMin, cMin);
+                }
+            });
+            minLen = absoluteMin;
+        }
+
+        // If card length is incomplete (less than minLen), clear series/assignment errors until user finishes typing
+        if (!trimmedCard || trimmedCard.length < minLen) {
             const currentError = formik.errors.jsHealthCardNo;
             if (
-                currentError === "JS Health Card No. already assigned to another patient" ||
-                isJsHealthCardSeriesRangeError(currentError)
+                currentError === "Health Card No. already assigned to another patient" ||
+                isJsHealthCardSeriesRangeError(currentError) ||
+                (typeof currentError === "string" && currentError.includes("Please match the series"))
             ) {
                 formik.setFieldError("jsHealthCardNo", undefined);
             }
             return;
         }
-        let inAllowedSeries = true;
-        try {
-            const seriesResult = await getArogyaCardSeriesQuery({ id: 1 }).unwrap();
-            if (seriesResult.success && seriesResult.data) {
-                const { seriesStart, seriesEnd } = seriesResult.data;
-                if (
-                    !isJsHealthCardNumberInSeries(trimmedCard, String(seriesStart), String(seriesEnd))
-                ) {
-                    inAllowedSeries = false;
-                    formik.setFieldError(
-                        "jsHealthCardNo",
-                        buildJsHealthCardSeriesErrorMessage(String(seriesStart), String(seriesEnd)),
-                    );
-                    formik.setFieldTouched("jsHealthCardNo", true, false);
-                }
+
+        // Check if trimmedCard matches ANY active series in cardSeriesArray by range & length
+        const matchByRange = Array.isArray(cardSeriesArray) && cardSeriesArray.length > 0
+            ? cardSeriesArray.find((series: any) => {
+                const sStart = String(series.seriesStart || "").replace(/\D/g, "");
+                const sEnd = String(series.seriesEnd || "").replace(/\D/g, "");
+                if (!sStart || !sEnd) return false;
+                if (trimmedCard.length !== sStart.length && trimmedCard.length !== sEnd.length) return false;
+
+                const valNum = Number(trimmedCard);
+                const startNum = Number(sStart);
+                const endNum = Number(sEnd);
+                return valNum >= startNum && valNum <= endNum;
+            })
+            : null;
+
+        if (!matchByRange) {
+            if (Array.isArray(cardSeriesArray) && cardSeriesArray.length > 0) {
+                const listStr = cardSeriesArray
+                    .map((series: any) => `${series.cardName} (${series.seriesStart}-${series.seriesEnd})`)
+                    .join(" | ");
+                formik.setFieldError("jsHealthCardNo", `Please match the series under the assigned card series : ${listStr}`);
+            } else {
+                formik.setFieldError("jsHealthCardNo", "Please enter a valid Health Card number matching branch series");
             }
-        } catch {
-            const e = formik.errors.jsHealthCardNo;
-            if (isJsHealthCardSeriesRangeError(e)) {
-                formik.setFieldError("jsHealthCardNo", undefined);
-            }
-        }
-        if (!inAllowedSeries) {
+            formik.setFieldTouched("jsHealthCardNo", true, false);
             return;
         }
+
+        // Range check passed! Clear any previous range mismatch error
         const seriesErr = formik.errors.jsHealthCardNo;
-        if (isJsHealthCardSeriesRangeError(seriesErr)) {
+        if (isJsHealthCardSeriesRangeError(seriesErr) || (typeof seriesErr === "string" && seriesErr.includes("Please match the series"))) {
             formik.setFieldError("jsHealthCardNo", undefined);
         }
+
+        // Check API for already assigned health card number
         try {
             const result = await checkJsHealthCardQuery({ cardNumber: trimmedCard }).unwrap();
-            if (result.data?.patient) {
-                formik.setFieldError("jsHealthCardNo", "JS Health Card No. already assigned to another patient");
+            const foundPat = result.data?.patient;
+            if (foundPat) {
+                formik.setFieldError("jsHealthCardNo", "Health Card No. already assigned to another patient");
                 formik.setFieldTouched("jsHealthCardNo", true, false);
             } else {
                 const currentError = formik.errors.jsHealthCardNo;
-                if (currentError === "JS Health Card No. already assigned to another patient") {
+                if (currentError === "Health Card No. already assigned to another patient") {
                     formik.setFieldError("jsHealthCardNo", undefined);
                 }
             }
         } catch {
             // If API fails, don't block the user
         }
-    }, [checkJsHealthCardQuery, getArogyaCardSeriesQuery, formik, jsHealthCardDigitLength]);
+    }, [checkJsHealthCardQuery, formik, arogyaCardSeriesForValidation, isRevisitedPatient, selectedRevisitedPatientData, hasActiveHealthCard]);
 
-    // Auto-fill jsHealthCardNo from the JS Health Card API response (only when field is empty)
-    const handleJsHealthCardFetched = useCallback((cardNumber: string) => {
-        if (/\d/.test(cardNumber || "")) {
+    // Auto-fill jsHealthCardNo from the Health Card API response (only when field is empty).
+    // A `null` card number means the patient only has closed (inactive) cards, so we must
+    // NOT auto-fill/lock the field — the user should be able to assign a new Health Card.
+    const handleJsHealthCardFetched = useCallback((cardNumber: string | null) => {
+        if (cardNumber == null || cardNumber.trim() === "") {
+            setHasActiveHealthCard(false);
+            setJsHealthCardClosed(true);
+            setJsHealthCardAutoFilled(false);
+            // Clear the closed card number so the user can assign a fresh Health Card.
+            if (formik.values.jsHealthCardNo && formik.values.jsHealthCardNo.trim() !== "") {
+                formik.setFieldValue("jsHealthCardNo", "", false);
+            }
+            return;
+        }
+        setHasActiveHealthCard(true);
+        setJsHealthCardClosed(false);
+        if (/\d/.test(cardNumber)) {
             setJsCardSeriesFetchEnabled(true);
         }
         if (!formik.values.jsHealthCardNo || formik.values.jsHealthCardNo.trim() === "") {
@@ -2707,6 +3192,8 @@ export default function RegistrationPage() {
     useEffect(() => {
         if (!patientUhid) {
             setJsHealthCardAutoFilled(false);
+            setJsHealthCardClosed(false);
+            setHasActiveHealthCard(false);
         }
     }, [patientUhid]);
 
@@ -2794,6 +3281,20 @@ export default function RegistrationPage() {
             setSelectedReferralPhoneNumber("");
             setSelectedReferralPatient(null);
         }
+    }, [formik]);
+
+    const handleClearReferral = useCallback(() => {
+        setSelectedReferralPatient(null);
+        setIsReferralNameDisabledAfterNotFound(false);
+        lastCheckedReferralMobileRef.current = "";
+        referralPatientSelectedRef.current = false;
+        setSelectedReferralPhoneNumber("");
+        formik.setFieldValue("referralMobile", "", false);
+        formik.setFieldValue("referralName", "", false);
+        formik.setFieldError("referralMobile", undefined);
+        formik.setFieldError("referralName", undefined);
+        formik.setFieldTouched("referralMobile", false, false);
+        formik.setFieldTouched("referralName", false, false);
     }, [formik]);
 
     // Handle close for "Patient not found" dialog
@@ -2890,6 +3391,32 @@ export default function RegistrationPage() {
 
             // Store the full patient data from API response for pending registration
             setSelectedRevisitedPatientData(patient);
+
+            // Check if patient has patientData for admitted IPD/Daycare
+            const pData = (patient as any).patientData ?? (patient as any).patient_data;
+            if (pData && typeof pData === "object" && (pData.patientId || pData.patient_id)) {
+                const pPatientId = Number(pData.patientId ?? pData.patient_id);
+                const pBranchId = Number(pData.branchId ?? pData.branch_id);
+                const pType = String(pData.type || "ipd").toLowerCase() as "ipd" | "daycare";
+                const pStatus = String(pData.status || "active");
+                setAdmittedPatientData({
+                    patientId: pPatientId,
+                    status: pStatus,
+                    type: pType,
+                    branchId: pBranchId,
+                });
+                formik.setFieldValue("patientType", pType.toUpperCase(), false);
+            } else {
+                setAdmittedPatientData(null);
+            }
+
+            if (patient.uhid) {
+                formik.setFieldValue("uhid", patient.uhid, false);
+            }
+            if (patient.id) {
+                formik.setFieldValue("patientRegistrationId", patient.id, false);
+            }
+            formik.setFieldValue("isRevisitedPatient", true, false);
 
             // Fill form with patient data
             if (patient.patientTitle) {
@@ -3291,8 +3818,87 @@ export default function RegistrationPage() {
 
     // Handle "Add New Patient" button click
     const handleAddNewPatient = () => {
-        // If we're currently filling a form for an approved patient, don't save as duplicate exception
+        const userFilledFields = [
+            formik.values.contactNumber,
+            formik.values.whatsappNo,
+            formik.values.patientName,
+            formik.values.patientNameSelect,
+            formik.values.aadharCardNumber,
+            formik.values.age,
+            formik.values.gender,
+            formik.values.religion,
+            formik.values.specificReligion,
+            formik.values.occupation,
+            formik.values.emailAddress,
+            formik.values.fathersHusbandsNameSelect,
+            formik.values.fathersHusbandsName,
+            formik.values.maritalStatus,
+            formik.values.pinCode,
+            formik.values.state,
+            formik.values.city,
+            formik.values.tehsil,
+            formik.values.area,
+            formik.values.address,
+            formik.values.addressLine1,
+            formik.values.addressLine2,
+            formik.values.referralMobile,
+            formik.values.referralName,
+            formik.values.referral,
+            formik.values.source,
+            formik.values.tvSpecificField,
+            formik.values.newspaperSpecificField,
+            formik.values.socialMediaSpecificField,
+            formik.values.doctorSpecificField,
+            formik.values.doctor,
+            formik.values.panelId,
+            formik.values.benificiaryId,
+            formik.values.insuranceCompany,
+            formik.values.ayushCovered,
+            formik.values.jsHealthCardNo,
+            formik.values.weight,
+            formik.values.heightFeet,
+            formik.values.heightInch,
+            formik.values.bloodGroup,
+            formik.values.allergiesDetails,
+            formik.values.surgeriesDetails,
+            formik.values.diabetesRemarks,
+            formik.values.htnRemarks,
+            formik.values.coronaryArteryDiseaseRemarks,
+            formik.values.thyroidRemarks,
+            formik.values.menstrualRemarks,
+            formik.values.addictionSpecify,
+            formik.values.symptoms,
+            formik.values.companyName,
+            formik.values.billingAddress,
+            formik.values.billingState,
+            formik.values.billingCity,
+            formik.values.billingPincode,
+            formik.values.gstNumber,
+        ];
+
+        const hasUserFilledData = userFilledFields.some((val) => typeof val === "string" && val.trim() !== "");
+        const hasPatientName = Boolean(formik.values.patientName?.trim());
+
+        if (hasUserFilledData && !hasPatientName) {
+            setShowPatientNameRequiredDialog(true);
+            return;
+        }
+        // If we're currently filling a form for an admitted IPD/Daycare patient, don't save as pending registration to localStorage
         // Just clear the form and start fresh
+        if (admittedPatientData) {
+            formik.resetForm({ values: initialValues });
+            setCurrentStep(0);
+            setCurrentPendingRegistrationId(null);
+            setSelectedApprovedPatientId(null);
+            setSelectedPreBookingId(null);
+            setSelectedPreBooking(null);
+            setPatientUhid("");
+            setPatientRegistrationId(null);
+            setIsRevisitedPatient(false);
+            setSelectedRevisitedPatientData(null);
+            setAdmittedPatientData(null);
+            return;
+        }
         if (selectedApprovedPatientId) {
             formik.resetForm({ values: initialValues });
             setCurrentStep(0);
@@ -3631,6 +4237,7 @@ export default function RegistrationPage() {
         "occupation",
         "emailAddress",
         "jsHealthCardNo",
+        "goldPackage",
         "aadharCardNumber",
         "whatsappNo",
         "pinCode",
@@ -3774,7 +4381,8 @@ export default function RegistrationPage() {
                                 const hoverBg = isApproved ? "hover:bg-[rgba(11,140,0,0.2)]" : isRejected ? "hover:bg-[rgba(239,68,68,0.2)]" : "hover:bg-[rgba(245,158,11,0.2)]";
                                 // Use ProfileIconBrown.svg for approved status, ProfileDarkIcon.svg for others
                                 const iconSrc = isApproved ? "/icons/ProfileDarkIcon.svg" : "/icons/ProfileIconBrown.svg";
-                                const buttonClasses = `h-full min-h-0 w-max shrink-0 overflow-visible py-3 px-6 ${borderColor} border-[1px] ${bgColor} rounded-[16px] flex items-center gap-2 cursor-pointer transition-all duration-300 ${hoverBg} hover:opacity-80 relative ${isSelected && isApproved ? "animate-[pulse-border_2s_ease-in-out_infinite]" : ""
+                                const showRemove = isApproved || isRejected;
+                                const buttonClasses = `h-full min-h-0 w-max shrink-0 overflow-visible py-3 ${showRemove ? "pl-6 pr-9" : "px-6"} ${borderColor} border-[1px] ${bgColor} rounded-[16px] flex items-center gap-2 cursor-pointer transition-all duration-300 ${hoverBg} hover:opacity-80 relative ${isSelected && isApproved ? "animate-[pulse-border-inset_2s_ease-in-out_infinite]" : ""
                                     }`;
 
                                 return (
@@ -3800,6 +4408,25 @@ export default function RegistrationPage() {
                                                 </span>
                                             </Tooltip>
                                         </button>
+                                        {showRemove && (
+                                            <Tooltip content="Remove Patient Details" position="top" delay={0}>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        removeDuplicateExceptionPatient(patient.id);
+                                                        if (selectedApprovedPatientId === patient.id) {
+                                                            handleAddNewPatient();
+                                                        }
+                                                    }}
+                                                    className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center bg-black/10 hover:bg-red-500 ${isApproved ? "text-[#0B8C00]" : "text-red-600"} hover:text-white transition-colors cursor-pointer z-30`}
+                                                >
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M18 6L6 18M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </Tooltip>
+                                        )}
                                         {/* Dot on top border; wrapper height matches pending chips (no extra pt-*) */}
                                         <span className="pointer-events-auto absolute right-4 top-0 z-20 inline-flex -translate-y-1/2">
                                             <Tooltip content={tooltipText} position="top" delay={0}>
@@ -3814,26 +4441,45 @@ export default function RegistrationPage() {
 
                             {/* Pending registration buttons (green buttons only) */}
                             {pendingRegistrationButtons.map((patient) => (
-                                <button
-                                    key={patient.id}
-                                    onClick={() => handleLoadPendingRegistration(patient.registration)}
-                                    className={`shrink-0 py-3 lg:px-6 px-3 ${patient.bgColor} ${patient.borderColor} border-[1px] rounded-[16px] flex items-center gap-2 lg:h-[48px] md:h-[36px] cursor-pointer transition-all duration-300 ${patient.isActive
-                                        ? "hover:bg-[rgba(27, 179, 14, 0.4)] scale-[1.02]"
-                                        : "hover:opacity-80 hover:bg-[rgba(11,140,0,0.2)]"
-                                        }`}
-                                    style={patient.isActive ? {
-                                        animation: 'pulse-border 2s ease-in-out infinite'
-                                    } : {}}
-                                >
-                                    <Tooltip content={patient.name || ""} position="top">
-                                        <span className="flex items-center gap-2 min-w-0 flex-1" >
-                                            <Image src={patient.iconSrc} alt="Patient Icon" width={32} height={32} className="shrink-0" />
-                                            <span className={`font-[Inter] font-medium text-sm leading-[120%] text-center text-hide ${patient.textColor} min-w-0 max-w-[180px] truncate`}>
-                                                {patient.name}
+                                <div key={patient.id} className="relative shrink-0 flex items-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleLoadPendingRegistration(patient.registration)}
+                                        className={`shrink-0 py-3 lg:pl-4 lg:pr-9 pl-3 pr-8 ${patient.bgColor} ${patient.borderColor} border-[1px] rounded-[16px] flex items-center gap-2 lg:h-[48px] md:h-[36px] cursor-pointer transition-all duration-300 ${patient.isActive
+                                            ? "hover:bg-[rgba(27, 179, 14, 0.4)]"
+                                            : "hover:opacity-80 hover:bg-[rgba(11,140,0,0.2)]"
+                                            }`}
+                                        style={patient.isActive ? {
+                                            animation: 'pulse-border-inset 2s ease-in-out infinite'
+                                        } : {}}
+                                    >
+                                        <Tooltip content={patient.name || ""} position="top">
+                                            <span className="flex items-center gap-2 min-w-0 flex-1">
+                                                <Image src={patient.iconSrc} alt="Patient Icon" width={32} height={32} className="shrink-0" />
+                                                <span className={`font-[Inter] font-medium text-sm leading-[120%] text-center text-hide ${patient.textColor} min-w-0 max-w-[180px] truncate`}>
+                                                    {patient.name}
+                                                </span>
                                             </span>
-                                        </span>
+                                        </Tooltip>
+                                    </button>
+                                    <Tooltip content="Remove Patient Details" position="top" delay={0}>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removePendingRegistration(patient.id);
+                                                if (currentPendingRegistrationId === patient.id) {
+                                                    handleAddNewPatient();
+                                                }
+                                            }}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center bg-black/10 hover:bg-red-500 text-gray-700 hover:text-white transition-colors cursor-pointer z-10"
+                                        >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M18 6L6 18M6 6l12 12" />
+                                            </svg>
+                                        </button>
                                     </Tooltip>
-                                </button>
+                                </div>
                             ))}
                         </div>
                     </ScrollableContainer>
@@ -3926,18 +4572,32 @@ export default function RegistrationPage() {
                 </div>
             </div>
             <div className="flex gap-4 h-screen">
-                {/* Pre Booking Panel - Conditionally rendered */}
+                {/* Pre Booking Panel / Admitted patient left panels */}
                 {isPreBookingOpen && (
-                    <div ref={preBookingPanelRef} className="w-[20%] transition-all duration-0 ease-in-out flex-shrink-0 small-screens">
+                    <div ref={preBookingPanelRef} className="w-[20%] transition-all duration-0 ease-in-out flex-shrink-0 small-screens space-y-4">
                         <PreBookingPanel
                             branchId={registrationBranchId}
                             onPreBookingClick={handlePreBookingClick}
                             selectedPreBookingId={selectedPreBookingId}
                         />
+                        {admittedPatientData && (
+                            <>
+                                <JSHealthCardPoints uhid={patientUhid} patientType={formik.values.patientType} onCardNumberFetched={handleJsHealthCardFetched} />
+                                {/* <PatientOldHistory /> */}
+                                <Vouchers
+                                    vouchers={registrationVouchers}
+                                    isLoading={isRegistrationVouchersLoading}
+                                    fetchError={registrationVouchersError}
+                                    onClaimVoucher={handleClaimConsultancyVoucher}
+                                    onRemoveAppliedVoucher={() => setAppliedConsultancyVoucher(null)}
+                                    appliedVoucherSelectionKey={appliedConsultancyVoucher?.selectionKey ?? null}
+                                />
+                            </>
+                        )}
                     </div>
                 )}
 
-                {/* Registration Steps and Forms - Dynamic width based on Pre Booking panel visibility */}
+                {/* Registration Steps and Forms - Dynamic width based on Pre Booking / Admitted panel visibility */}
                 <div
                     ref={formsContainerRef}
                     data-form-container
@@ -3949,9 +4609,26 @@ export default function RegistrationPage() {
                     {currentStep === 0 && (
                         <PersonalForm
                             formik={formik}
+                            isNewPatient={!isRevisitedPatient && !patientUhid && !patientRegistrationId && !selectedRevisitedPatientData}
+                            isRevisitedPatient={isRevisitedPatient}
+                            selectedRevisitedPatientData={selectedRevisitedPatientData}
+                            patientUhid={patientUhid}
+                            patientRegistrationId={patientRegistrationId}
+                            isCardSeriesNotAssigned={isCardSeriesNotAssigned}
+                            arogyaCardSeries={arogyaCardSeriesForValidation?.data}
+                            source={formik.values.source || ""}
                             getFormErrors={getFormErrors}
                             scrollToFirstError={scrollToFirstError}
-                            onNext={handleNextStep}
+                            onNext={
+                                admittedPatientData && admittedPatientData.branchId === registrationBranchId && (admittedPatientData.type === "ipd" || formType === "hospital")
+                                    ? handleAdmittedPatientSubmit
+                                    : handleNextStep
+                            }
+                            submitButtonText={
+                                admittedPatientData && admittedPatientData.branchId === registrationBranchId && (admittedPatientData.type === "ipd" || formType === "hospital")
+                                    ? "Submit"
+                                    : "Save & Next"
+                            }
                             panelsBranchId={registrationBranchId}
                             branchDoctorOptions={branchDoctorSelectOptions}
                             sourceOptions={sourceOptions}
@@ -3962,8 +4639,13 @@ export default function RegistrationPage() {
                             onAadharCardNumberChange={(value) => checkExistingAadharCard(value)}
                             onJsHealthCardNoChange={(value) => checkJsHealthCard(value)}
                             onReferralMobileChange={handleReferralMobileChange}
+                            onGoldPackageChange={setGoldPackageState}
                             readOnlyFields={(() => {
                                 let baseFields: string[] = [];
+
+                                if (admittedPatientData) {
+                                    baseFields.push("patientType");
+                                }
 
                                 if (isUserLeadData) {
                                     // For user lead data: lock fields only if original API data had values
@@ -3976,13 +4658,14 @@ export default function RegistrationPage() {
                                     // For revisit: only lock Aadhar if the existing patient had Aadhar when loaded
                                     const revisitHadAadhar = isRevisitedPatient && !!(selectedRevisitedPatientData?.aadharCardNo?.trim());
                                     const lockAadhar = preBookingHadAadhar || revisitHadAadhar;
-                                    // Lock JS Health Card No. if patient already has it OR it was auto-filled from API
-                                    const lockJsCard = !!(selectedRevisitedPatientData?.jsHealthCardNo?.trim()) || jsHealthCardAutoFilled;
-                                    baseFields = ["patientName", "contactNumber"];
+                                    // Lock Health Card No. if patient already has it OR it was auto-filled from API,
+                                    // but keep it editable when the patient's card is closed so a new one can be assigned.
+                                    const lockJsCard = (!!(selectedRevisitedPatientData?.jsHealthCardNo?.trim()) || jsHealthCardAutoFilled) && !jsHealthCardClosed;
+                                    baseFields.push("patientName", "contactNumber");
                                     if (lockAadhar) baseFields.push("aadharCardNumber");
                                     if (lockJsCard) baseFields.push("jsHealthCardNo");
                                 } else if (selectedApprovedPatientId) {
-                                    baseFields = ["patientName", "contactNumber"];
+                                    baseFields.push("patientName", "contactNumber");
                                 }
 
                                 // Add referral fields if patient is selected or dialog is open
@@ -3998,7 +4681,9 @@ export default function RegistrationPage() {
                             hideReferral={!!patientUhid && patientUhid.trim() !== ""}
                             isContactLoading={isContactLoading}
                             isReferralMobileLoading={isReferralMobileLoading}
-                            isNextDisabled={!canAdd}
+                            isNextDisabled={!canAdd || isSubmittingAdmittedActive}
+                            isSubmitting={isSubmittingAdmittedActive}
+                            onClearReferral={handleClearReferral}
                         />
                     )}
 
@@ -4006,9 +4691,20 @@ export default function RegistrationPage() {
                         <VitalForm
                             formik={formik}
                             getFormErrors={getFormErrors}
-                            onNext={handleNextStep}
+                            scrollToFirstError={scrollToFirstError}
+                            onNext={
+                                admittedPatientData && admittedPatientData.branchId === registrationBranchId && admittedPatientData.type === "daycare" && formType === "clinic"
+                                    ? handleAdmittedPatientSubmit
+                                    : handleNextStep
+                            }
                             onBack={handleBackSteps}
                             branchId={registrationBranchId}
+                            submitButtonText={
+                                admittedPatientData && admittedPatientData.branchId === registrationBranchId && admittedPatientData.type === "daycare" && formType === "clinic"
+                                    ? "Submit"
+                                    : "Save & Next"
+                            }
+                            isSubmitting={isSubmittingAdmittedActive}
                         />
                     )}
 
@@ -4052,12 +4748,15 @@ export default function RegistrationPage() {
                                 consultancyVoucher={
                                     appliedConsultancyVoucher
                                         ? {
-                                              voucherType: appliedConsultancyVoucher.voucherType,
-                                              voucher: appliedConsultancyVoucher.voucher,
-                                              benefitMessage: appliedConsultancyVoucher.benefitMessage,
-                                          }
+                                            voucherType: appliedConsultancyVoucher.voucherType,
+                                            voucher: appliedConsultancyVoucher.voucher,
+                                            benefitMessage: appliedConsultancyVoucher.benefitMessage,
+                                        }
                                         : null
                                 }
+                                goldPackageStatus={goldPackageState.goldPackageStatus}
+                                couponCode={goldPackageState.couponCode}
+                                declineDescription={goldPackageState.declineDescription}
                                 renderPaymentBody={currentStep === 3}
                             />
                         </div>
@@ -4065,23 +4764,72 @@ export default function RegistrationPage() {
                 </div>
 
                 <div className="hidden xl:block w-[20%] right-screen">
-                    <JSHealthCardPoints uhid={patientUhid} patientType={formik.values.patientType} onCardNumberFetched={handleJsHealthCardFetched} />
-                    <PatientOldHistory />
-                    <Vouchers
-                        vouchers={registrationVouchers}
-                        isLoading={isRegistrationVouchersLoading}
-                        fetchError={registrationVouchersError}
-                        onClaimVoucher={handleClaimConsultancyVoucher}
-                        onRemoveAppliedVoucher={() => setAppliedConsultancyVoucher(null)}
-                        appliedVoucherSelectionKey={appliedConsultancyVoucher?.selectionKey ?? null}
-                    />
+                    {admittedPatientData ? (
+                        admittedPatientData.type === "ipd" ? (
+                            <>
+                                <RoomInformation roomData={roomDataFromApi} />
+                                <Doctor doctorData={doctorDataFromApi} />
+                                <MedicalDetails medicalData={medicalDataFromApi} />
+                                <PatientWalletInformation walletData={patientWalletData} />
+                            </>
+                        ) : (
+                            <>
+                                {/* <PersonalDetailsReg personalDetails={{
+                                    patientName: formik.values.patientName || undefined,
+                                    contactNumber: formik.values.contactNumber || undefined,
+                                    aadharCardNumber: formik.values.aadharCardNumber || undefined,
+                                    gender: formik.values.gender || undefined,
+                                    age: formik.values.age || undefined,
+                                    religion: formik.values.religion || undefined,
+                                    occupation: formik.values.occupation || undefined,
+                                    emailAddress: formik.values.emailAddress || undefined,
+                                    maritalStatus: formik.values.maritalStatus || undefined,
+                                    fatherHusbandName: formik.values.fathersHusbandsName || undefined,
+                                }} /> */}
+                                <Vitals vitals={vitalsDataFromApi} />
+                                <Doctor doctorData={doctorDataFromApi} />
+                                <MedicalDetails medicalData={medicalDataFromApi} />
+                                <PatientWalletInformation walletData={patientWalletData} />
+                                <Therapy therapies={therapiesDataFromApi} />
+                            </>
+                        )
+                    ) : (
+                        <>
+                            <JSHealthCardPoints uhid={patientUhid} patientType={formik.values.patientType} onCardNumberFetched={handleJsHealthCardFetched} />
+                            {/* <PatientOldHistory /> */}
+                            {patientUhid && (formik.values.patientType?.toLowerCase() === "ipd" || formik.values.patientType?.toLowerCase() === "daycare") && (
+                                <>
+                                    <RoomInformation roomData={roomDataFromApi} />
+                                    <Doctor doctorData={doctorDataFromApi} />
+                                    <MedicalDetails medicalData={medicalDataFromApi} />
+                                </>
+                            )}
+                            <PatientWalletInformation walletData={patientWalletData} />
+                            <Vouchers
+                                vouchers={registrationVouchers}
+                                isLoading={isRegistrationVouchersLoading}
+                                fetchError={registrationVouchersError}
+                                onClaimVoucher={handleClaimConsultancyVoucher}
+                                onRemoveAppliedVoucher={() => setAppliedConsultancyVoucher(null)}
+                                appliedVoucherSelectionKey={appliedConsultancyVoucher?.selectionKey ?? null}
+                            />
+                        </>
+                    )}
                 </div>
                 {/* Mobile right screen drawer - slides from right on screens below 1280px */}
                 <div className={`mobile-fix fixed right-0 top-0 h-screen w-[80%] sm:w-[60%] md:w-[50%] lg:w-[40%] bg-white z-50 transform transition-transform duration-300 overflow-hidden ${isRightScreenOpen ? 'translate-x-0' : 'translate-x-full'
                     }`}>
                     <div className="h-full overflow-y-auto p-3">
                         <JSHealthCardPoints uhid={patientUhid} patientType={formik.values.patientType} onCardNumberFetched={handleJsHealthCardFetched} />
-                        <PatientOldHistory />
+                        {/* <PatientOldHistory /> */}
+                        {patientUhid && (formik.values.patientType?.toLowerCase() === "ipd" || formik.values.patientType?.toLowerCase() === "daycare") && (
+                            <>
+                                <RoomInformation roomData={roomDataFromApi} />
+                                <Doctor doctorData={doctorDataFromApi} />
+                                <MedicalDetails medicalData={medicalDataFromApi} />
+                            </>
+                        )}
+                        <PatientWalletInformation walletData={patientWalletData} />
                         <Vouchers
                             vouchers={registrationVouchers}
                             isLoading={isRegistrationVouchersLoading}
@@ -4194,6 +4942,18 @@ export default function RegistrationPage() {
                 confirmText="OK"
                 showCancel={false}
                 onConfirm={() => setShowDuplicatePendingDialog(false)}
+            />
+
+            {/* Patient Name Required Dialog when clicking Add New Patient */}
+            <MessageDialog
+                open={showPatientNameRequiredDialog}
+                onClose={() => setShowPatientNameRequiredDialog(false)}
+                icon="/icons/CrossIcon.svg"
+                iconBgColor="#FFEBEE"
+                message="The Patient Name is compulsory to click on Add New Patient button for hold registration"
+                confirmText="OK"
+                showCancel={false}
+                onConfirm={() => setShowPatientNameRequiredDialog(false)}
             />
 
         </AppShell>

@@ -119,18 +119,27 @@ export default function IpdOpdDetails({
         if (formData.timeSlot && slot.value === formData.timeSlot) return true;
         const parts = slot.value.split(/\s*-\s*/);
         if (parts.length !== 2) return true;
-        const endPart = parts[1].trim().toLowerCase();
-        const pm = endPart.endsWith("pm");
-        const am = endPart.endsWith("am");
-        let endHour = 0;
-        const numMatch = endPart.match(/^(\d{1,2})/);
-        if (numMatch) {
-          endHour = parseInt(numMatch[1], 10);
-          if (pm && endHour !== 12) endHour += 12;
-          if (am && endHour === 12) endHour = 0;
-        }
-        const slotEndMinutes = endHour * 60;
-        return currentMinutes < slotEndMinutes;
+        const parseTimeToHourLocal = (s: string): number | null => {
+          const t = s.trim().toLowerCase();
+          const pm = t.endsWith("pm");
+          const am = t.endsWith("am");
+          if (!pm && !am) return null;
+          const numPart = t.replace(/(am|pm)$/, "").trim();
+          const match = numPart.match(/^(\d{1,2})(?::(\d{2}))?/);
+          if (!match) return null;
+          let h = parseInt(match[1], 10);
+          if (isNaN(h) || h < 1 || h > 12) return null;
+          if (pm && h !== 12) h += 12;
+          if (am && h === 12) h = 0;
+          return h;
+        };
+        const startHour = parseTimeToHourLocal(parts[0]);
+        const endHour = parseTimeToHourLocal(parts[1]);
+        if (startHour == null || endHour == null) return true;
+        const normalizedEnd = endHour <= startHour ? endHour + 24 : endHour;
+        const durationHours = normalizedEnd - startHour;
+        const cutoffMinutes = durationHours >= 2 ? startHour * 60 + 61 : normalizedEnd * 60;
+        return currentMinutes < cutoffMinutes;
       });
       return filtered;
     }

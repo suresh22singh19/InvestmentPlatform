@@ -5,20 +5,17 @@ import Image from "next/image";
 import { ScrollableContainer } from "../ui";
 import NoDataBox from "./NoDataBox";
 
-interface DoctorData {
+export interface DoctorData {
     opdDoctor?: string;
     ipdDoctor?: string;
 }
 
 interface DoctorProps {
-    doctorData?: DoctorData;
+    doctorData?: DoctorData | null;
 }
 
 export default function Doctor({
-    doctorData = {
-        opdDoctor: "Dr. Rahul Verma",
-        ipdDoctor: "Dr. Ananya Sharma",
-    },
+    doctorData,
 }: DoctorProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
@@ -26,7 +23,7 @@ export default function Doctor({
         setIsExpanded(!isExpanded);
     };
 
-    const hasDoctorData = doctorData && (doctorData.opdDoctor || doctorData.ipdDoctor);
+    const hasDoctorData = Boolean(doctorData && (Boolean(doctorData.opdDoctor) || Boolean(doctorData.ipdDoctor)));
 
     return (
         <div className="mb-4 w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
@@ -54,32 +51,29 @@ export default function Doctor({
             </div>
             {isExpanded ? (
                 <>
+
                     {hasDoctorData ? (
                         <div className="Room-content mt-5">
                             <ScrollableContainer maxHeight="400px" className="pr-2" showScrollbar={true}>
                                 <div>
                                     <div className="bg-white mb-4 border border-[#EBECED]">
-                                        {doctorData?.opdDoctor && (
-                                            <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    OPD Doctor
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {doctorData.opdDoctor}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px] border-b border-[#EBECED]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                OPD Doctor
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {doctorData?.opdDoctor || "NA"}
+                                            </span>
+                                        </div>
 
-                                        {doctorData?.ipdDoctor && (
-                                            <div className="flex justify-between px-[20px] py-[18px]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
-                                                    IPD Doctor
-                                                </span>
-                                                <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
-                                                    {doctorData.ipdDoctor}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between px-[20px] py-[18px]">
+                                            <span className="font-inter text-[14px] leading-[120%] font-normal text-[#525763]">
+                                                IPD Doctor
+                                            </span>
+                                            <span className="font-inter text-[14px] leading-[120%] font-medium text-right text-[#434956]">
+                                                {doctorData?.ipdDoctor || "NA"}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </ScrollableContainer>

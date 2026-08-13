@@ -11,7 +11,8 @@ import PaymentDialogDetails from "@/components/registration/PaymentDialogDetails
 import ProcessingPaymentDialog from "@/components/registration/ProcessingPaymentDialog";
 import { useGetStatesQuery, useGetCitiesQuery, useGetCountriesQuery, useLazyGetTehsilsQuery, useLazyGetAreasQuery } from "@/store/api/publicApi";
 import { useGetServicesByBranchAndPaymentModesQuery, useCreateHospitalPatientMutation, useCreateAppointmentAndUpdateRegistrationMutation, useLazyGetRazorpayPosPaymentStatusPollingQuery, useCancelRazorpayPosPaymentMutation, type HospitalPatientRequest, type CreateAppointmentAndUpdateRegistrationRequest, type RazorpayPosMachineUser } from "@/store/api/registrationApi";
-import { selectUserId, selectUserBranchId } from "@/store/slices/authSlice";
+import { useGetBranchesQuery } from "@/store/api/settingsApi";
+import { selectUserId, selectUserBranchId, selectSelectedBranch, selectRoleCategoryType } from "@/store/slices/authSlice";
 import { useAppSelector } from "@/store/hooks";
 import type { RegistrationPersonalDetailsFormValues } from "@/lib/validation/registrationSchemas";
 import type { SelectOption } from "@/components/ui/FormSelectField";
@@ -48,6 +49,36 @@ export function buildConsultancyVoucherRoot(v: PaymentFormConsultancyVoucher | n
             voucher: v.voucher,
             benefitMessage: v.benefitMessage,
         },
+    };
+}
+
+/** Build the root-level comp package fields for hospital/clinic payloads */
+export function buildCompPackageRoot(
+    goldPackageStatus: "Accept" | "Decline" | "",
+    couponCode: string,
+    declineDescription: string,
+): {
+    isCompPackageReceived: boolean;
+    compPackageCouponNumber: string | null;
+    compPackageNotUsedReason: string | null;
+} {
+    if (goldPackageStatus === "Accept") {
+        return {
+            isCompPackageReceived: true,
+            compPackageCouponNumber: couponCode?.trim() || null,
+            compPackageNotUsedReason: null,
+        };
+    } else if (goldPackageStatus === "Decline") {
+        return {
+            isCompPackageReceived: false,
+            compPackageCouponNumber: null,
+            compPackageNotUsedReason: declineDescription?.trim() || null,
+        };
+    }
+    return {
+        isCompPackageReceived: false,
+        compPackageCouponNumber: null,
+        compPackageNotUsedReason: null,
     };
 }
 
@@ -90,6 +121,12 @@ interface PaymentFormProps {
     consultancyVoucher?: PaymentFormConsultancyVoucher | null;
     /** When false, only dialogs are rendered (clinic voucher flow mounts this for receipt + direct finalize). Default true. */
     renderPaymentBody?: boolean;
+    /** Gold package acceptance status from PersonalForm */
+    goldPackageStatus?: "Accept" | "Decline" | "";
+    /** Coupon code entered when goldPackageStatus is "Accept" */
+    couponCode?: string;
+    /** Decline reason entered when goldPackageStatus is "Decline" */
+    declineDescription?: string;
 }
 
 const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentForm({
@@ -112,6 +149,9 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
     registrationBranchId: registrationBranchIdProp,
     consultancyVoucher = null,
     renderPaymentBody = true,
+    goldPackageStatus = "",
+    couponCode = "",
+    declineDescription = "",
 }, ref) {
     const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
     const [showCashConsultationConfirm, setShowCashConsultationConfirm] = useState(false);
@@ -208,6 +248,22 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
     // Extract services and POS machine users from response
     const services = servicesData?.data?.services || [];
     const razorpayPosMachineUsers: RazorpayPosMachineUser[] = servicesData?.data?.razorpayPosMachineUsers || [];
+
+    const reduxSelectedBranch = useAppSelector(selectSelectedBranch);
+    const roleCategoryType = useAppSelector(selectRoleCategoryType);
+    const isSuperAdmin = roleCategoryType?.toLowerCase() === "superadmin";
+    const { data: branchesData } = useGetBranchesQuery(undefined, { skip: !isSuperAdmin });
+
+    const activeBranch = useMemo(() => {
+        if (isSuperAdmin && Array.isArray(branchesData?.data)) {
+            if (branchId) {
+                const found = branchesData.data.find((b) => Number(b.id) === Number(branchId));
+                if (found) return found;
+            }
+            if (branchesData.data.length > 0) return branchesData.data[0];
+        }
+        return reduxSelectedBranch;
+    }, [isSuperAdmin, branchId, branchesData?.data, reduxSelectedBranch]);
     
     // Get serviceId from first service (for payment payload)
     const serviceId = useMemo(() => {
@@ -249,7 +305,7 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
                 // { value: "500", label: "500" },
             ];
         }
-        return services.map((service) => {
+        const mappedOptions = services.map((service) => {
             // Use price as value and label
             const priceValue = service.price?.toString() || service.id?.toString() || "";
             const priceLabel = service.price?.toString() || priceValue;
@@ -257,6 +313,13 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
                 value: priceValue,
                 label: priceLabel,
             };
+        });
+
+        // Sort options numerically in ascending order
+        return [...mappedOptions].sort((a, b) => {
+            const numA = parseFloat(a.value) || 0;
+            const numB = parseFloat(b.value) || 0;
+            return numA - numB;
         });
     }, [services]);
 
@@ -604,6 +667,7 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
                 preBookingId: preBookingId ? (typeof preBookingId === 'number' ? preBookingId : parseInt(String(preBookingId), 10)) : null,
             },
             ...buildConsultancyVoucherRoot(consultancyVoucher),
+            ...buildCompPackageRoot(goldPackageStatus, couponCode, declineDescription),
         };
         
         return payload;
@@ -1722,6 +1786,7 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
                 isDownloadingInvoice={isDownloadingInvoice}
                 canDownload={canDownload}
                 isSubmitting={isSubmitting || isCreatingPatient || registrationSubmitting}
+                branch={activeBranch}
             />
 
             <PaymentDialogDetails
@@ -1759,6 +1824,7 @@ const PaymentForm = forwardRef<PaymentFormHandle, PaymentFormProps>(function Pay
                 canDownload={canDownload}
                 isSubmitting={false}
                 receiptActionsOnly
+                branch={activeBranch}
             />
 
             <MessageDialog

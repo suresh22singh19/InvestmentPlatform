@@ -46,7 +46,7 @@ export const reportsApi = baseApi.injectEndpoints({
       }),
     }),
     /**
-     * Generate CSV for JS Health Card Issue report (GET).
+     * Generate CSV for Health Card Issue report (GET).
      * Same params and response shape as old/new patient report.
      */
     generateCsvForHealthCardIssues: builder.query<

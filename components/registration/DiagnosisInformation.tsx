@@ -97,15 +97,18 @@ export default function DiagnosisInformation({
                         label="Symptoms"
                         value={formData.symptoms || ""}
                         onChange={(e) => {
-                            const value = e.target.value.replace(/[^a-zA-Z\s]/g, "").slice(0, 100);
+                            const value = e.target.value.replace(/[^a-zA-Z\s]/g, "").slice(0, 1000);
                             onChange("symptoms", value);
                         }}
                         onBlur={() => onBlur?.("symptoms")}
-                        placeholder="Symptoms"
+                        placeholder="Please enter the symptoms (maximum 1,000 characters)"
                         className="h-[79px]"
-                        maxLength={100}
+                        maxLength={1000}
                         error={errors?.symptoms}
                     />
+                    <div className="flex justify-end mt-1 text-[12px] leading-[120%] text-[#7B8089]">
+                        Remaining characters : <span className="font-semibold ml-1 text-[#262D3B]">{1000 - (formData.symptoms || "").length}</span>
+                    </div>
                 </div>
             </div>
         </div>

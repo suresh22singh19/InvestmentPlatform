@@ -46,12 +46,12 @@ interface PreBookingPatientInformationProps {
   isContactLoading?: boolean;
   /** When true (Address country is not India), email is required — label shows * */
   emailRequiredByAddressCountry?: boolean;
-  /** When true (e.g. Patient Type is Private), show JS Health Card No. in the last row with full width */
+  /** When true (e.g. Patient Type is Private), show Health Card No. in the last row with full width */
   showJsHealthCardNo?: boolean;
   jsHealthCardNo?: string;
   onJsHealthCardNoChange?: (value: string) => void;
   onJsHealthCardNoBlur?: () => void;
-  /** When true, JS Health Card No. is shown but non-editable (for existing patients) */
+  /** When true, Health Card No. is shown but non-editable (for existing patients) */
   jsHealthCardReadOnly?: boolean;
   /** Field names that should be disabled (e.g. when filled from "Patient Already Exists" dialog) */
   readOnlyFields?: (keyof PreBookingPatientInformationFormData)[];
@@ -178,10 +178,10 @@ export default function PreBookingPatientInformation({
             </div>
           )}
         </div>
-      
 
-     
-       
+
+
+
 
         <div className="flex flex-col gap-0 flex-1 flex-wrap">
           <div className="flex gap-2 flex-1">
@@ -370,7 +370,7 @@ export default function PreBookingPatientInformation({
         {/* {showJsHealthCardNo && (
           <div className="col-span-full mt-0" data-field="jsHealthCardNo">
             <FormInputField
-              label="JS Health Card No."
+              label="Health Card No."
               value={jsHealthCardNo}
               onChange={(e) => {
                 if (jsHealthCardReadOnly) return;

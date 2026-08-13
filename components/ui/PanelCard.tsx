@@ -79,8 +79,12 @@ export const PanelCard = ({
         <div className="mb-6 h-[30px] shrink-0" aria-hidden />
       )}
 
-      <div className="mb-6 flex-1">
-        <h3 className="text-center text-xl font-semibold leading-[130%] text-[#262D3B]">{name}</h3>
+      <div className="mb-6 flex-1 min-w-0 text-center">
+        <Tooltip content={name} position="top">
+          <h3 className="text-center text-xl font-semibold leading-[130%] text-[#262D3B] truncate inline-block align-top w-[240px] ">
+            {name}
+          </h3>
+        </Tooltip>
       </div>
 
       <div className="flex items-center gap-3">

@@ -29,6 +29,7 @@ import { useGetBranchesQuery, useGetLabTestsQuery, useGetLabTestsByBranchQuery, 
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 type LabTestStatus = "Active" | "Inactive" | "Pending";
 
@@ -66,6 +67,11 @@ type LabTestApiItemRow = {
   panel_price_last_updated_by?: string | null;
   tpa_price_last_updated_by?: string | null;
 };
+
+function formatPriceVal(val?: string | number | null): string {
+  if (val === null || val === undefined || val === "" || val === "—") return "—";
+  return formatIndianAmount(val);
+}
 
 function formatPrice(n: number): string {
   return `₹ ${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -116,13 +122,22 @@ function displayLastSyncDate(test: LabTest, tab: string): string {
 }
 
 function sanitizeDecimalInput(raw: string): string {
-  let v = raw.replace(/[^0-9.]/g, "");
-  const dotCount = (v.match(/\./g) || []).length;
-  if (dotCount > 1) {
-    const [first, ...rest] = v.split(".");
-    v = first + "." + rest.join("").replace(/\./g, "");
+  const value = raw.replace(/[^\d.]/g, "");
+  const parts = value.split(".");
+  let integerPart = parts[0];
+  if (integerPart.startsWith("0") && integerPart.length > 1) {
+    integerPart = integerPart.replace(/^0+/, "") || "0";
   }
-  return v;
+  if (integerPart.length > 6) {
+    integerPart = integerPart.slice(0, 6);
+  }
+  let fractionalPart = parts[1];
+  if (fractionalPart !== undefined) {
+    if (fractionalPart.length > 2) {
+      fractionalPart = fractionalPart.slice(0, 2);
+    }
+  }
+  return fractionalPart !== undefined ? `${integerPart}.${fractionalPart}` : integerPart;
 }
 
 type AddLabTestFormState = {
@@ -429,9 +444,21 @@ export default function LabTestsPage() {
     if (!addLabTestForm.categoryName.trim()) err.categoryName = "Category is required";
     if (!addLabTestForm.testName.trim()) err.testName = "Test name is required";
     if (!addLabTestForm.testDescription.trim()) err.testDescription = "Description is required";
-    if (!addLabTestForm.privatePrice.trim()) err.privatePrice = "Private price is required";
-    if (!addLabTestForm.panelPrice.trim()) err.panelPrice = "Panel price is required";
-    if (!addLabTestForm.tpaPrice.trim()) err.tpaPrice = "TPA price is required";
+    if (!addLabTestForm.privatePrice.trim()) {
+      err.privatePrice = "Private price is required";
+    } else if (!/^\d{1,6}(\.\d{1,2})?$/.test(addLabTestForm.privatePrice.trim())) {
+      err.privatePrice = "Enter a valid amount (max 6 digits before decimal)";
+    }
+    if (!addLabTestForm.panelPrice.trim()) {
+      err.panelPrice = "Panel price is required";
+    } else if (!/^\d{1,6}(\.\d{1,2})?$/.test(addLabTestForm.panelPrice.trim())) {
+      err.panelPrice = "Enter a valid amount (max 6 digits before decimal)";
+    }
+    if (!addLabTestForm.tpaPrice.trim()) {
+      err.tpaPrice = "TPA price is required";
+    } else if (!/^\d{1,6}(\.\d{1,2})?$/.test(addLabTestForm.tpaPrice.trim())) {
+      err.tpaPrice = "Enter a valid amount (max 6 digits before decimal)";
+    }
     setAddLabTestErrors(err);
     return Object.keys(err).length === 0;
   };
@@ -749,7 +776,7 @@ export default function LabTestsPage() {
                       <TableData>{test.testName}</TableData>
                       {activeTab === "all" ? (
                         <>
-                          <TableData className="whitespace-nowrap">{test.privatePrice ?? test.price}</TableData>
+                          <TableData className="whitespace-nowrap">{formatPriceVal(test.privatePrice ?? test.price)}</TableData>
                           <TableData>
                             <span
                               className={`inline-flex h-[30px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${getStatusBadgeClass(test.privateStatus ?? test.status)}`}
@@ -757,7 +784,7 @@ export default function LabTestsPage() {
                               {test.privateStatus ?? test.status}
                             </span>
                           </TableData>
-                          <TableData className="whitespace-nowrap">{test.panelPrice ?? test.price}</TableData>
+                          <TableData className="whitespace-nowrap">{formatPriceVal(test.panelPrice ?? test.price)}</TableData>
                           <TableData>
                             <span
                               className={`inline-flex h-[30px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${getStatusBadgeClass(test.panelStatus ?? test.status)}`}
@@ -765,7 +792,7 @@ export default function LabTestsPage() {
                               {test.panelStatus ?? test.status}
                             </span>
                           </TableData>
-                          <TableData className="whitespace-nowrap">{test.tpaPrice ?? test.price}</TableData>
+                          <TableData className="whitespace-nowrap">{formatPriceVal(test.tpaPrice ?? test.price)}</TableData>
                           <TableData>
                             <span
                               className={`inline-flex h-[30px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] ${getStatusBadgeClass(test.tpaStatus ?? test.status)}`}
@@ -777,11 +804,13 @@ export default function LabTestsPage() {
                       ) : (
                         <>
                           <TableData className="whitespace-nowrap">
-                            {activeTab === "private"
-                              ? (test.privatePrice ?? test.price)
-                              : activeTab === "panel"
-                                ? (test.panelPrice ?? test.price)
-                                : (test.tpaPrice ?? test.price)}
+                            {formatPriceVal(
+                              activeTab === "private"
+                                ? (test.privatePrice ?? test.price)
+                                : activeTab === "panel"
+                                  ? (test.panelPrice ?? test.price)
+                                  : (test.tpaPrice ?? test.price)
+                            )}
                           </TableData>
                           <TableData>
                             <span
@@ -1081,15 +1110,15 @@ export default function LabTestsPage() {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-[#7B8088]">Private Price</p>
-                  <p className="mt-1 text-sm font-medium text-[#262D3B]">{selectedLabTest.privatePrice ?? selectedLabTest.price}</p>
+                  <p className="mt-1 text-sm font-medium text-[#262D3B]">{formatPriceVal(selectedLabTest.privatePrice ?? selectedLabTest.price)}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-[#7B8088]">Panel Price</p>
-                  <p className="mt-1 text-sm font-medium text-[#262D3B]">{selectedLabTest.panelPrice ?? selectedLabTest.price}</p>
+                  <p className="mt-1 text-sm font-medium text-[#262D3B]">{formatPriceVal(selectedLabTest.panelPrice ?? selectedLabTest.price)}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-[#7B8088]">TPA Price</p>
-                  <p className="mt-1 text-sm font-medium text-[#262D3B]">{selectedLabTest.tpaPrice ?? selectedLabTest.price}</p>
+                  <p className="mt-1 text-sm font-medium text-[#262D3B]">{formatPriceVal(selectedLabTest.tpaPrice ?? selectedLabTest.price)}</p>
                 </div>
               </div>
               <div className="space-y-4">

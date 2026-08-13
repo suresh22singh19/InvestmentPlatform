@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useId, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback, useId, useMemo, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -48,6 +48,9 @@ const NAV_ICON_SRC: Record<string, string> = {
   ipdreception: "/icons/patientBed.svg",
   "ipdreception-dashboard": "/icons/DashboardDarkIcon.svg",
   "today-appointment": "/icons/RegistrationDarkIcon.svg",
+  counsellor: "/icons/RegistrationDarkIcon.svg",
+  "ipd-head-nurse": "/icons/ProfileGreenIcon.svg",
+  "ipd-staff-nurse": "/icons/ProfileGreenIcon.svg",
 };
 
 type TopNavigationBarProps = {
@@ -151,105 +154,73 @@ type SettingsItem = {
 };
 
 const getAllSettingsItems = (): SettingsItem[] => [
-  {
-    key: "configuration",
-    label: "Configuration",
-    href: "/settings/configuration",
-    iconSrc: "/icons/SettingsDarkIcon.svg",
-  },
-  {
-    key: "branch-ip",
-    label: "Branch IP Network",
-    href: "/settings/branch-ip-network",
-    iconSrc: "/icons/BranchIPNetworkDarkIcon.svg",
-  },
-  {
-    key: "therapist",
-    label: "Therapist",
-    href: "/settings/therapist",
-    iconSrc: "/icons/TpaTherapyDarkIcon.svg",
-  },
-  {
-    key: "duplicate-no-exp",
-    label: "Duplicate Number Exceptions",
-    href: "/settings/duplicate-number-exceptions",
-    iconSrc: "/icons/DuplicateNoExpDarkIcon.svg",
-  },
-  {
-    key: "manage-contact-updates",
-    label: "Manage Contact Updates",
-    href: "/settings/manage-contact-updates",
-    iconSrc: "/icons/Contact.svg", // Using same icon for now, can be replaced with specific icon later
-  },
 
-  // hide some Settings items for temparary purpose not remove the code any condition i will uncomment when its needed
-
-  {
-    key: "discount",
-    label: "Discount Approval",
-    href: "/settings/discount-approval",
-    iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
-  },
-  {
-    key: "refund",
-    label: "Refund Approval",
-    href: "/settings/refund-approval",
-    iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
-  },
-  {
-    key: "users",
-    label: "Users",
-    href: "/settings/users",
-    iconSrc: "/icons/UsersDarkIcon.svg",
-  },
-  {
-    key: "panel",
-    label: "Panel",
-    href: "/settings/panel",
-    iconSrc: "/icons/PannelDarkIcon.svg",
-  },
-  {
-    key: "document",
-    label: "Document Master",
-    href: "/settings/document",
-    iconSrc: "/icons/PannelDarkIcon.svg",
-  },
   // {
-  //   key: "stock",
-  //   label: "Stock/Product",
-  //   href: "/settings/stock-product",
-  //   iconSrc: "/icons/Stock&ProductDarkIcon.svg",
+  //   key: "configuration",
+  //   label: "Configuration",
+  //   href: "/settings/configuration",
+  //   iconSrc: "/icons/SettingsDarkIcon.svg",
   // },
-  {
-    key: "therapy",
-    label: "Therapy",
-    href: "/settings/therapy",
-    iconSrc: "/icons/PanelTherapy.svg",
-  },
   // {
-  //   key: "tpa",
-  //   label: "TPA Therapy",
-  //   href: "/settings/tpa-therapy",
-  //   iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  //   key: "consultancy-service",
+  //   label: "Consultancy Service",
+  //   href: "/settings/consultancy-service",
+  //   iconSrc: "/icons/SettingsDarkIcon.svg",
   // },
-  {
-    key: "lab-tests",
-    label: "Lab Tests",
-    href: "/settings/lab-tests",
-    iconSrc: "/icons/LabTestsDarkIcon.svg",
-  },
-  {
-    key: "package",
-    label: "Packages",
-    href: "/settings/package",
-    iconSrc: "/icons/PackageDarkIcon.svg",
-  },
-  {
-    key: "offer-master",
-    label: "Offer Master",
-    href: "/settings/offer-master",
-    iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
-  },
+  // {
+  //   key: "diagnosis",
+  //   label: "Diagnosis",
+  //   href: "/settings/diagnosis",
+  //   iconSrc: "/icons/DiagnosisDarkIcon.svg",
+  // },
+  // {
+  //   key: "diet",
+  //   label: "Diagnosis Diet",
+  //   href: "/settings/diet",
+  //   iconSrc: "/icons/DiagnosisDietDarkIcon.svg",
+  // },
+  // {
+  //   key: "diet-category",
+  //   label: "Diet Category",
+  //   href: "/settings/diet-category",
+  //   iconSrc: "/icons/DietCategoryDarkIcon.svg",
+  // },
+  // {
+  //   key: "discount",
+  //   label: "Discount Approval",
+  //   href: "/settings/discount-approval",
+  //   iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
+  // },
+  // {
+  //   key: "doctor",
+  //   label: "Doctor",
+  //   href: "/doctor",
+  //   iconSrc: "/icons/DoctorDarkIcon.svg",
+  // },
+  // {
+  //   key: "document",
+  //   label: "Document Master",
+  //   href: "/settings/document",
+  //   iconSrc: "/icons/PannelDarkIcon.svg",
+  // },
+  // {
+  //   key: "duplicate-no-exp",
+  //   label: "Duplicate Number Exceptions",
+  //   href: "/settings/duplicate-number-exceptions",
+  //   iconSrc: "/icons/DuplicateNoExpDarkIcon.svg",
+  // },
+  // {
+  //   key: "facilities",
+  //   label: "Facilities",
+  //   href: "/settings/facilities",
+  //   iconSrc: "/icons/hospitalicon.svg",
+  // },
+  // {
+  //   key: "floor-master",
+  //   label: "Floor Master",
+  //   href: "/settings/floor-master",
+  //   iconSrc: "/icons/hospitalicon.svg",
+  // },
   // {
   //   key: "field-users",
   //   label: "Field Users",
@@ -257,10 +228,42 @@ const getAllSettingsItems = (): SettingsItem[] => [
   //   iconSrc: "/icons/UsersDarkIcon.svg",
   // },
   // {
-  //   key: "sms",
-  //   label: "SMS",
-  //   href: "/settings/sms",
-  //   iconSrc: "/icons/SmsDarkIcon.svg",
+  //   key: "groups",
+  //   label: "Groups",
+  //   href: "/settings/groups",
+  //   fallbackIcon: (
+  //     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  //       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+  //       <circle cx="9" cy="7" r="4" />
+  //       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+  //       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  //     </svg>
+  //   ),
+  // },
+
+  // {
+  //   key: "healthcard-exceptions",
+  //   label: "Health Card Approval",
+  //   href: "/settings/healthcard-exceptions",
+  //   iconSrc: "/icons/SettingsDarkIcon.svg",
+  // },
+  // {
+  //   key: "infrastructure",
+  //   label: "Infrastructure",
+  //   href: "/infrastructure",
+  //   iconSrc: "/icons/BranchRoleMasterIcon.svg",
+  // },
+  // {
+  //   key: "lab-tests",
+  //   label: "Lab Tests",
+  //   href: "/settings/lab-tests",
+  //   iconSrc: "/icons/LabTestsDarkIcon.svg",
+  // },
+  // {
+  //   key: "manage-contact-updates",
+  //   label: "Manage Contact Updates",
+  //   href: "/settings/manage-contact-updates",
+  //   iconSrc: "/icons/Contact.svg",
   // },
   // {
   //   key: "medical-report",
@@ -278,82 +281,10 @@ const getAllSettingsItems = (): SettingsItem[] => [
   //   ),
   // },
   // {
-  //   key: "notifications",
-  //   label: "Notifications",
-  //   href: "/settings/notifications",
-  //   iconSrc: "/icons/NotificationDarkIcon.svg",
-  // },
-  {
-    key: "diet-category",
-    label: "Diet Category",
-    href: "/settings/diet-category",
-    iconSrc: "/icons/DietCategoryDarkIcon.svg",
-  },
-  {
-    key: "diet",
-    label: "Diagnosis Diet",
-    href: "/settings/diet",
-    iconSrc: "/icons/DiagnosisDietDarkIcon.svg",
-  },
-  {
-    key: "diagnosis",
-    label: "Diagnosis",
-    href: "/settings/diagnosis",
-    iconSrc: "/icons/DiagnosisDarkIcon.svg",
-  },
-  {
-    key: "sub-diagnosis",
-    label: "Sub Diagnosis",
-    href: "/settings/sub-diagnosis",
-    iconSrc: "/icons/DiagnosisDarkIcon.svg",
-  },
-  {
-    key: "health-card-management",
-    label: "Health Card Management",
-    href: "/settings/health-card-management",
-    iconSrc: "/icons/SettingsDarkIcon.svg",
-  },
-  {
-    key: "support",
-    label: "Support",
-    href: "/settings/support",
-    iconSrc: "/icons/Contact.svg",
-  },
-  {
-    key: "misc-settings",
-    label: "Misc Settings",
-    href: "/settings/misc-settings",
-    iconSrc: "/icons/SettingsDarkIcon.svg",
-  },
-  {
-    key: "facilities",
-    label: "Facilities",
-    href: "/settings/facilities",
-    iconSrc: "/icons/hospitalicon.svg",
-  },
-  {
-    key: "hardware",
-    label: "Hardware",
-    href: "/settings/hardware",
-    iconSrc: "/icons/Printer.svg",
-  },
-  {
-    key: "room-type",
-    label: "Room Type Master",
-    href: "/settings/room-type",
-    iconSrc: "/icons/roominfo.svg",
-  },
-  {
-    key: "consultancy-service",
-    label: "Consultancy Service",
-    href: "/settings/consultancy-service",
-    iconSrc: "/icons/SettingsDarkIcon.svg",
-  },
-  // {
-  //   key: "razarpay-pos-machine",
-  //   label: "Razarpay Pos Machine",
-  //   href: "/settings/razarpay-pos-machine",
-  //   iconSrc: "/icons/RazarpayPosMachineDarkIcon.svg",
+  //   key: "misc-settings",
+  //   label: "Misc Settings",
+  //   href: "/settings/misc-settings",
+  //   iconSrc: "/icons/SettingsDarkIcon.svg",
   // },
   // {
   //   key: "module-settings",
@@ -361,21 +292,102 @@ const getAllSettingsItems = (): SettingsItem[] => [
   //   href: "/settings/module-settings",
   //   iconSrc: "/icons/ModuleSettingsDarkIcon.svg",
   // },
-
-
   // {
-  //   key: "groups",
-  //   label: "Groups",
-  //   href: "/settings/groups",
-  //   fallbackIcon: (
-  //     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-  //       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-  //       <circle cx="9" cy="7" r="4" />
-  //       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-  //       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  //     </svg>
-  //   ),
+  //   key: "notifications",
+  //   label: "Notifications",
+  //   href: "/settings/notifications",
+  //   iconSrc: "/icons/NotificationDarkIcon.svg",
   // },
+  // {
+  //   key: "nurse",
+  //   label: "Nurse",
+  //   href: "/nurse",
+  //   iconSrc: "/icons/UsersDarkIcon.svg",
+  // },
+  // {
+  //   key: "offer-master",
+  //   label: "Offer Master",
+  //   href: "/settings/offer-master",
+  //   iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
+  // },
+  {
+    key: "package",
+    label: "Packages",
+    href: "/settings/package",
+    iconSrc: "/icons/PackageDarkIcon.svg",
+  },
+  {
+    key: "panel",
+    label: "Referral Program",
+    href: "/settings/panel",
+    iconSrc: "/icons/PannelDarkIcon.svg",
+  },
+  // {
+  //   key: "razorpay-pos-machine",
+  //   label: "Razorpay Pos Machine",
+  //   href: "/settings/razorpay-pos-machine",
+  //   iconSrc: "/icons/RazarpayPosMachineDarkIcon.svg",
+  // },
+  // {
+  //   key: "refund",
+  //   label: "Refund Approval",
+  //   href: "/settings/refund-approval",
+  //   iconSrc: "/icons/DiscountApprovalDarkIcon.svg",
+  // },
+  // {
+  //   key: "room-type",
+  //   label: "Room Type Master",
+  //   href: "/settings/room-type",
+  //   iconSrc: "/icons/roominfo.svg",
+  // },
+  // {
+  //   key: "sms",
+  //   label: "SMS",
+  //   href: "/settings/sms",
+  //   iconSrc: "/icons/SmsDarkIcon.svg",
+  // },
+  // {
+  //   key: "stock",
+  //   label: "Stock/Product",
+  //   href: "/settings/stock-product",
+  //   iconSrc: "/icons/Stock&ProductDarkIcon.svg",
+  // },
+  // {
+  //   key: "sub-diagnosis",
+  //   label: "Sub Diagnosis",
+  //   href: "/settings/sub-diagnosis",
+  //   iconSrc: "/icons/DiagnosisDarkIcon.svg",
+  // },
+  {
+    key: "support",
+    label: "Support",
+    href: "/settings/support",
+    iconSrc: "/icons/Contact.svg",
+  },
+  // {
+  //   key: "therapy",
+  //   label: "Therapy",
+  //   href: "/settings/therapy",
+  //   iconSrc: "/icons/PanelTherapy.svg",
+  // },
+  // {
+  //   key: "therapist",
+  //   label: "Therapist",
+  //   href: "/settings/therapist",
+  //   iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  // },
+  // {
+  //   key: "tpa",
+  //   label: "TPA Therapy",
+  //   href: "/settings/tpa-therapy",
+  //   iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  // },
+  {
+    key: "users",
+    label: "Users",
+    href: "/settings/users",
+    iconSrc: "/icons/UsersDarkIcon.svg",
+  },
 ];
 
 // Hospital Infrastructure items
@@ -414,24 +426,6 @@ type PatientItem = {
 // Patient sub-options (OPD, Old OPD, IPD, DayCare, Discharge)
 const getPatientItems = (): PatientItem[] => [
   {
-    key: "patient-opd",
-    label: "OPD",
-    href: "/registration/registrationList",
-    iconSrc: "/icons/RegistrationDarkIcon.svg",
-  },
-  {
-    key: "patient-old-opd",
-    label: "Old OPD",
-    href: "/patient/opd",
-    iconSrc: "/icons/RegistrationDarkIcon.svg",
-  },
-  {
-    key: "patient-ipd",
-    label: "IPD",
-    href: "/patient/ipd",
-    iconSrc: "/icons/RegistrationDarkIcon.svg",
-  },
-  {
     key: "patient-daycare",
     label: "DayCare",
     href: "/patient/daycare",
@@ -441,6 +435,24 @@ const getPatientItems = (): PatientItem[] => [
     key: "patient-discharge",
     label: "Discharge",
     href: "/patient/discharge",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-ipd",
+    label: "IPD",
+    href: "/patient/ipd",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-old-opd",
+    label: "Old OPD",
+    href: "/patient/opd",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "patient-opd",
+    label: "OPD",
+    href: "/registration/registrationList",
     iconSrc: "/icons/RegistrationDarkIcon.svg",
   },
 ];
@@ -513,6 +525,153 @@ const getLeadRequestItems = (): SettingsItem[] => [
   },
 ];
 
+const getCounsellorItems = (): SettingsItem[] => [
+  {
+    key: "user-dashboard",
+    label: "User Dashboard",
+    href: "/user/dashboard",
+    iconSrc: "/icons/DashboardDarkIcon.svg",
+  },
+  {
+    key: "user-product",
+    label: "Packages & Products",
+    href: "/user/product",
+    iconSrc: "/icons/PackageDarkIcon.svg",
+  },
+  {
+    key: "user-referral",
+    label: "Referral Program",
+    href: "/user/refferal",
+    iconSrc: "/icons/PannelDarkIcon.svg",
+  },
+  {
+    key: "user-transaction",
+    label: "Transactions & Withdrawals",
+    href: "/user/transaction",
+    iconSrc: "/icons/RazarpayPosMachineDarkIcon.svg",
+  },
+  {
+    key: "user-support",
+    label: "VIP Support & Helpdesk",
+    href: "/user/support",
+    iconSrc: "/icons/Contact.svg",
+  },
+];
+
+const getIpdHeadNurseItems = (): SettingsItem[] => [
+  {
+    key: "ipd-head-nurse-allocation",
+    label: "Allocation",
+    href: "/ipd-head-nurse/allocation",
+    iconSrc: "/icons/bedDarkIcon.svg",
+  },
+  {
+    key: "ipd-head-nurse-dashboard",
+    label: "Dashboard",
+    href: "/ipd-head-nurse/dashboard",
+    iconSrc: "/icons/DashboardDarkIcon.svg",
+  },
+  {
+    key: "ipd-head-nurse-medication",
+    label: "Medication",
+    href: "/ipd-head-nurse/medication",
+    iconSrc: "/icons/medication.svg",
+  },
+  {
+    key: "ipd-head-nurse-patient",
+    label: "Patient",
+    href: "/ipd-head-nurse/patient",
+    iconSrc: "/icons/ProfileGreenIcon.svg",
+  },
+  {
+    key: "ipd-head-nurse-patient-referral",
+    label: "Patient Referral",
+    href: "/ipd-head-nurse/patient-referral",
+    iconSrc: "/icons/darkreferral.svg",
+  },
+  {
+    key: "ipd-head-nurse-staff-roster",
+    label: "Staff Roster",
+    href: "/ipd-head-nurse/staff-roster",
+    iconSrc: "/icons/staffRoaster.svg",
+  },
+  // {
+  //   key: "ipd-head-nurse-unit-batch-handover",
+  //   label: "Unit Batch Handover",
+  //   href: "/ipd-head-nurse/unit-batch-handover",
+  //   iconSrc: "/icons/unitbatch.svg",
+  // },
+  {
+    key: "ipd-head-nurse-vitals",
+    label: "Vitals",
+    href: "/ipd-head-nurse/vitals",
+    iconSrc: "/icons/vitals.svg",
+  },
+  {
+    key: "ipd-head-nurse-ward-therapy-timetable",
+    label: "Ward Therapy Timetable",
+    href: "/ipd-head-nurse/ward-therapy-timetable",
+    iconSrc: "/icons/wardtherapy.svg",
+  },
+  {
+    key: "ipd-head-nurse-therapies",
+    label: "Therapies",
+    href: "/ipd-head-nurse/therapies",
+    iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  },
+  {
+    key: "ipd-head-nurse-nurse-coverage",
+    label: "Nurse Coverage",
+    href: "/ipd-head-nurse/nurse-coverage",
+    iconSrc: "/icons/patients.svg",
+  },
+];
+
+const getIpdStaffNurseItems = (): SettingsItem[] => [
+  {
+    key: "ipd-staff-nurse-dashboard",
+    label: "Dashboard",
+    href: "/ipd-staff-nurse/dashboard",
+    iconSrc: "/icons/DashboardDarkIcon.svg",
+  },
+  {
+    key: "ipd-staff-nurse-medication",
+    label: "Medication",
+    href: "/ipd-staff-nurse/medication",
+    iconSrc: "/icons/medication.svg",
+  },
+  {
+    key: "ipd-staff-nurse-patient",
+    label: "Patient",
+    href: "/ipd-staff-nurse/patient",
+    iconSrc: "/icons/ProfileGreenIcon.svg",
+  },
+  {
+    key: "ipd-staff-nurse-unit-lab-orders",
+    label: "Unit Lab Orders",
+    href: "/ipd-staff-nurse/unit-lab-orders",
+    iconSrc: "/icons/unitbatch.svg",
+  },
+  {
+    key: "ipd-staff-nurse-nurse-history",
+    label: "Nurse History",
+    href: "/ipd-staff-nurse/nurse-history",
+    iconSrc: "/icons/RegistrationDarkIcon.svg",
+  },
+  {
+    key: "ipd-staff-nurse-discharge-planner",
+    label: "Discharge Planner",
+    href: "/ipd-staff-nurse/discharge-planner",
+    iconSrc: "/icons/dischargePlanner.svg",
+  },
+  {
+    key: "ipd-staff-nurse-therapies",
+    label: "Therapies",
+    href: "/ipd-staff-nurse/therapies",
+    iconSrc: "/icons/TpaTherapyDarkIcon.svg",
+  },
+];
+
 type RolesPermissionItem = {
   key: string;
   label: string;
@@ -523,15 +682,9 @@ type RolesPermissionItem = {
 
 const getRolesPermissionItems = (): RolesPermissionItem[] => [
   {
-    key: "role-master",
-    label: "Role Master",
-    href: "/roles&permission/role-master",
-    fallbackIcon: <RolesPermissionNavIcon className="h-8 w-8 shrink-0" active={false} />,
-  },
-  {
-    key: "branch-role-master",
-    label: "Branch Role Master",
-    href: "/roles&permission/banch-role-master",
+    key: "approval-level-assignment",
+    label: "Approval Level Assignment",
+    href: "/roles&permission/approval-level-assignment",
     fallbackIcon: <RolesPermissionNavIcon className="h-8 w-8 shrink-0" active={false} />,
   },
   {
@@ -540,10 +693,16 @@ const getRolesPermissionItems = (): RolesPermissionItem[] => [
     href: "/roles&permission/approval-level-setup",
     fallbackIcon: <RolesPermissionNavIcon className="h-8 w-8 shrink-0" active={false} />,
   },
+  // {
+  //   key: "branch-role-master",
+  //   label: "Branch Role Master",
+  //   href: "/roles&permission/banch-role-master",
+  //   fallbackIcon: <RolesPermissionNavIcon className="h-8 w-8 shrink-0" active={false} />,
+  // },
   {
-    key: "approval-level-assignment",
-    label: "Approval Level Assignment",
-    href: "/roles&permission/approval-level-assignment",
+    key: "role-master",
+    label: "Role Master",
+    href: "/roles&permission/role-master",
     fallbackIcon: <RolesPermissionNavIcon className="h-8 w-8 shrink-0" active={false} />,
   },
 ];
@@ -555,17 +714,34 @@ type DropdownGridProps = {
   title: string;
   /** When set, menu is portaled with fixed position (avoids clipping inside overflow scroll areas). */
   fixedPlacement?: { top: number; left: number } | null;
+  /** Single-column list layout (e.g. Patient, Counsellor dropdowns). */
+  singleColumn?: boolean;
+  /** Cap visible rows; extra items scroll (row height matches `h-[60px]` links). */
+  maxVisibleItems?: number;
 };
 
-const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: DropdownGridProps) => {
-  const ITEMS_PER_COLUMN = 7;
+const DROPDOWN_ITEM_ROW_HEIGHT_PX = 60;
+/** Matches `py-6` on the dropdown list container (24px top + 24px bottom). */
+const DROPDOWN_LIST_VERTICAL_PADDING_PX = 48;
+
+const DropdownGrid = ({
+  items,
+  pathname,
+  onNavigate,
+  title,
+  fixedPlacement,
+  singleColumn = false,
+  maxVisibleItems,
+}: DropdownGridProps) => {
   const totalItems = items.length;
-  const numberOfColumns = Math.ceil(totalItems / ITEMS_PER_COLUMN);
 
   // Track window/viewport size so dropdown recalculates on resize and zoom
   const [viewportWidth, setViewportWidth] = useState(
     () => (typeof window !== "undefined" ? window.innerWidth : 0)
   );
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [adjustedLeft, setAdjustedLeft] = useState<number | null>(null);
 
   useEffect(() => {
     const updateWidth = () => setViewportWidth(window.innerWidth);
@@ -587,20 +763,71 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!fixedPlacement || !containerRef.current) {
+      setAdjustedLeft(null);
+      return;
+    }
 
-  // Distribute items evenly across columns so all rows are as full as possible
-  const columns: (
+    const adjustPosition = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const dropdownWidth = rect.width;
+
+      // Preferred left position (original rect.left minus 10px)
+      const preferredLeft = fixedPlacement.left - 10;
+
+      // Calculate max left to prevent right-edge overflow (16px margin from the screen edge)
+      const maxLeft = viewportWidth - dropdownWidth - 16;
+
+      // Clamp the left position to be at least 10px (user requested "left side take 10 to 20 px ok")
+      const finalLeft = Math.max(10, Math.min(preferredLeft, maxLeft));
+
+      setAdjustedLeft(finalLeft);
+    };
+
+    adjustPosition();
+
+    // Use requestAnimationFrame to ensure the DOM layout is fully stable before measuring
+    const rafId = requestAnimationFrame(adjustPosition);
+    return () => cancelAnimationFrame(rafId);
+  }, [fixedPlacement, viewportWidth, items]);
+
+
+  // Distribute items across columns using the 4x4 layout rule
+  const columns = useMemo((): (
     | SettingsItem
     | HospitalInfrastructureItem
     | PatientItem
     | RolesPermissionItem
-  )[][] = [];
-  let remaining = [...items];
-  for (let i = 0; i < numberOfColumns; i++) {
-    const colCount = Math.ceil(remaining.length / (numberOfColumns - i));
-    columns.push(remaining.slice(0, colCount));
-    remaining = remaining.slice(colCount);
-  }
+  )[][] => {
+    if (singleColumn || totalItems <= 4) {
+      return [items];
+    }
+    if (totalItems <= 16) {
+      const C = Math.ceil(totalItems / 4);
+      const cols: any[][] = [];
+      for (let i = 0; i < C; i++) {
+        const start = i * 4;
+        const end = Math.min(start + 4, totalItems);
+        cols.push(items.slice(start, end));
+      }
+      return cols;
+    }
+    // totalItems > 16
+    const K = Math.floor(totalItems / 4);
+    const R = totalItems % 4;
+    const cols: any[][] = [];
+    let currentIndex = 0;
+    for (let i = 0; i < 4; i++) {
+      const size = i < R ? K + 1 : K;
+      cols.push(items.slice(currentIndex, currentIndex + size));
+      currentIndex += size;
+    }
+    return cols;
+  }, [items, totalItems, singleColumn]);
+
+  const numberOfColumns = columns.length;
 
   // Calculate width based on number of columns (1/4, 2/4, 3/4, or 4/4 of 1400px) + extra padding on right
   const baseWidth = 1400;
@@ -618,8 +845,9 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
     return "0px";
   };
 
-  const dropdownWidth =
-    viewportWidth <= 991
+  const dropdownWidth = singleColumn
+    ? "fit-content"
+    : viewportWidth <= 991
       ? "100%"
       : viewportWidth <= 1100
         ? "800px"
@@ -628,14 +856,15 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
           : `${finalWidth}px`;
 
   // For dropdowns with few items (e.g. Patient: OPD, IPD, DayCare), use a minimum width so it looks like Settings
-  const minWidth = totalItems <= 4 ? "380px" : undefined;
+  const minWidth = singleColumn || totalItems <= 4 ? "380px" : undefined;
 
   const isFixed = !!fixedPlacement;
 
   return (
     <div
+      ref={containerRef}
       className={classNames(
-        "bg-white border border-[#ffffff] rounded-[16px] lg:shadow-lg pointer-events-auto",
+        "bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-xl text-white pointer-events-auto",
         isFixed ? "fixed z-[200]" : "absolute top-full left-0 mt-5 z-50"
       )}
       style={{
@@ -643,25 +872,37 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
         ...(minWidth && { minWidth }),
         ...(!isFixed && numberOfColumns === 4 && { left: getLeftValue() }),
         ...(isFixed && fixedPlacement
-          ? { top: fixedPlacement.top, left: fixedPlacement.left }
+          ? {
+            top: fixedPlacement.top,
+            left: adjustedLeft !== null ? adjustedLeft : fixedPlacement.left - 10,
+          }
           : {}),
       }}
     >
       {/* Opened Heading Section */}
       <div className="px-6 text-hide">
-        <div className="w-full py-5 border-b border-[#E9F3E6]">
-          <h1 className="text-[32px] font-semibold leading-tight text-[#262D3B]">{title}</h1>
+        <div className="w-full py-4 border-b border-slate-800 flex items-center justify-between">
+          <h1 className="text-2xl font-black tracking-tight text-amber-400 flex items-center gap-2">
+            {title}
+          </h1>
+          <span className="text-[10px] font-black uppercase tracking-wider text-amber-400/70 bg-amber-400/10 px-2.5 py-1 rounded-full border border-amber-400/20">
+            VIP Portal
+          </span>
         </div>
       </div>
 
       {/* Grid - Column Layout */}
       <ScrollableContainer
-        maxHeight="calc(100vh - 300px)"
-        className="px-6 py-6"
+        maxHeight={
+          maxVisibleItems != null && maxVisibleItems > 0
+            ? maxVisibleItems * DROPDOWN_ITEM_ROW_HEIGHT_PX + DROPDOWN_LIST_VERTICAL_PADDING_PX
+            : "calc(100vh - 300px)"
+        }
+        className="px-6 py-5"
       >
-        <div className="flex gap-2 col-cstm">
+        <div className="flex gap-3 col-cstm">
           {columns.map((columnItems, columnIndex) => (
-            <div key={columnIndex} className="flex flex-col gap-0 flex-1">
+            <div key={columnIndex} className="flex flex-col gap-1 flex-1">
               {columnItems.map((item) => {
                 const isRootRegistrationItem = item.href === "/registration";
                 const isRootInfrastructureItem = item.href === "/hospital-infrastructure";
@@ -672,26 +913,41 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
                 // Determine if this item is active
                 let isActive = false;
                 if (pathname) {
-                  if (item.href === "/doctor") {
+                  if (item.href === "/settings/users") {
+                    isActive =
+                      pathname === "/settings/users" ||
+                      pathname.startsWith("/settings/users/") ||
+                      pathname === "/settings/doctor" ||
+                      pathname.startsWith("/settings/doctor/") ||
+                      pathname === "/settings/nurse" ||
+                      pathname.startsWith("/settings/nurse/") ||
+                      pathname === "/settings/therapist" ||
+                      pathname.startsWith("/settings/therapist/") ||
+                      pathname === "/doctor" ||
+                      pathname.startsWith("/doctor/") ||
+                      pathname === "/nurse" ||
+                      pathname.startsWith("/nurse/");
+                  } else if (item.href === "/doctor") {
                     isActive =
                       pathname === "/doctor" ||
                       (pathname.startsWith("/doctor/") &&
                         !pathname.startsWith("/doctor/camp") &&
                         !pathname.startsWith("/doctor/visit"));
                   } else if (isRootRegistrationItem) {
-                    // For registration root, only match exact path
                     isActive = pathname === item.href;
                   } else if (isRootInfrastructureItem) {
-                    // For infrastructure root (Builder), match exact path only (not structure-preview)
                     isActive = pathname === item.href;
                   } else if (isRootPreBookingItem) {
-                    // For Pre Booking root, keep exact match so "Old Pre Booking" can highlight independently.
                     isActive = pathname === item.href;
                   } else if (isRootLeadRequestItem) {
-                    // For Lead Request root, keep exact match so "Old Lead Request" can highlight independently.
                     isActive = pathname === item.href;
+                  } else if (item.href === "/ipd-head-nurse/allocation") {
+                    isActive = pathname === item.href;
+                  } else if (item.href === "/ipd-head-nurse/nurse-coverage") {
+                    isActive =
+                      pathname === item.href ||
+                      pathname === "/ipd-head-nurse/allocation/assign-rooms";
                   } else {
-                    // For other items (including structure-preview), match exact path or paths that start with it
                     isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
                   }
                 }
@@ -700,18 +956,18 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
                     <div
                       key={item.key}
                       className={classNames(
-                        "cstm-link flex items-center gap-[15px] w-full h-[60px] px-0 py-3 pl-4 rounded-[12px] border border-transparent cursor-not-allowed opacity-60"
+                        "cstm-link flex items-center gap-3 w-full h-[52px] px-3 py-2 rounded-xl border border-transparent cursor-not-allowed opacity-40 text-slate-500"
                       )}
                       aria-disabled="true"
                     >
-                      <div className="w-9 h-9 shrink-0 flex items-center justify-center text-[#9CA3AF]">
+                      <div className="w-8 h-8 shrink-0 flex items-center justify-center text-slate-600">
                         {item.iconSrc ? (
-                          <Image src={item.iconSrc} alt={item.label} width={32} height={32} className="opacity-70" />
+                          <Image src={item.iconSrc} alt={item.label} width={24} height={24} className="opacity-40" />
                         ) : (
                           item.fallbackIcon
                         )}
                       </div>
-                      <span className="text-[18px] leading-[18px] tracking-[-0.01em] whitespace-nowrap flex-1 font-medium text-[#9CA3AF]">
+                      <span className="text-sm leading-tight whitespace-nowrap flex-1 font-medium text-slate-500">
                         {item.label}
                       </span>
                     </div>
@@ -722,27 +978,27 @@ const DropdownGrid = ({ items, pathname, onNavigate, title, fixedPlacement }: Dr
                     key={item.key}
                     href={item.href}
                     className={classNames(
-                      "cstm-link flex items-center gap-[15px] w-full h-[60px] px-0 py-3 pl-4 rounded-[12px] border border-transparent cursor-pointer",
+                      "cstm-link flex items-center gap-3 w-full h-[52px] px-3.5 py-2 rounded-xl border transition-all cursor-pointer group",
                       isActive
-                        ? "shadow-[0_6px_24px_0_rgba(0,0,0,0.15)]"
-                        : "hover:bg-[#F2F8F2]"
+                        ? "bg-slate-800 text-amber-400 border-amber-400/60 shadow-lg shadow-amber-400/10 font-black"
+                        : "bg-slate-900/60 border-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white hover:border-slate-700"
                     )}
                     onClick={(e) => {
                       e.stopPropagation();
                       onNavigate();
                     }}
                   >
-                    <div className={classNames("w-9 h-9 shrink-0 flex items-center justify-center", "text-[#0B8C00]")}>
+                    <div className={classNames("w-8 h-8 shrink-0 flex items-center justify-center rounded-lg p-1.5 transition-colors", isActive ? "bg-amber-400/20 text-amber-400" : "bg-slate-800 text-amber-400 group-hover:bg-amber-400/20")}>
                       {item.iconSrc ? (
-                        <Image src={item.iconSrc} alt={item.label} width={32} height={32} />
+                        <Image src={item.iconSrc} alt={item.label} width={22} height={22} className="brightness-0 invert sepia-[1] hue-rotate-[10deg] saturate-[3]" />
                       ) : (
                         item.fallbackIcon
                       )}
                     </div>
                     <span
                       className={classNames(
-                        "text-[18px] leading-[18px] tracking-[-0.01em] whitespace-nowrap flex-1",
-                        isActive ? "font-semibold text-[#353535]" : "font-medium text-[#434956]"
+                        "text-sm leading-tight whitespace-nowrap flex-1 transition-colors",
+                        isActive ? "font-extrabold text-amber-400" : "font-semibold text-slate-200 group-hover:text-amber-400"
                       )}
                     >
                       {item.label}
@@ -775,39 +1031,38 @@ const shouldItemBeActive = (pathname: string, item: SidebarNavItem): boolean => 
 const BASE_TOP_NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
   { key: "settings", label: "Settings", hasDropdown: true },
-  { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
-  { key: "today-appointment", label: "Today Appointment", href: "/today-appointment" },
-  { key: "patient", label: "Patient", hasDropdown: true },
-  { key: "ipdreception", label: "IPD Reception", hasDropdown: true },
-  { key: "doctors", label: "Doctor", href: "/doctor" },
-  { key: "nurse", label: "Nurse", href: "/nurse" },
-  { key: "reports", label: "Reports", href: "/reports" },
-  { key: "infrastructure-view", label: "Infrastructure", href: "/infrastructure" },
-  { key: "pre-booking", label: "Pre Booking", hasDropdown: true },
-  { key: "lead-request", label: "Lead Request", hasDropdown: true },
-  { key: "voucher", label: "Voucher", href: "/voucher" },
-  { key: "token", label: "Tokens", href: "/token" },
-  { key: "discharge-pending", label: "Discharge Pending", href: "/discharge-pending" },
+  // { key: "roles-permission", label: "Roles & Permissions", hasDropdown: true },
+  { key: "counsellor", label: "User-Portal", hasDropdown: true },
+  // { key: "ipd-head-nurse", label: "IPD Head Nurse", hasDropdown: true },
+  // { key: "ipd-staff-nurse", label: "IPD Staff Nurse", hasDropdown: true },
+  // { key: "today-appointment", label: "Today Appointment", href: "/today-appointment" },
+  // { key: "patient", label: "Patient", hasDropdown: true },
+  // { key: "ipdreception", label: "IPD Reception", hasDropdown: true },
+  // { key: "reports", label: "Reports", href: "/reports" },
+  // { key: "pre-booking", label: "Pre Booking", hasDropdown: true },
+  // { key: "lead-request", label: "Lead Request", hasDropdown: true },
+  // { key: "voucher", label: "Voucher", href: "/voucher" },
+  // { key: "token", label: "Tokens", href: "/token" },
+  // { key: "discharge-pending", label: "Discharge Pending", href: "/discharge-pending" },
 ];
 
 const TOP_NAV_PERMISSION_ALIASES: Record<string, string[]> = {
   dashboard: ["dashboard"],
   settings: ["settings"],
   "roles-permission": ["roles-permissions", "roles-and-permissions", "roles-permission"],
+  counsellor: ["counsellor"],
+  "ipd-head-nurse": ["ipd-head-nurse"],
+  "ipd-staff-nurse": ["ipd-staff-nurse"],
   patient: ["patient", "patients", "registration-list"],
   reports: ["reports", "report"],
-  "infrastructure-view": ["infrastructure", "infrastructure-view", "hospital-infrastructure"],
   "pre-booking": ["pre-booking", "prebooking", "pre-bookings"],
   "lead-request": ["lead-request", "lead"],
   voucher: ["vouchers", "voucher"],
   token: ["token", "tokens"],
   "discharge-pending": ["discharge-pending"],
-  doctors: ["doctor", "doctors"],
-  nurse: ["nurse", "nurses"],
   ipdreception: ["reception", "ipd-reception", "ipdreception", "dashboard"],
   registration: ["registration"],
   "today-appointment": ["today-appointment"],
-
 };
 
 const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
@@ -815,6 +1070,7 @@ const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
   "branch-ip": ["branch-ip-network", "branch-ip", "ip-network"],
   "duplicate-no-exp": ["duplicate-number-exceptions", "duplicate-no-exp"],
   "manage-contact-updates": ["manage-contact-updates"],
+  "razorpay-pos-machine": ["razorpay-pos-machine", "razorpay-pos-machine"],
   discount: ["discount-approval", "discount"],
   refund: ["refund-approval", "refund"],
   users: ["users", "user"],
@@ -823,17 +1079,22 @@ const SETTINGS_SUBMODULE_ALIASES: Record<string, string[]> = {
   therapy: ["therapy"],
   "lab-tests": ["lab-tests", "lab-test"],
   package: ["package", "packages", "package-master", "package-settings", "package-management"],
+  doctor: ["doctor", "doctors", "camp-doctor", "doctor-visit"],
   "diet-category": ["diet-category"],
   diet: ["diagnosis-diet", "diet"],
   diagnosis: ["diagnosis"],
   "sub-diagnosis": ["sub-diagnosis"],
   "health-card-management": ["health-card-management"],
+  "healthcard-exceptions": ["healthcard-exceptions", "health-card-approval-management", "health-card-approval"],
+  nurse: ["nurse", "nurses"],
   support: ["support"],
   "misc-settings": ["misc-settings"],
   facilities: ["facilities", "facility"],
+  "floor-master": ["floor-master"],
   hardware: ["hardware"],
   "room-type": ["room-type-master", "room-type"],
   "consultancy-service": ["consultancy-service"],
+  infrastructure: ["add-hospital-clinic", "infrastructure", "hospital-infrastructure"],
   "offer-master": ["offer-master", "offer"],
   therapist: ["therapist"],
 };
@@ -856,6 +1117,47 @@ const PATIENT_SUBMODULE_ALIASES: Record<string, string[]> = {
   "patient-daycare": ["daycare", "day-care", "patient-daycare"],
   /** Discharge — shown only when the user has the "Discharge" submodule */
   "patient-discharge": ["discharge", "patient-discharge"],
+};
+
+const COUNSELLOR_SUBMODULE_ALIASES: Record<string, string[]> = {
+  // Counsellor module submodule names (from backend) shown in your sample:
+  // Dashboard, Future Bookings, Tentative Bookings, Archived Bookings, Treatment Packages,
+  // Packages, Advance Bookings, Manage Rooms, Admitted Patients
+  "counsellor-dashboard": ["dashboard"],
+  "counsellor-future-admissions": ["future-bookings", "future-admissions"],
+  "counsellor-tentative-booking": ["tentative-bookings", "tentative-booking"],
+  "counsellor-archived": ["archived-bookings", "archived"],
+  // Our UI has a single "Packages" entry; allow either "Treatment Packages" or "Packages" permission
+  "counsellor-packages": ["treatment-packages", "packages"],
+  "counsellor-advance-bookings": ["advance-bookings", "advance-booking"],
+  "counsellor-manage-room": ["manage-rooms", "manage-room"],
+  "counsellor-admitted-patient": ["admitted-patients", "admitted-patient"],
+};
+
+const IPD_HEAD_NURSE_SUBMODULE_ALIASES: Record<string, string[]> = {
+  "ipd-head-nurse-dashboard": ["dashboard"],
+  "ipd-head-nurse-allocation": ["allocation", "allocation"],
+  "ipd-head-nurse-medication": ["medication", "medication"],
+  "ipd-head-nurse-patient": ["patient", "patient"],
+
+  // Our UI has a single "Packages" entry; allow either "Treatment Packages" or "Packages" permission
+  "ipd-head-nurse-patient-referral": ["patient-referral", "patient-referral"],
+  "ipd-head-nurse-staff-roster": ["staff-roster", "staff-roster"],
+  "ipd-head-nurse-unit-batch-handover": ["unit-batch-handover", "unit-batch-handover"],
+  "ipd-head-nurse-vitals": ["vitals", "vitals"],
+  "ipd-head-nurse-ward-therapy-timetable": ["ward-therapy-timetable", "ward-therapy-timetable"],
+  "ipd-head-nurse-therapies": ["therapies", "therapies"],
+  "ipd-head-nurse-nurse-coverage": ["nurse-coverage", "nurse-coverage"],
+};
+
+const IPD_Staff_NURSE_SUBMODULE_ALIASES: Record<string, string[]> = {
+  "ipd-staff-nurse-dashboard": ["dashboard"],
+  "ipd-staff-nurse-medication": ["medication", "medication"],
+  "ipd-staff-nurse-patient": ["patient", "patient"],
+  "ipd-staff-nurse-unit-lab-orders": ["unit-lab-orders", "unit-lab-orders"],
+  "ipd-staff-nurse-nurse-history": ["nurse-history", "nurse-history"],
+  "ipd-staff-nurse-discharge-planner": ["discharge-planner", "discharge-planner"],
+  "ipd-staff-nurse-therapies": ["therapies", "therapies"],
 };
 
 const DOCTOR_SUBMODULE_ALIASES: Record<string, string[]> = {
@@ -926,6 +1228,13 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     top: number;
     left: number;
   } | null>(null);
+  const navScrollRef = useRef<HTMLDivElement>(null);
+  const targetScrollRef = useRef<number>(0);
+  const currentScrollRef = useRef<number>(0);
+  const animationFrameIdRef = useRef<number | null>(null);
+
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const loginType = useAppSelector(selectLoginType);
   const permissionsMap = useAppSelector(selectPermissionsMap);
   const selectedBranch = useAppSelector(selectSelectedBranch);
@@ -994,8 +1303,10 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     const offerMaster = all.find((i) => i.key === "offer-master");
     let result = filtered;
     if (offerMaster && !filtered.some((i) => i.key === "offer-master")) {
+      const docIdx = filtered.findIndex((i) => i.key === "doctor");
       const pkgIdx = filtered.findIndex((i) => i.key === "package");
-      const insertAt = pkgIdx >= 0 ? pkgIdx + 1 : filtered.length;
+      const targetIdx = docIdx >= 0 ? docIdx : (pkgIdx >= 0 ? pkgIdx : -1);
+      const insertAt = targetIdx >= 0 ? targetIdx + 1 : filtered.length;
       result = [...filtered.slice(0, insertAt), offerMaster, ...filtered.slice(insertAt)];
     }
 
@@ -1043,6 +1354,33 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     return filtered.length > 0 ? filtered : all;
   }, [permissionsMap]);
 
+  const counsellorItems = useMemo(() => {
+    return getCounsellorItems();
+  }, []);
+
+  const ipdHeadNurseItems = useMemo(() => {
+    const all = getIpdHeadNurseItems();
+    return filterBySubModuleAccess(
+      all,
+      permissionsMap,
+      ["ipd-head-nurse"],
+      IPD_HEAD_NURSE_SUBMODULE_ALIASES
+    );
+  }, [permissionsMap]);
+
+  const ipdStaffNurseItems = useMemo(() => {
+    const all = getIpdStaffNurseItems();
+    return filterBySubModuleAccess(
+      all,
+      permissionsMap,
+      ["ipd-staff-nurse"],
+      IPD_Staff_NURSE_SUBMODULE_ALIASES
+    );
+  }, [permissionsMap]);
+
+  // console.log("ipdStaffNurseItems",ipdStaffNurseItems)
+
+
   const preBookingItems = useMemo(() => getPreBookingItems(), []);
   const leadRequestItems = useMemo(() => getLeadRequestItems(), []);
   useEffect(() => {
@@ -1067,6 +1405,114 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const smoothScrollTo = useCallback((newTarget: number) => {
+    const element = navScrollRef.current;
+    if (!element) return;
+
+    const maxScroll = element.scrollWidth - element.clientWidth;
+    targetScrollRef.current = Math.max(0, Math.min(newTarget, maxScroll));
+
+    const LERP_FACTOR = 0.05;
+
+    const animate = () => {
+      currentScrollRef.current += (targetScrollRef.current - currentScrollRef.current) * LERP_FACTOR;
+      element.scrollLeft = currentScrollRef.current;
+
+      if (Math.abs(targetScrollRef.current - currentScrollRef.current) > 0.5) {
+        animationFrameIdRef.current = requestAnimationFrame(animate);
+      } else {
+        element.scrollLeft = targetScrollRef.current;
+        animationFrameIdRef.current = null;
+      }
+    };
+
+    if (animationFrameIdRef.current !== null) {
+      cancelAnimationFrame(animationFrameIdRef.current);
+    }
+    animationFrameIdRef.current = requestAnimationFrame(animate);
+  }, []);
+
+  const handleArrowScroll = (direction: "left" | "right") => {
+    const element = navScrollRef.current;
+    if (!element) return;
+
+    if (animationFrameIdRef.current === null) {
+      targetScrollRef.current = element.scrollLeft;
+      currentScrollRef.current = element.scrollLeft;
+    }
+
+    // Scroll by 240px per click
+    const scrollAmount = 240;
+    const nextTarget = direction === "left"
+      ? targetScrollRef.current - scrollAmount
+      : targetScrollRef.current + scrollAmount;
+
+    smoothScrollTo(nextTarget);
+  };
+
+  const updateScrollButtons = useCallback(() => {
+    const element = navScrollRef.current;
+    if (!element) return;
+
+    // Tolerance of 2px for fractional subpixel layout calculations
+    const tolerance = 2;
+    setCanScrollLeft(element.scrollLeft > tolerance);
+    setCanScrollRight(element.scrollLeft < element.scrollWidth - element.clientWidth - tolerance);
+  }, []);
+
+  // Effect to listen to wheel events on the scroll container
+  useEffect(() => {
+    const element = navScrollRef.current;
+    if (!element) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+
+      if (animationFrameIdRef.current === null) {
+        targetScrollRef.current = element.scrollLeft;
+        currentScrollRef.current = element.scrollLeft;
+      }
+
+      const nextTarget = targetScrollRef.current + e.deltaY * 0.7;
+      smoothScrollTo(nextTarget);
+    };
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      element.removeEventListener("wheel", handleWheel);
+      if (animationFrameIdRef.current !== null) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+    };
+  }, [smoothScrollTo]);
+
+  // Effect to monitor layout/viewport changes and toggle scroll button visibility
+  useEffect(() => {
+    const element = navScrollRef.current;
+    if (!element) return;
+
+    updateScrollButtons();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateScrollButtons();
+    });
+    resizeObserver.observe(element);
+
+    const child = element.firstElementChild;
+    if (child) {
+      resizeObserver.observe(child);
+    }
+
+    element.addEventListener("scroll", updateScrollButtons);
+    window.addEventListener("resize", updateScrollButtons);
+
+    return () => {
+      resizeObserver.disconnect();
+      element.removeEventListener("scroll", updateScrollButtons);
+      window.removeEventListener("resize", updateScrollButtons);
+    };
+  }, [updateScrollButtons]);
 
   const openDropdownKey = expandedKeys.size === 1 ? Array.from(expandedKeys)[0] : null;
 
@@ -1159,7 +1605,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
   };
 
   const hasNoPermissions = isAuthenticated && Object.keys(permissionsMap).length === 0;
-
+  // console.log("dgcsddy",isAuthenticated,permissionsMap,hasNoPermissions)
   // Build navigation items array
   // - clinic/hospital    → only Registration as direct link
   // - all other users    → keep full menu, Registration is direct link
@@ -1169,7 +1615,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
       ? [{ key: "registration", label: "Registration", href: getRegistrationHref() }]
       : [
         ...BASE_TOP_NAV_ITEMS.slice(0, 2), // Dashboard + Voucher (direct links like Dashboard)
-        { key: "registration", label: "Registration", href: getRegistrationHref() },
+        // { key: "registration", label: "Registration", href: getRegistrationHref() },
         ...BASE_TOP_NAV_ITEMS.slice(2), // Patient, Settings, Reports, …
       ].filter((item) => {
         const aliases = TOP_NAV_PERMISSION_ALIASES[item.key];
@@ -1182,18 +1628,31 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
         }
         return hasAccessByAliases(permissionsMap, aliases);
       });
-
+  // console.log("TOP_NAV_ITEMS",TOP_NAV_ITEMS)
   return (
     <nav className={classNames(
-      "main-nav w-full bg-white/25 transition-all duration-300",
+      "main-nav w-full bg-slate-950 border-b border-slate-800/80 transition-all duration-300",
       isOpen ? "nav-open" : "nav-close"
     )}>
-      <div className="px-5">
+      <div className="px-5 flex items-center w-full gap-2 py-1">
+        {canScrollLeft && (
+          <button
+            onClick={() => handleArrowScroll("left")}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-amber-400 border border-slate-700 shadow-md hover:bg-slate-700 transition-all duration-200 active:scale-95 cursor-pointer"
+            type="button"
+          >
+            <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+            </svg>
+          </button>
+        )}
         <ScrollableContainer
+          ref={navScrollRef}
           maxHeight="74px"
-          className="h-[74px] overflow-x-auto overflow-y-hidden"
+          className="h-[74px] overflow-x-auto overflow-y-hidden flex-1"
+          showScrollbar={false}
         >
-          <div className="flex items-center gap-2 h-[74px] w-max min-w-full flex-nowrap">
+          <div className="flex items-center gap-2.5 h-[74px] w-max min-w-full flex-nowrap">
 
             {TOP_NAV_ITEMS.map((item) => {
               const Icon = getIconForItem(item.key);
@@ -1201,8 +1660,12 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               // Check if item is active: use sidebar logic or check against registration/settings/hospital-infrastructure routes
               let isActive = false;
               if (item.key === "settings" && pathname) {
-                // Check if pathname matches any settings route (all settings pages)
-                isActive = pathname?.startsWith("/settings");
+                // Check if pathname matches any settings route (including doctor, nurse, and infrastructure)
+                isActive =
+                  pathname?.startsWith("/settings") ||
+                  pathname?.startsWith("/doctor") ||
+                  pathname?.startsWith("/nurse") ||
+                  pathname?.startsWith("/infrastructure");
               } else if (item.key === "patient" && pathname) {
                 // OPD lives under registration list; IPD/DayCare under /patient/* — keep Patient highlighted for all
                 isActive =
@@ -1223,8 +1686,6 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               } else if (item.key === "hospital-infrastructure" && pathname) {
                 // Check if pathname matches any hospital-infrastructure route (not /infrastructure - that has its own nav item)
                 isActive = pathname === "/hospital-infrastructure" || pathname?.startsWith("/hospital-infrastructure/");
-              } else if (item.key === "infrastructure-view" && pathname) {
-                isActive = pathname === "/infrastructure";
               } else if (item.key === "pre-booking" && pathname) {
                 isActive = pathname === "/pre-booking" || pathname?.startsWith("/pre-booking/");
               } else if (item.key === "token" && pathname) {
@@ -1241,12 +1702,14 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                 isActive = pathname === "/reports" || pathname?.startsWith("/reports/");
               } else if (item.key === "voucher" && pathname) {
                 isActive = pathname === "/voucher" || pathname?.startsWith("/voucher/");
-              } else if (item.key === "doctors" && pathname) {
-                isActive = pathname === "/doctor" || pathname?.startsWith("/doctor/");
-              } else if (item.key === "nurse" && pathname) {
-                isActive = pathname === "/nurse" || pathname?.startsWith("/nurse/");
               } else if (item.key === "today-appointment" && pathname) {
                 isActive = pathname === "/today-appointment" || pathname?.startsWith("/today-appointment/");
+              } else if (item.key === "counsellor" && pathname) {
+                isActive = pathname === "/counsellor" || pathname?.startsWith("/counsellor/") || pathname?.startsWith("/user/");
+              } else if (item.key === "ipd-head-nurse" && pathname) {
+                isActive = pathname === "/ipd-head-nurse" || pathname?.startsWith("/ipd-head-nurse/");
+              } else if (item.key === "ipd-staff-nurse" && pathname) {
+                isActive = pathname === "/ipd-staff-nurse" || pathname?.startsWith("/ipd-staff-nurse/");
               }
 
               else if (item.key === "ipdreception" && pathname) {
@@ -1260,22 +1723,21 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                 isActive = shouldItemBeActive(pathname, sidebarItem);
               }
               const isExpanded = expandedKeys.has(item.key);
-              // Check if item has dropdown: either has sidebar children OR is settings/registration/hospital-infrastructure with dropdown items
-              // Registration should NOT have dropdown for clinic/hospital users - it's a direct link
               const hasDropdown =
                 "hasDropdown" in item &&
                 item.hasDropdown &&
                 (sidebarItem?.children ||
                   (item.key === "settings" && settingsItems.length > 0) ||
                   (item.key === "patient" && patientItems.length > 0) ||
-                  (item.key === "doctors" && doctorItems.length > 0) ||
+                  (item.key === "counsellor" && counsellorItems.length > 0) ||
+                  (item.key === "ipd-head-nurse" && ipdHeadNurseItems.length > 0) ||
+                  (item.key === "ipd-staff-nurse" && ipdStaffNurseItems.length > 0) ||
                   (item.key === "ipdreception" && receptionItems.length > 0) ||
                   (item.key === "pre-booking" && preBookingItems.length > 0) ||
                   (item.key === "lead-request" && leadRequestItems.length > 0) ||
                   item.key === "hospital-infrastructure" ||
                   (item.key === "roles-permission" && rolesPermissionItems.length > 0));
 
-              // For registration, if it should be shown, it's always active (green) and has no dropdown
               const isRegistrationActive = item.key === "registration" && shouldShowRegistration;
 
               const pillActive =
@@ -1286,7 +1748,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
               return (
                 <div
                   key={item.key}
-                  className="relative flex items-center cstm-width shrink-0 flex-nowrap"
+                  className="relative flex items-center shrink-0 flex-nowrap"
                   ref={(el) => {
                     if (hasDropdown && el) {
                       dropdownRefs.current.set(item.key, el);
@@ -1299,10 +1761,10 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                     <Link
                       href={item.href}
                       className={classNames(
-                        "flex items-center justify-between gap-2 h-[44px] px-6 py-3 rounded-[20px] text-[13px] lg:text-sm font-medium transition-all",
+                        "flex items-center justify-between gap-2 h-[42px] px-5 py-2.5 rounded-[16px] text-[13px] lg:text-sm font-extrabold transition-all shadow-sm",
                         pillActive
-                          ? "bg-[#0B8C00] text-white border border-[#0B8C00]"
-                          : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
+                          ? "bg-slate-900 text-amber-400 border border-amber-400/80 shadow-md ring-1 ring-amber-400/30"
+                          : "bg-slate-900/80 text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white hover:border-slate-700"
                       )}
                       onClick={onNavigate}
                     >
@@ -1310,12 +1772,8 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                         {Icon && (
                           <Icon
                             className={classNames(
-                              isVoucherItem ? "h-8 w-8 shrink-0" : "h-5 w-5 shrink-0",
-                              !isVoucherItem &&
-                                !isRolesPermissionItem &&
-                                pillActive
-                                ? "brightness-0 invert"
-                                : ""
+                              isVoucherItem ? "h-7 w-7 shrink-0" : "h-4.5 w-4.5 shrink-0",
+                              !isVoucherItem && !isRolesPermissionItem ? "brightness-0 invert" : ""
                             )}
                             active={
                               isVoucherItem || isRolesPermissionItem ? pillActive : undefined
@@ -1330,10 +1788,10 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                       type="button"
                       onClick={() => toggleDropdown(item.key)}
                       className={classNames(
-                        "flex items-center justify-between gap-2 h-[44px] px-6 py-3 rounded-[20px] text-[13px] lg:text-sm font-medium transition-all",
+                        "flex items-center justify-between gap-2 h-[42px] px-5 py-2.5 rounded-[16px] text-[13px] lg:text-sm font-extrabold transition-all shadow-sm",
                         isActive
-                          ? "bg-[#0B8C00] text-white"
-                          : "bg-white text-[#434956]  hover:bg-[#F2F8F2]"
+                          ? "bg-slate-900 text-amber-400 border border-amber-400/80 shadow-md ring-1 ring-amber-400/30"
+                          : "bg-slate-900/80 text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white hover:border-slate-700"
                       )}
                     >
                       <div className="flex gap-2 items-center">
@@ -1341,11 +1799,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                           <Icon
                             className={classNames(
                               isVoucherItem ? "h-8 w-8 shrink-0" : "h-5 w-5 shrink-0",
-                              !isVoucherItem &&
-                                !isRolesPermissionItem &&
-                                isActive
-                                ? "brightness-0 invert"
-                                : ""
+                              !isVoucherItem && !isRolesPermissionItem ? "brightness-0 invert" : ""
                             )}
                             active={
                               isVoucherItem || isRolesPermissionItem ? isActive : undefined
@@ -1361,9 +1815,8 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                           width={16}
                           height={16}
                           className={classNames(
-                            "transition-transform ml-1",
-                            isExpanded ? "rotate-180" : "",
-                            isActive ? "brightness-0 invert" : ""
+                            "transition-transform ml-1 brightness-0 invert",
+                            isExpanded ? "rotate-180" : ""
                           )}
                         />
                       )}
@@ -1375,6 +1828,17 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
             })}
           </div>
         </ScrollableContainer>
+        {canScrollRight && (
+          <button
+            onClick={() => handleArrowScroll("right")}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/95 border border-gray-200 shadow-md hover:bg-[#F2F8F2] hover:text-[#0B8C00] transition-all duration-200 active:scale-95 cursor-pointer"
+            type="button"
+          >
+            <svg className="w-5 h-5 text-[#434956] hover:text-[#0B8C00]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {typeof document !== "undefined" &&
@@ -1390,7 +1854,7 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                   left: dropdownFixedPlacement.left + 20,
                 }}
               >
-                <div className="h-0 w-0 border-l-[18px] border-r-[18px] border-b-[18px] border-l-transparent border-r-transparent border-b-white drop-shadow-sm" />
+                <div className="h-0 w-0 border-l-[18px] border-r-[18px] border-b-[18px] border-l-transparent border-r-transparent border-b-slate-900 drop-shadow-sm" />
               </div>
               {openDropdownKey === "settings" && (
                 <DropdownGrid
@@ -1452,6 +1916,42 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                   title="Pre Booking"
                 />
               )}
+              {openDropdownKey === "ipd-head-nurse" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={ipdHeadNurseItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="IPD Head Nurse"
+                />
+              )}
+              {openDropdownKey === "ipd-staff-nurse" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={ipdStaffNurseItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="IPD Staff Nurse"
+                />
+              )}
+              {openDropdownKey === "counsellor" && (
+                <DropdownGrid
+                  fixedPlacement={dropdownFixedPlacement}
+                  items={counsellorItems}
+                  pathname={pathname}
+                  onNavigate={() => {
+                    setExpandedKeys(new Set());
+                    onNavigate?.();
+                  }}
+                  title="User-Portal"
+                />
+              )}
               {openDropdownKey === "lead-request" && (
                 <DropdownGrid
                   fixedPlacement={dropdownFixedPlacement}
@@ -1462,18 +1962,6 @@ export function TopNavigationBar({ onNavigate, isOpen }: TopNavigationBarProps) 
                     onNavigate?.();
                   }}
                   title="Lead Request"
-                />
-              )}
-              {openDropdownKey === "doctors" && (
-                <DropdownGrid
-                  fixedPlacement={dropdownFixedPlacement}
-                  items={doctorItems}
-                  pathname={pathname}
-                  onNavigate={() => {
-                    setExpandedKeys(new Set());
-                    onNavigate?.();
-                  }}
-                  title="Doctor"
                 />
               )}
               {openDropdownKey === "ipdreception" && (

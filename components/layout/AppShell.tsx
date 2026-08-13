@@ -26,19 +26,21 @@ function BellNotificationsPrefetch() {
 
 type AppShellProps = {
   children: ReactNode;
+  pt?: string;
+  scrollable?: boolean;
 };
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, pt = "pt-6", scrollable = true }: AppShellProps) {
   const { user, logout } = useAuthSession();
   const groupName = useAppSelector(selectUserGroupName);
-   const [isNavOpen, setIsNavOpen] = useState(false);
-const toggleNav = () => {
+  const [isNavOpen, setIsNavOpen] = useState(false);
+  const toggleNav = () => {
     setIsNavOpen((prev) => !prev);
   };
-  
+
   // Initialize socket connection when user is authenticated
   useSocket();
-  
+
   // Protect routes based on user role (e.g., restrict nurses to specific routes)
   useRouteProtection();
 
@@ -51,20 +53,24 @@ const toggleNav = () => {
       <div className="flex flex-col h-full w-full overflow-hidden">
         <BellNotificationsPrefetch />
         {/* Top Header Bar */}
-        <HeaderBar 
-          userEmail={user.email} 
-          userRole={groupName || ""} 
+        <HeaderBar
+          userEmail={user.email}
+          userRole={groupName || ""}
           onLogout={logout}
-          onToggleNav={toggleNav} 
+          onToggleNav={toggleNav}
         />
 
         {/* Top Navigation Bar */}
-        <TopNavigationBar isOpen={isNavOpen}/>
+        <TopNavigationBar isOpen={isNavOpen} />
 
         {/* Main Content Area - Full Width */}
         <main
           data-app-shell-scroll
-          className="flex w-full flex-1 flex-col gap-8 overflow-y-auto pb-12 scrollbar-hidden px-6 md:px-4 pt-6"
+          className={`flex w-full flex-1 flex-col gap-8 px-6 md:px-4 ${pt} ${
+            scrollable
+              ? "overflow-y-auto pb-12 custom-scroll"
+              : "overflow-hidden pb-0 h-full"
+          }`}
         >
           {children}
         </main>

@@ -16,6 +16,7 @@ import {
     FormInputField,
     DatePicker,
     MessageDialog,
+    Tooltip,
 } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import { PatientTypeButtonGroup } from "@/components/ui/PatientTypeButtonGroup";
@@ -30,6 +31,7 @@ import {
     type OfferPromotionType,
 } from "@/store/api/settingsApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { formatIndianAmount, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 import {
     isPanelNameHiddenFromPanelTypeDropdown,
     findActivePanelIdStringByName,
@@ -113,8 +115,8 @@ function validateBundledStay(f: BundledStayForm, isEdit: boolean): BundledStayEr
     }
     if (!f.stayDuration) {
         e.stayDuration = "Stay Duration is required";
-    } else if (!DIGITS_ONLY.test(f.stayDuration)) {
-        e.stayDuration = "Must contain only digits";
+    } else if (!DIGITS_ONLY.test(f.stayDuration) || f.stayDuration.startsWith("0")) {
+        e.stayDuration = "Must contain only digits without leading zero";
     } else {
         const v = parseInt(f.stayDuration, 10);
         if (v < 1 || v > 365) e.stayDuration = "Must be between 1 and 365";
@@ -125,7 +127,7 @@ function validateBundledStay(f: BundledStayForm, isEdit: boolean): BundledStayEr
         e.freeDays = "Must contain only digits";
     } else {
         const v = parseInt(f.freeDays, 10);
-        if (v < 1 || v > 365) e.freeDays = "Must be between 1 and 365";
+        if (v < 0 || v > 365) e.freeDays = "Must be between 0 and 365";
     }
     if (f.patientType === "panel" && !f.panelId) e.panelId = "Panel is required";
     if (!f.startDate) e.startDate = "Start Date is required";
@@ -165,6 +167,53 @@ function validateFlatDiscount(f: FlatDiscountForm, isEdit: boolean): FlatDiscoun
     return e;
 }
 
+function formatOfferNameInput(raw: string): string {
+    let value = raw.replace(/[^a-zA-Z\s]/g, "");
+    value = value.replace(/^\s+/, "");
+    value = value.replace(/(.)\1{2,}/g, "$1$1");
+    if (value.length > 0) {
+        value = value.charAt(0).toUpperCase() + value.slice(1);
+    }
+    return value.slice(0, 100);
+}
+
+const DECIMAL_BILL_AMOUNT_INPUT = /^\d{0,6}(\.\d{0,2})?$/;
+
+function isValidBillAmountInput(val: string): boolean {
+    if (!val) return true;
+    if (!DECIMAL_BILL_AMOUNT_INPUT.test(val)) return false;
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 999999.99) return false;
+    return true;
+}
+
+function isValidDiscountInput(val: string): boolean {
+    if (!val) return true;
+    if (val.startsWith("0")) return false;
+    if (!/^\d*\.?\d{0,2}$/.test(val)) return false;
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 100) return false;
+    return true;
+}
+
+function isValidStayDurationInput(val: string): boolean {
+    if (!val) return true;
+    if (val.startsWith("0")) return false;
+    if (!/^\d+$/.test(val)) return false;
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 1 || num > 365) return false;
+    return true;
+}
+
+function isValidFreeDaysInput(val: string): boolean {
+    if (!val) return true;
+    if (!/^\d+$/.test(val)) return false;
+    if (/0{2,}/.test(val)) return false;
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 0 || num > 365) return false;
+    return true;
+}
+
 function validateConditionalBilling(f: ConditionalBillingForm, isEdit: boolean): ConditionalBillingErrors {
     const e: ConditionalBillingErrors = {};
     if (!isEdit && !f.branch) e.branch = "Branch is required";
@@ -172,26 +221,23 @@ function validateConditionalBilling(f: ConditionalBillingForm, isEdit: boolean):
         e.offerName = "Offer Name is required";
     } else if (f.offerName.trim().length > 100) {
         e.offerName = "Offer Name cannot exceed 100 characters";
-    } else if (!OFFER_NAME_RE.test(f.offerName.trim())) {
-        e.offerName = "Only letters, numbers and common symbols allowed";
     }
+    const rawMinBill = parseIndianAmount(f.minBillAmount);
     if (!f.minBillAmount) {
         e.minBillAmount = "Minimum Bill Amount is required";
-    } else if (!DECIMAL_AMOUNT.test(f.minBillAmount) || parseFloat(f.minBillAmount) < 1) {
-        e.minBillAmount = "Must be a number ≥ 1";
+    } else if (!DECIMAL_AMOUNT.test(rawMinBill) || parseFloat(rawMinBill) < 1 || parseFloat(rawMinBill) > 999999.99) {
+        e.minBillAmount = "Must be between 1 and 999,999.99";
     }
     if (!f.discount) {
         e.discount = "Discount is required";
-    } else if (!DECIMAL_PERCENTAGE.test(f.discount)) {
-        e.discount = "Must be a valid number";
-    } else {
-        const v = parseFloat(f.discount);
-        if (v < 1 || v > 100) e.discount = "Must be between 1 and 100";
+    } else if (!DECIMAL_PERCENTAGE.test(f.discount) || parseFloat(f.discount) < 1 || parseFloat(f.discount) > 100 || f.discount.startsWith("0")) {
+        e.discount = "Must be between 1 and 100";
     }
+    const rawMaxCap = parseIndianAmount(f.maxCap);
     if (!f.maxCap) {
         e.maxCap = "Max Cap is required";
-    } else if (!DECIMAL_AMOUNT.test(f.maxCap) || parseFloat(f.maxCap) < 1) {
-        e.maxCap = "Must be a number ≥ 1";
+    } else if (!DECIMAL_AMOUNT.test(rawMaxCap) || parseFloat(rawMaxCap) < 1 || parseFloat(rawMaxCap) > 999999.99) {
+        e.maxCap = "Must be between 1 and 999,999.99";
     }
     if (f.patientType === "panel" && !f.panelId) e.panelId = "Panel is required";
     if (!f.startDate) e.startDate = "Start Date is required";
@@ -424,9 +470,9 @@ export default function OfferMasterPage() {
             setConditionalBillingForm({
                 branch: String(item.branch_id),
                 offerName: item.offer_name,
-                minBillAmount: String(item.cond_min_billing_amount ?? ""),
+                minBillAmount: item.cond_min_billing_amount != null && item.cond_min_billing_amount > 0 ? formatIndianAmount(item.cond_min_billing_amount) : "",
                 discount: String(item.cond_discount_value ?? ""),
-                maxCap: String(item.cond_max_discount_cap ?? ""),
+                maxCap: item.cond_max_discount_cap != null && item.cond_max_discount_cap > 0 ? formatIndianAmount(item.cond_max_discount_cap) : "",
                 startDate: item.valid_from.split("T")[0],
                 endDate: item.valid_to.split("T")[0],
                 patientType: editPatientType,
@@ -522,9 +568,9 @@ export default function OfferMasterPage() {
                     await updateOfferMaster({
                         id: editingOfferId,
                         offerName: conditionalBillingForm.offerName.trim(),
-                        condMinBillingAmount: parseFloat(conditionalBillingForm.minBillAmount),
+                        condMinBillingAmount: parseFloat(parseIndianAmount(conditionalBillingForm.minBillAmount)),
                         condDiscountValue: parseFloat(conditionalBillingForm.discount),
-                        condMaxDiscountCap: parseFloat(conditionalBillingForm.maxCap),
+                        condMaxDiscountCap: parseFloat(parseIndianAmount(conditionalBillingForm.maxCap)),
                         validFrom: new Date(conditionalBillingForm.startDate).toISOString(),
                         validTo: new Date(conditionalBillingForm.endDate).toISOString(),
                     }).unwrap();
@@ -534,9 +580,9 @@ export default function OfferMasterPage() {
                         ...(cPanelId != null ? { panelId: cPanelId } : {}),
                         promotionType: "conditional_billing",
                         offerName: conditionalBillingForm.offerName.trim(),
-                        condMinBillingAmount: parseFloat(conditionalBillingForm.minBillAmount),
+                        condMinBillingAmount: parseFloat(parseIndianAmount(conditionalBillingForm.minBillAmount)),
                         condDiscountValue: parseFloat(conditionalBillingForm.discount),
-                        condMaxDiscountCap: parseFloat(conditionalBillingForm.maxCap),
+                        condMaxDiscountCap: parseFloat(parseIndianAmount(conditionalBillingForm.maxCap)),
                         validFrom: new Date(conditionalBillingForm.startDate).toISOString(),
                         validTo: new Date(conditionalBillingForm.endDate).toISOString(),
                     }).unwrap();
@@ -597,7 +643,7 @@ export default function OfferMasterPage() {
         } else if (item.promotion_type === "flat_discount") {
             logicDetail = `Flat ${item.flat_discount_percentage}% Off`;
         } else if (item.promotion_type === "conditional_billing") {
-            logicDetail = `${item.cond_discount_value}% off (min ₹${item.cond_min_billing_amount}, cap ₹${item.cond_max_discount_cap})`;
+            logicDetail = `${item.cond_discount_value}% off (min ₹${formatIndianAmount(item.cond_min_billing_amount)}, cap ₹${formatIndianAmount(item.cond_max_discount_cap)})`;
         }
 
         const validity = (
@@ -635,7 +681,23 @@ export default function OfferMasterPage() {
 
         const patientTypeLabel = item.panelName ?? "Private";
 
-        return [sr, item.branchName, item.offer_name, patientTypeLabel, logicDetail, validity, statusToggle, action];
+        const branchCell = (
+            <Tooltip content={item.branchName || "—"} position="top">
+                <span className="inline-block max-w-[220px] truncate align-middle">
+                    {item.branchName || "—"}
+                </span>
+            </Tooltip>
+        );
+
+        const offerNameCell = (
+            <Tooltip content={item.offer_name || "—"} position="top">
+                <span className="inline-block max-w-[220px] truncate align-middle font-medium text-[#262D3B]">
+                    {item.offer_name || "—"}
+                </span>
+            </Tooltip>
+        );
+
+        return [sr, branchCell, offerNameCell, patientTypeLabel, logicDetail, validity, statusToggle, action];
     });
 
     // ── Bundled stay scenario ──
@@ -734,6 +796,7 @@ export default function OfferMasterPage() {
                 title={isEditMode ? "Edit Offer" : "Create New Offer"}
                 width={750}
                 contentPadding="px-6 py-5"
+                closeOnOutsideClick={false}
             >
                 {/* ── Bundled Stay ── */}
                 {activeTab === "bundled-stay" && (
@@ -759,7 +822,8 @@ export default function OfferMasterPage() {
                                 value={bundledStayForm.offerName}
                                 maxLength={100}
                                 onChange={(e) => {
-                                    setBundledStayForm((p) => ({ ...p, offerName: e.target.value }));
+                                    const val = formatOfferNameInput(e.target.value);
+                                    setBundledStayForm((p) => ({ ...p, offerName: val }));
                                     if (bundledStayErrors.offerName) setBundledStayErrors((p) => ({ ...p, offerName: undefined }));
                                 }}
                                 onBlur={() => setBundledStayForm((p) => ({ ...p, offerName: p.offerName.trim() }))}
@@ -779,21 +843,25 @@ export default function OfferMasterPage() {
                                 value={bundledStayForm.stayDuration}
                                 onKeyDown={blockNonDigits}
                                 onChange={(e) => {
-                                    setBundledStayForm((p) => ({ ...p, stayDuration: e.target.value }));
+                                    const val = e.target.value;
+                                    if (!isValidStayDurationInput(val)) return;
+                                    setBundledStayForm((p) => ({ ...p, stayDuration: val }));
                                     if (bundledStayErrors.stayDuration) setBundledStayErrors((p) => ({ ...p, stayDuration: undefined }));
                                 }}
                                 error={bundledStayErrors.stayDuration}
                             />
                             <FormInputField
                                 label="Free Days (Y days) *"
-                                placeholder="1 – 365"
+                                placeholder="0 – 365"
                                 type="number"
-                                min="1"
+                                min="0"
                                 max="365"
                                 value={bundledStayForm.freeDays}
                                 onKeyDown={blockNonDigits}
                                 onChange={(e) => {
-                                    setBundledStayForm((p) => ({ ...p, freeDays: e.target.value }));
+                                    const val = e.target.value;
+                                    if (!isValidFreeDaysInput(val)) return;
+                                    setBundledStayForm((p) => ({ ...p, freeDays: val }));
                                     if (bundledStayErrors.freeDays) setBundledStayErrors((p) => ({ ...p, freeDays: undefined }));
                                 }}
                                 error={bundledStayErrors.freeDays}
@@ -909,7 +977,8 @@ export default function OfferMasterPage() {
                                 value={flatDiscountForm.offerName}
                                 maxLength={100}
                                 onChange={(e) => {
-                                    setFlatDiscountForm((p) => ({ ...p, offerName: e.target.value }));
+                                    const val = formatOfferNameInput(e.target.value);
+                                    setFlatDiscountForm((p) => ({ ...p, offerName: val }));
                                     if (flatDiscountErrors.offerName) setFlatDiscountErrors((p) => ({ ...p, offerName: undefined }));
                                 }}
                                 onBlur={() => setFlatDiscountForm((p) => ({ ...p, offerName: p.offerName.trim() }))}
@@ -929,7 +998,7 @@ export default function OfferMasterPage() {
                                 onKeyDown={blockNonDecimalDigits}
                                 onChange={(e) => {
                                     const val = e.target.value;
-                                    if (!DECIMAL_PERCENTAGE_INPUT.test(val)) return;
+                                    if (!isValidDiscountInput(val)) return;
                                     setFlatDiscountForm((p) => ({ ...p, discountPercentage: val }));
                                     if (flatDiscountErrors.discountPercentage) setFlatDiscountErrors((p) => ({ ...p, discountPercentage: undefined }));
                                 }}
@@ -1035,7 +1104,8 @@ export default function OfferMasterPage() {
                                 value={conditionalBillingForm.offerName}
                                 maxLength={100}
                                 onChange={(e) => {
-                                    setConditionalBillingForm((p) => ({ ...p, offerName: e.target.value }));
+                                    const val = formatOfferNameInput(e.target.value);
+                                    setConditionalBillingForm((p) => ({ ...p, offerName: val }));
                                     if (conditionalBillingErrors.offerName) setConditionalBillingErrors((p) => ({ ...p, offerName: undefined }));
                                 }}
                                 onBlur={() => setConditionalBillingForm((p) => ({ ...p, offerName: p.offerName.trim() }))}
@@ -1045,17 +1115,26 @@ export default function OfferMasterPage() {
                             <FormInputField
                                 label="Minimum Bill Amount *"
                                 placeholder="Min 1"
-                                type="number"
-                                min="1"
-                                step="any"
                                 value={conditionalBillingForm.minBillAmount}
-                                onKeyDown={blockNonDecimalDigits}
                                 onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (!DECIMAL_AMOUNT_INPUT.test(val)) return;
-                                    setConditionalBillingForm((p) => ({ ...p, minBillAmount: val }));
+                                    const raw = parseIndianAmount(e.target.value).replace(/[^\d.]/g, "");
+                                    const parts = raw.split(".");
+                                    let integerPart = parts[0];
+                                    if (integerPart.length > 6) {
+                                        integerPart = integerPart.slice(0, 6);
+                                    }
+                                    let fractionalPart = parts[1];
+                                    if (fractionalPart !== undefined) {
+                                        if (fractionalPart.length > 2) {
+                                            fractionalPart = fractionalPart.slice(0, 2);
+                                        }
+                                    }
+                                    const normalized = fractionalPart !== undefined ? `${integerPart}.${fractionalPart}` : integerPart;
+                                    const formatted = normalized ? formatIndianAmount(normalized) : "";
+                                    setConditionalBillingForm((p) => ({ ...p, minBillAmount: formatted }));
                                     if (conditionalBillingErrors.minBillAmount) setConditionalBillingErrors((p) => ({ ...p, minBillAmount: undefined }));
                                 }}
+                                maxLength={11}
                                 suffix={<span className="text-sm text-[#7B8089]">₹</span>}
                                 error={conditionalBillingErrors.minBillAmount}
                             />
@@ -1100,7 +1179,7 @@ export default function OfferMasterPage() {
                                 onKeyDown={blockNonDecimalDigits}
                                 onChange={(e) => {
                                     const val = e.target.value;
-                                    if (!DECIMAL_PERCENTAGE_INPUT.test(val)) return;
+                                    if (!isValidDiscountInput(val)) return;
                                     setConditionalBillingForm((p) => ({ ...p, discount: val }));
                                     if (conditionalBillingErrors.discount) setConditionalBillingErrors((p) => ({ ...p, discount: undefined }));
                                 }}
@@ -1110,17 +1189,26 @@ export default function OfferMasterPage() {
                             <FormInputField
                                 label="Max Cap *"
                                 placeholder="Min 1"
-                                type="number"
-                                min="1"
-                                step="any"
                                 value={conditionalBillingForm.maxCap}
-                                onKeyDown={blockNonDecimalDigits}
                                 onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (!DECIMAL_AMOUNT_INPUT.test(val)) return;
-                                    setConditionalBillingForm((p) => ({ ...p, maxCap: val }));
+                                    const raw = parseIndianAmount(e.target.value).replace(/[^\d.]/g, "");
+                                    const parts = raw.split(".");
+                                    let integerPart = parts[0];
+                                    if (integerPart.length > 6) {
+                                        integerPart = integerPart.slice(0, 6);
+                                    }
+                                    let fractionalPart = parts[1];
+                                    if (fractionalPart !== undefined) {
+                                        if (fractionalPart.length > 2) {
+                                            fractionalPart = fractionalPart.slice(0, 2);
+                                        }
+                                    }
+                                    const normalized = fractionalPart !== undefined ? `${integerPart}.${fractionalPart}` : integerPart;
+                                    const formatted = normalized ? formatIndianAmount(normalized) : "";
+                                    setConditionalBillingForm((p) => ({ ...p, maxCap: formatted }));
                                     if (conditionalBillingErrors.maxCap) setConditionalBillingErrors((p) => ({ ...p, maxCap: undefined }));
                                 }}
+                                maxLength={11}
                                 suffix={<span className="text-sm text-[#7B8089]">₹</span>}
                                 error={conditionalBillingErrors.maxCap}
                             />

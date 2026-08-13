@@ -1,10 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect } from "react";
-import { FormInputField, FormSelectField, Checkbox } from "@/components/ui";
+import { useState, useEffect, useMemo } from "react";
+import { FormInputField, FormSelectField, Checkbox, Tabs, Button, FormTextareaField, Tooltip } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import UpdateContactDialog from "./UpdateContactDialog";
+import UpdateHealthCardDialog from "./UpdateHealthCardDialog";
 import { sanitizeEmailInput } from "@/lib/utils/emailValidation";
 
 export interface RegistrationPersonalDetailsFormData {
@@ -45,24 +46,46 @@ interface RegistrationPersonalDetailsProps {
         maritalStatus?: React.RefObject<HTMLDivElement | null>;
         fathersHusbandsNameSelect?: React.RefObject<HTMLDivElement | null>;
         fathersHusbandsName?: React.RefObject<HTMLInputElement | null>;
-    religion?: React.RefObject<HTMLDivElement | null>;
-    specificReligion?: React.RefObject<HTMLInputElement | null>;
-    occupation?: React.RefObject<HTMLInputElement | null>;
+        religion?: React.RefObject<HTMLDivElement | null>;
+        specificReligion?: React.RefObject<HTMLInputElement | null>;
+        occupation?: React.RefObject<HTMLInputElement | null>;
         emailAddress?: React.RefObject<HTMLInputElement | null>;
         jsHealthCardNo?: React.RefObject<HTMLInputElement | null>;
+        goldPackage?: React.RefObject<HTMLDivElement | null>;
     };
     errors?: Record<string, string>;
     readOnlyFields?: string[]; // Array of field names that should be read-only
     registrationId?: number | string; // Registration ID for updating contact number
     onContactNumberUpdate?: (newContactNumber: string) => void; // Callback when contact number is updated
+    onHealthCardUpdate?: (newHealthCardNo: string) => void; // Callback when health card number is updated
+    uhid?: string;
+    branchId?: number | string;
     isContactLoading?: boolean; // Show loading spinner on contact number field
-    showJsHealthCardNo?: boolean; // When false, hide JS Health Card No. and let Whatsapp No. take its space (e.g. when Patient Type is not Private)
+    showJsHealthCardNo?: boolean; // When false, hide Health Card No. and let Whatsapp No. take its space (e.g. when Patient Type is not Private)
     disableOldContactNumberInDialog?: boolean; // Disable old contact number input inside Update Contact dialog
     /** When true (Address country is not India), email is required — label shows * */
     emailRequiredByAddressCountry?: boolean;
+    isNewPatient?: boolean;
+    goldPackageStatus?: "Accept" | "Decline" | "";
+    setGoldPackageStatus?: (status: "Accept" | "Decline" | "") => void;
+    couponCode?: string;
+    setCouponCode?: (code: string) => void;
+    declineDescription?: string;
+    setDeclineDescription?: (desc: string) => void;
+    isCouponVerified?: boolean;
+    setIsCouponVerified?: (verified: boolean) => void;
+    couponError?: string;
+    setCouponError?: (err: string) => void;
+    declineError?: string;
+    setDeclineError?: (err: string) => void;
+    goldPackageRef?: React.RefObject<HTMLDivElement | null>;
+    isCardSeriesNotAssigned?: boolean;
+    arogyaCardSeries?: any;
+    source?: string;
 }
 
 export default function RegistrationPersonalDetails({
+    source = "",
     formData,
     onChange,
     onBlur,
@@ -99,14 +122,95 @@ export default function RegistrationPersonalDetails({
     readOnlyFields = [],
     registrationId,
     onContactNumberUpdate,
+    onHealthCardUpdate,
+    uhid,
+    branchId,
     isContactLoading = false,
     showJsHealthCardNo = true,
     disableOldContactNumberInDialog = false,
     emailRequiredByAddressCountry = false,
+    isNewPatient = true,
+    goldPackageStatus = "",
+    setGoldPackageStatus,
+    couponCode = "",
+    setCouponCode,
+    declineDescription = "",
+    setDeclineDescription,
+    isCouponVerified = false,
+    setIsCouponVerified,
+    couponError = "",
+    setCouponError,
+    declineError = "",
+    setDeclineError,
+    goldPackageRef,
+    isCardSeriesNotAssigned = false,
+    arogyaCardSeries = null,
 }: RegistrationPersonalDetailsProps) {
     const isFieldReadOnly = (fieldName: string) => readOnlyFields.includes(fieldName);
     const [isWhatsappSameAsContact, setIsWhatsappSameAsContact] = useState(false);
     const [isUpdateContactDialogOpen, setIsUpdateContactDialogOpen] = useState(false);
+    const [isUpdateHealthCardDialogOpen, setIsUpdateHealthCardDialogOpen] = useState(false);
+
+    const matchingCard = useMemo(() => {
+        const jsValue = (formData.jsHealthCardNo || "").trim();
+        if (!Array.isArray(arogyaCardSeries) || arogyaCardSeries.length === 0) return null;
+
+        if (!jsValue && arogyaCardSeries.length === 1) return arogyaCardSeries[0];
+        if (!jsValue) return null;
+
+        let bestMatch = null;
+        let maxMatchLen = 0;
+
+        for (const series of arogyaCardSeries) {
+            const sStart = String(series.seriesStart || "").replace(/\D/g, "");
+            if (!sStart) continue;
+
+            let matchLen = 0;
+            for (let i = 0; i < Math.min(jsValue.length, sStart.length); i++) {
+                if (jsValue[i] === sStart[i]) matchLen++;
+                else break;
+            }
+
+            if (matchLen > maxMatchLen) {
+                maxMatchLen = matchLen;
+                bestMatch = series;
+            }
+        }
+        return bestMatch;
+    }, [arogyaCardSeries, formData.jsHealthCardNo]);
+
+    // Maximum digit length across ALL configured series. We cap the input to this
+    // (not the prefix-matched series) so a shorter series matched mid-typing can't
+    // block the user from typing the full-length card number. Exact length / range
+    // is enforced by the validation schema.
+    const maxSeriesDigitLength = useMemo(() => {
+        if (!Array.isArray(arogyaCardSeries) || arogyaCardSeries.length === 0) return 12;
+        let max = 0;
+        for (const series of arogyaCardSeries) {
+            const startLen = String(series.seriesStart || "").replace(/\D/g, "").length;
+            const endLen = String(series.seriesEnd || "").replace(/\D/g, "").length;
+            max = Math.max(max, startLen, endLen);
+        }
+        return max > 0 ? max : 12;
+    }, [arogyaCardSeries]);
+
+    const shouldShowGoldPackage = useMemo(() => {
+        if (!isNewPatient || !showJsHealthCardNo || !formData.jsHealthCardNo) return false;
+        if (formData.jsHealthCardNo.length !== 12 || errors?.jsHealthCardNo) return false;
+
+        // Lead Source must be selected
+        if (!source || !source.trim()) return false;
+
+        // Must find matching card series
+        if (!matchingCard) return false;
+
+        // Check package flags based on source selection
+        if (source === "Direct Patient") {
+            return !!matchingCard.loyalPatientConsultantPackage;
+        } else {
+            return !!matchingCard.refereePatientConsultantPackage;
+        }
+    }, [isNewPatient, showJsHealthCardNo, formData.jsHealthCardNo, errors?.jsHealthCardNo, source, matchingCard]);
 
     // Auto-check "Same as contact number" when both numbers match (e.g. after selecting an existing patient)
     useEffect(() => {
@@ -201,6 +305,7 @@ export default function RegistrationPersonalDetails({
                         type="tel"
                         maxLength={10}
                         error={errors?.whatsappNo}
+                        disabled={isWhatsappSameAsContact ? true : false}
                     />
                     <div className="mt-1 flex items-center justify-end gap-2">
                         <Checkbox
@@ -223,32 +328,82 @@ export default function RegistrationPersonalDetails({
                     </div>
                 </div>
 
-                {showJsHealthCardNo && (
-                    <div data-field="jsHealthCardNo" className="scroll-mt-4">
+                {showJsHealthCardNo && (() => {
+                    // For new patients: disable field until Lead Source is selected
+                    const isLeadSourceMissing = isNewPatient && (!source || !source.trim());
+                    const isHealthCardDisabled =
+                        isFieldReadOnly("jsHealthCardNo") ||
+                        isCardSeriesNotAssigned ||
+                        isLeadSourceMissing;
+                    const healthCardPlaceholder = isCardSeriesNotAssigned
+                        ? "No card or series number has been assigned to your current branch"
+                        : isLeadSourceMissing
+                            ? "Please select Lead Source first"
+                            : "Health Card No.";
+
+                    // Show edit icon only when patient is old (!isNewPatient) and has a pre-filled locked active healthcard
+                    const showEditHealthCardIcon = !isNewPatient && isFieldReadOnly("jsHealthCardNo") && Boolean(formData.jsHealthCardNo && formData.jsHealthCardNo.trim() !== "");
+
+                    const renderInputField = () => (
                         <FormInputField
                             ref={fieldRefs?.jsHealthCardNo}
-                            label="JS Health Card No. *"
+                            label={isCardSeriesNotAssigned ? "Health Card No." : "Health Card No. *"}
                             value={formData.jsHealthCardNo}
                             onChange={(e) => {
-                            if (!isFieldReadOnly("jsHealthCardNo")) {
-                                // Only allow digits, exactly 12 digits (50503030 + 4 digits)
-                                const value = e.target.value.replace(/\D/g, "").slice(0, 12);
-                                onChange("jsHealthCardNo", value);
-                            }
-                        }}
-                        onBlur={() => onBlur?.("jsHealthCardNo")}
-                        placeholder="JS Health Card No."
-                        type="tel"
-                        maxLength={12}
-                            error={errors?.jsHealthCardNo}
-                            disabled={isFieldReadOnly("jsHealthCardNo")}
-                            readOnly={isFieldReadOnly("jsHealthCardNo")}
+                                if (!isHealthCardDisabled) {
+                                    const expectedMax = Math.max(maxSeriesDigitLength, 12);
+                                    const value = e.target.value.replace(/\D/g, "").slice(0, expectedMax);
+                                    onChange("jsHealthCardNo", value);
+                                }
+                            }}
+                            onBlur={() => onBlur?.("jsHealthCardNo")}
+                            placeholder={healthCardPlaceholder}
+                            type="tel"
+                            maxLength={Math.max(maxSeriesDigitLength, 12)}
+                            error={isCardSeriesNotAssigned || isLeadSourceMissing ? undefined : errors?.jsHealthCardNo}
+                            disabled={isHealthCardDisabled}
+                            readOnly={isHealthCardDisabled}
+                            className={showEditHealthCardIcon ? "!pr-12" : ""}
                         />
-                    </div>
-                )}
+                    );
+
+                    const hasAssignedCardValue = Boolean(formData.jsHealthCardNo && formData.jsHealthCardNo.trim() !== "");
+
+                    return (
+                        <div data-field="jsHealthCardNo" className="scroll-mt-4 relative flex flex-col gap-1.5">
+                            {(isCardSeriesNotAssigned || isLeadSourceMissing) && !hasAssignedCardValue ? (
+                                <Tooltip content={healthCardPlaceholder} position="top" delay={0}>
+                                    <div className="w-full">{renderInputField()}</div>
+                                </Tooltip>
+                            ) : (
+                                renderInputField()
+                            )}
+                            {/* {showEditHealthCardIcon && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsUpdateHealthCardDialogOpen(true);
+                                    }}
+                                    className="cursor-pointer absolute right-4 top-[10px] flex h-6 w-6 items-center justify-center rounded transition-colors pointer-events-auto"
+                                    aria-label="Update HealthCard"
+                                >
+                                    <Image
+                                        src="/icons/EditIconBlack.svg"
+                                        alt="Edit"
+                                        width={20}
+                                        height={20}
+                                        className="shrink-0"
+                                    />
+                                </button>
+                            )} */}
+                        </div>
+                    );
+                })()}
 
                 {/* <div className="col-span-1 sm:col-span-3 flex gap-4"> */}
-                    <div data-field="aadharCardNumber" className="scroll-mt-4">
+                <div data-field="aadharCardNumber" className="scroll-mt-4">
                     <FormInputField
                         ref={fieldRefs?.aadharCardNumber}
                         label="Aadhar Card Number"
@@ -270,213 +425,213 @@ export default function RegistrationPersonalDetails({
                         readOnly={isFieldReadOnly("aadharCardNumber")}
                         error={errors?.aadharCardNumber}
                     />
-                    </div>
+                </div>
 
-                    <div className="flex-1 flex gap-2">
-                        <div
-                            data-field="patientNameSelect"
-                            className="scroll-mt-4"
-                        >
-                            <FormSelectField
-                                ref={fieldRefs?.patientNameSelect}
-                                label="Title *"
-                                options={titleOptions}
-                                placeholder="Select"
-                                background="white"
-                                width={115}
-                                dropdownWidth={160}
-                                value={formData.patientNameSelect}
-                                onChange={(value) => {
-                                    const selectedValue = Array.isArray(value) ? value[0] : value;
-                                    onChange("patientNameSelect", selectedValue || "");
-                                    // If a value is selected, immediately mark as touched and validate to clear error
-                                    if (selectedValue) {
-                                        setTimeout(() => {
-                                            onBlur?.("patientNameSelect");
-                                        }, 0);
-                                    }
-                                }}
-                                onBlur={() => onBlur?.("patientNameSelect")}
-                            />
-                            {errors?.patientNameSelect && (
-                                <p className="mt-1 text-xs text-[#F6776E]">{errors.patientNameSelect}</p>
-                            )}
-                        </div>
-                        <div className="flex-1" data-field="patientName">
-                            <FormInputField
-                                ref={fieldRefs?.patientName}
-                                label="Patient Name *"
-                                value={formData.patientName}
-                                onChange={(e) => {
-                                    if (!isFieldReadOnly("patientName")) {
-                                        // Only allow letters and spaces, prevent leading spaces, max 100 characters
-                                        let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
-                                        value = value.replace(/^\s+/, "");
-                                        value = value.replace(/(.)\1{2,}/g, "$1$1");
-                                        // Ensure first character is uppercase (e.g. "test kumar" -> "Test kumar")
-                                        if (value.length > 0) {
-                                            value = value.charAt(0).toUpperCase() + value.slice(1);
-                                        }
-                                        value = value.slice(0, 100);
-                                        onChange("patientName", value);
-                                    }
-                                }}
-                                onBlur={(e) => {
-                                    const trimmed = e.target.value.trim();
-                                    if (!isFieldReadOnly("patientName") && trimmed !== e.target.value) {
-                                        onChange("patientName", trimmed);
-                                    }
-                                    onBlur?.("patientName");
-                                }}
-                                placeholder="Patient Name"
-                                required
-                                type="text"
-                                maxLength={100}
-                                error={errors?.patientName}
-                                disabled={isFieldReadOnly("patientName")}
-                                readOnly={isFieldReadOnly("patientName")}
-                            />
-                        </div>
+                <div className="flex-1 flex gap-2">
+                    <div
+                        data-field="patientNameSelect"
+                        className="scroll-mt-4"
+                    >
+                        <FormSelectField
+                            ref={fieldRefs?.patientNameSelect}
+                            label="Title *"
+                            options={titleOptions}
+                            placeholder="Select"
+                            background="white"
+                            width={115}
+                            dropdownWidth={160}
+                            value={formData.patientNameSelect}
+                            onChange={(value) => {
+                                const selectedValue = Array.isArray(value) ? value[0] : value;
+                                onChange("patientNameSelect", selectedValue || "");
+                                // If a value is selected, immediately mark as touched and validate to clear error
+                                if (selectedValue) {
+                                    setTimeout(() => {
+                                        onBlur?.("patientNameSelect");
+                                    }, 0);
+                                }
+                            }}
+                            onBlur={() => onBlur?.("patientNameSelect")}
+                        />
+                        {errors?.patientNameSelect && (
+                            <p className="mt-1 text-xs text-[#F6776E]">{errors.patientNameSelect}</p>
+                        )}
                     </div>
-
-                    <div className="flex-1 flex gap-2">
-                        <div
-                            data-field="fathersHusbandsNameSelect"
-                            className="scroll-mt-4"
-                        >
-                            <FormSelectField
-                                ref={fieldRefs?.fathersHusbandsNameSelect}
-                                label="Title *"
-                                options={titleOptions}
-                                placeholder="Select"
-                                background="white"
-                                width={115}
-                                dropdownWidth={160}
-                                value={formData.fathersHusbandsNameSelect}
-                                onChange={(value) => {
-                                    const selectedValue = Array.isArray(value) ? value[0] : value;
-                                    onChange("fathersHusbandsNameSelect", selectedValue || "");
-                                    // If a value is selected, immediately mark as touched and validate to clear error
-                                    if (selectedValue) {
-                                        setTimeout(() => {
-                                            onBlur?.("fathersHusbandsNameSelect");
-                                        }, 0);
-                                    }
-                                }}
-                                onBlur={() => onBlur?.("fathersHusbandsNameSelect")}
-                            />
-                            {errors?.fathersHusbandsNameSelect && (
-                                <p className="mt-1 text-xs text-[#F6776E]">{errors.fathersHusbandsNameSelect}</p>
-                            )}
-                        </div>
-                        <div className="flex-1" data-field="fathersHusbandsName">
-                            <FormInputField
-                                ref={fieldRefs?.fathersHusbandsName}
-                                label="Father's/Husband's Name *"
-                                value={formData.fathersHusbandsName}
-                                onChange={(e) => {
+                    <div className="flex-1" data-field="patientName">
+                        <FormInputField
+                            ref={fieldRefs?.patientName}
+                            label="Patient Name *"
+                            value={formData.patientName}
+                            onChange={(e) => {
+                                if (!isFieldReadOnly("patientName")) {
                                     // Only allow letters and spaces, prevent leading spaces, max 100 characters
                                     let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
                                     value = value.replace(/^\s+/, "");
                                     value = value.replace(/(.)\1{2,}/g, "$1$1");
-                                    // Ensure first character is uppercase
+                                    // Ensure first character is uppercase (e.g. "test kumar" -> "Test kumar")
                                     if (value.length > 0) {
                                         value = value.charAt(0).toUpperCase() + value.slice(1);
                                     }
                                     value = value.slice(0, 100);
-                                    onChange("fathersHusbandsName", value);
-                                }}
-                                onBlur={(e) => {
-                                    const trimmed = e.target.value.trim();
-                                    if (trimmed !== e.target.value) {
-                                        onChange("fathersHusbandsName", trimmed);
-                                    }
-                                    onBlur?.("fathersHusbandsName");
-                                }}
-                                placeholder="Father's/Husband's Name"
-                                required
-                                type="text"
-                                maxLength={100}
-                                error={errors?.fathersHusbandsName}
-                            />
-                        </div>
-                    </div>
-                {/* </div> */}
-                    <div data-field="age" className="scroll-mt-4">
-                        <FormInputField
-                            ref={fieldRefs?.age}
-                            label="Age *"
-                            value={formData.age}
-                            onChange={(e) => {
-                                let value = e.target.value.replace(/\D/g, ""); // Only allow digits
-                                // Remove leading zeros
-                                value = value.replace(/^0+/, "") || "";
-                                // Limit to 3 digits max
-                                value = value.slice(0, 3);
-                                // Ensure value is between 1 and 120
-                                if (value && parseInt(value, 10) > 120) {
-                                    value = "120";
+                                    onChange("patientName", value);
                                 }
-                                onChange("age", value);
                             }}
-                            onBlur={() => onBlur?.("age")}
-                            placeholder="Age"
+                            onBlur={(e) => {
+                                const trimmed = e.target.value.trim();
+                                if (!isFieldReadOnly("patientName") && trimmed !== e.target.value) {
+                                    onChange("patientName", trimmed);
+                                }
+                                onBlur?.("patientName");
+                            }}
+                            placeholder="Patient Name"
                             required
-                            type="tel"
-                            maxLength={3}
-                            error={errors?.age}
+                            type="text"
+                            maxLength={100}
+                            error={errors?.patientName}
+                            disabled={isFieldReadOnly("patientName")}
+                            readOnly={isFieldReadOnly("patientName")}
                         />
                     </div>
+                </div>
 
-                    <div data-field="gender" className="scroll-mt-4">
+                <div className="flex-1 flex gap-2">
+                    <div
+                        data-field="fathersHusbandsNameSelect"
+                        className="scroll-mt-4"
+                    >
                         <FormSelectField
-                            ref={fieldRefs?.gender}
-                            label="Gender *"
-                            options={genderOptions}
-                            value={formData.gender}
+                            ref={fieldRefs?.fathersHusbandsNameSelect}
+                            label="Title *"
+                            options={titleOptions}
+                            placeholder="Select"
+                            background="white"
+                            width={115}
+                            dropdownWidth={160}
+                            value={formData.fathersHusbandsNameSelect}
                             onChange={(value) => {
                                 const selectedValue = Array.isArray(value) ? value[0] : value;
-                                onChange("gender", selectedValue || "");
+                                onChange("fathersHusbandsNameSelect", selectedValue || "");
+                                // If a value is selected, immediately mark as touched and validate to clear error
                                 if (selectedValue) {
                                     setTimeout(() => {
-                                        onBlur?.("gender");
+                                        onBlur?.("fathersHusbandsNameSelect");
                                     }, 0);
                                 }
                             }}
-                            onBlur={() => onBlur?.("gender")}
-                            placeholder="Select"
-                            mode="single"
-                            background="white"
+                            onBlur={() => onBlur?.("fathersHusbandsNameSelect")}
                         />
-                        {errors?.gender && (
-                            <p className="mt-1 text-xs text-[#F6776E]">{errors.gender}</p>
+                        {errors?.fathersHusbandsNameSelect && (
+                            <p className="mt-1 text-xs text-[#F6776E]">{errors.fathersHusbandsNameSelect}</p>
                         )}
                     </div>
-
-                    <div data-field="maritalStatus" className="scroll-mt-4">
-                        <FormSelectField
-                            ref={fieldRefs?.maritalStatus}
-                            label="Marital Status *"
-                            options={maritalStatusOptions}
-                            value={formData.maritalStatus}
-                            onChange={(value) => {
-                                const selectedValue = Array.isArray(value) ? value[0] : value;
-                                onChange("maritalStatus", selectedValue || "");
-                                if (selectedValue) {
-                                    setTimeout(() => {
-                                        onBlur?.("maritalStatus");
-                                    }, 0);
+                    <div className="flex-1" data-field="fathersHusbandsName">
+                        <FormInputField
+                            ref={fieldRefs?.fathersHusbandsName}
+                            label="Father's/Husband's Name *"
+                            value={formData.fathersHusbandsName}
+                            onChange={(e) => {
+                                // Only allow letters and spaces, prevent leading spaces, max 100 characters
+                                let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                value = value.replace(/^\s+/, "");
+                                value = value.replace(/(.)\1{2,}/g, "$1$1");
+                                // Ensure first character is uppercase
+                                if (value.length > 0) {
+                                    value = value.charAt(0).toUpperCase() + value.slice(1);
                                 }
+                                value = value.slice(0, 100);
+                                onChange("fathersHusbandsName", value);
                             }}
-                            onBlur={() => onBlur?.("maritalStatus")}
-                            placeholder="Select"
-                            mode="single"
-                            background="white"
+                            onBlur={(e) => {
+                                const trimmed = e.target.value.trim();
+                                if (trimmed !== e.target.value) {
+                                    onChange("fathersHusbandsName", trimmed);
+                                }
+                                onBlur?.("fathersHusbandsName");
+                            }}
+                            placeholder="Father's/Husband's Name"
+                            required
+                            type="text"
+                            maxLength={100}
+                            error={errors?.fathersHusbandsName}
                         />
-                        {errors?.maritalStatus && (
-                            <p className="mt-1 text-xs text-[#F6776E]">{errors.maritalStatus}</p>
-                        )}
                     </div>
+                </div>
+                {/* </div> */}
+                <div data-field="age" className="scroll-mt-4">
+                    <FormInputField
+                        ref={fieldRefs?.age}
+                        label="Age *"
+                        value={formData.age}
+                        onChange={(e) => {
+                            let value = e.target.value.replace(/\D/g, ""); // Only allow digits
+                            // Remove leading zeros
+                            value = value.replace(/^0+/, "") || "";
+                            // Limit to 3 digits max
+                            value = value.slice(0, 3);
+                            // Ensure value is between 1 and 120
+                            if (value && parseInt(value, 10) > 120) {
+                                value = "120";
+                            }
+                            onChange("age", value);
+                        }}
+                        onBlur={() => onBlur?.("age")}
+                        placeholder="Age"
+                        required
+                        type="tel"
+                        maxLength={3}
+                        error={errors?.age}
+                    />
+                </div>
+
+                <div data-field="gender" className="scroll-mt-4">
+                    <FormSelectField
+                        ref={fieldRefs?.gender}
+                        label="Gender *"
+                        options={genderOptions}
+                        value={formData.gender}
+                        onChange={(value) => {
+                            const selectedValue = Array.isArray(value) ? value[0] : value;
+                            onChange("gender", selectedValue || "");
+                            if (selectedValue) {
+                                setTimeout(() => {
+                                    onBlur?.("gender");
+                                }, 0);
+                            }
+                        }}
+                        onBlur={() => onBlur?.("gender")}
+                        placeholder="Select"
+                        mode="single"
+                        background="white"
+                    />
+                    {errors?.gender && (
+                        <p className="mt-1 text-xs text-[#F6776E]">{errors.gender}</p>
+                    )}
+                </div>
+
+                <div data-field="maritalStatus" className="scroll-mt-4">
+                    <FormSelectField
+                        ref={fieldRefs?.maritalStatus}
+                        label="Marital Status *"
+                        options={maritalStatusOptions}
+                        value={formData.maritalStatus}
+                        onChange={(value) => {
+                            const selectedValue = Array.isArray(value) ? value[0] : value;
+                            onChange("maritalStatus", selectedValue || "");
+                            if (selectedValue) {
+                                setTimeout(() => {
+                                    onBlur?.("maritalStatus");
+                                }, 0);
+                            }
+                        }}
+                        onBlur={() => onBlur?.("maritalStatus")}
+                        placeholder="Select"
+                        mode="single"
+                        background="white"
+                    />
+                    {errors?.maritalStatus && (
+                        <p className="mt-1 text-xs text-[#F6776E]">{errors.maritalStatus}</p>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
@@ -516,13 +671,25 @@ export default function RegistrationPersonalDetails({
                             label="Specific Religion *"
                             value={formData.specificReligion}
                             onChange={(e) => {
-                                const value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
-                                onChange("specificReligion", value);
+                                if (!isFieldReadOnly("specificReligion")) {
+                                    // Only allow letters and spaces, prevent leading spaces, max 100 characters
+                                    let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                    value = value.replace(/^\s+/, "");
+                                    value = value.replace(/(.)\1{2,}/g, "$1$1");
+                                    // Ensure first character is uppercase (e.g. "test kumar" -> "Test kumar")
+                                    if (value.length > 0) {
+                                        value = value.charAt(0).toUpperCase() + value.slice(1);
+                                    }
+                                    value = value.slice(0, 100);
+                                    onChange("specificReligion", value);
+                                }
                             }}
                             onBlur={() => onBlur?.("specificReligion")}
                             placeholder="Specific Religion"
                             required
                             type="text"
+                            disabled={isFieldReadOnly("specificReligion")}
+                            readOnly={isFieldReadOnly("specificReligion")}
                             error={errors?.specificReligion}
                         />
                     </div>
@@ -580,6 +747,108 @@ export default function RegistrationPersonalDetails({
                 </div>
             </div>
 
+            {/* Complimentary Health Gold Package Panel */}
+            {/* {shouldShowGoldPackage && (
+                <div
+                    ref={goldPackageRef}
+                    data-field="goldPackage"
+                    className="mt-6 mb-4  rounded-[16px]  flex flex-col gap-4 transition-all duration-300 scroll-mt-4"
+                >
+                    <div className="flex items-center gap-2.5">
+                        <Image src="/icons/PreBookingCheck.svg" alt="Gold Package" width={18} height={18} />
+                        <span className="text-base font-medium leading-[100%] text-[#262D3B] flex gap-2 items-center">
+                            <span className="">Complimentary Health Gold Package</span>
+                        </span>
+                    </div>
+
+                    <div className="w-[300px]">
+                        <Tabs
+                            options={[
+                                { value: "Accept", label: "Accept" },
+                                { value: "Decline", label: "Decline" },
+                            ]}
+                            value={goldPackageStatus}
+                            onChange={(val) => {
+                                setGoldPackageStatus?.(val as any);
+                                if (val === "Accept") {
+                                    setDeclineError?.("");
+                                } else {
+                                    setCouponError?.("");
+                                }
+                            }}
+                            className="self-start"
+                        />
+                    </div>
+                    {goldPackageStatus === "Accept" && (
+                        <div className="flex gap-2 items-start mt-3">
+                            <div className="flex-1">
+                                <FormInputField
+                                    label="Coupon Code *"
+                                    placeholder="Enter Coupon (e.g. SA15E5)"
+                                    value={couponCode}
+                                    onChange={(e) => {
+                                        const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+                                        setCouponCode?.(val);
+                                        setIsCouponVerified?.(false);
+                                        setCouponError?.("");
+                                    }}
+                                    suffix={
+                                        isCouponVerified ? (
+                                            <div className="flex items-center gap-1 text-[11px] font-semibold text-[#0B8C00] bg-green-100/50 px-2.5 py-0.5 rounded-full">
+                                                <span>✓ Verified</span>
+                                            </div>
+                                        ) : undefined
+                                    }
+                                    error={couponError}
+                                />
+                            </div>
+                            <Button
+                                type="button"
+                                onClick={() => {
+                                    if (!couponCode.trim()) {
+                                        setCouponError?.("Coupon code is required");
+                                        setIsCouponVerified?.(false);
+                                        return;
+                                    }
+                                    if (couponCode.trim().length !== 6 || !/^[a-zA-Z0-9]{6}$/.test(couponCode.trim())) {
+                                        setCouponError?.('Coupon code must be exactly 6 characters alphanumeric');
+                                        setIsCouponVerified?.(false);
+                                        return;
+                                    }
+                                    setCouponError?.("");
+                                    setIsCouponVerified?.(true);
+                                }}
+                                size="medium"
+                                className="h-11 rounded-[32px] text-xs font-semibold shrink-0"
+                            >
+                                Verify
+                            </Button>
+                        </div>
+                    )}
+
+                    {goldPackageStatus === "Decline" && (
+                        <div className="mt-2">
+                            <FormTextareaField
+                                label="Enter Description for Decline *"
+                                placeholder="Enter description for decline..."
+                                value={declineDescription}
+                                onChange={(e) => {
+                                    setDeclineDescription?.(e.target.value.slice(0, 250));
+                                    if (e.target.value.trim()) {
+                                        setDeclineError?.("");
+                                    }
+                                }}
+                                maxLength={250}
+                                rows={3}
+                                error={declineError}
+                                className="!rounded-xl"
+                            />
+                        </div>
+                    )}
+                </div>
+            )} */}
+
+
             {/* Update Contact Dialog */}
             <UpdateContactDialog
                 open={isUpdateContactDialogOpen}
@@ -591,6 +860,24 @@ export default function RegistrationPersonalDetails({
                     // Don't update the form field - just call callback if provided
                     if (onContactNumberUpdate) {
                         onContactNumberUpdate(newContactNumber);
+                    }
+                }}
+            />
+
+            {/* Update HealthCard Dialog */}
+            <UpdateHealthCardDialog
+                open={isUpdateHealthCardDialogOpen}
+                onClose={() => setIsUpdateHealthCardDialogOpen(false)}
+                currentHealthCardNo={formData.jsHealthCardNo?.trim() ? formData.jsHealthCardNo : undefined}
+                registrationId={registrationId || ""}
+                uhid={uhid || (formData as any)?.uhid || ""}
+                phone={formData.contactNumber || ""}
+                branchId={branchId}
+                arogyaCardSeries={arogyaCardSeries}
+                onSuccess={(newHealthCardNo) => {
+                    // Do not mutate jsHealthCardNo field since this is only a change request awaiting admin approval
+                    if (onHealthCardUpdate) {
+                        onHealthCardUpdate(newHealthCardNo);
                     }
                 }}
             />

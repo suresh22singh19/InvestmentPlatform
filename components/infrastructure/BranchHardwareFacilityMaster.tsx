@@ -7,6 +7,7 @@ import {
   FormSelectField,
   ConfigurationSummaryPanel,
   MessageDialog,
+  Tooltip,
 } from "@/components/ui";
 import { useGetHardwareOrFacilitiesQuery } from "@/store/api/settingsApi";
 import type { BranchHardwareFacilityKind } from "@/store/api/branchSetupApi";
@@ -246,9 +247,9 @@ export function BranchHardwareFacilityMaster({
       if (res.success) {
         setSuccessMessage(
           res.message ??
-            (kind === "hardware"
-              ? "Branch hardware facility mapping deleted successfully."
-              : "Branch facility mapping deleted successfully.")
+          (kind === "hardware"
+            ? "Branch hardware facility mapping deleted successfully."
+            : "Branch facility mapping deleted successfully.")
         );
         setShowSuccessDialog(true);
         return;
@@ -356,15 +357,18 @@ export function BranchHardwareFacilityMaster({
       <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? "w-[80%]" : "w-full"}`}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
-            >
-              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <Tooltip content="Back to Previous Page">
+              <button
+                type="button"
+                onClick={onBack}
+                className="cursor-pointer flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+                aria-label="Back to Previous Page"
+              >
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </Tooltip>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">{copy.pageTitle}</h1>
               <p className="text-sm text-gray-500">{facilityName}</p>
@@ -372,31 +376,36 @@ export function BranchHardwareFacilityMaster({
           </div>
           <div className="flex items-center gap-3">
             {canAdd ? (
-              <Button
-                variant="primary"
-                size="small"
-                onClick={handleAddOpen}
-                disabled={noBranch}
-                leftIcon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                }
-              >
-                {copy.addLabel}
-              </Button>
+              <Tooltip content={copy.addLabel}>
+                <Button
+                  variant="primary"
+                  size="small"
+                  className="cursor-pointer"
+                  onClick={handleAddOpen}
+                  disabled={noBranch}
+                  leftIcon={
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  }
+                >
+                  {copy.addLabel}
+                </Button>
+              </Tooltip>
             ) : null}
             {!isPanelOpen && (
-              <button
-                type="button"
-                onClick={() => setIsPanelOpen(true)}
-                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
-                aria-label="Open Configuration Summary"
-              >
-                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+              <Tooltip content="Open Configuration Summary">
+                <button
+                  type="button"
+                  onClick={() => setIsPanelOpen(true)}
+                  className="cursor-pointer flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                  aria-label="Open Configuration Summary"
+                >
+                  <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -445,35 +454,40 @@ export function BranchHardwareFacilityMaster({
                   </div>
                   <div className="flex items-center gap-2">
                     {canEdit ? (
-                      <Button
-                        variant="outline"
-                        size="small"
-                        onClick={() => openEditDialog(row.id, row.hardwareFacilityId, name)}
-                        disabled={editingId === row.id}
-                      >
-                        {editingId === row.id ? "Saving..." : "Edit"}
-                      </Button>
+                      <Tooltip content={`Edit ${kind === "hardware" ? "Hardware" : "Facility"}`}>
+                        <Button
+                          variant="outline"
+                          size="small"
+                          className="cursor-pointer"
+                          onClick={() => openEditDialog(row.id, row.hardwareFacilityId, name)}
+                          disabled={editingId === row.id}
+                        >
+                          {editingId === row.id ? "Saving..." : "Edit"}
+                        </Button>
+                      </Tooltip>
                     ) : null}
                     {canDelete ? (
-                      <Button
-                        variant="outline"
-                        size="small"
-                        onClick={() => openDeleteConfirm(row.id, name)}
-                        disabled={deletingId === row.id || deleteConfirmId != null}
-                        leftIcon={
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        }
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        {deletingId === row.id ? "Removing…" : "Delete"}
-                      </Button>
+                      <Tooltip content={`Delete ${kind === "hardware" ? "Hardware" : "Facility"}`}>
+                        <Button
+                          variant="outline"
+                          size="small"
+                          onClick={() => openDeleteConfirm(row.id, name)}
+                          disabled={deletingId === row.id || deleteConfirmId != null}
+                          leftIcon={
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          }
+                          className="cursor-pointer text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          {deletingId === row.id ? "Removing…" : "Delete"}
+                        </Button>
+                      </Tooltip>
                     ) : null}
                   </div>
                 </div>
@@ -494,7 +508,7 @@ export function BranchHardwareFacilityMaster({
           )}
         </div>
 
-        <Dialog open={showAddDialog} onClose={handleCloseAdd} title={copy.addDialogTitle} width={500}>
+        <Dialog open={showAddDialog} onClose={handleCloseAdd} title={copy.addDialogTitle} width={500} closeOnOutsideClick={false}>
           <div className="space-y-5">
             <p className="text-sm text-gray-600">{copy.addDescription}</p>
             <FormSelectField
@@ -522,7 +536,7 @@ export function BranchHardwareFacilityMaster({
           </div>
         </Dialog>
 
-        <Dialog open={editDialog != null} onClose={closeEditDialog} title={`Edit ${kind}`} width={460}>
+        <Dialog open={editDialog != null} onClose={closeEditDialog} title={`Edit ${kind}`} width={460} closeOnOutsideClick={false}>
           {editDialog ? (
             <div className="space-y-4">
               <p className="text-sm text-gray-600">Current: <span className="font-medium text-gray-900">{editDialog.oldName}</span></p>
@@ -569,7 +583,7 @@ export function BranchHardwareFacilityMaster({
       <MessageDialog
         open={deleteConfirmId != null}
         onClose={closeDeleteConfirm}
-        icon="/icons/CrossIcon.svg"
+        icon="/icons/transhExtraDarkIcon.svg"
         iconBgColor="#FFF8E1"
         message={`Are you sure you want to delete "${deleteConfirmName}"?`}
         showCancel
@@ -577,6 +591,7 @@ export function BranchHardwareFacilityMaster({
         confirmText="Confirm"
         onCancel={closeDeleteConfirm}
         onConfirm={() => void handleDeleteConfirmed()}
+        closeOnOutsideClick={false}
       />
 
       <MessageDialog

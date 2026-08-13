@@ -62,7 +62,7 @@ const sanitizeInstructionText = (value: string) =>
   value
     .replace(/[^a-zA-Z\s]/g, "")
     .replace(/\s{2,}/g, " ")
-    .slice(0, 100);
+    .slice(0, 250);
 
 function capitalizeFirst(str: string | null | undefined): string {
   if (str == null || str === "") return "";
@@ -103,7 +103,7 @@ export default function DietPage() {
     diagnosis: "",
     diagnosisId: 0,
     diagnosisName: "",
-    dietSchedule: "",
+    dietSchedule: [] as string[] | string,
     selectedFoodIds: [] as number[],
     instructions: "",
   });
@@ -113,6 +113,8 @@ export default function DietPage() {
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
   const [viewingDiet, setViewingDiet] = useState<DiagnosisDietItem | null>(null);
+  const [dietToDeleteId, setDietToDeleteId] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   /** Add/Edit form: super admin can change; others locked to the page branch (disabled). */
   const [formBranchId, setFormBranchId] = useState("");
 
@@ -289,7 +291,7 @@ export default function DietPage() {
       diagnosis: "",
       diagnosisId: 0,
       diagnosisName: "",
-      dietSchedule: "",
+      dietSchedule: [],
       selectedFoodIds: [],
       instructions: "",
     });
@@ -328,7 +330,7 @@ export default function DietPage() {
       diagnosis: "",
       diagnosisId: 0,
       diagnosisName: "",
-      dietSchedule: "",
+      dietSchedule: [],
       selectedFoodIds: [],
       instructions: "",
     });
@@ -350,7 +352,10 @@ export default function DietPage() {
   const validateForm = () => {
     const errors: Record<string, string> = {};
     if (!formValues.diagnosis) errors.diagnosis = "Diagnosis is required";
-    if (!formValues.dietSchedule) errors.dietSchedule = "Diet Schedule is required";
+    const isDietScheduleEmpty = Array.isArray(formValues.dietSchedule)
+      ? formValues.dietSchedule.length === 0
+      : !formValues.dietSchedule;
+    if (isDietScheduleEmpty) errors.dietSchedule = "Diet Schedule is required";
     if (formValues.selectedFoodIds.length === 0) errors.selectedFoodIds = "At least one diet food is required";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -364,9 +369,9 @@ export default function DietPage() {
 
     const branchId = isBranchFilterSuperAdmin
       ? (() => {
-          const n = parseInt(formBranchId, 10);
-          return Number.isFinite(n) && n >= 1 ? n : undefined;
-        })()
+        const n = parseInt(formBranchId, 10);
+        return Number.isFinite(n) && n >= 1 ? n : undefined;
+      })()
       : filterBranchId;
 
     if (branchId === undefined || !Number.isFinite(branchId) || branchId < 1) {
@@ -377,7 +382,7 @@ export default function DietPage() {
 
     try {
       let result;
-      
+
       if (isEditing && editingDietId) {
         // Update existing diagnosis diet
         const payload = {
@@ -394,7 +399,9 @@ export default function DietPage() {
         const payload = {
           diagnosisId: formValues.diagnosisId,
           diagnosisName: formValues.diagnosisName,
-          dietSchedule: formValues.dietSchedule,
+          dietSchedule: Array.isArray(formValues.dietSchedule)
+            ? formValues.dietSchedule
+            : [formValues.dietSchedule],
           dietDetail: formValues.selectedFoodIds,
           instructions: formValues.instructions.trim(),
           status: "active" as "active" | "inactive",
@@ -431,7 +438,7 @@ export default function DietPage() {
       } else if (err?.message) {
         errorMsg = err.message;
       }
-      
+
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
     }
@@ -475,7 +482,7 @@ export default function DietPage() {
     const selectedDiagnosis = diagnosisData?.data?.find(
       (item) => item.id.toString() === diagnosisValue
     );
-    
+
     setFormValues((prev) => ({
       ...prev,
       diagnosis: diagnosisValue,
@@ -485,17 +492,25 @@ export default function DietPage() {
     setFormErrors((prev) => ({ ...prev, diagnosis: "" }));
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = (id: number) => {
     if (!canDelete) return;
     if (!hasValidBranch) {
       setApiErrorMessage("Select a branch before deleting.");
       setShowApiErrorDialog(true);
       return;
     }
+    setDietToDeleteId(id);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (dietToDeleteId == null) return;
     try {
-      const result = await deleteDiagnosisDiet({ id, branchId: filterBranchId as number }).unwrap();
+      const result = await deleteDiagnosisDiet({ id: dietToDeleteId }).unwrap();
       setSuccessMessage(result?.message || "Diagnosis diet deleted successfully");
       setShowSuccessDialog(true);
+      setShowDeleteConfirm(false);
+      setDietToDeleteId(null);
       await refetchDiagnosisDiets();
     } catch (error: unknown) {
       console.error("Failed to delete diagnosis diet:", error);
@@ -516,9 +531,11 @@ export default function DietPage() {
       } else if (err?.message) {
         errorMsg = err.message;
       }
-      
+
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
+      setShowDeleteConfirm(false);
+      setDietToDeleteId(null);
     }
   };
 
@@ -536,159 +553,159 @@ export default function DietPage() {
                 You don&apos;t have permission to view diagnosis diet.
               </div>
             ) : (
-            <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-              <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
-                <div className="relative shrink-0">
-                  <FormSelectField
-                    label=""
-                    hideLabel
-                    options={diagnosisDietBranchOptions}
-                    value={selectedBranchFilter}
-                    onChange={(value) => {
-                      setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
-                      setCurrentPage(1);
-                    }}
-                    placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
-                    mode="single"
-                    background="normal"
-                    width={300}
-                    disabled={isBranchFilterDisabled || isLoadingBranches}
-                  />
+              <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+                <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
+                  <div className="relative shrink-0">
+                    <FormSelectField
+                      label=""
+                      hideLabel
+                      options={diagnosisDietBranchOptions}
+                      value={selectedBranchFilter}
+                      onChange={(value) => {
+                        setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                        setCurrentPage(1);
+                      }}
+                      placeholder={isLoadingBranches ? "Loading branches..." : "Select Branch"}
+                      mode="single"
+                      background="normal"
+                      width={300}
+                      disabled={isBranchFilterDisabled || isLoadingBranches}
+                    />
+                  </div>
+                  <div className="w-[280px] shrink-0 min-w-[200px]">
+                    <TableSearchInput
+                      value={searchTerm}
+                      onChange={(value) => {
+                        setSearchTerm((prev) => {
+                          if (prev !== value) setCurrentPage(1);
+                          return value;
+                        });
+                      }}
+                      placeholder="Search Here..."
+                    />
+                  </div>
+                  {canAdd ? (
+                    <button
+                      type="button"
+                      className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                      onClick={handleAdd}
+                    >
+                      <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                      <span className="text-hide">Add New Diet</span>
+                    </button>
+                  ) : null}
                 </div>
-                <div className="w-[280px] shrink-0 min-w-[200px]">
-                  <TableSearchInput
-                    value={searchTerm}
-                    onChange={(value) => {
-                      setSearchTerm((prev) => {
-                        if (prev !== value) setCurrentPage(1);
-                        return value;
-                      });
-                    }}
-                    placeholder="Search Here..."
-                  />
-                </div>
-                {canAdd ? (
-                  <button
-                    type="button"
-                    className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
-                    onClick={handleAdd}
-                  >
-                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    <span className="text-hide">Add New Diet</span>
-                  </button>
-                ) : null}
-              </div>
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead position="first" className="whitespace-nowrap">
-                      Sr no.
-                    </TableHead>
-                    <TableHead 
-                      sortable 
-                      sortDirection={getSortDirection("diagnosisName")} 
-                      onSort={() => handleSort("diagnosisName")}
-                    >
-                      Diagnosis
-                    </TableHead>
-                    <TableHead 
-                      sortable 
-                      sortDirection={getSortDirection("dietSchedule")} 
-                      onSort={() => handleSort("dietSchedule")}
-                    >
-                      Diet Schedule
-                    </TableHead>
-                    <TableHead position="last">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoadingDiagnosisDiets ? (
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
-                        Loading...
-                      </TableData>
+                      <TableHead position="first" className="whitespace-nowrap">
+                        Sr no.
+                      </TableHead>
+                      <TableHead
+                        sortable
+                        sortDirection={getSortDirection("diagnosisName")}
+                        onSort={() => handleSort("diagnosisName")}
+                      >
+                        Diagnosis
+                      </TableHead>
+                      <TableHead
+                        sortable
+                        sortDirection={getSortDirection("dietSchedule")}
+                        onSort={() => handleSort("dietSchedule")}
+                      >
+                        Diet Schedule
+                      </TableHead>
+                      <TableHead position="last">Action</TableHead>
                     </TableRow>
-                  ) : diagnosisDiets.length === 0 ? (
-                    <TableRow>
-                      <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
-                        No diets found
-                      </TableData>
-                    </TableRow>
-                  ) : (
-                    diagnosisDiets.map((diet, index) => (
-                      <TableRow key={diet.id}>
-                        <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                        <TableData>{diet.diagnosisName}</TableData>
-                        <TableData>{getDietScheduleLabel(diet.dietSchedule)}</TableData>
-                        <TableData position="last">
-                          <div className="flex items-center gap-3">
-                            {canView ? (
-                              <Tooltip content="View" position="top" delay={0}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleView(diet)}
-                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                  aria-label="View diagnosis diet"
-                                >
-                                  <Image
-                                    src="/icons/ViewEyeIcon.svg"
-                                    alt="View"
-                                    width={20}
-                                    height={20}
-                                  />
-                                </button>
-                              </Tooltip>
-                            ) : null}
-                            {canEdit ? (
-                              <Tooltip content="Edit" position="top" delay={0}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleEdit(diet)}
-                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                  aria-label="Edit diagnosis diet"
-                                >
-                                  <Image
-                                    src="/icons/EditIconBlack.svg"
-                                    alt="Edit"
-                                    width={20}
-                                    height={20}
-                                  />
-                                </button>
-                              </Tooltip>
-                            ) : null}
-                            {canDelete ? (
-                              <Tooltip content="Delete" position="top" delay={0}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(diet.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
-                                  aria-label="Delete diagnosis diet"
-                                  disabled={isDeleting}
-                                >
-                                  <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
-                                </button>
-                              </Tooltip>
-                            ) : null}
-                          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoadingDiagnosisDiets ? (
+                      <TableRow>
+                        <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
+                          Loading...
                         </TableData>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : diagnosisDiets.length === 0 ? (
+                      <TableRow>
+                        <TableData colSpan={4} className="py-12 text-center text-sm text-[#9CA3AF]">
+                          No diets found
+                        </TableData>
+                      </TableRow>
+                    ) : (
+                      diagnosisDiets.map((diet, index) => (
+                        <TableRow key={diet.id}>
+                          <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
+                          <TableData>{diet.diagnosisName}</TableData>
+                          <TableData>{getDietScheduleLabel(diet.dietSchedule)}</TableData>
+                          <TableData position="last">
+                            <div className="flex items-center gap-3">
+                              {canView ? (
+                                <Tooltip content="View" position="top" delay={0}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleView(diet)}
+                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                    aria-label="View diagnosis diet"
+                                  >
+                                    <Image
+                                      src="/icons/ViewEyeIcon.svg"
+                                      alt="View"
+                                      width={20}
+                                      height={20}
+                                    />
+                                  </button>
+                                </Tooltip>
+                              ) : null}
+                              {canEdit ? (
+                                <Tooltip content="Edit" position="top" delay={0}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEdit(diet)}
+                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                    aria-label="Edit diagnosis diet"
+                                  >
+                                    <Image
+                                      src="/icons/EditIconBlack.svg"
+                                      alt="Edit"
+                                      width={20}
+                                      height={20}
+                                    />
+                                  </button>
+                                </Tooltip>
+                              ) : null}
+                              {canDelete ? (
+                                <Tooltip content="Delete" position="top" delay={0}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(diet.id)}
+                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                                    aria-label="Delete diagnosis diet"
+                                    disabled={isDeleting}
+                                  >
+                                    <Image src="/icons/TrashBlackIcon.svg" alt="Delete" width={20} height={20} className="shrink-0" />
+                                  </button>
+                                </Tooltip>
+                              ) : null}
+                            </div>
+                          </TableData>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
 
-              {!isLoadingDiagnosisDiets && totalItems > 0 && (
-                <Pagination
-                  currentPage={currentPage}
-                  totalItems={totalItems}
-                  itemsPerPage={itemsPerPage}
-                  onPageChange={handlePageChange}
-                  onItemsPerPageChange={handleItemsPerPageChange}
-                  itemsPerPageOptions={[10, 20, 50, 100]}
-                />
-              )}
-            </div>
+                {!isLoadingDiagnosisDiets && totalItems > 0 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalItems={totalItems}
+                    itemsPerPage={itemsPerPage}
+                    onPageChange={handlePageChange}
+                    onItemsPerPageChange={handleItemsPerPageChange}
+                    itemsPerPageOptions={[10, 20, 50, 100]}
+                  />
+                )}
+              </div>
             )}
           </ListBorder>
         ) : (
@@ -728,7 +745,7 @@ export default function DietPage() {
                 <div className="grid grid-cols-1 gap-6">
                   <div>
                     <FormSelectField
-                      label="Diagnosis"
+                      label="Diagnosis *"
                       value={formValues.diagnosis}
                       onChange={handleDiagnosisChange}
                       options={diagnosisOptions}
@@ -742,18 +759,20 @@ export default function DietPage() {
 
                   <div>
                     <FormSelectField
-                      label="Diet Schedule"
+                      label="Diet Schedule *"
                       value={formValues.dietSchedule}
                       onChange={(value) => {
                         setFormValues((prev) => ({
                           ...prev,
-                          dietSchedule: Array.isArray(value) ? value[0] : value || "",
+                          dietSchedule: isEditing
+                            ? (Array.isArray(value) ? value[0] : value || "")
+                            : (Array.isArray(value) ? value : value ? [value] : []),
                         }));
                         setFormErrors((prev) => ({ ...prev, dietSchedule: "" }));
                       }}
                       options={dietScheduleOptions}
                       placeholder="Select Diet Schedule"
-                      mode="single"
+                      mode={isEditing ? "single" : "multiple"}
                       background="white"
                       disabled={isCreating || isUpdating || isEditing}
                     />
@@ -764,7 +783,7 @@ export default function DietPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Categories</h3>
+                  <h3 className="text-sm font-semibold leading-[120%] text-[#262D3B]">Diet Categories <span className="text-[#F6776E]">*</span></h3>
                   {isLoadingDietCategories ? (
                     <div className="py-8 text-center text-sm text-[#9CA3AF]">Loading diet categories...</div>
                   ) : (
@@ -781,11 +800,10 @@ export default function DietPage() {
                                   type="button"
                                   onClick={() => toggleFood(food.id)}
                                   disabled={isCreating || isUpdating}
-                                  className={`inline-flex h-[30px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold leading-[120%] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                                    isSelected
-                                      ? "border-[#0B8C00] bg-[#0B8C00] text-white"
-                                      : "border-[#0B8C00]/20 bg-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/30"
-                                  }`}
+                                  className={`inline-flex h-[30px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold leading-[120%] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isSelected
+                                    ? "border-[#0B8C00] bg-[#0B8C00] text-white"
+                                    : "border-[#0B8C00]/20 bg-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/30"
+                                    }`}
                                 >
                                   {food.diet}
                                 </button>
@@ -813,24 +831,24 @@ export default function DietPage() {
                     }}
                     height={73}
                     placeholder="Special Instructions"
-                    maxLength={100}
+                    maxLength={250}
                     disabled={isCreating || isUpdating}
                   />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button 
-                    type="submit" 
-                    variant="primary" 
-                    isLoading={isCreating || isUpdating} 
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    isLoading={isCreating || isUpdating}
                     disabled={isCreating || isUpdating}
                   >
                     {isEditing ? "Update Diet" : "Add Diet"}
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={handleCancel} 
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancel}
                     disabled={isCreating || isUpdating}
                   >
                     Cancel
@@ -847,6 +865,7 @@ export default function DietPage() {
         onClose={() => setViewingDiet(null)}
         title="View Diagnosis Diet"
         width={686}
+        closeOnOutsideClick={false}
       >
         {viewingDiet ? (
           <div className="space-y-5 text-sm text-[#434956]">
@@ -926,6 +945,28 @@ export default function DietPage() {
         showCancel={false}
         onConfirm={() => {
           setShowApiErrorDialog(false);
+        }}
+      />
+
+      <MessageDialog
+        open={showDeleteConfirm}
+        onClose={() => {
+          if (isDeleting) return;
+          setShowDeleteConfirm(false);
+          setDietToDeleteId(null);
+        }}
+        closeOnOutsideClick={false}
+        icon="/icons/transhExtraDarkIcon.svg"
+        iconBgColor="#FFEBEE"
+        message="Are you sure you want to delete this diagnosis diet?"
+        confirmText="Confirm"
+        cancelText="Cancel"
+        showCancel={true}
+        isActionLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setDietToDeleteId(null);
         }}
       />
     </AppShell>

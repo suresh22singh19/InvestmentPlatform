@@ -20,7 +20,7 @@ export function FollowUpCard({
     className = "",
 }: FollowUpCardProps) {
     return (
-        <div className={`rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] ${className}`}>
+        <div className={`rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 mb-4 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] ${className}`}>
             <div className="flex items-center gap-2 mb-4">
                 <Image src="/icons/followUp.svg" alt="Follow Up Icon" width={20} height={20} />
                 <h2 className="font-inter font-semibold text-base text-[#262D3B]">Follow-Up</h2>

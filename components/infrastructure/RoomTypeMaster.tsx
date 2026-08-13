@@ -8,6 +8,7 @@ import {
   FormSelectField,
   ConfigurationSummaryPanel,
   MessageDialog,
+  Tooltip,
 } from "@/components/ui";
 import { useGetAllRoomTypesQuery } from "@/store/api/settingsApi";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/store/api/branchSetupApi";
 import type { FacilityConfigurationSummarySnapshot } from "@/lib/types/facilityConfigurationSummary";
 import { useFacilityConfigurationSummaryFromHierarchy } from "@/hooks/useFacilityConfigurationSummaryFromHierarchy";
+import { formatIndianAmount, formatIndianCurrency, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 
 type RoomTypeMasterProps = {
   facilityName: string;
@@ -183,7 +185,7 @@ export const RoomTypeMaster = ({
       const rented = master.isRented === true;
       let roomRentPrice = 0;
       if (rented) {
-        const trimmed = (roomRentByTypeId[idStr] ?? "").trim();
+        const trimmed = parseIndianAmount(roomRentByTypeId[idStr] ?? "").trim();
         if (!isValidRoomRent(trimmed)) {
           const label = master.roomType?.trim() ? master.roomType : String(master.id);
           openApiError(
@@ -270,12 +272,13 @@ export const RoomTypeMaster = ({
     const rt = row.roomType;
     const title = rt?.roomType ?? `Room type #${row.roomtypeId}`;
     const isRented = rt?.isRented === true;
+    const rent = row.roomRentPrice ?? 0;
     setEditDialog({
       mappingId: row.id,
       roomtypeId: row.roomtypeId,
       title,
       isRented,
-      rentInput: isRented ? String(row.roomRentPrice ?? "") : "",
+      rentInput: isRented && rent > 0 ? formatIndianAmount(rent) : "",
     });
   };
 
@@ -285,7 +288,7 @@ export const RoomTypeMaster = ({
     if (!canEdit || !editDialog || branchId == null) return;
     let roomRentPrice = 0;
     if (editDialog.isRented) {
-      const trimmed = editDialog.rentInput.trim();
+      const trimmed = parseIndianAmount(editDialog.rentInput).trim();
       if (!isValidRoomRent(trimmed)) {
         openApiError(
           `Room rent for "${editDialog.title}" must be 1–7 digits only, starting with 1–9 (no leading zero).`,
@@ -331,15 +334,18 @@ export const RoomTypeMaster = ({
       <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? "w-[80%]" : "w-full"}`}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
-            >
-              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <Tooltip content="Back to Previous Page">
+              <button
+                type="button"
+                onClick={onBack}
+                className="cursor-pointer flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+                aria-label="Back to Previous Page"
+              >
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </Tooltip>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Room Type Master</h1>
               <p className="text-sm text-gray-500">{facilityName}</p>
@@ -347,31 +353,36 @@ export const RoomTypeMaster = ({
           </div>
           <div className="flex items-center gap-3">
             {canAdd ? (
-              <Button
-                variant="primary"
-                size="small"
-                onClick={handleAddOpen}
-                disabled={noBranch}
-                leftIcon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                }
-              >
-                Add Room Type
-              </Button>
+              <Tooltip content="Add Room Type">
+                <Button
+                  variant="primary"
+                  size="small"
+                  className="cursor-pointer"
+                  onClick={handleAddOpen}
+                  disabled={noBranch}
+                  leftIcon={
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  }
+                >
+                  Add Room Type
+                </Button>
+              </Tooltip>
             ) : null}
             {!isPanelOpen && (
-              <button
-                type="button"
-                onClick={() => setIsPanelOpen(true)}
-                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
-                aria-label="Open Configuration Summary"
-              >
-                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+              <Tooltip content="Open Configuration Summary">
+                <button
+                  type="button"
+                  onClick={() => setIsPanelOpen(true)}
+                  className="cursor-pointer flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                  aria-label="Open Configuration Summary"
+                >
+                  <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -414,12 +425,12 @@ export const RoomTypeMaster = ({
                   className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
                         <TagIcon className="h-5 w-5 text-green-700" />
                       </div>
-                      <div>
-                        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-base font-semibold text-gray-900 break-words">{title}</h3>
                       </div>
                     </div>
                   </div>
@@ -428,42 +439,47 @@ export const RoomTypeMaster = ({
                     <div className="flex items-center gap-2 mb-4">
                       <span className="text-sm text-gray-500">Rent:</span>
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                        Rs {rent.toLocaleString("en-IN")}
+                        {formatIndianCurrency(rent)}
                       </span>
                     </div>
                   ) : null}
 
                   <div className="flex items-center gap-2">
-                    {canEdit ? (
-                      <Button
-                        variant="outline"
-                        size="small"
-                        onClick={() => openEditDialog(row)}
-                        disabled={editingId === row.id}
-                      >
-                        {editingId === row.id ? "Saving…" : "Edit"}
-                      </Button>
-                    ) : null}
+                    {/* {canEdit ? (
+                      <Tooltip content="Edit Room Type">
+                        <Button
+                          variant="outline"
+                          size="small"
+                          className="cursor-pointer"
+                          onClick={() => openEditDialog(row)}
+                          disabled={editingId === row.id}
+                        >
+                          {editingId === row.id ? "Saving…" : "Edit"}
+                        </Button>
+                      </Tooltip>
+                    ) : null} */}
                     {canDelete ? (
-                      <Button
-                        variant="outline"
-                        size="small"
-                        onClick={() => openDeleteConfirm(row.id, title)}
-                        disabled={deletingId === row.id || deleteConfirmId != null}
-                        leftIcon={
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        }
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        {deletingId === row.id ? "Removing…" : "Delete"}
-                      </Button>
+                      <Tooltip content="Delete Room Type">
+                        <Button
+                          variant="outline"
+                          size="small"
+                          onClick={() => openDeleteConfirm(row.id, title)}
+                          disabled={deletingId === row.id || deleteConfirmId != null}
+                          leftIcon={
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          }
+                          className="cursor-pointer text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          {deletingId === row.id ? "Removing…" : "Delete"}
+                        </Button>
+                      </Tooltip>
                     ) : null}
                   </div>
                 </div>
@@ -484,7 +500,7 @@ export const RoomTypeMaster = ({
           )}
         </div>
 
-        <Dialog open={showAddDialog} onClose={handleCloseAdd} title="Add Room Type" width={500}>
+        <Dialog open={showAddDialog} onClose={handleCloseAdd} title="Add Room Type" width={500} closeOnOutsideClick={false}>
           <div className="space-y-5">
             <p className="text-sm text-gray-600">
               Select one or more room types from the master list to add to this branch.
@@ -507,20 +523,22 @@ export const RoomTypeMaster = ({
                   return (
                     <FormInputField
                       key={idStr}
-                      label={`Room rent (Rs) — ${label}*`}
-                      placeholder="e.g. 5000"
+                      label={`Room rent (₹) — ${label}*`}
+                      placeholder="e.g. 5,000"
                       value={roomRentByTypeId[idStr] ?? ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const raw = parseIndianAmount(e.target.value).replace(/\D/g, "").slice(0, ROOM_RENT_MAX_DIGITS);
+                        const noLeadingZero = raw.replace(/^0+/, "");
+                        const formatted = noLeadingZero ? formatIndianAmount(noLeadingZero) : "";
                         setRoomRentByTypeId((prev) => ({
                           ...prev,
-                          [idStr]: sanitizeRoomRentInput(e.target.value),
-                        }))
-                      }
+                          [idStr]: formatted,
+                        }));
+                      }}
                       helperText="Digits only, max 7; first digit 1–9 (no leading zero)."
                       type="text"
                       inputMode="numeric"
-                      maxLength={ROOM_RENT_MAX_DIGITS}
-                      pattern="[1-9][0-9]{0,6}"
+                      maxLength={11}
                     />
                   );
                 })}
@@ -541,7 +559,7 @@ export const RoomTypeMaster = ({
           </div>
         </Dialog>
 
-        <Dialog open={editDialog != null} onClose={closeEditDialog} title="Edit Room Type" width={480}>
+        <Dialog open={editDialog != null} onClose={closeEditDialog} title="Edit Room Type" width={480} closeOnOutsideClick={false}>
           {editDialog ? (
             <div className="space-y-4">
               <p className="text-sm text-gray-700">
@@ -549,19 +567,21 @@ export const RoomTypeMaster = ({
               </p>
               {editDialog.isRented ? (
                 <FormInputField
-                  label="Room rent (Rs)*"
-                  placeholder="e.g. 5000"
+                  label="Room rent (₹)*"
+                  placeholder="e.g. 5,000"
                   value={editDialog.rentInput}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const raw = parseIndianAmount(e.target.value).replace(/\D/g, "").slice(0, ROOM_RENT_MAX_DIGITS);
+                    const noLeadingZero = raw.replace(/^0+/, "");
+                    const formatted = noLeadingZero ? formatIndianAmount(noLeadingZero) : "";
                     setEditDialog((prev) =>
-                      prev ? { ...prev, rentInput: sanitizeRoomRentInput(e.target.value) } : prev,
-                    )
-                  }
+                      prev ? { ...prev, rentInput: formatted } : prev,
+                    );
+                  }}
                   helperText="Digits only, max 7; first digit 1-9 (no leading zero)."
                   type="text"
                   inputMode="numeric"
-                  maxLength={ROOM_RENT_MAX_DIGITS}
-                  pattern="[1-9][0-9]{0,6}"
+                  maxLength={11}
                 />
               ) : (
                 <p className="text-xs text-gray-500">No editable rent for non-rented room types.</p>
@@ -573,7 +593,7 @@ export const RoomTypeMaster = ({
                 <Button
                   variant="primary"
                   onClick={() => void submitEditDialog()}
-                  disabled={editingId != null || (editDialog.isRented && !isValidRoomRent(editDialog.rentInput.trim()))}
+                  disabled={editingId != null || (editDialog.isRented && !isValidRoomRent(parseIndianAmount(editDialog.rentInput).trim()))}
                 >
                   {editingId != null ? "Saving..." : "Save"}
                 </Button>
@@ -599,7 +619,7 @@ export const RoomTypeMaster = ({
       <MessageDialog
         open={deleteConfirmId != null}
         onClose={closeDeleteConfirm}
-        icon="/icons/CrossIcon.svg"
+        icon="/icons/transhExtraDarkIcon.svg"
         iconBgColor="#FFF8E1"
         message={`Are you sure you want to delete "${deleteConfirmName}"?`}
         showCancel
@@ -607,6 +627,7 @@ export const RoomTypeMaster = ({
         confirmText="Confirm"
         onCancel={closeDeleteConfirm}
         onConfirm={() => void handleDeleteConfirmed()}
+        closeOnOutsideClick={false}
       />
 
       <MessageDialog

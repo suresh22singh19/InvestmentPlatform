@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { Calendar, momentLocalizer } from "react-big-calendar";
 import moment from "moment";
+// @ts-ignore: CSS import for react-big-calendar side effects
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa6";
 import { useAppSelector } from "@/store/hooks";

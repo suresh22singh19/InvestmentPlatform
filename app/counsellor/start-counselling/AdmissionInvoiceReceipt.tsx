@@ -1,6 +1,10 @@
 "use client";
 
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
+
 export interface AdmissionInvoiceReceiptProps {
+    discountAmount?:number;
+    feeDays?:number;
     captureId?: string;
     patientName: string;
     address: string;
@@ -32,8 +36,8 @@ export interface AdmissionInvoiceReceiptProps {
     lineItemLabel?: string;
 }
 
-function formatCurrency(amount: number) {
-    return `₹${amount.toLocaleString("en-IN")}`;
+function formatCurrency(amount: number | string) {
+    return `₹${formatIndianAmount(amount)}`;
 }
 
 function numberToWords(num: number): string {
@@ -80,6 +84,8 @@ function numberToWords(num: number): string {
 export function AdmissionInvoiceReceipt({
     captureId = "counsellor-admission-invoice",
     patientName,
+    discountAmount,
+    feeDays,
     pinCode,
     address,
     countryName,
@@ -112,6 +118,9 @@ export function AdmissionInvoiceReceipt({
             ? String(invoiceId).trim()
             : null;
 // console.log("djhsdj",address)
+
+const finalAmount = totalAmount - (discountAmount ?? 0);
+
     return (
         <div
             id={captureId}
@@ -243,6 +252,52 @@ export function AdmissionInvoiceReceipt({
                 </div>
             ) : null}
 
+        {/* {true ? (
+                <div className="flex w-full flex-col border-t border-[#C0C3C8]">
+                    <h3 className="px-[24px] py-[11px] pb-0 font-inter text-[19px] font-extrabold not-italic leading-[130%] text-[#434956]">
+                        Package Details
+                    </h3>
+                    <div className="flex flex-col gap-[8px] px-[24px] py-[11px]">
+                        <p className="font-inter text-[14px] not-italic leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">Package Name:</span>{" "}
+                            <span className="font-medium">{""}</span>
+                        </p>
+                        
+                            <p className="font-inter text-[14px] not-italic leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Package Type Selection :</span>{" "}
+                                <span className="font-medium">{""}</span>
+                            </p>
+
+                            <p className="font-inter text-[14px] not-italic leading-[120%] text-[#434956]">
+                                <span className="font-extrabold">Package Total Price:</span>{" "}
+                                <span className="font-medium">{""}</span>
+                            </p>
+                        
+                    </div>
+                </div>
+            ) : null} */}
+
+                    {/* {true ? (
+                <div className="flex w-full flex-col border-t border-[#C0C3C8]">
+                    <h3 className="px-[24px] py-[11px] pb-0 font-inter text-[19px] font-extrabold not-italic leading-[130%] text-[#434956]">
+                        Offer Details
+                    </h3>
+                    <div className="flex flex-col gap-[8px] px-[24px] py-[11px]">
+                        <p className="font-inter text-[14px] not-italic leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">Offer Name:</span>{" "}
+                            <span className="font-medium">{""}</span>
+                        </p>
+                        
+                        <p className="font-inter text-[14px] not-italic leading-[120%] text-[#434956]">
+                            <span className="font-extrabold">Offer Type :</span>{" "}
+                            <span className="font-medium">{""}</span>
+                        </p>
+                
+                    </div>
+                </div>
+            ) : null} */}
+
+
             <table className="w-full border-collapse">
                 <thead>
                     <tr>
@@ -263,14 +318,16 @@ export function AdmissionInvoiceReceipt({
                             {formatCurrency(consultationCharges)}
                         </td>
                     </tr>
+                 {discountAmount != null && feeDays === 0 && (
                     <tr>
-                        <td className="border border-l-0 border-[#C0C3C8] px-[24px] py-[12px] text-right font-inter text-[14px] font-extrabold not-italic leading-[120%] text-[#434956]">
-                            Subtotal
+                        <td className="border border-l-0 border-[#C0C3C8] px-[24px] py-[12px] text-right font-inter text-[14px] font-extrabold leading-[120%] text-[#434956]">
+                        Discount
                         </td>
-                        <td className="border border-r-0 border-[#C0C3C8] px-[24px] py-[12px] text-right font-inter text-[14px] font-normal not-italic leading-[120%] text-[#434956]">
-                            {formatCurrency(subtotal)}
+                        <td className="border border-r-0 border-[#C0C3C8] px-[24px] py-[12px] text-right font-inter text-[14px] font-normal leading-[120%] text-[#434956]">
+                        ₹ {discountAmount}
                         </td>
                     </tr>
+                    )}
                     <tr>
                         <td className="border border-l-0 border-[#C0C3C8] px-[24px] py-[12px] text-right font-inter text-[14px] font-extrabold not-italic leading-[120%] text-[#434956]">
                             Tax
@@ -285,12 +342,16 @@ export function AdmissionInvoiceReceipt({
                             <div className="text-[11px] font-medium text-[#787E8C]">
                                 Amount in Words:{" "}
                                 <span className="select-all font-extrabold text-[#0B8C00]">
-                                    {numberToWords(totalAmount)}
+                                    {numberToWords(finalAmount)}
                                 </span>
                             </div>
                         </td>
                         <td className="border border-r-0 border-[#C0C3C8] px-[24px] py-[10px] text-right align-middle font-inter text-[14px] font-semibold not-italic leading-[120%] text-[#434956]">
-                            {formatCurrency(totalAmount)}
+                            {/* {formatCurrency(totalAmount)} */}
+                                   ₹ {finalAmount.toLocaleString("en-IN", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}
                         </td>
                     </tr>
                 </tbody>
@@ -353,7 +414,7 @@ export function AdmissionInvoiceReceipt({
                                         {record.status}
                                     </td>
                                     <td className="border border-r-0 border-[#C0C3C8] px-[24px] py-[10px] text-end font-inter text-[13px] font-bold text-[#434956]">
-                                        ₹ {Number(record.amount || 0).toLocaleString("en-IN")}
+                                        ₹ {formatIndianAmount(record.amount || 0)}
                                     </td>
                                 </tr>
                             ))}

@@ -160,10 +160,13 @@ export interface RequiredDocumentItem {
 }
 
 export interface AwaitingPatient {
+  admissionStatus?:string;
   patientId: number;
   branchId?: number;
   patientName: string;
   patientUhid: string;
+  age?: string | number | null;
+  gender?: string | null;
   admissionType: string;
   counsellorName: string;
   doctorName: string;
@@ -352,8 +355,9 @@ export type DietaryForm = {
 };
 
 export type OpenFileStep1Form = {
-  vitals: VitalsCaptureForm;
-  dietary: DietaryForm;
+  patientIdTagNumber?:string;
+  vitals?: VitalsCaptureForm;
+  dietary?: DietaryForm;
 };
 
 export type OpenFilePatientVitalsSnapshot = {
@@ -373,6 +377,12 @@ export type OpenFileAdmissionSummary = {
 export type OpenFilePatientDetails = {
   patientName: string;
   uhid: string;
+  age: string;
+  gender: string;
+  bedNumber: string;
+  roomNumber: string;
+  admissionDate: string;
+  opdDoctor: string;
   admissionType: string;
   wardCategory: string;
   vitalsSnapshot: OpenFilePatientVitalsSnapshot;
@@ -404,8 +414,8 @@ export interface CreateIpdAdmissionPayload {
   patientId: number;
   branchId: number;
   patientName: string;
-  documents: CreateIpdAdmissionDocumentPayload[];
-  vitals: CreateIpdAdmissionVitalsPayload;
+  admissionNo: string;
+  patientTagId: number;
 }
 
 export interface CreateIpdAdmissionResponse {

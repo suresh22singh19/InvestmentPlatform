@@ -543,9 +543,17 @@ export default function TokenDisplayConfigurationPage() {
                             <FormInputField
                               label="Area / location"
                               value={monitor.location}
-                              onChange={(e) =>
-                                updateMonitor(monitor.id, { location: e.target.value })
-                              }
+                              maxLength={100}
+                              onChange={(e) => {
+                                let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                value = value.replace(/^\s+/, "");
+                                value = value.replace(/(.)\1{2,}/g, "$1$1");
+                                if (value.length > 0) {
+                                  value = value.charAt(0).toUpperCase() + value.slice(1);
+                                }
+                                value = value.slice(0, 100);
+                                updateMonitor(monitor.id, { location: value });
+                              }}
                               height={38}
                               disabled={!canAdd}
                             />

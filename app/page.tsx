@@ -19,7 +19,7 @@ import { forceLogoutJatayu } from "@/store/api/jatayuApi";
 import { LoginFormValues } from "@/lib/validation/schemas";
 import { encrypt, decrypt } from "@/lib/utils/encryption";
 import type { LoginPermissionModule } from "@/store/api/authApi";
-import { formatPermissions, hasOnlyGateModuleViewAccess } from "@/utils/permission";
+import { formatPermissions, hasOnlyGateModuleViewAccess, slugify } from "@/utils/permission";
 
 type PendingLogin = {
   email: string;
@@ -68,6 +68,28 @@ const SUB_MODULE_ROUTE_MAP: Record<string, string> = {
   "other visitor": "/gate/other",
   "patient medicine type": "/gate/patient-medicine-type",
   "view daily reports": "/gate/reports",
+  "today appointment": "/today-appointment",
+  "today-appointment": "/today-appointment",
+  doctor: "/doctor",
+  "camp doctor": "/doctor",
+  "doctor visit": "/doctor",
+  nurse: "/nurse",
+  therapist: "/settings/therapist",
+  "discharge pending": "/discharge-pending",
+  "discharge-pending": "/discharge-pending",
+  "ipd reception dashboard": "/ipd-reception/dashboard",
+  "ipd-reception-dashboard": "/ipd-reception/dashboard",
+  "pre-booking": "/pre-booking",
+  "pre booking": "/pre-booking",
+  "lead-request": "/lead-request",
+  "lead request": "/lead-request",
+  document: "/settings/document",
+  "document master": "/settings/document",
+  "offer master": "/settings/offer-master",
+  offer: "/settings/offer-master",
+  ipd: "/patient/ipd",
+  daycare: "/patient/daycare",
+  discharge: "/patient/discharge",
 };
 
 const getPermissionLandingRoute = (permissions?: any[]): string | null => {
@@ -89,7 +111,9 @@ const getPermissionLandingRoute = (permissions?: any[]): string | null => {
 
     for (const subModule of permissionModule.subModules ?? []) {
       if (!subModule?.isActive || !subModule?.canView) continue;
-      const route = SUB_MODULE_ROUTE_MAP[subModule.moduleName.trim().toLowerCase()];
+      const lowerName = subModule.moduleName?.trim().toLowerCase() || "";
+      const slugName = slugify(subModule.moduleName || "");
+      const route = SUB_MODULE_ROUTE_MAP[lowerName] ?? SUB_MODULE_ROUTE_MAP[slugName];
       if (route) return route;
     }
   }
@@ -190,7 +214,7 @@ export default function LoginPage() {
     } else if (type?.includes("gate")) {
       router.push("/gate");
     } else {
-      router.push(getPermissionLandingRoute(permissions) ?? "/dashboard");
+      router.push(getPermissionLandingRoute(permissions) ?? "/profile");
     }
   }, [router]);
 
@@ -257,8 +281,9 @@ export default function LoginPage() {
         // Save token to localStorage if successful
         if (aiVoiceActivated && jatayuAuthObj?.token) {
           localStorage.setItem("jatayuToken", jatayuAuthObj.token);
-          if (jatayuAuthObj.refreshtoken) {
-            localStorage.setItem("jatayuRefreshToken", jatayuAuthObj.refreshtoken);
+          const rToken = jatayuAuthObj.refreshtoken || jatayuAuthObj.refreshToken || jatayuAuthObj.refresh_token;
+          if (rToken) {
+            localStorage.setItem("jatayuRefreshToken", rToken);
           }
         } else {
           localStorage.removeItem("jatayuToken");
@@ -320,8 +345,9 @@ export default function LoginPage() {
         // Store new tokens in localStorage
         if (newJatayuAuthObj?.token) {
           localStorage.setItem("jatayuToken", newJatayuAuthObj.token);
-          if (newJatayuAuthObj.refreshtoken) {
-            localStorage.setItem("jatayuRefreshToken", newJatayuAuthObj.refreshtoken);
+          const newRToken = newJatayuAuthObj.refreshtoken || newJatayuAuthObj.refreshToken || newJatayuAuthObj.refresh_token;
+          if (newRToken) {
+            localStorage.setItem("jatayuRefreshToken", newRToken);
           }
         }
 
@@ -564,21 +590,25 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-[526px]">
-        {/* Logo */}
-        <div className="flex justify-start mb-6">
-          <Logo />
-        </div>
+    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center relative overflow-hidden px-4 py-12">
+      {/* Background Ambient Spotlights */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/10 blur-[140px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none" />
 
-        {/* Login Form Container (no background as per design) */}
-        <div className="p-0">
+      <div className="w-full max-w-[500px] relative z-10">
+        {/* Dark Glass Card Container */}
+        <div className="p-8 md:p-10 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl">
+          {/* Logo Badge */}
+          <div className="flex justify-center mb-8">
+            <Logo />
+          </div>
+
           {authPhase === "credentials" ? (
             <>
-              <div className="mb-8">
-                <h1 className="text-2xl font-semibold text-[#434956] mb-2">Login</h1>
-                <p className="text-sm text-[#434956] leading-[120%]">
-                  Login to your account and join us
+              <div className="mb-8 text-center">
+                <h1 className="text-2xl font-black text-white tracking-tight">VIP Member Sign In</h1>
+                <p className="text-sm text-slate-400 font-medium mt-1">
+                  Access your global yield dashboard & commissions
                 </p>
               </div>
 
@@ -610,10 +640,10 @@ export default function LoginPage() {
             </>
           ) : (
             <>
-              <div className="mb-8">
-                <h1 className="text-2xl font-semibold text-[#434956] mb-2">Enter Login OTP</h1>
-                <p className="text-sm text-[#434956] leading-[120%]">
-                  Enter the one-time password sent to your registered phone number.
+              <div className="mb-8 text-center">
+                <h1 className="text-2xl font-black text-white tracking-tight">Enter Security OTP</h1>
+                <p className="text-sm text-slate-400 font-medium mt-1">
+                  Enter the one-time code sent to your registered device.
                 </p>
               </div>
 

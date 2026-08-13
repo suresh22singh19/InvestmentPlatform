@@ -47,12 +47,12 @@ export const validateIPNetwork = (value: string): string => {
     }
 
     const trimmedValue = value.trim();
-    
+
     // Check for CIDR notation (e.g., 192.168.1.0/24)
     const cidrPattern = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
     // Check for simple IP address (e.g., 192.168.1.1)
     const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
-    
+
     if (cidrPattern.test(trimmedValue)) {
         // Validate CIDR notation
         const [ip, cidr] = trimmedValue.split('/');
@@ -186,7 +186,8 @@ export function formatRoomHierarchyPath(
 }
 
 /** UI label for room gender usage; API still uses `mixed` / `Mixed` internally. */
-export function genderUsageDisplayLabel(g: "Male" | "Female" | "Mixed"): string {
+export function genderUsageDisplayLabel(g: "Male" | "Female" | "Mixed" | "" | null | undefined): string {
+    if (!g) return "N/A";
     return g === "Mixed" ? "General" : g;
 }
 

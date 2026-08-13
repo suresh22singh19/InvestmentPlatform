@@ -33,6 +33,10 @@ interface PhotoCaptureProps {
   externalFieldErrors?: Partial<Record<keyof PhotoCaptureFormData, string>>;
   accept?: string; // e.g. "image/png,image/jpeg"
   onValidationChange?: (hasErrors: boolean, errors: { vehiclePhoto?: string; aadharPhoto?: string }) => void;
+  hideToggles?: boolean;
+  maxSize?: number;
+  allowedDimensions?: Array<{ width: number; height: number }>;
+  helperText?: string;
 }
 
 export interface PhotoCaptureRef {
@@ -55,9 +59,13 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
   selectionHeadingRequired = false,
   slotDataFields,
   externalFieldErrors,
-  // PNG, JPEG/JPG, SVG only (same rules as gate new-patient photo flow)
-  accept = "image/png,image/jpeg,image/jpg,image/svg+xml,.png,.jpg,.jpeg,.svg",
+  // PNG, JPEG/JPG, SVG, WEBP (standard web image formats)
+  accept = "image/png,image/jpeg,image/jpg,image/webp,image/svg+xml,.png,.jpg,.jpeg,.webp,.svg",
   onValidationChange,
+  hideToggles = false,
+  maxSize,
+  allowedDimensions,
+  helperText,
 }, ref) => {
   const labelVehicle = fieldLabels?.vehiclePhoto ?? DEFAULT_VEHICLE_LABEL;
   const labelAadhar = fieldLabels?.aadharPhoto ?? DEFAULT_AADHAR_LABEL;
@@ -295,8 +303,8 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
     );
   };
 
-  // Validate file type and size (PNG, JPG/JPEG, SVG — same messaging pattern as gate/new-patient)
-  const validateFile = (file: File): string | null => {
+  // Validate file type, max size, and image dimensions
+  const validateFile = async (file: File): Promise<string | null> => {
     const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/svg+xml"];
     const fileType = file.type.toLowerCase().trim();
 
@@ -311,24 +319,59 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
       (fileExtension !== "" && allowedExtensions.includes(fileExtension));
 
     if (!isValidType) {
-      return "Only image files (PNG, JPG, JPEG, SVG) are allowed";
+      return "Only standard image files (PNG, JPG, JPEG, SVG) are allowed";
     }
     
-    // Check file size - max 3MB
-    const maxSize = 3 * 1024 * 1024; // 3MB in bytes
-    if (file.size > maxSize) {
-      return "File size must be less than 3MB";
+    // Check file size - max 4MB (or custom limit)
+    const limit = maxSize ?? (4 * 1024 * 1024);
+    if (file.size > limit) {
+      const limitMB = Math.round(limit / (1024 * 1024));
+      return `File size must be less than ${limitMB}MB`;
+    }
+
+    // Check image dimensions if allowedDimensions is provided
+    if (allowedDimensions && allowedDimensions.length > 0) {
+      if (fileType !== "image/svg+xml" && !fileName.endsWith(".svg")) {
+        const dimError = await new Promise<string | null>((resolve) => {
+          const img = new window.Image();
+          const objectUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const w = img.width;
+            const h = img.height;
+            const matchExact = allowedDimensions.some((d) => d.width === w && d.height === h);
+            const matchProportional = allowedDimensions.some((d) => {
+              const targetRatio = d.width / d.height;
+              const actualRatio = w / h;
+              return Math.abs(targetRatio - actualRatio) < 0.03;
+            });
+
+            if (!matchExact && !matchProportional) {
+              const dimsStr = allowedDimensions.map((d) => `${d.width}×${d.height}`).join(", ");
+              resolve(`Image size must be one of the standard sizes: ${dimsStr} px`);
+            } else {
+              resolve(null);
+            }
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve("Unable to load image file for validation");
+          };
+          img.src = objectUrl;
+        });
+        if (dimError) return dimError;
+      }
     }
     
     return null; // No error
   };
 
   // Handle file upload (when photoOption is "Upload Photo")
-  const handleFileChange = (field: keyof PhotoCaptureFormData, file: File | null, fileName?: string) => {
+  const handleFileChange = async (field: keyof PhotoCaptureFormData, file: File | null, fileName?: string) => {
     if (photoOption.toLowerCase() === "upload photo") {
       if (file) {
         // Validate file
-        const error = validateFile(file);
+        const error = await validateFile(file);
         if (error) {
           // Set error for this field
           setFileErrors((prev) => ({
@@ -372,19 +415,21 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
       <div ref={containerRef} className={shellClass}>
         {!embedded ? <h2 className="text-base font-medium leading-[120%] text-[#262D3B]">{title}</h2> : null}
 
-        <div className="w-full flex">
-          <div className="lg:w-1/3 md:w-1/2 w-full space-y-1">
-            <span className="block text-xs font-medium text-[#7B8089]">
-              {selectionHeading}
-              {selectionHeadingRequired ? <span className="text-[#F6776E]">*</span> : null}
-            </span>
-            <PatientTypeButtonGroup
-              options={["Take a Photo", "Upload Photo"]}
-              value={photoOption}
-              onChange={setPhotoOption}
-            />
+        {!hideToggles && (
+          <div className="w-full flex">
+            <div className="lg:w-1/3 md:w-1/2 w-full space-y-1">
+              <span className="block text-xs font-medium text-[#7B8089]">
+                {selectionHeading}
+                {selectionHeadingRequired ? <span className="text-[#F6776E]">*</span> : null}
+              </span>
+              <PatientTypeButtonGroup
+                options={["Take a Photo", "Upload Photo"]}
+                value={photoOption}
+                onChange={setPhotoOption}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           className={`space-y-4 flex-1 grid grid-cols-1 gap-4 ${
@@ -451,6 +496,9 @@ const PhotoCapture = forwardRef<PhotoCaptureRef, PhotoCaptureProps>(({
                   error={vehicleErrorText}
                 />
               )}
+              {helperText && !vehicleErrorText ? (
+                <span className="text-[11px] text-[#7B8089] font-medium leading-tight px-1">{helperText}</span>
+              ) : null}
               {photoOption.toLowerCase() === "take a photo" && vehicleErrorText ? (
                 <span className="text-xs text-[#F87171]">{vehicleErrorText}</span>
               ) : null}

@@ -14,7 +14,7 @@ import {
     useUpdateDocumentsMutation,
 } from "@/store/api/counsellorApi";
 import type { CounsellorDocumentItem, PatientAdmissionDetailsData } from "@/store/api/counsellorApi";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const FINALIZE_DISCLAIMER =
     "By clicking Finalize, you confirm that all physical documents have been collected.";
@@ -64,7 +64,7 @@ function isActiveDocument(doc: CounsellorDocumentItem): boolean {
 }
 
 function formatWardAssigned(details: PatientAdmissionDetailsData): string {
-    const roomBed = [details.roomNumber, details.bedNumber].filter(Boolean).join(" / ");
+    const roomBed = [details?.roomType, details.roomNumber, details.bedNumber].filter(Boolean).join(" / ");
     if (roomBed) return roomBed;
     if (details.roomType) {
         return details.roomType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -77,9 +77,20 @@ const DOCUMENTS_TABLE_GRID =
 
 export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStepProps) {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const patientIdParam = Number(searchParams?.get("patientID")) || null;
+    const editPatientIdParam = Number(searchParams?.get("editpatientID")) || null;
+    const tentativePatientIdParam = Number(searchParams?.get("tentativepatientID")) || null;
 
-    const numericPatientId = patientId ?? 0;
-    const isValidPatientId = Number.isFinite(numericPatientId) && numericPatientId > 0;
+    const resolvedPatientId = useMemo(() => {
+        if (patientId != null && patientId > 0) return patientId;
+        if (editPatientIdParam) return editPatientIdParam;
+        if (tentativePatientIdParam) return tentativePatientIdParam;
+        if (patientIdParam) return patientIdParam;
+        return 0;
+    }, [patientId, editPatientIdParam, tentativePatientIdParam, patientIdParam]);
+
+    const isValidPatientId = resolvedPatientId > 0;
 
     const {
         data: documentsResponse,
@@ -94,7 +105,7 @@ export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStep
         isLoading: isAdmissionDetailsLoading,
         isError: isAdmissionDetailsError,
         error: admissionDetailsError,
-    } = useGetPatientAdmissionDetailsQuery(numericPatientId, {
+    } = useGetPatientAdmissionDetailsQuery(resolvedPatientId, {
         skip: !isValidPatientId,
         refetchOnMountOrArgChange: true,
     });
@@ -117,14 +128,15 @@ export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStep
         message: string;
     }>({ open: false, variant: "success", message: "" });
 
-    const hasAnyDocumentSelection = useMemo(
-        () => activeDocuments.some((doc) => documentSelections[doc.id] != null),
+    const allDocumentsSelected = useMemo(
+        () =>
+            activeDocuments.length > 0 &&
+            activeDocuments.every((doc) => documentSelections[doc.id] != null),
         [activeDocuments, documentSelections]
     );
 
     const canUpdateDocuments =
         confirmConsentsReceived &&
-        hasAnyDocumentSelection &&
         activeDocuments.length > 0 &&
         !isDocumentsLoading &&
         !isDocumentsError;
@@ -171,16 +183,16 @@ export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStep
             return;
         }
 
-        if (!hasAnyDocumentSelection) {
+        if (!allDocumentsSelected) {
             setDocumentsValidationError(
-                "Please mark at least one document as Required or Not Required."
+                "Please select Required or Not Required for all documents."
             );
             return;
         }
 
         try {
             const res = await updateDocuments({
-                patientId: numericPatientId,
+                patientId: resolvedPatientId,
                 documentIds: requiredDocumentIds,
             }).unwrap();
 
@@ -202,9 +214,9 @@ export default function IpdAdmissionStep({ patientId, onBack }: IpdAdmissionStep
         }
     }, [
         confirmConsentsReceived,
-        hasAnyDocumentSelection,
+        allDocumentsSelected,
         updateDocuments,
-        numericPatientId,
+        resolvedPatientId,
         requiredDocumentIds,
     ]);
 

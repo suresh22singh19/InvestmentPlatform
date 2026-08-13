@@ -41,7 +41,48 @@ import { fileNameFromUrl } from "@/lib/doctor/doctorPhoto";
 import { Tooltip } from "@/components/ui/Tooltip";
 
 const MAX_FIELD_LEN = 100;
-const MAX_EMPLOYEE_ID_LEN = 20;
+const MAX_EMPLOYEE_ID_LEN = 9;
+
+function formatEmployeeIdInput(raw: string): string {
+    if (!raw) return "";
+    const val = raw.toUpperCase();
+
+    // First character MUST be 'J'
+    if (!val.startsWith("J")) {
+        return "";
+    }
+
+    // If only "J", allow so user can type 'S' next
+    if (val === "J") {
+        return "J";
+    }
+
+    // Second character MUST be 'S'
+    if (val[1] !== "S") {
+        return "J";
+    }
+
+    // If only "JS", return "JS"
+    if (val === "JS") {
+        return "JS";
+    }
+
+    // Process characters after "JS"
+    const rest = val.slice(2);
+
+    let separator = "";
+    let digitsPart = rest;
+
+    if (rest.startsWith("-") || rest.startsWith("_")) {
+        separator = rest[0];
+        digitsPart = rest.slice(1);
+    }
+
+    // Keep only digits after JS / JS- / JS_ (max 6 digits)
+    const cleanDigits = digitsPart.replace(/[^0-9]/g, "").slice(0, 6);
+
+    return "JS" + separator + cleanDigits;
+}
 /** Max repeatable rows for education, specialization, and registration (same as Visitors Details). */
 const MAX_DYNAMIC_ROWS = 5;
 
@@ -60,15 +101,20 @@ function branchRecordTypeToRoleApiBranchType(apiType: string | undefined): "hosp
     return "hospital";
 }
 
-/** Mirrors registration `PersonalDetails` patient name handling. */
-function formatDoctorNameInput(raw: string): string {
+/** Helper for text inputs: letters and spaces only, prevent leading spaces, max 2 repeating chars, first letter capitalized. */
+function formatAlphaTextInput(raw: string, maxLen = MAX_FIELD_LEN): string {
     let value = raw.replace(/[^a-zA-Z\s]/g, "");
     value = value.replace(/^\s+/, "");
     value = value.replace(/(.)\1{2,}/g, "$1$1");
     if (value.length > 0) {
         value = value.charAt(0).toUpperCase() + value.slice(1);
     }
-    return value.slice(0, MAX_FIELD_LEN);
+    return value.slice(0, maxLen);
+}
+
+/** Mirrors registration `PersonalDetails` patient name handling. */
+function formatDoctorNameInput(raw: string): string {
+    return formatAlphaTextInput(raw, 96);
 }
 
 /** Mirrors registration contact: digits only, strip leading zeros, max 10. */
@@ -86,14 +132,14 @@ function formatAddressInput(raw: string): string {
     return raw.replace(/[^a-zA-Z0-9\s]/g, "").slice(0, MAX_FIELD_LEN);
 }
 
-/** Bank name: letters and spaces only; max 100 (preserves e.g. HDFC, SBI casing). */
+/** Bank name: letters and spaces only; max 100 with capitalization & repetition rules. */
 function formatBankNameInput(raw: string): string {
-    return raw.replace(/[^a-zA-Z\s]/g, "").slice(0, MAX_FIELD_LEN);
+    return formatAlphaTextInput(raw, MAX_FIELD_LEN);
 }
 
-/** College: letters, spaces, comma, parentheses, period. */
+/** College: letters and spaces only; max 100 with capitalization & repetition rules. */
 function formatCollegeNameInput(raw: string): string {
-    return raw.replace(/[^a-zA-Z\s,().]/g, "").slice(0, MAX_FIELD_LEN);
+    return formatAlphaTextInput(raw, MAX_FIELD_LEN);
 }
 
 /** Council reg. no.: letters, digits, and / - _ | \\ only; max 100. */
@@ -104,11 +150,6 @@ function formatCouncilRegistrationNumberInput(raw: string): string {
 /** Digits only; used for year-style fields. */
 function digitsOnly(raw: string, maxLen: number): string {
     return raw.replace(/\D/g, "").slice(0, maxLen);
-}
-
-/** Employee id: letters, digits, hyphen (e.g. JS20752). */
-function formatEmployeeIdInput(raw: string): string {
-    return raw.replace(/[^a-zA-Z0-9\-]/g, "").slice(0, MAX_EMPLOYEE_ID_LEN);
 }
 
 /** Same as BranchBankInformation: uppercase A–Z / 0–9 only, max 11 (IFSC). */
@@ -468,7 +509,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
         const rows = Array.isArray(assignableRolesRes?.data) ? assignableRolesRes.data : [];
         return rows
             .filter((r) => r.isActive !== false)
-            .map((r) => ({ value: String(r.id), label: r.name }));
+            .map((r) => ({ value: String(r.id), label: (r.name ?? "").toUpperCase() }));
     }, [assignableRolesRes]);
 
     const selectableBranchCount = useMemo(
@@ -761,7 +802,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                                 }}
                                 height={44}
                                 placeholder="Full name"
-                                maxLength={MAX_FIELD_LEN}
+                                maxLength={96}
                                 error={formErrors.name}
                             />
                         </div>
@@ -828,7 +869,17 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                         inputMode="numeric"
                         autoComplete="off"
                         value={values.yearsExperience}
-                        onChange={(e) => setField("yearsExperience", digitsOnly(e.target.value, 3))}
+                        onChange={(e) => {
+                            let val = e.target.value.replace(/\D/g, "");
+                            if (val.length > 1 && val.startsWith("0")) {
+                                val = val.replace(/^0+/, "") || "0";
+                            }
+                            if (val !== "") {
+                                const num = parseInt(val, 10);
+                                if (num > 100) return;
+                            }
+                            setField("yearsExperience", val);
+                        }}
                         onBlur={() => blurAndValidate("yearsExperience")}
                         height={44}
                         placeholder="e.g. 5"
@@ -906,10 +957,22 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                         type="text"
                         autoComplete="off"
                         value={values.employeeId}
-                        onChange={(e) => setField("employeeId", formatEmployeeIdInput(e.target.value))}
+                        onChange={(e) => {
+                            const val = formatEmployeeIdInput(e.target.value);
+                            setField("employeeId", val);
+                            let err = "";
+                            if (val.trim()) {
+                                if (!/^JS[-_]?[0-9]{1,6}$/.test(val.trim())) {
+                                    err = "Invalid format (e.g. JS-01, JS_01, JS01, JS-9999)";
+                                } else if (/^JS[-_]?0{6}$/.test(val.trim())) {
+                                    err = "Employee Id cannot be all zeros";
+                                }
+                            }
+                            setFormErrors((prev) => ({ ...prev, employeeId: err }));
+                        }}
                         onBlur={() => blurAndValidate("employeeId")}
                         height={44}
-                        placeholder="Employee Id"
+                        placeholder="e.g. JS-01, JS_01, JS01, JS-9999"
                         maxLength={MAX_EMPLOYEE_ID_LEN}
                         error={formErrors.employeeId}
                         disabled={mode === "edit"}
@@ -1089,7 +1152,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                     <FormInputField
                         label="City"
                         value={values.city}
-                        onChange={(e) => setField("city", formatDoctorNameInput(e.target.value))}
+                        onChange={(e) => setField("city", formatAlphaTextInput(e.target.value))}
                         onBlur={(e) => {
                             setField("city", e.target.value.trim());
                             blurAndValidate("city");
@@ -1182,7 +1245,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                             >
                                 <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 md:grid-cols-3">
                                     <FormSelectField
-                                        label="Qualification"
+                                        label="Qualification *"
                                         value={row.qualification}
                                         onChange={(v) => {
                                             const val = pickSingle(v);
@@ -1215,7 +1278,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                                     />
 
                                     <FormInputField
-                                        label="College"
+                                        label="College *"
                                         value={row.college}
                                         onChange={(e) => {
                                             const val = formatCollegeNameInput(e.target.value);
@@ -1253,7 +1316,7 @@ export function DoctorForm({ mode, initial, onSubmit, onBack }: DoctorFormProps)
                                     />
 
                                     <FormInputField
-                                        label="Completion Years"
+                                        label="Completion Year *"
                                         type="tel"
                                         inputMode="numeric"
                                         autoComplete="off"

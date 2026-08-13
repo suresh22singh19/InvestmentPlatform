@@ -106,6 +106,7 @@ function branchRecordTypeToRoleApiBranchType(apiType: string | undefined): "hosp
 
 function formatNameInput(raw: string): string {
     let value = raw.replace(/[^a-zA-Z\s]/g, "").replace(/^\s+/, "");
+    value = value.replace(/(.)\1{2,}/g, "$1$1");
     if (value.length > 0) value = value.charAt(0).toUpperCase() + value.slice(1);
     return value.slice(0, 100);
 }
@@ -114,8 +115,47 @@ function formatPhoneInput(raw: string): string {
     return raw.replace(/\D/g, "").replace(/^0+/, "").slice(0, 10);
 }
 
+const EMP_ID_MAX_LEN = 9;
+
 function formatEmpIdInput(raw: string): string {
-    return raw.replace(/[^a-zA-Z0-9\-]/g, "").slice(0, 20);
+    if (!raw) return "";
+    const val = raw.toUpperCase();
+
+    // First character MUST be 'J'
+    if (!val.startsWith("J")) {
+        return "";
+    }
+
+    // If only "J", allow so user can type 'S' next
+    if (val === "J") {
+        return "J";
+    }
+
+    // Second character MUST be 'S'
+    if (val[1] !== "S") {
+        return "J";
+    }
+
+    // If only "JS", return "JS"
+    if (val === "JS") {
+        return "JS";
+    }
+
+    // Process characters after "JS"
+    const rest = val.slice(2);
+
+    let separator = "";
+    let digitsPart = rest;
+
+    if (rest.startsWith("-") || rest.startsWith("_")) {
+        separator = rest[0];
+        digitsPart = rest.slice(1);
+    }
+
+    // Keep only digits after JS / JS- / JS_ (max 6 digits)
+    const cleanDigits = digitsPart.replace(/[^0-9]/g, "").slice(0, 6);
+
+    return "JS" + separator + cleanDigits;
 }
 
 function formatAddressInput(raw: string): string {
@@ -139,7 +179,13 @@ function validateNursePayload(payload: NursePayload, mode: "add" | "edit"): Reco
     }
     if (!payload.phone.trim()) errors.phone = "Phone is required.";
     else if (payload.phone.trim().length !== 10) errors.phone = "Phone must be 10 digits.";
-    if (!payload.empId.trim()) errors.empId = "Emp ID is required.";
+    if (!payload.empId.trim()) {
+        errors.empId = "Emp ID is required.";
+    } else if (!/^JS[-_]?[0-9]{1,6}$/.test(payload.empId.trim())) {
+        errors.empId = "Invalid format (e.g. JS-01, JS_01, JS01, JS-9999)";
+    } else if (/^JS[-_]?0{6}$/.test(payload.empId.trim())) {
+        errors.empId = "Employee Id cannot be all zeros";
+    }
     if (!payload.address.trim()) errors.address = "Address is required.";
     if (!payload.loginType.trim()) errors.loginType = "Login Type is required.";
     if (!payload.status) errors.status = "Status is required.";
@@ -239,7 +285,7 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
 
     const { data: assignableRolesRes, isFetching: isLoadingRoles } =
         useGetBranchRoleByCategoryTypeQuery(assignableRolesQueryArgs ?? { roleCategoryType: "corporate" }, {
-            skip: assignableRolesQueryArgs === null || isEdit,
+            skip: assignableRolesQueryArgs === null,
             refetchOnMountOrArgChange: true,
         });
 
@@ -247,13 +293,13 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
         const rows = Array.isArray(assignableRolesRes?.data) ? assignableRolesRes.data : [];
         return rows
             .filter((r) => r.isActive !== false)
-            .map((r) => ({ value: String(r.id), label: r.name }));
+            .map((r) => ({ value: String(r.id), label: (r.name ?? "").toUpperCase() }));
     }, [assignableRolesRes]);
 
     const roleOptionsForDisplay: SelectOption[] = useMemo(() => {
         if (!isEdit || !form.roleId.trim()) return roleOptions;
         if (roleOptions.some((o) => o.value === form.roleId)) return roleOptions;
-        return [{ value: form.roleId, label: form.roleId }, ...roleOptions];
+        return [{ value: form.roleId, label: form.roleId.toUpperCase() }, ...roleOptions];
     }, [isEdit, form.roleId, roleOptions]);
 
     const branchFieldDisabled = isEdit;
@@ -393,6 +439,7 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
                         }}
                         height={44}
                         placeholder="Name"
+                        maxLength={100}
                         error={formErrors.name}
                     />
                     </NurseFormFieldSlot>
@@ -447,11 +494,21 @@ export function NurseForm({ mode, initial, onSubmit, onBack }: NurseFormProps) {
                             className={readOnlyFieldDisabled ? NURSE_EDIT_READONLY_INPUT_CLASS : undefined}
                             onChange={(e) => {
                                 if (readOnlyFieldDisabled) return;
-                                setForm((p) => ({ ...p, empId: formatEmpIdInput(e.target.value) }));
-                                setFormErrors((err) => ({ ...err, empId: "" }));
+                                const val = formatEmpIdInput(e.target.value);
+                                setForm((p) => ({ ...p, empId: val }));
+                                let err = "";
+                                if (val.trim()) {
+                                    if (!/^JS[-_]?[0-9]{1,6}$/.test(val.trim())) {
+                                        err = "Invalid format (e.g. JS-01, JS_01, JS01, JS-9999)";
+                                    } else if (/^JS[-_]?0{6}$/.test(val.trim())) {
+                                        err = "Employee Id cannot be all zeros";
+                                    }
+                                }
+                                setFormErrors((eMap) => ({ ...eMap, empId: err }));
                             }}
                             height={44}
-                            placeholder="Emp ID"
+                            placeholder="e.g. JS-01, JS_01, JS01, JS-9999"
+                            maxLength={EMP_ID_MAX_LEN}
                             error={formErrors.empId}
                         />
                     </NurseFormReadOnlyShell>

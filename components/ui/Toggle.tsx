@@ -35,24 +35,24 @@ export const Toggle: React.FC<ToggleProps> = ({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={`
-          relative inline-flex h-8 w-[60px] items-center rounded-full
+          relative inline-flex h-7 w-[52px] items-center rounded-full
           transition-colors duration-200 ease-in-out
-          focus:outline-none  ${className}
-          ${checked ? "bg-[#0B8C00]" : "bg-gray-200"}
+          focus:outline-none ${className}
+          ${checked ? "bg-gradient-to-r from-amber-400 to-yellow-500 shadow-md shadow-amber-500/20" : "bg-slate-800 border border-slate-700"}
           ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
         `}
       >
         <span
           className={`
-            inline-block ${height ? height : "h-6" } ${width ? width : "w-6" } transform rounded-full bg-white shadow-md
+            inline-block ${height ? height : "h-5" } ${width ? width : "w-5" } transform rounded-full bg-slate-950 shadow-md
             transition-transform duration-200 ease-in-out ${transform}
-            ${checked ? "translate-x-[32px]" : "translate-x-1"}
+            ${checked ? "translate-x-[27px] bg-slate-950" : "translate-x-1 bg-slate-400"}
           `}
         />
       </button>
       {label && (
         <label
-          className={`text-base text-[#262D3B] cursor-pointer ${fontsize ? fontsize : "text-base"}`}
+          className={`text-sm font-semibold text-slate-200 cursor-pointer select-none hover:text-white transition-colors ${fontsize ? fontsize : ""}`}
           onClick={() => !disabled && onChange(!checked)}
         >
           {label}

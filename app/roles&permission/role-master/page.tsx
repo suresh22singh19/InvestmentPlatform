@@ -27,6 +27,8 @@ import {
     TableSearchInput,
     MessageDialog,
     Pagination,
+    Tabs,
+    Tooltip,
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import Image from "next/image";
@@ -39,6 +41,8 @@ import type {
     RolePermissionPayload,
     RoleDropdownItem,
     StateByZoneItem,
+    RoleType,
+    RoleSubTypeItem,
 } from "@/store/api/roleAndPermission";
 import {
     useCreateRolesMutation,
@@ -50,6 +54,7 @@ import {
     useLazyGetRoleListDropdownQuery,
     useUpdateRoleMutation,
     useUpdateRoleStatusMutation,
+    useGetRoleTypesListQuery,
 } from "@/store/api/roleAndPermission";
 import { useAppSelector } from "@/store/hooks";
 import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
@@ -191,6 +196,49 @@ function formatRoleGroupColumnLabel(roleCategoryType: string | null | undefined)
         .join(" ");
 }
 
+function TruncatedRoleTextValue({ text, className = "" }: { text: string | null | undefined; className?: string }) {
+    const value = text?.trim() ? text.trim() : "—";
+    const textRef = useRef<HTMLSpanElement>(null);
+    const [isTruncated, setIsTruncated] = useState(false);
+
+    useEffect(() => {
+        const element = textRef.current;
+        if (!element) return;
+
+        const checkTruncation = () => {
+            setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+        };
+
+        checkTruncation();
+
+        const observer = new ResizeObserver(checkTruncation);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [value]);
+
+    if (value === "—") {
+        return <span className={className}>—</span>;
+    }
+
+    return (
+        <Tooltip
+            position="top"
+            maxWidth={360}
+            disabled={!isTruncated}
+            className="!overflow-visible !py-2.5"
+            content={
+                <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+                    {value}
+                </p>
+            }
+        >
+            <span ref={textRef} className={`block min-w-0 w-full truncate whitespace-nowrap ${className}`}>
+                {value}
+            </span>
+        </Tooltip>
+    );
+}
+
 /** GET getRole: `sort` param values; default list order is newest first. */
 const ROLES_LIST_DEFAULT_SORT = { field: "createdAt", order: "desc" as const };
 type RolesListSortableColumnApiField = "rolename" | "roleGroup" | "zonal";
@@ -226,7 +274,12 @@ function buildCatalogFromModules(modules: ModuleListItem[]): {
         (m) => Array.isArray(m.subModules) && m.subModules.length > 0
     );
 
-    if (hasNested) {
+    // If no module has any subModules, there is nothing to configure — return empty.
+    if (!hasNested) {
+        return { sections: [], moduleIdsBySection: {} };
+    }
+
+    {
         const sections: PermSectionDef[] = [];
         const moduleIdsBySection: Record<string, string[]> = {};
         const sortedRoots = [...activeRoots].sort((a, b) =>
@@ -250,13 +303,15 @@ function buildCatalogFromModules(modules: ModuleListItem[]): {
         if (sections.length > 0) {
             return { sections, moduleIdsBySection };
         }
-        /** Nested shape but no usable rows (edge case) — fall through to flat grouping. */
+        /** Nested shape but no usable rows (edge case) — fall through. */
     }
 
+    // Fallback flat grouping (reached only if nested path produced no usable sections)
     const active = activeRoots;
     const byParent = new Map<string, ModuleListItem[]>();
     for (const m of active) {
-        const key = (m.parentModule || "Other").trim() || "Other";
+        const rawParent = (m.parentModule || "").trim();
+        const key = rawParent || m.moduleName || "Other";
         if (!byParent.has(key)) byParent.set(key, []);
         byParent.get(key)!.push(m);
     }
@@ -310,6 +365,19 @@ function permissionsFromRoleDetail(
     return out;
 }
 
+function formatDesignationType(val: string): string {
+    if (!val) return "N/A";
+    return val
+        .split(/[_\s]+/)
+        .filter(Boolean)
+        .map((w) => {
+            if (w.toLowerCase() === "ipd") return "IPD";
+            if (w.toLowerCase() === "opd") return "OPD";
+            return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        })
+        .join(" ");
+}
+
 function snapshotFromRoleDetail(
     detail: RoleByIdData,
     permState: Record<string, PermCell[]>,
@@ -323,11 +391,16 @@ function snapshotFromRoleDetail(
     const scopeTypeLabels = [...new Set(detail.roleAccess.map((a) => a.roleScopeType))];
     const zoneFromAccess =
         detail.roleAccess.map((a) => a.state?.zone).find((z) => z && String(z).trim() !== "") ?? "—";
+
+    const rawDesignation = detail.roleTypeAssignments?.[0]?.roleType?.roleType || "";
+    const designationType = rawDesignation ? formatDesignationType(rawDesignation) : "N/A";
+
     return {
         roleGroup: group,
         roleName: detail.name,
-        roleDescription: "",
+        roleDescription: (detail as any).roleDescription || "",
         facilityTypeLabel: group === "facility" ? scopeTypeLabels.join(", ") || "—" : undefined,
+        designationType: group === "facility" ? designationType : undefined,
         scope:
             group === "corporate"
                 ? {
@@ -465,6 +538,7 @@ type ManagePermissionsSnapshot = {
     roleDescription: string;
     /** Facility role — e.g. "Hospital", "Hospital, Clinic" */
     facilityTypeLabel?: string;
+    designationType?: string;
     /** Corporate role */
     scope?: {
         dataScope: string;
@@ -752,7 +826,7 @@ export default function RoleMasterPage() {
     const debouncedRoleName = useDebounce(roleName, 400);
     /** Hide dropdown while user is still typing (debounce not caught up) to avoid stale API results. */
     const isRoleNameSearchSynced = roleName.trim() === debouncedRoleName.trim();
-    const [roleNameOption, setRoleNameOption] = useState<"Doctor" | "Nurse" | "Therapist" | "Other">("Doctor");
+    const [roleNameOption, setRoleNameOption] = useState<"Doctor" | "Nurse" | "Therapist" | "Other" | "">("");
     const [roleDescription, setRoleDescription] = useState("");
 
     /** Inline field-level errors for the "Define Role Name" step. */
@@ -778,17 +852,6 @@ export default function RoleMasterPage() {
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
-    const ROLE_NAME_PRESET_OPTIONS = ["Doctor", "Nurse", "Therapist", "Other"] as const;
-
-    const ROLE_DEFINE_NAME_FIELD_COPY: Record<
-        "Doctor" | "Nurse" | "Therapist" | "Other",
-        { label: string; placeholder: string }
-    > = {
-        Doctor: { label: "Role Name *", placeholder: "Role Name" },
-        Nurse: { label: "Role Name *", placeholder: "Role Name" },
-        Therapist: { label: "Role Name *", placeholder: "Role Name" },
-        Other: { label: "Role Name *", placeholder: "Role Name" },
-    };
 
     /** `roleCategoryType` query param for getRoleListDropdown. */
     const roleListDropdownRoleCategoryParam = useMemo(() => {
@@ -803,12 +866,15 @@ export default function RoleMasterPage() {
                     return "facility_therapist";
                 case "Other":
                     return "facility";
+                default:
+                    return "facility";
             }
         }
         return "facility";
     }, [selectedGroup, roleNameOption]);
 
     useEffect(() => {
+        if (wizardMode === "edit") return;
         const q = debouncedRoleName.trim();
         if (q.length === 0) {
             setRoleDropdownItems([]);
@@ -819,6 +885,7 @@ export default function RoleMasterPage() {
         void fetchRoleDropdown({
             search: q,
             roleCategoryType: roleListDropdownRoleCategoryParam,
+            ...(roleNameOption === "Other" ? { isCustom: true } : {}),
         })
             .unwrap()
             .then((res) => {
@@ -842,14 +909,15 @@ export default function RoleMasterPage() {
         return () => {
             cancelled = true;
         };
-    }, [debouncedRoleName, roleListDropdownRoleCategoryParam, fetchRoleDropdown]);
+    }, [debouncedRoleName, roleListDropdownRoleCategoryParam, roleNameOption, wizardMode, fetchRoleDropdown]);
 
     const onRoleNameOptionChange = useCallback((option: "Doctor" | "Nurse" | "Therapist" | "Other") => {
         setRoleNameOption(option);
-        setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+        setDefineErrors((prev) => ({ ...prev, roleName: "", modules: "" }));
         setRoleDropdownOpen(false);
         setRoleDropdownItems([]);
         setRoleName("");
+        setFacilitySelectedModuleIds([]);
         justSelectedRef.current = false;
     }, []);
 
@@ -913,6 +981,8 @@ export default function RoleMasterPage() {
     /** Facility Role create/edit: single branch for scope + branch-scoped module list. */
     const [facilitySelectedBranchId, setFacilitySelectedBranchId] = useState("");
     const [facilitySelectedModuleIds, setFacilitySelectedModuleIds] = useState<string[]>([]);
+    const [selectedRoleTypeId, setSelectedRoleTypeId] = useState<number | null>(null);
+    const [selectedRoleSubTypeId, setSelectedRoleSubTypeId] = useState<number | null>(null);
 
     const [dataScope, setDataScope] = useState<DataScopeLevel | null>(null);
     const [corporateFacilityTypes, setCorporateFacilityTypes] = useState({
@@ -927,6 +997,96 @@ export default function RoleMasterPage() {
 
     /** Corporate Specific / All: branch IDs from GET /admin/settings/branches (multi-select values as strings). */
     const [corporateSelectedBranchIds, setCorporateSelectedBranchIds] = useState<string[]>([]);
+
+    const { data: roleTypesEnvelope } = useGetRoleTypesListQuery(undefined, {
+        skip: !isRoleWizardOpen || selectedGroup !== "facility",
+    });
+
+    const roleTypes = useMemo(() => {
+        if (!roleTypesEnvelope?.success || !Array.isArray(roleTypesEnvelope.data)) return [];
+        return roleTypesEnvelope.data.filter((item) => item.isActive);
+    }, [roleTypesEnvelope]);
+
+    const activeRoleTypeObj = useMemo(() => {
+        return roleTypes.find((r) => r.id === selectedRoleTypeId);
+    }, [roleTypes, selectedRoleTypeId]);
+
+    const subRoleTypes = useMemo((): RoleSubTypeItem[] => {
+        if (!selectedRoleTypeId) return [];
+        const matched = roleTypes.find((r) => r.id === selectedRoleTypeId);
+        return (matched?.roleSubTypes as RoleSubTypeItem[]) ?? [];
+    }, [roleTypes, selectedRoleTypeId]);
+
+    const roleTypeOptions = useMemo(() => {
+        return roleTypes.map((item) => ({
+            label: item.roleType.toUpperCase(),
+            value: String(item.id),
+        }));
+    }, [roleTypes]);
+
+    const subRoleTypeOptions = useMemo(() => {
+        return subRoleTypes.map((sub: RoleSubTypeItem) => ({
+            label: sub.subRoleType.toUpperCase(),
+            value: String(sub.id),
+        }));
+    }, [subRoleTypes]);
+
+    const onRoleTypeChange = useCallback((val: string | string[] | null) => {
+        const idStr = typeof val === "string" ? val : Array.isArray(val) ? val[0] ?? "" : "";
+        const numericId = idStr ? Number.parseInt(idStr, 10) : null;
+        setSelectedRoleTypeId(numericId);
+        setSelectedRoleSubTypeId(null);
+        setDefineErrors((prev) => ({ ...prev, roleName: "" }));
+
+        const matched = roleTypes.find((r) => r.id === numericId);
+        if (matched) {
+            const roleTypeLower = matched.roleType.toLowerCase();
+            if (roleTypeLower === "other") {
+                setRoleNameOption("Other");
+                setRoleName("");
+            } else {
+                setRoleNameOption("");
+                if (!matched.roleSubTypes || matched.roleSubTypes.length === 0) {
+                    setRoleName(matched.roleType);
+                } else {
+                    setRoleName("");
+                }
+            }
+        } else {
+            setRoleNameOption("");
+            setRoleName("");
+        }
+    }, [roleTypes]);
+
+    const onSubRoleTypeChange = useCallback((val: string | string[] | null) => {
+        const idStr = typeof val === "string" ? val : Array.isArray(val) ? val[0] ?? "" : "";
+        const numericId = idStr ? Number.parseInt(idStr, 10) : null;
+        setSelectedRoleSubTypeId(numericId);
+
+        const matchedSub = subRoleTypes.find((s: RoleSubTypeItem) => s.id === numericId);
+        if (matchedSub) {
+            setRoleName(matchedSub.subRoleType);
+        } else {
+            setRoleName("");
+        }
+    }, [subRoleTypes]);
+
+    useEffect(() => {
+        if (
+            wizardMode === "edit" &&
+            selectedRoleTypeId &&
+            !selectedRoleSubTypeId &&
+            roleName &&
+            subRoleTypes.length > 0
+        ) {
+            const matched = subRoleTypes.find(
+                (sub: RoleSubTypeItem) => sub.subRoleType.toLowerCase().trim() === roleName.toLowerCase().trim()
+            );
+            if (matched) {
+                setSelectedRoleSubTypeId(matched.id);
+            }
+        }
+    }, [wizardMode, selectedRoleTypeId, selectedRoleSubTypeId, roleName, subRoleTypes]);
 
     const resolveBranchIdForModuleList = useCallback(
         (d: RoleByIdData, fallbackBranchId: number | undefined): number | undefined => {
@@ -971,7 +1131,7 @@ export default function RoleMasterPage() {
 
     /** Always scope GET getListOfmodules with a branchId (required for nested subModules). */
     const resolvedModulesBranchId = useMemo((): number | undefined => {
-        if (isWizardFacilityOpen && facilityBranchIdNumeric != null) {
+        if (isWizardFacilityOpen) {
             return facilityBranchIdNumeric;
         }
         if (filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId > 0) {
@@ -992,26 +1152,45 @@ export default function RoleMasterPage() {
         branchesEnvelope?.data,
     ]);
 
-    /** Map ROLE_NAME_PRESET_OPTIONS selection to the `roleType` query param for getListOfModules. Only applies for facility wizard; undefined for corporate. */
+    /** Map selection to the `roleType` query param for getListOfModules. Only applies for facility wizard; undefined for corporate. */
     const resolvedRoleType: string | undefined = useMemo(() => {
         if (selectedGroup !== "facility") return undefined;
-        switch (roleNameOption) {
-            case "Doctor": return "doctor";
-            case "Nurse": return "nurse";
-            case "Therapist": return "therapist";
-            case "Other": return "other";
-        }
-    }, [selectedGroup, roleNameOption]);
+        return activeRoleTypeObj?.roleType?.toLowerCase();
+    }, [selectedGroup, activeRoleTypeObj]);
 
     const modulesQueryArg =
         resolvedModulesBranchId != null
             ? { branchId: resolvedModulesBranchId, ...(resolvedRoleType ? { roleType: resolvedRoleType } : {}) }
             : undefined;
 
+    const skipGetListOfModules = useMemo(() => {
+        if (!canView) return true;
+        if (modulesQueryArg == null) return true;
+        if (isWizardFacilityOpen) {
+            if (facilityBranchIdNumeric == null) return true;
+            if (!selectedRoleTypeId) return true;
+        }
+        return false;
+    }, [canView, modulesQueryArg, isWizardFacilityOpen, facilityBranchIdNumeric, selectedRoleTypeId]);
+
     const { data: modulesEnvelope, isFetching: modulesLoading } = useGetListOfModulesQuery(
         modulesQueryArg,
-        { skip: !canView || modulesQueryArg == null }
+        {
+            skip: skipGetListOfModules,
+            refetchOnMountOrArgChange: isWizardFacilityOpen,
+        }
     );
+
+
+    const roleNamePlaceholder = useMemo(() => {
+        if (!facilitySelectedBranchId) {
+            return "First select the Branch";
+        }
+        if (!selectedRoleTypeId) {
+            return "First select the Role Type";
+        }
+        return "Role Name";
+    }, [facilitySelectedBranchId, selectedRoleTypeId]);
 
     const [triggerListModules] = useLazyGetListOfModulesQuery();
 
@@ -1292,7 +1471,7 @@ export default function RoleMasterPage() {
 
     const resetForm = useCallback(() => {
         setRoleName("");
-        setRoleNameOption("Doctor");
+        setRoleNameOption("");
         setDefineErrors({ roleName: "", branch: "", modules: "" });
         setRoleDescription("");
         setFacilitySelectedBranchId(
@@ -1312,6 +1491,8 @@ export default function RoleMasterPage() {
         setEditingRoleId(null);
         setEditingIsActive(true);
         setFacilitySelectedModuleIds([]);
+        setSelectedRoleTypeId(null);
+        setSelectedRoleSubTypeId(null);
         isRoleInputFocusedRef.current = false;
     }, [permissionSections, isRoleListSuperAdmin, selectedBranchFilter]);
 
@@ -1378,7 +1559,7 @@ export default function RoleMasterPage() {
         setManageLoading(false);
     };
 
-    const openManagePermissions = async (roleId: number) => {
+    const openManagePermissions = async (roleId: number, roleCategoryType?: string) => {
         if (!canView) return;
         if (managePermissionsBusyRef.current) return;
         managePermissionsBusyRef.current = true;
@@ -1386,7 +1567,11 @@ export default function RoleMasterPage() {
         setManageView(null);
         setManageSectionOpen({});
         try {
-            const res = await triggerGetRoleById({ roleId }).unwrap();
+            const isFacility = (roleCategoryType || "").toLowerCase().startsWith("facility");
+            const res = await triggerGetRoleById({
+                roleId,
+                ...(isFacility ? { roleCategoryType: "facility" } : {}),
+            }).unwrap();
             if (!res.success || !res.data) {
                 throw new Error(res.message || "Failed to load role");
             }
@@ -1398,6 +1583,9 @@ export default function RoleMasterPage() {
             }
 
             const roleTypeFromCategory = (() => {
+                const assignedRoleType = d.roleTypeAssignments?.[0]?.roleType?.roleType?.toLowerCase();
+                if (assignedRoleType) return assignedRoleType;
+
                 const cat = (d.roleCategoryType ?? "").toLowerCase();
                 if (cat === "facility_doctor") return "doctor";
                 if (cat === "facility_nurse") return "nurse";
@@ -1476,7 +1664,7 @@ export default function RoleMasterPage() {
         }
     };
 
-    const openEditRole = async (roleId: number) => {
+    const openEditRole = async (roleId: number, roleCategoryType?: string) => {
         if (!canEdit || !canView) return;
         setEditingRoleDetail(null);
         facilityEditPermHydrateKeyRef.current = "";
@@ -1488,7 +1676,11 @@ export default function RoleMasterPage() {
         setEditingRoleId(roleId);
         setIsRoleWizardOpen(true);
         try {
-            const res = await triggerGetRoleById({ roleId }).unwrap();
+            const isFacility = (roleCategoryType || "").toLowerCase().startsWith("facility");
+            const res = await triggerGetRoleById({
+                roleId,
+                ...(isFacility ? { roleCategoryType: "facility" } : {}),
+            }).unwrap();
             if (!res.success || !res.data) {
                 throw new Error(res.message || "Failed to load role");
             }
@@ -1543,6 +1735,20 @@ export default function RoleMasterPage() {
                     ),
                 ];
                 setFacilitySelectedBranchId(branchIds[0] != null ? String(branchIds[0]) : "");
+
+                const roleTypeId = d.roleTypeAssignments?.[0]?.roleTypeId ?? d.roleTypeIds?.[0] ?? (d as any).roleTypeId ?? null;
+                setSelectedRoleTypeId(roleTypeId);
+
+                const subTypeId = d.roleTypeAssignments?.[0]?.roleSubTypeId ?? d.roleSubTypeId ?? (d as any).roleSubTypeId ?? null;
+                setSelectedRoleSubTypeId(subTypeId);
+
+                const matchedRoleType = d.roleTypeAssignments?.[0]?.roleType?.roleType?.toLowerCase() || "";
+                if (matchedRoleType === "other") {
+                    setRoleNameOption("Other");
+                } else {
+                    setRoleNameOption("");
+                }
+
                 setCorporateFacilityTypes({ hospital: false, clinic: false });
                 setHospitalZones([]);
                 setHospitalRegions([]);
@@ -1552,6 +1758,7 @@ export default function RoleMasterPage() {
                 facilityEditPermHydrateKeyRef.current = "";
                 facilityPermCatalogKeyRef.current = "";
             } else {
+                setSelectedRoleTypeId(null);
                 setCorporateSelectedBranchIds([]);
                 const scopeTypes = d.roleAccess.map((a) => a.roleScopeType.toLowerCase());
                 const hasHospital = scopeTypes.some((s) => s.includes("hospital"));
@@ -1733,12 +1940,22 @@ export default function RoleMasterPage() {
 
     const validateDefineFacility = () => {
         const errors = { roleName: "", branch: "", modules: "" };
-        if (!roleName.trim()) {
-            errors.roleName = "Please enter role name.";
-        }
         const bid = Number.parseInt(facilitySelectedBranchId.trim(), 10);
         if (!facilitySelectedBranchId.trim() || !Number.isFinite(bid) || bid <= 0) {
             errors.branch = "Please select a branch.";
+        }
+        if (!selectedRoleTypeId) {
+            errors.roleName = "Please select a Role Type.";
+        } else {
+            const matched = roleTypes.find((r) => r.id === selectedRoleTypeId);
+            if (matched && matched.roleSubTypes && matched.roleSubTypes.length > 0) {
+                if (!selectedRoleSubTypeId) {
+                    errors.roleName = "Please select a Sub-Role Type.";
+                }
+            }
+        }
+        if (!roleName.trim()) {
+            errors.roleName = errors.roleName || "Please enter role name.";
         }
         if (errors.roleName || errors.branch) {
             setDefineErrors((prev) => ({ ...prev, roleName: errors.roleName, branch: errors.branch }));
@@ -1935,23 +2152,26 @@ export default function RoleMasterPage() {
                         return Number.isFinite(n) && n > 0 ? n : null;
                     })()
                     : null;
-            if (wizardMode === "create") {
-                const createRoleCategoryType =
-                    selectedGroup === "corporate"
-                        ? "CORPORATE"
-                        : roleNameOption === "Doctor"
-                            ? "facility_doctor"
-                            : roleNameOption === "Nurse"
-                                ? "facility_nurse"
-                                : roleNameOption === "Therapist"
-                                    ? "facility_therapist"
-                                    : "FACILITY";
+            const roleTypeLower = activeRoleTypeObj?.roleType?.toLowerCase() || "";
+            let targetRoleCategoryType = selectedGroup === "corporate" ? "CORPORATE" : "facility";
+            if (selectedGroup === "facility") {
+                if (roleTypeLower === "doctor") {
+                    targetRoleCategoryType = "facility_doctor";
+                } else if (roleTypeLower === "nurse") {
+                    targetRoleCategoryType = "facility_nurse";
+                } else if (roleTypeLower === "therapist") {
+                    targetRoleCategoryType = "facility_therapist";
+                } else {
+                    targetRoleCategoryType = "facility";
+                }
+            }
 
+            if (wizardMode === "create") {
                 await createRoles({
                     name: roleName.trim(),
-                    roleCategoryType: createRoleCategoryType,
+                    roleCategoryType: targetRoleCategoryType,
                     mainScope:
-                        selectedGroup === "facility" ? "Specific" : (dataScope || "Zonal"),
+                        selectedGroup === "facility" ? "facility" : (dataScope || "Zonal").toLowerCase(),
                     roleAccess: buildRoleAccessForCreate(
                         selectedGroup,
                         dataScope,
@@ -1966,6 +2186,15 @@ export default function RoleMasterPage() {
                     ),
                     permissions: permsPayload,
                     roleDescription: roleDescription.trim() || undefined,
+                    roleTypes: selectedGroup === "facility" && selectedRoleTypeId
+                        ? [
+                            {
+                                roleTypeId: selectedRoleTypeId,
+                                ...(selectedRoleSubTypeId ? { roleSubTypeId: selectedRoleSubTypeId } : {}),
+                            },
+                        ]
+                        : undefined,
+                    isCustom: selectedGroup === "facility" && roleNameOption === "Other" ? true : undefined,
                 }).unwrap();
                 showMessage("success", "Role created successfully.");
             } else {
@@ -1974,11 +2203,20 @@ export default function RoleMasterPage() {
                     roleId: editingRoleId,
                     body: {
                         name: roleName.trim(),
-                        roleCategoryType: editingRoleCategoryType,
-                        mainScope: selectedGroup === "facility" ? "Facility" : (dataScope || "Zonal"),
+                        roleCategoryType: targetRoleCategoryType,
+                        mainScope: selectedGroup === "facility" ? "facility" : (dataScope || "Zonal").toLowerCase(),
                         isActive: editingIsActive,
                         permissions: permsPayload,
                         roleDescription: roleDescription.trim() || undefined,
+                        roleTypes: selectedGroup === "facility" && selectedRoleTypeId
+                            ? [
+                                {
+                                    roleTypeId: selectedRoleTypeId,
+                                    ...(selectedRoleSubTypeId ? { roleSubTypeId: selectedRoleSubTypeId } : {}),
+                                },
+                            ]
+                            : undefined,
+                        isCustom: selectedGroup === "facility" && roleNameOption === "Other" ? true : undefined,
                     },
                 }).unwrap();
                 showMessage("success", "Role updated successfully.");
@@ -2563,7 +2801,7 @@ export default function RoleMasterPage() {
                                                 return (
                                                     <TableRow key={row.id}>
                                                         <TableData>{(listPage - 1) * listLimit + idx + 1}</TableData>
-                                                        <TableData>{row.name}</TableData>
+                                                        <TableData>{row.name?.toUpperCase()}</TableData>
                                                         <TableData>{groupLabel}</TableData>
                                                         <TableData>
                                                             <div className="flex flex-row flex-wrap items-center gap-1">
@@ -2592,18 +2830,17 @@ export default function RoleMasterPage() {
                                                         </TableData>
                                                         <TableData>{permissionCountDisplay}</TableData>
                                                         <TableData>
-                                                             <button
-                                                                 type="button"
-                                                                 onClick={() => openStatusUpdateDialog(row)}
-                                                                 className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border bg-white py-2 px-5 text-xs leading-[120%] cursor-pointer transition-colors ${
-                                                                     row.isActive
-                                                                         ? "border-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/5"
-                                                                         : "border-[#F6776E]/20 text-[#F6776E] hover:bg-[#F6776E]/5"
-                                                                 }`}
-                                                             >
-                                                                 {row.isActive ? "Active" : "Inactive"}
-                                                             </button>
-                                                         </TableData>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openStatusUpdateDialog(row)}
+                                                                className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border bg-white py-2 px-5 text-xs leading-[120%] cursor-pointer transition-colors ${row.isActive
+                                                                    ? "border-[#0B8C00]/20 text-[#0B8C00] hover:bg-[#0B8C00]/5"
+                                                                    : "border-[#F6776E]/20 text-[#F6776E] hover:bg-[#F6776E]/5"
+                                                                    }`}
+                                                            >
+                                                                {row.isActive ? "Active" : "Inactive"}
+                                                            </button>
+                                                        </TableData>
                                                         <TableData>
                                                             <div className="flex flex-wrap items-center gap-2">
                                                                 <button
@@ -2612,7 +2849,7 @@ export default function RoleMasterPage() {
                                                                     title={managePermissionsTitle}
                                                                     onClick={() => {
                                                                         if (roleActionsLocked) return;
-                                                                        void openManagePermissions(row.id);
+                                                                        void openManagePermissions(row.id, row.roleCategoryType);
                                                                     }}
                                                                     className={`flex h-9 items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] bg-[#0B8C00] px-4 text-sm font-medium text-white transition-colors ${roleActionsLocked
                                                                         ? "cursor-not-allowed opacity-50"
@@ -2628,7 +2865,7 @@ export default function RoleMasterPage() {
                                                                         title={editRoleTitle}
                                                                         onClick={() => {
                                                                             if (roleActionsLocked) return;
-                                                                            void openEditRole(row.id);
+                                                                            void openEditRole(row.id, row.roleCategoryType);
                                                                         }}
                                                                         className={`flex h-9 items-center justify-center gap-1 rounded-[32px] border border-[#0B8C00] bg-white px-4 text-sm font-medium text-[#0B8C00] transition-colors ${roleActionsLocked
                                                                             ? "cursor-not-allowed opacity-50"
@@ -2759,34 +2996,43 @@ export default function RoleMasterPage() {
                                         disabled={wizardMode === "edit" || (!isRoleListSuperAdmin && Boolean(selectedBranchFilter))}
                                     />
                                 </div>
-                                <div className="mb-5">
-                                    <label className="mb-2 block text-[13px] font-medium text-[#434956]">
-                                        Role Type <span className="text-[#F6776E]">*</span>
-                                    </label>
-                                    <div className="flex flex-wrap gap-4">
-                                        {ROLE_NAME_PRESET_OPTIONS.map((opt) => {
-                                            // const isDisabled = wizardMode === "edit" || opt === "Nurse" || opt === "Therapist";
-                                            const isDisabled = wizardMode === "edit" || opt === "Therapist";
-                                            return (
-                                                <label key={opt} className={`flex items-center gap-2 ${isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
-                                                    <input
-                                                        type="radio"
-                                                        name="roleNameOption-facility"
-                                                        value={opt}
-                                                        checked={roleNameOption === opt}
-                                                        onChange={() => onRoleNameOptionChange(opt)}
-                                                        disabled={isDisabled}
-                                                        className="h-4 w-4 accent-[#0B8C00] disabled:cursor-not-allowed"
-                                                    />
-                                                    <span className="text-[14px] text-[#434956]">{opt}</span>
-                                                </label>
-                                            );
-                                        })}
+                                <div className="mb-3">
+                                    <FormSelectField
+                                        label="Role Type *"
+                                        options={roleTypeOptions}
+                                        value={selectedRoleTypeId ? String(selectedRoleTypeId) : null}
+                                        onChange={onRoleTypeChange}
+                                        placeholder={facilitySelectedBranchId ? "Select role type" : "Select branch first"}
+                                        background="white"
+                                        width="100%"
+                                        emptyMessage="No role types found."
+                                        error={defineErrors.roleName || undefined}
+                                        disabled={!facilitySelectedBranchId || wizardMode === "edit"}
+                                    />
+                                </div>
+
+                                {selectedRoleTypeId != null && subRoleTypes.length > 0 && (
+                                    <div className="mb-3">
+                                        <FormSelectField
+                                            label="Sub-Role Type *"
+                                            options={subRoleTypeOptions}
+                                            value={selectedRoleSubTypeId ? String(selectedRoleSubTypeId) : null}
+                                            onChange={onSubRoleTypeChange}
+                                            placeholder="Select sub-role type"
+                                            background="white"
+                                            width="100%"
+                                            emptyMessage="No sub-role types found."
+                                            error={defineErrors.roleName || undefined}
+                                            disabled={!facilitySelectedBranchId || wizardMode === "edit"}
+                                        />
                                     </div>
-                                    <div className="relative mt-3" ref={roleDropdownRef}>
+                                )}
+
+                                {roleNameOption === "Other" && (
+                                    <div className="relative mb-3" ref={roleDropdownRef}>
                                         <FormInputField
-                                            label={ROLE_DEFINE_NAME_FIELD_COPY[roleNameOption].label}
-                                            placeholder={ROLE_DEFINE_NAME_FIELD_COPY[roleNameOption].placeholder}
+                                            label="Role Name *"
+                                            placeholder={roleNamePlaceholder}
                                             height={44}
                                             value={roleName}
                                             maxLength={ROLE_WIZARD_TEXT_MAX_LEN}
@@ -2795,6 +3041,7 @@ export default function RoleMasterPage() {
                                             onBlur={onRoleNameBlur}
                                             error={defineErrors.roleName || undefined}
                                             autoComplete="off"
+                                            disabled={!facilitySelectedBranchId || wizardMode === "edit"}
                                         />
                                         {roleDropdownOpen &&
                                             roleDropdownItems.length > 0 &&
@@ -2805,15 +3052,7 @@ export default function RoleMasterPage() {
                                                             key={item.id}
                                                             onMouseDown={(e) => {
                                                                 e.preventDefault();
-                                                                const presetMatch = (["Doctor", "Nurse", "Therapist"] as const).find(
-                                                                    (o) => o.toLowerCase() === item.name.trim().toLowerCase()
-                                                                );
-                                                                if (presetMatch) {
-                                                                    setRoleNameOption(presetMatch);
-                                                                    setRoleName(presetMatch);
-                                                                } else {
-                                                                    setRoleName(item.name);
-                                                                }
+                                                                setRoleName(item.name);
                                                                 justSelectedRef.current = true;
                                                                 setRoleDropdownOpen(false);
                                                                 setRoleDropdownItems([]);
@@ -2827,7 +3066,7 @@ export default function RoleMasterPage() {
                                                 </ul>
                                             )}
                                     </div>
-                                </div>
+                                )}
                                 <div className="mb-5">
                                     <FormTextareaField
                                         label="Role Description"
@@ -2877,6 +3116,8 @@ export default function RoleMasterPage() {
                                         Select one or more modules that this role should be allowed to access.
                                     </p>
                                 </div>
+
+
                                 <div className="mb-5">
                                     <FormSelectField
                                         label="Select Modules *"
@@ -2892,7 +3133,11 @@ export default function RoleMasterPage() {
                                         placeholder="Select one or more modules"
                                         background="white"
                                         width="100%"
-                                        emptyMessage={modulesLoading ? "Loading modules..." : "No modules found."}
+                                        emptyMessage={
+                                            modulesLoading
+                                                ? "Loading modules..."
+                                                : "No sub-modules are available for this role type. Please contact your administrator to configure modules."
+                                        }
                                         error={defineErrors.modules || undefined}
                                     />
                                 </div>
@@ -3512,22 +3757,22 @@ export default function RoleMasterPage() {
                                                     Role Information
                                                 </h4>
                                             </div>
-                                            <div className="space-y-3">
-                                                <div>
+                                            <div className="space-y-3 min-w-0 overflow-hidden">
+                                                <div className="min-w-0 overflow-hidden">
                                                     <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
                                                         Role Name
                                                     </p>
-                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                        {manageView.roleName}
-                                                    </p>
+                                                    <div className="min-w-0 overflow-hidden">
+                                                        <TruncatedRoleTextValue text={manageView.roleName} className="text-[14px] font-medium leading-[120%] text-[#262D3B]" />
+                                                    </div>
                                                 </div>
-                                                <div>
+                                                <div className="min-w-0 overflow-hidden">
                                                     <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
                                                         Role Description
                                                     </p>
-                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                        {manageView.roleDescription}
-                                                    </p>
+                                                    <div className="min-w-0 overflow-hidden">
+                                                        <TruncatedRoleTextValue text={manageView.roleDescription} className="text-[14px] font-medium leading-[120%] text-[#262D3B]" />
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -3539,32 +3784,49 @@ export default function RoleMasterPage() {
                                                 Role Information
                                             </h4>
                                         </div>
-                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                            <div>
-                                                <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                    Role Name
-                                                </p>
-                                                <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                    {manageView.roleName}
-                                                </p>
-                                            </div>
-                                            {manageView.facilityTypeLabel ? (
-                                                <div>
+                                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                            {/* Column 1 */}
+                                            <div className="space-y-4 min-w-0 overflow-hidden">
+                                                <div className="min-w-0 overflow-hidden">
                                                     <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                        Facility Type
+                                                        Role Name
                                                     </p>
-                                                    <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                        {manageView.facilityTypeLabel}
-                                                    </p>
+                                                    <div className="min-w-0 overflow-hidden">
+                                                        <TruncatedRoleTextValue text={manageView.roleName} className="text-[14px] font-medium uppercase leading-[120%] text-[#262D3B]" />
+                                                    </div>
                                                 </div>
-                                            ) : null}
-                                            <div className="sm:col-span-2">
-                                                <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
-                                                    Role Description
-                                                </p>
-                                                <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
-                                                    {manageView.roleDescription}
-                                                </p>
+                                                <div className="min-w-0 overflow-hidden">
+                                                    <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                        Role Description
+                                                    </p>
+                                                    <div className="min-w-0 overflow-hidden">
+                                                        <TruncatedRoleTextValue text={manageView.roleDescription || "—"} className="text-[14px] font-medium leading-[120%] text-[#262D3B]" />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Column 2 */}
+                                            <div className="space-y-4">
+                                                {manageView.facilityTypeLabel ? (
+                                                    <div>
+                                                        <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                            Facility Type
+                                                        </p>
+                                                        <p className="text-[14px] font-medium leading-[120%] text-[#262D3B]">
+                                                            {manageView.facilityTypeLabel}
+                                                        </p>
+                                                    </div>
+                                                ) : null}
+                                                {manageView.designationType ? (
+                                                    <div>
+                                                        <p className="text-[12px] font-normal leading-[120%] text-[#434956]">
+                                                            Role Type
+                                                        </p>
+                                                        <p className="text-[14px] uppercase font-medium leading-[120%] text-[#262D3B]">
+                                                            {manageView.designationType}
+                                                        </p>
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
                                     </div>

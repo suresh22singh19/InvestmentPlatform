@@ -28,6 +28,35 @@ export function formatWardFromListingPatient(patient: AwaitingPatient): string {
   return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
+function formatOpenFileDate(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatAge(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const normalized = String(value).trim();
+  if (!normalized) return "—";
+  return /years?$/i.test(normalized) ? normalized : `${normalized} years`;
+}
+
+function formatGender(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  return capitalizeWords(value.trim());
+}
+
+function formatRoomNumber(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  const trimmed = value.trim();
+  return /^room\b/i.test(trimmed) ? trimmed : `Room ${trimmed}`;
+}
+
 /** Maps dashboard listing row → Open File step 1 & 2 view model (no overview API). */
 export function mapAwaitingPatientToOpenFile(
   patient: AwaitingPatient | undefined
@@ -46,10 +75,17 @@ export function mapAwaitingPatientToOpenFile(
     patient.remark?.trim() ||
     patient.diagnosis?.trim() ||
     "";
+    console.log("eweqweqweqw",patient)
 
   return {
     patientName: displayValue(patient.patientName),
     uhid: displayValue(patient.patientUhid),
+    age: formatAge(patient.age),
+    gender: formatGender(patient.gender),
+    bedNumber: displayValue(patient.bedNumber),
+    roomNumber: formatRoomNumber(patient.roomNumber),
+    admissionDate: formatOpenFileDate(patient.admissionDate),
+    opdDoctor: displayValue(patient.doctorName),
     admissionType,
     wardCategory: wardAssigned,
     vitalsSnapshot: {

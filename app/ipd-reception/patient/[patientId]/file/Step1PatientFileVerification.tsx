@@ -1,13 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Image from "next/image";
-import { Button, FormInputField, FormSelectField, FormTextareaField } from "@/components/ui";
-import {
-  OPEN_FILE_CLINICAL_NOTE_PLACEHOLDER,
-  OPEN_FILE_DIET_OPTIONS,
-  OPEN_FILE_VITAL_REFERENCES,
-} from "@/lib/ipd-reception/openFileMock";
+import { Button, Checkbox, FormInputField, BackToPreviousPageButton } from "@/components/ui";
 import type { OpenFilePatientDetails, OpenFileStep1Form } from "@/lib/ipd-reception/types";
 
 type Step1PatientFileVerificationProps = {
@@ -16,10 +11,15 @@ type Step1PatientFileVerificationProps = {
   admissionNumberGenerated: boolean;
   form: OpenFileStep1Form;
   onFormChange: (form: OpenFileStep1Form) => void;
+  confirmPatientIdTagIssued: boolean;
+  onConfirmPatientIdTagIssuedChange: (checked: boolean) => void;
   onGenerateAdmissionNumber: () => void;
   onBack: () => void;
-  onSaveDraft: () => void;
-  onSaveAndNext: () => void;
+  hideFooter?: boolean;
+  validationAttempted?: boolean;
+  onSubmit?: () => void;
+  canSubmit?: boolean;
+  isSubmitting?: boolean;
 };
 
 function SectionCard({
@@ -61,24 +61,42 @@ export function Step1PatientFileVerification({
   admissionNumberGenerated,
   form,
   onFormChange,
+  confirmPatientIdTagIssued,
+  onConfirmPatientIdTagIssuedChange,
   onGenerateAdmissionNumber,
   onBack,
-  onSaveDraft,
-  onSaveAndNext,
+  hideFooter = false,
+  validationAttempted: validationAttemptedProp,
+  onSubmit,
+  canSubmit = true,
+  isSubmitting = false,
 }: Step1PatientFileVerificationProps) {
-  const updateVital = (field: keyof OpenFileStep1Form["vitals"], value: string) => {
+  const [internalValidationAttempted, setInternalValidationAttempted] = useState(false);
+  const validationAttempted = validationAttemptedProp ?? internalValidationAttempted;
+
+  useEffect(() => {
+    setInternalValidationAttempted(false);
+  }, [patient.uhid]);
+
+  const updatePatientIdTagNumber = (value: string) => {
     onFormChange({
       ...form,
-      vitals: { ...form.vitals, [field]: value },
+      patientIdTagNumber: value,
     });
+    if (!value.trim() && confirmPatientIdTagIssued) {
+      onConfirmPatientIdTagIssuedChange(false);
+    }
   };
 
-  const updateDietary = (field: keyof OpenFileStep1Form["dietary"], value: string) => {
-    onFormChange({
-      ...form,
-      dietary: { ...form.dietary, [field]: value },
-    });
-  };
+  const hasPatientIdTagNumber = Boolean(form.patientIdTagNumber?.trim());
+  const admissionNumberError =
+    validationAttempted && !admissionNumberGenerated
+      ? "Please generate admission number before proceeding."
+      : undefined;
+  const patientIdTagError =
+    validationAttempted && !hasPatientIdTagNumber
+      ? "Patient ID Tag Number is required"
+      : undefined;
 
   return (
     <div className="space-y-6">
@@ -120,7 +138,13 @@ export function Step1PatientFileVerification({
                 >
                   Generate Admission Number
                 </Button>
-                <p className="text-center text-xs text-[#9CA3AF]">Wait for manual trigger</p>
+                {admissionNumberError ? (
+                  <p className="text-center text-xs text-[#EF4444]" role="alert">
+                    {admissionNumberError}
+                  </p>
+                ) : (
+                  <p className="text-center text-xs text-[#9CA3AF]">Wait for manual trigger</p>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -137,10 +161,10 @@ export function Step1PatientFileVerification({
         </SectionCard>
 
         <div className="space-y-4">
-          <SectionCard title="Vitals Capture">
-            <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+          {/* <SectionCard title="Vitals Capture"> */}
+            {/* <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2 lg:grid-cols-3"> */}
               {/* Blood Pressure */}
-              <div>
+              {/* <div>
                 <div className="relative w-full">
                   <FormInputField
                     label="Blood Pressure"
@@ -166,10 +190,10 @@ export function Step1PatientFileVerification({
                   </span>
                 </div>
                 <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.bloodPressure}</p>
-              </div>
+              </div> */}
 
               {/* Sugar Level */}
-              <div>
+              {/* <div>
                 <div className="relative w-full">
                   <FormInputField
                     label="Sugar Level"
@@ -188,10 +212,10 @@ export function Step1PatientFileVerification({
                   </span>
                 </div>
                 <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.sugarLevel}</p>
-              </div>
+              </div> */}
 
               {/* Temperature */}
-              <div>
+              {/* <div>
                 <div className="relative w-full">
                   <FormInputField
                     label="Temperature"
@@ -215,10 +239,10 @@ export function Step1PatientFileVerification({
                   </span>
                 </div>
                 <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.temperature}</p>
-              </div>
+              </div> */}
 
               {/* Pulse */}
-              <div>
+              {/* <div>
                 <div className="relative w-full">
                   <FormInputField
                     label="Pulse"
@@ -242,10 +266,10 @@ export function Step1PatientFileVerification({
                   </span>
                 </div>
                 <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.pulseRate}</p>
-              </div>
+              </div> */}
 
               {/* SpO2 */}
-              <div>
+              {/* <div>
                 <div className="relative w-full">
                   <FormInputField
                     label="SPO2"
@@ -269,67 +293,86 @@ export function Step1PatientFileVerification({
                   </span>
                 </div>
                 <p className="mt-1 text-right text-xs font-medium text-[#0B8C00]">Ref: {OPEN_FILE_VITAL_REFERENCES.spo2}</p>
-              </div>
-            </div>
-          </SectionCard>
+              </div> */}
+            {/* </div> */}
+          {/* </SectionCard> */}
 
-          <SectionCard title="Dietary Requirements">
+          <SectionCard title="Patient ID Tag">
             <div className="space-y-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
-                  <FormSelectField
-                    label="Diet Plan Request"
-                    value={form.dietary.dietPlanRequest}
-                    onChange={(v) => updateDietary("dietPlanRequest", String(v))}
+                  {/* <FormSelectField
+                    label="Patient ID Tag Number"
+                    value={form.dietary.patinetidtag}
+                    onChange={(v) => patientIDTag("patinetidtag", String(v))}
                     options={OPEN_FILE_DIET_OPTIONS}
                     mode="single"
                     background="normal"
                     disabled
+                  /> */}
+                <FormInputField
+                  label="Patient ID Tag Number*"
+                  value={form.patientIdTagNumber ?? ""}
+                  onChange={(e) =>
+                    updatePatientIdTagNumber(e.target.value.replace(/\D/g, ""))
+                  }
+                  placeholder="Patient ID Tag Number"
+                  type="text"
+                  error={patientIdTagError}
+                />
+                <p className="text-[14px] mt-4 text-[#262D3B]">
+                  Confirm that the physical identification wristband has been printed and securely
+                  attached to the patient.
+                </p>
+                <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-[6px] border border-[#0B8C00]/50 bg-[#F4FAF4] p-4" >
+                  <Checkbox
+                    checked={confirmPatientIdTagIssued}
+                    onChange={onConfirmPatientIdTagIssuedChange}
+                    disabled={!hasPatientIdTagNumber}
                   />
+                  <span className="text-sm font-semibold leading-relaxed text-[#262D3B]" style={{marginTop:"-3px"}}>
+                    I confirm that the Patient ID Tag has been issued.
+                  </span>
+                </label>
                 </div>
-                <Button
+                {/* <Button
                   variant="outline"
                   size="medium"
                   className="!min-w-0 shrink-0 sm:mb-0.5"
                   leftIcon={<Image src="/icons/Bell.svg" alt="" width={18} height={18} />}
                 >
                   Notify Dietitian
-                </Button>
+                </Button> */}
               </div>
-              <FormTextareaField
+              {/* <FormTextareaField
                 label="Clinical Note for Pantry"
                 value={form.dietary.clinicalNote}
                 onChange={(e) => updateDietary("clinicalNote", e.target.value)}
                 rows={4}
                 placeholder={OPEN_FILE_CLINICAL_NOTE_PLACEHOLDER}
-              />
+              /> */}
             </div>
           </SectionCard>
-        </div>
-      </div>
 
-      <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
-        <Button
-          variant="outline"
-          size="medium"
-          className="!min-w-0 !border-[#9A7909] !bg-white !text-[#9A7909] shadow-none hover:!bg-[#FBF8F2] active:!bg-[#F5F0E6]"
-          onClick={onBack}
-          leftIcon={<Image src="/icons/LeftArrowIcon.svg" alt="" width={16} height={16} />}
-        >
-          Back
-        </Button>
-        {/* <Button variant="outline" size="medium" className="!min-w-0" onClick={onSaveDraft}>
-          Save Draft
-        </Button> */}
-        <Button
-          variant="primary"
-          size="medium"
-          className="!min-w-0"
-          onClick={onSaveAndNext}
-          disabled={!admissionNumberGenerated}
-        >
-          Save & Next Step
-        </Button>
+          {!hideFooter ? (
+            <div className="mt-4 flex w-full min-w-0 flex-row flex-wrap items-center justify-between gap-4 border-t border-[#EDF3EA] pt-0">
+              <BackToPreviousPageButton text="Back" onClick={onBack} />
+              {onSubmit ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="medium"
+                  className="!min-w-[180px] h-11 shrink-0 rounded-full !font-bold"
+                  onClick={onSubmit}
+                  disabled={!canSubmit}
+                  isLoading={isSubmitting}
+                >
+                  Submit
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

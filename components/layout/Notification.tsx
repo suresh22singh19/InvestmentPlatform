@@ -96,11 +96,26 @@ type ContactChangeRequestNotification = {
   type: "contact-change-request";
 };
 
+// Health card change request notification type
+type HealthCardChangeRequestNotification = {
+  id: string; // Unique ID for localStorage notifications
+  message: string;
+  newCardNumber?: string;
+  status?: string;
+  requestId?: number | string;
+  is_read: boolean;
+  created_date: string;
+  type: "health-card-change-request" | "health-card-change-request-update";
+};
+
 // LocalStorage key for duplicate number notifications
 const DUPLICATE_NUMBER_NOTIFICATIONS_KEY = "duplicateNumberNotifications";
 
 // LocalStorage key for contact change request notifications
 const CONTACT_CHANGE_REQUEST_NOTIFICATIONS_KEY = "contactChangeRequestNotifications";
+
+// LocalStorage key for health card change request notifications
+const HEALTH_CARD_CHANGE_REQUEST_NOTIFICATIONS_KEY = "healthCardChangeRequestNotifications";
 
 // LocalStorage keys for duplicate exception patients (separate for hospital and clinic)
 const DUPLICATE_EXCEPTION_PATIENTS_HOSPITAL_KEY = "duplicateExceptionPatientsHospital";
@@ -134,13 +149,23 @@ export function NotificationDropdown({
   const [notificationList, setNotificationList] = useState<Notification[]>([]);
   const [duplicateNumberNotificationList, setDuplicateNumberNotificationList] = useState<DuplicateNumberNotification[]>([]);
   const [contactChangeRequestNotificationList, setContactChangeRequestNotificationList] = useState<ContactChangeRequestNotification[]>([]);
+  const [healthCardNotificationList, setHealthCardNotificationList] = useState<HealthCardChangeRequestNotification[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastProcessedContactChangeRequestRef = useRef<{ id?: number; timestamp: number } | null>(null);
 
   // Use shared socket connection
-  const { onNotification, markNotificationAsRead: socketMarkAsRead, onDuplicateNumberRequest, onDuplicateNumberPermissionUpdate, onContactChangeRequest, onManageContactSettingsUpdate } = useSocket();
+  const {
+    onNotification,
+    markNotificationAsRead: socketMarkAsRead,
+    onDuplicateNumberRequest,
+    onDuplicateNumberPermissionUpdate,
+    onContactChangeRequest,
+    onManageContactSettingsUpdate,
+    onHealthCardChangeRequest,
+    onHealthCardChangeRequestUpdate,
+  } = useSocket();
   
   // LocalStorage functions for duplicate number notifications
   const getDuplicateNumberNotifications = useCallback((): DuplicateNumberNotification[] => {
@@ -497,11 +522,85 @@ export function NotificationDropdown({
     }
   }, [getContactChangeRequestNotifications]);
 
-  // Load contact change request notifications from localStorage on mount
+  // LocalStorage functions for health card change request notifications
+  const getHealthCardChangeRequestNotifications = useCallback((): HealthCardChangeRequestNotification[] => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = localStorage.getItem(HEALTH_CARD_CHANGE_REQUEST_NOTIFICATIONS_KEY);
+      if (!stored) return [];
+      return JSON.parse(stored) as HealthCardChangeRequestNotification[];
+    } catch (error) {
+      console.error("[Notification] Failed to load health card notifications:", error);
+      return [];
+    }
+  }, []);
+
+  const saveHealthCardChangeRequestNotification = useCallback(
+    (
+      notification: Omit<HealthCardChangeRequestNotification, "id" | "created_date">,
+      requestId?: number | string
+    ) => {
+      if (typeof window === "undefined") return false;
+      try {
+        const existing = getHealthCardChangeRequestNotifications();
+        const now = Date.now();
+        const fiveSecondsAgo = now - 5000;
+
+        const isDuplicate = existing.some((notif) => {
+          const notifTime = new Date(notif.created_date).getTime();
+          return (
+            notif.message === notification.message &&
+            notif.newCardNumber === notification.newCardNumber &&
+            notif.status === notification.status &&
+            notifTime > fiveSecondsAgo
+          );
+        });
+
+        if (isDuplicate) return false;
+
+        const newNotification: HealthCardChangeRequestNotification = {
+          ...notification,
+          id: requestId
+            ? `health_card_${requestId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            : `health_card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          created_date: new Date().toISOString(),
+        };
+
+        const updated = [newNotification, ...existing].slice(0, 100);
+        localStorage.setItem(HEALTH_CARD_CHANGE_REQUEST_NOTIFICATIONS_KEY, JSON.stringify(updated));
+        return true;
+      } catch (error) {
+        console.error("[Notification] Failed to save health card notification:", error);
+        return false;
+      }
+    },
+    [getHealthCardChangeRequestNotifications]
+  );
+
+  const markHealthCardNotificationAsRead = useCallback(
+    (id: string) => {
+      if (typeof window === "undefined") return;
+      try {
+        const existing = getHealthCardChangeRequestNotifications();
+        const updated = existing.map((notif) =>
+          notif.id === id ? { ...notif, is_read: true } : notif
+        );
+        localStorage.setItem(HEALTH_CARD_CHANGE_REQUEST_NOTIFICATIONS_KEY, JSON.stringify(updated));
+      } catch (error) {
+        console.error("[Notification] Failed to mark health card notification as read:", error);
+      }
+    },
+    [getHealthCardChangeRequestNotifications]
+  );
+
+  // Load contact change & health card notifications from localStorage on mount
   useEffect(() => {
     const contactChangeNotifications = getContactChangeRequestNotifications();
     setContactChangeRequestNotificationList(contactChangeNotifications);
-  }, [getContactChangeRequestNotifications]);
+
+    const healthCardNotifications = getHealthCardChangeRequestNotifications();
+    setHealthCardNotificationList(healthCardNotifications);
+  }, [getContactChangeRequestNotifications, getHealthCardChangeRequestNotifications]);
 
   // Listen to contact-change-request socket event
   useEffect(() => {
@@ -687,6 +786,62 @@ export function NotificationDropdown({
     return unsubscribe;
   }, [onManageContactSettingsUpdate, refetchNotifications, userData?.user_id, saveContactChangeRequestNotification, getContactChangeRequestNotifications]);
 
+  // Listen to health-card-change-request and health-card-change-request-update socket events
+  useEffect(() => {
+    const handleHealthCardEvent = (
+      socketData: any,
+      defaultType: "health-card-change-request" | "health-card-change-request-update"
+    ) => {
+      try {
+        const data = socketData?.data || socketData;
+        const message =
+          socketData?.message ||
+          socketData?.title ||
+          `Health card change request update`;
+
+        const notification: Omit<HealthCardChangeRequestNotification, "id" | "created_date"> = {
+          message,
+          newCardNumber: data?.newCardNumber,
+          status: data?.status?.toLowerCase(),
+          requestId: data?.requestId || socketData?.data?.requestId,
+          is_read: false,
+          type: socketData?.type || defaultType,
+        };
+
+        const wasSaved = saveHealthCardChangeRequestNotification(notification, data?.requestId);
+        if (wasSaved) {
+          const updated = getHealthCardChangeRequestNotifications();
+          setHealthCardNotificationList(updated);
+        }
+
+        if (userData?.user_id) {
+          void refetchNotifications();
+        }
+      } catch (err) {
+        console.error("[Notification] Error handling health card socket event:", err);
+      }
+    };
+
+    const unsubReq = onHealthCardChangeRequest((data) =>
+      handleHealthCardEvent(data, "health-card-change-request")
+    );
+    const unsubUpd = onHealthCardChangeRequestUpdate((data) =>
+      handleHealthCardEvent(data, "health-card-change-request-update")
+    );
+
+    return () => {
+      unsubReq();
+      unsubUpd();
+    };
+  }, [
+    onHealthCardChangeRequest,
+    onHealthCardChangeRequestUpdate,
+    saveHealthCardChangeRequestNotification,
+    getHealthCardChangeRequestNotifications,
+    userData?.user_id,
+    refetchNotifications,
+  ]);
+
   // Mark notification as read (bell API list). Backend optional — keep flow for when POST is enabled.
   const onMarkAsRead = useCallback(
     async (notification_id: number) => {
@@ -761,6 +916,25 @@ export function NotificationDropdown({
     [markContactChangeRequestNotificationAsRead]
   );
 
+  // Mark health card notification as read
+  const onMarkHealthCardNotificationAsRead = useCallback(
+    (id: string) => {
+      setHealthCardNotificationList((prevList) => {
+        const updatedList = prevList.map((item) => {
+          if (item.id === id && !item.is_read) {
+            return { ...item, is_read: true };
+          }
+          return item;
+        });
+        return updatedList;
+      });
+
+      setUnreadCount((prevCount) => Math.max(0, prevCount - 1));
+      markHealthCardNotificationAsRead(id);
+    },
+    [markHealthCardNotificationAsRead]
+  );
+
   // Mark all as read
   const handleMarkAllAsRead = useCallback(async () => {
     const unreadNotifications = notificationList.filter((item) => !item.is_read);
@@ -769,6 +943,9 @@ export function NotificationDropdown({
       prevList.map((item) => ({ ...item, is_read: true }))
     );
     setContactChangeRequestNotificationList((prevList) =>
+      prevList.map((item) => ({ ...item, is_read: true }))
+    );
+    setHealthCardNotificationList((prevList) =>
       prevList.map((item) => ({ ...item, is_read: true }))
     );
 
@@ -783,6 +960,14 @@ export function NotificationDropdown({
         localStorage.setItem(CONTACT_CHANGE_REQUEST_NOTIFICATIONS_KEY, JSON.stringify(updated));
       } catch (error) {
         console.error("[Notification] Failed to mark all contact change request notifications as read:", error);
+      }
+
+      try {
+        const existingHc = getHealthCardChangeRequestNotifications();
+        const updatedHc = existingHc.map((notif) => ({ ...notif, is_read: true }));
+        localStorage.setItem(HEALTH_CARD_CHANGE_REQUEST_NOTIFICATIONS_KEY, JSON.stringify(updatedHc));
+      } catch (error) {
+        console.error("[Notification] Failed to mark all health card notifications as read:", error);
       }
     }
 
@@ -820,43 +1005,49 @@ export function NotificationDropdown({
     getContactChangeRequestNotifications,
   ]);
 
-  // When the API returns rows (e.g. total > 0 or notifications.length > 0), show that list only — it already includes duplicate/contact items; merging localStorage would duplicate.
+  const STATIC_GAMBLING_INVESTMENT_NOTIFICATIONS: Notification[] = useMemo(() => [
+    {
+      notification_id: 9001,
+      message: "🎉 Welcome Bonus Credited! $10.00 Welcome Sign-up Bonus added to your wallet.",
+      is_read: false,
+      created_date: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    },
+    {
+      notification_id: 9002,
+      message: "💰 Direct Referral Reward Received! You earned +$15.00 Direct Bonus from Rajesh Kumar.",
+      is_read: false,
+      created_date: new Date(Date.now() - 65 * 60 * 1000).toISOString(),
+    },
+    {
+      notification_id: 9003,
+      message: "📈 Daily ROI Interest Yield Credited! Daily 2.2% yield (+$22.00) credited from Gold Shareholder Plan.",
+      is_read: true,
+      created_date: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    },
+    {
+      notification_id: 9004,
+      message: "🏆 Level Milestone Unlocked! Congratulations! You reached Level 3 Shareholder Role + $350 Cash Bonus.",
+      is_read: true,
+      created_date: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
+    },
+    {
+      notification_id: 9005,
+      message: "⚡ Withdrawal Approved! Your payout request of $350.00 via UPI Direct has been transferred.",
+      is_read: true,
+      created_date: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+    },
+    {
+      notification_id: 9006,
+      message: "👑 VIP Support Ticket Replied: VIP Specialist Alex replied to your inquiry on Ticket #TICK-8921.",
+      is_read: true,
+      created_date: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString(),
+    },
+  ], []);
+
+  // Return ONLY static gaming, referral, bonus, and investment notifications
   const allNotifications = useMemo(() => {
-    const apiData = notificationsData?.success ? notificationsData.data : undefined;
-    const hasApiRows =
-      !!apiData &&
-      ((apiData.total ?? 0) > 0 || (apiData.notifications?.length ?? 0) > 0);
-
-    if (hasApiRows) {
-      return [...notificationList].sort(
-        (a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
-      );
-    }
-
-    const duplicateAsNotifications: (Notification & { duplicateId?: string; contactChangeId?: string })[] =
-      duplicateNumberNotificationList.map((dup) => ({
-        notification_id: parseInt(dup.id.replace(/\D/g, ""), 10) || 0,
-        message: dup.message,
-        is_read: dup.is_read,
-        created_date: dup.created_date,
-        duplicateId: dup.id,
-      }));
-
-    const contactChangeAsNotifications: (Notification & { duplicateId?: string; contactChangeId?: string })[] =
-      contactChangeRequestNotificationList.map((contact) => ({
-        notification_id: parseInt(contact.id.replace(/\D/g, ""), 10) || 0,
-        message: contact.message,
-        is_read: contact.is_read,
-        created_date: contact.created_date,
-        contactChangeId: contact.id,
-      }));
-
-    const combined = [...notificationList, ...duplicateAsNotifications, ...contactChangeAsNotifications].sort(
-      (a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
-    );
-
-    return combined;
-  }, [notificationsData, notificationList, duplicateNumberNotificationList, contactChangeRequestNotificationList]);
+    return STATIC_GAMBLING_INVESTMENT_NOTIFICATIONS;
+  }, [STATIC_GAMBLING_INVESTMENT_NOTIFICATIONS]);
 
   // Group notifications by time
   const today = moment().startOf("day");
@@ -949,14 +1140,13 @@ export function NotificationDropdown({
                         }`}
                         onClick={() => {
                           if (!notif.is_read) {
-                            // Check if it's a contact change request notification
-                            if ((notif as any).contactChangeId) {
+                            if ((notif as any).healthCardId) {
+                              onMarkHealthCardNotificationAsRead((notif as any).healthCardId);
+                            } else if ((notif as any).contactChangeId) {
                               onMarkContactChangeRequestNotificationAsRead((notif as any).contactChangeId);
                             } else if ((notif as any).duplicateId) {
-                              // Check if it's a duplicate number notification
                               onMarkDuplicateNumberNotificationAsRead((notif as any).duplicateId);
                             } else {
-                              // Regular API notification
                               onMarkAsRead(notif.notification_id);
                             }
                           }
@@ -1010,14 +1200,13 @@ export function NotificationDropdown({
                         }`}
                         onClick={() => {
                           if (!notif.is_read) {
-                            // Check if it's a contact change request notification
-                            if ((notif as any).contactChangeId) {
+                            if ((notif as any).healthCardId) {
+                              onMarkHealthCardNotificationAsRead((notif as any).healthCardId);
+                            } else if ((notif as any).contactChangeId) {
                               onMarkContactChangeRequestNotificationAsRead((notif as any).contactChangeId);
                             } else if ((notif as any).duplicateId) {
-                              // Check if it's a duplicate number notification
                               onMarkDuplicateNumberNotificationAsRead((notif as any).duplicateId);
                             } else {
-                              // Regular API notification
                               onMarkAsRead(notif.notification_id);
                             }
                           }
@@ -1067,14 +1256,13 @@ export function NotificationDropdown({
                         }`}
                         onClick={() => {
                           if (!notif.is_read) {
-                            // Check if it's a contact change request notification
-                            if ((notif as any).contactChangeId) {
+                            if ((notif as any).healthCardId) {
+                              onMarkHealthCardNotificationAsRead((notif as any).healthCardId);
+                            } else if ((notif as any).contactChangeId) {
                               onMarkContactChangeRequestNotificationAsRead((notif as any).contactChangeId);
                             } else if ((notif as any).duplicateId) {
-                              // Check if it's a duplicate number notification
                               onMarkDuplicateNumberNotificationAsRead((notif as any).duplicateId);
                             } else {
-                              // Regular API notification
                               onMarkAsRead(notif.notification_id);
                             }
                           }
@@ -1124,14 +1312,13 @@ export function NotificationDropdown({
                         }`}
                         onClick={() => {
                           if (!notif.is_read) {
-                            // Check if it's a contact change request notification
-                            if ((notif as any).contactChangeId) {
+                            if ((notif as any).healthCardId) {
+                              onMarkHealthCardNotificationAsRead((notif as any).healthCardId);
+                            } else if ((notif as any).contactChangeId) {
                               onMarkContactChangeRequestNotificationAsRead((notif as any).contactChangeId);
                             } else if ((notif as any).duplicateId) {
-                              // Check if it's a duplicate number notification
                               onMarkDuplicateNumberNotificationAsRead((notif as any).duplicateId);
                             } else {
-                              // Regular API notification
                               onMarkAsRead(notif.notification_id);
                             }
                           }
@@ -1181,14 +1368,13 @@ export function NotificationDropdown({
                         }`}
                         onClick={() => {
                           if (!notif.is_read) {
-                            // Check if it's a contact change request notification
-                            if ((notif as any).contactChangeId) {
+                            if ((notif as any).healthCardId) {
+                              onMarkHealthCardNotificationAsRead((notif as any).healthCardId);
+                            } else if ((notif as any).contactChangeId) {
                               onMarkContactChangeRequestNotificationAsRead((notif as any).contactChangeId);
                             } else if ((notif as any).duplicateId) {
-                              // Check if it's a duplicate number notification
                               onMarkDuplicateNumberNotificationAsRead((notif as any).duplicateId);
                             } else {
-                              // Regular API notification
                               onMarkAsRead(notif.notification_id);
                             }
                           }

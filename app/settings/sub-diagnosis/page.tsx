@@ -22,8 +22,9 @@ import {
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
-import { 
+import {
   useGetDiagnosisCategoriesQuery,
+  useGetDiagnosisCategoriesOnlyQuery,
   useCreateSubDiagnosisMutation,
   useUpdateSubDiagnosisMutation
 } from "@/store/api/settingsApi";
@@ -47,6 +48,16 @@ type SubDiagnosis = {
 
 /** Fixed column width so chip layout / search does not resize the table. */
 const SUB_DIAGNOSIS_COL_PX = 780;
+
+function formatSubDiagnosisInput(raw: string): string {
+  let value = raw.replace(/[^a-zA-Z\s]/g, "");
+  value = value.replace(/^\s+/, "");
+  value = value.replace(/(.)\1{2,}/g, "$1$1");
+  if (value.length > 0) {
+    value = value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  return value.slice(0, 100);
+}
 
 type DynamicSubDiagnosisItemsProps = {
   items: SubDiagnosisItem[];
@@ -172,15 +183,18 @@ function DynamicSubDiagnosisItems({ items, onViewAll }: DynamicSubDiagnosisItems
       className="flex h-[30px] w-full min-w-0 flex-nowrap items-center gap-2 overflow-hidden"
     >
       {visibleItems.map((item, index) => (
-        <span
-          key={`${item.id || item.name}-${index}`}
-          ref={(el) => {
-            itemsRef.current[index] = el;
-          }}
-          className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap"
-        >
-          {item.name}
-        </span>
+        <Tooltip key={`${item.id || item.name}-${index}`} content={item.name} position="top">
+          <span
+            ref={(el) => {
+              itemsRef.current[index] = el;
+            }}
+            className="inline-flex h-[30px] max-w-[220px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-4 text-xs font-semibold leading-[120%] text-[#9A7909] whitespace-nowrap overflow-hidden"
+          >
+            <span className="truncate max-w-full">
+              {item.name}
+            </span>
+          </span>
+        </Tooltip>
       ))}
       {isOverflowing && remainingCount > 0 && (
         <button
@@ -243,14 +257,14 @@ export default function SubDiagnosisPage() {
 
   // Create sub-diagnosis mutation
   const [createSubDiagnosis, { isLoading: isCreating }] = useCreateSubDiagnosisMutation();
-  
+
   // Update sub-diagnosis mutation
   const [updateSubDiagnosis, { isLoading: isUpdating }] = useUpdateSubDiagnosisMutation();
 
   // Transform API data to SubDiagnosis format
   const subDiagnoses: SubDiagnosis[] = useMemo(() => {
     if (!diagnosisCategoriesData?.data) return [];
-    
+
     return diagnosisCategoriesData.data.map((category) => ({
       id: category.id,
       diagnosis: category.diagnosisCategory,
@@ -265,15 +279,17 @@ export default function SubDiagnosisPage() {
     }));
   }, [diagnosisCategoriesData]);
 
+  // Fetch all diagnosis categories for dropdown filter
+  const { data: diagnosisCategoriesOnlyData } = useGetDiagnosisCategoriesOnlyQuery({ limit: 100 }, { skip: !canView && !canAdd && !canEdit });
+
   // Get diagnosis options for dropdown
   const diagnosisOptions: SelectOption[] = useMemo(() => {
-    if (!diagnosisCategoriesData?.data) return [];
-    
-    return diagnosisCategoriesData.data.map((category) => ({
+    const categories = diagnosisCategoriesOnlyData?.data || diagnosisCategoriesData?.data || [];
+    return categories.map((category) => ({
       value: category.id.toString(),
       label: category.diagnosisCategory,
     }));
-  }, [diagnosisCategoriesData]);
+  }, [diagnosisCategoriesOnlyData, diagnosisCategoriesData]);
 
   const filteredData = useMemo(() => {
     let filtered = subDiagnoses.filter((item) => {
@@ -310,7 +326,8 @@ export default function SubDiagnosisPage() {
   }, [subDiagnoses, diagnosisFilter, trimmedSearchTerm, sortBy, sortOrder]);
 
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedSubDiagnoses = filteredData.slice(startIndex, startIndex + itemsPerPage);
+  // API is already server-paginated by page & limit, so filteredData represents current page items
+  const paginatedSubDiagnoses = filteredData;
 
   const handleOpenViewAll = (items: SubDiagnosisItem[]) => {
     if (!canView) return;
@@ -321,13 +338,13 @@ export default function SubDiagnosisPage() {
   const handleAdd = () => {
     if (!canAdd) return;
     setSelectedSubDiagnosis(null);
-    setFormValues({ 
-      diagnosis: "", 
-      diagnosisId: 0, 
+    setFormValues({
+      diagnosis: "",
+      diagnosisId: 0,
       status: "active",
       type: "doctor",
       sort: 0,
-      subDiagnoses: [] 
+      subDiagnoses: []
     });
     setSubDiagnosisInput("");
     setFormErrors({});
@@ -337,8 +354,8 @@ export default function SubDiagnosisPage() {
   const handleEdit = (entry: SubDiagnosis) => {
     if (!canEdit) return;
     setSelectedSubDiagnosis(entry);
-    setFormValues({ 
-      diagnosis: entry.diagnosis, 
+    setFormValues({
+      diagnosis: entry.diagnosis,
       diagnosisId: entry.diagnosisId,
       status: entry.status,
       type: entry.type,
@@ -388,7 +405,7 @@ export default function SubDiagnosisPage() {
 
     try {
       let result;
-      
+
       if (!selectedSubDiagnosis) {
         // Add new sub-diagnoses
         const payload = {
@@ -398,7 +415,7 @@ export default function SubDiagnosisPage() {
 
         result = await createSubDiagnosis(payload).unwrap();
         setSuccessMessage(result?.message || "Sub diagnosis created successfully");
-        
+
         // Refetch data after successful creation
         await refetchDiagnosis();
 
@@ -422,7 +439,7 @@ export default function SubDiagnosisPage() {
 
         result = await updateSubDiagnosis(payload).unwrap();
         setSuccessMessage(result?.message || "Sub diagnosis updated successfully");
-        
+
         // Refetch data after successful update
         await refetchDiagnosis();
 
@@ -431,21 +448,21 @@ export default function SubDiagnosisPage() {
 
       setShowSuccessDialog(true);
       setSelectedSubDiagnosis(null);
-      setFormValues({ 
-        diagnosis: "", 
-        diagnosisId: 0, 
+      setFormValues({
+        diagnosis: "",
+        diagnosisId: 0,
         status: "active",
         type: "doctor",
         sort: 0,
-        subDiagnoses: [] 
+        subDiagnoses: []
       });
       setSubDiagnosisInput("");
       setFormErrors({});
     } catch (error: any) {
       console.error(`Failed to ${selectedSubDiagnosis ? "update" : "create"} sub diagnosis:`, error);
-      
+
       let errorMsg = `Failed to ${selectedSubDiagnosis ? "update" : "create"} sub diagnosis. Please try again.`;
-      
+
       if (error?.data?.message) {
         errorMsg = error.data.message;
       } else if (error?.data?.error) {
@@ -455,7 +472,7 @@ export default function SubDiagnosisPage() {
       } else if (error?.message) {
         errorMsg = error.message;
       }
-      
+
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
     }
@@ -492,143 +509,147 @@ export default function SubDiagnosisPage() {
               You don&apos;t have permission to view sub diagnosis.
             </div>
           ) : (
-          <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
+            <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+              <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
-              <div className="flex items-center gap-3">
-                <div className="w-[300px]">
-                  <FormSelectField
-                    label=""
-                    options={[{ value: "", label: "All" }, ...diagnosisOptions]}
-                    value={diagnosisFilter || null}
-                    onChange={(value) => {
-                      const next = Array.isArray(value) ? value[0] : value;
-                      setDiagnosisFilter(next || "");
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Select Diagnosis"
-                    background="normal"
-                  />
-                </div>
-
-                <div className="w-[300px]">
-                  <TableSearchInput
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    placeholder="Search Here..."
-                  />
-                </div>
-
-                {canAdd ? (
-                  <div className="w-full lg:w-auto lg:flex-shrink-0">
-                    <button
-                      type="button"
-                      className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
-                      onClick={handleAdd}
-                    >
-                      <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                      <span className="text-hide">Add Sub Diagnosis</span>
-                    </button>
+                <div className="flex items-center gap-3">
+                  <div className="w-[300px]">
+                    <FormSelectField
+                      label=""
+                      options={[{ value: "", label: "All" }, ...diagnosisOptions]}
+                      value={diagnosisFilter || null}
+                      onChange={(value) => {
+                        const next = Array.isArray(value) ? value[0] : value;
+                        setDiagnosisFilter(next || "");
+                        setCurrentPage(1);
+                      }}
+                      placeholder="Select Diagnosis"
+                      background="normal"
+                    />
                   </div>
-                ) : null}
+
+                  <div className="w-[300px]">
+                    <TableSearchInput
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      placeholder="Search Here..."
+                    />
+                  </div>
+
+                  {canAdd ? (
+                    <div className="w-full lg:w-auto lg:flex-shrink-0">
+                      <button
+                        type="button"
+                        className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20"
+                        onClick={handleAdd}
+                      >
+                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                        <span className="text-hide">Add Sub Diagnosis</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
 
-            {isLoadingDiagnosis ? (
-              <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
-            ) : (
-              <Table tableClassName="table-fixed min-w-0 w-full">
-                <colgroup>
-                  <col style={{ width: 56 }} />
-                  <col />
-                  <col style={{ width: SUB_DIAGNOSIS_COL_PX }} />
-                  <col style={{ width: 88 }} />
-                </colgroup>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead position="first" className="whitespace-nowrap">
-                      Sr no.
-                    </TableHead>
-                    <TableHead
-                      className="min-w-0"
-                      sortable
-                      sortDirection={getSortDirection("diagnosis")}
-                      onSort={() => handleSort("diagnosis")}
-                    >
-                      Diagnosis
-                    </TableHead>
-                    <TableHead
-                      className="overflow-hidden"
-                      sortable
-                      sortDirection={getSortDirection("subDiagnoses")}
-                      onSort={() => handleSort("subDiagnoses")}
-                    >
-                      Sub Diagnosis
-                    </TableHead>
-                    {canEdit ? (
-                      <TableHead position="last" className="whitespace-nowrap">
-                        Action
-                      </TableHead>
-                    ) : null}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedSubDiagnoses.length === 0 ? (
+              {isLoadingDiagnosis ? (
+                <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+              ) : (
+                <Table tableClassName="table-fixed min-w-0 w-full">
+                  <colgroup>
+                    <col style={{ width: 56 }} />
+                    <col />
+                    <col style={{ width: SUB_DIAGNOSIS_COL_PX }} />
+                    <col style={{ width: 88 }} />
+                  </colgroup>
+                  <TableHeader>
                     <TableRow>
-                      <TableData colSpan={canEdit ? 4 : 3} className="py-12 text-center text-sm text-[#9CA3AF]">
-                        No sub diagnoses found
-                      </TableData>
+                      <TableHead position="first" className="whitespace-nowrap">
+                        Sr no.
+                      </TableHead>
+                      <TableHead
+                        className="min-w-0"
+                        sortable
+                        sortDirection={getSortDirection("diagnosis")}
+                        onSort={() => handleSort("diagnosis")}
+                      >
+                        Diagnosis
+                      </TableHead>
+                      <TableHead
+                        className="overflow-hidden"
+                        sortable
+                        sortDirection={getSortDirection("subDiagnoses")}
+                        onSort={() => handleSort("subDiagnoses")}
+                      >
+                        Sub Diagnosis
+                      </TableHead>
+                      {canEdit ? (
+                        <TableHead position="last" className="whitespace-nowrap">
+                          Action
+                        </TableHead>
+                      ) : null}
                     </TableRow>
-                  ) : (
-                    paginatedSubDiagnoses.map((entry, index) => (
-                      <TableRow key={entry.id}>
-                        <TableData position="first" className="whitespace-nowrap">
-                          {startIndex + index + 1}
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedSubDiagnoses.length === 0 ? (
+                      <TableRow>
+                        <TableData colSpan={canEdit ? 4 : 3} className="py-12 text-center text-sm text-[#9CA3AF]">
+                          No sub diagnoses found
                         </TableData>
-                        <TableData className="min-w-0 align-middle break-words">
-                          {entry.diagnosis}
-                        </TableData>
-                        <TableData className="h-auto min-h-[46px] min-w-0 overflow-hidden align-middle py-2">
-                          <DynamicSubDiagnosisItems items={entry.subDiagnoses} onViewAll={handleOpenViewAll} />
-                        </TableData>
-                        {canEdit ? (
-                          <TableData position="last" className="whitespace-nowrap">
-                            <div className="flex items-center gap-3">
-                              <Tooltip content="Edit" position="top" delay={0}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleEdit(entry)}
-                                  className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                  aria-label="Edit sub diagnosis"
-                                >
-                                  <Image src="/icons/EditIconBlack.svg" alt="Edit" width={20} height={20} />
-                                </button>
-                              </Tooltip>
-                            </div>
-                          </TableData>
-                        ) : null}
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            )}
+                    ) : (
+                      paginatedSubDiagnoses.map((entry, index) => (
+                        <TableRow key={entry.id}>
+                          <TableData position="first" className="whitespace-nowrap">
+                            {startIndex + index + 1}
+                          </TableData>
+                          <TableData className="min-w-0 align-middle max-w-[220px]">
+                            <Tooltip content={entry.diagnosis} position="top">
+                              <span className="inline-block max-w-[300px] truncate align-middle font-medium text-[#262D3B]">
+                                {entry.diagnosis}
+                              </span>
+                            </Tooltip>
+                          </TableData>
+                          <TableData className="h-auto min-h-[46px] min-w-0 overflow-hidden align-middle py-2">
+                            <DynamicSubDiagnosisItems items={entry.subDiagnoses} onViewAll={handleOpenViewAll} />
+                          </TableData>
+                          {canEdit ? (
+                            <TableData position="last" className="whitespace-nowrap">
+                              <div className="flex items-center gap-3">
+                                <Tooltip content="Edit" position="top" delay={0}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEdit(entry)}
+                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                    aria-label="Edit sub diagnosis"
+                                  >
+                                    <Image src="/icons/EditIconBlack.svg" alt="Edit" width={20} height={20} />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            </TableData>
+                          ) : null}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              )}
 
-            {!isLoadingDiagnosis && (diagnosisCategoriesData?.total || filteredData.length) > 0 && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={diagnosisCategoriesData?.total || filteredData.length}
-                itemsPerPage={itemsPerPage}
-                onPageChange={setCurrentPage}
-                onItemsPerPageChange={(items) => {
-                  setItemsPerPage(items);
-                  setCurrentPage(1);
-                }}
-                itemsPerPageOptions={[10, 20, 50,100]}
-              />
-            )}
-          </div>
+              {!isLoadingDiagnosis && (diagnosisCategoriesData?.total || filteredData.length) > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={diagnosisCategoriesData?.total || filteredData.length}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={setCurrentPage}
+                  onItemsPerPageChange={(items) => {
+                    setItemsPerPage(items);
+                    setCurrentPage(1);
+                  }}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
+                />
+              )}
+            </div>
           )}
         </ListBorder>
       </div>
@@ -644,12 +665,13 @@ export default function SubDiagnosisPage() {
       >
         <div className="flex flex-wrap gap-2">
           {chipsDialogItems.map((item, idx) => (
-            <span
-              key={`${item}-${idx}`}
-              className="inline-flex h-[30px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-5 text-xs font-semibold leading-[120%] text-[#9A7909]"
-            >
-              {item}
-            </span>
+            <Tooltip key={`${item}-${idx}`} content={item} position="top">
+              <span className="inline-flex h-[30px] max-w-[280px] items-center justify-center rounded-[30px] border border-[#FDC70F]/32 bg-[#FDC70F]/5 px-5 text-xs font-semibold leading-[120%] text-[#9A7909] overflow-hidden">
+                <span className="truncate max-w-full">
+                  {item}
+                </span>
+              </span>
+            </Tooltip>
           ))}
         </div>
       </Dialog>
@@ -660,28 +682,29 @@ export default function SubDiagnosisPage() {
           setAddDialogOpen(false);
           setFormErrors({});
           setSubDiagnosisInput("");
-          setFormValues({ 
-            diagnosis: "", 
-            diagnosisId: 0, 
+          setFormValues({
+            diagnosis: "",
+            diagnosisId: 0,
             status: "active",
             type: "doctor",
             sort: 0,
-            subDiagnoses: [] 
+            subDiagnoses: []
           });
         }}
         title="Add Sub Diagnosis"
         width={949}
+        closeOnOutsideClick={false}
       >
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <FormSelectField
-              label="Diagnosis"
+              label="Diagnosis *"
               value={formValues.diagnosisId > 0 ? formValues.diagnosisId.toString() : ""}
               onChange={(value) => {
                 const next = Array.isArray(value) ? value[0] : value;
                 const selectedOption = diagnosisOptions.find((opt) => opt.value === next);
-                setFormValues((prev) => ({ 
-                  ...prev, 
+                setFormValues((prev) => ({
+                  ...prev,
                   diagnosis: selectedOption?.label || "",
                   diagnosisId: next ? parseInt(next) : 0
                 }));
@@ -699,11 +722,10 @@ export default function SubDiagnosisPage() {
             <div className="flex gap-3">
               <div className="flex-1">
                 <FormInputField
-                  label="Sub Diagnosis"
+                  label="Sub Diagnosis *"
                   value={subDiagnosisInput}
                   onChange={(event) => {
-                    let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
-                    value = value.slice(0, 100);
+                    const value = formatSubDiagnosisInput(event.target.value);
                     setSubDiagnosisInput(value);
                     setFormErrors((prev) => ({ ...prev, subDiagnoses: "" }));
                   }}
@@ -747,8 +769,8 @@ export default function SubDiagnosisPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               variant="primary"
               isLoading={isCreating}
               disabled={isCreating}
@@ -762,13 +784,13 @@ export default function SubDiagnosisPage() {
                 setAddDialogOpen(false);
                 setFormErrors({});
                 setSubDiagnosisInput("");
-                setFormValues({ 
-                  diagnosis: "", 
-                  diagnosisId: 0, 
+                setFormValues({
+                  diagnosis: "",
+                  diagnosisId: 0,
                   status: "active",
                   type: "doctor",
                   sort: 0,
-                  subDiagnoses: [] 
+                  subDiagnoses: []
                 });
               }}
               disabled={isCreating}
@@ -789,17 +811,18 @@ export default function SubDiagnosisPage() {
         }}
         title="Edit Sub Diagnosis"
         width={949}
+        closeOnOutsideClick={false}
       >
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <FormSelectField
-              label="Diagnosis"
+              label="Diagnosis *"
               value={formValues.diagnosisId > 0 ? formValues.diagnosisId.toString() : ""}
               onChange={(value) => {
                 const next = Array.isArray(value) ? value[0] : value;
                 const selectedOption = diagnosisOptions.find((opt) => opt.value === next);
-                setFormValues((prev) => ({ 
-                  ...prev, 
+                setFormValues((prev) => ({
+                  ...prev,
                   diagnosis: selectedOption?.label || "",
                   diagnosisId: next ? parseInt(next) : 0
                 }));
@@ -818,11 +841,10 @@ export default function SubDiagnosisPage() {
             <div className="flex gap-3">
               <div className="flex-1">
                 <FormInputField
-                  label="Sub Diagnosis"
+                  label="Sub Diagnosis *"
                   value={subDiagnosisInput}
                   onChange={(event) => {
-                    let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
-                    value = value.slice(0, 100);
+                    const value = formatSubDiagnosisInput(event.target.value);
                     setSubDiagnosisInput(value);
                     setFormErrors((prev) => ({ ...prev, subDiagnoses: "" }));
                   }}
@@ -869,8 +891,8 @@ export default function SubDiagnosisPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               variant="primary"
               isLoading={isUpdating}
               disabled={isUpdating}

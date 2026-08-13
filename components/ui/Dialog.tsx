@@ -122,11 +122,11 @@ export const Dialog = ({
 
   return createPortal(
     <div
-      className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center overscroll-none bg-[#0B1323]/70 px-4"
+      className="dialog-backdrop fixed inset-0 z-[999] flex items-center justify-center overscroll-none bg-slate-950/80 backdrop-blur-md px-4"
       onClick={closeOnOutsideClick ? onClose : undefined}
     >
       <div
-        className="dialog-container relative flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden rounded-[12px] bg-white shadow-[0px_32px_80px_rgba(47,72,61,0.18)]"
+        className="dialog-container relative flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-2xl backdrop-blur-xl"
         style={dialogStyles}
         role="dialog"
         aria-modal="true"
@@ -138,17 +138,20 @@ export const Dialog = ({
             {customHeader}
           </div>
         ) : (
-          <div className="flex items-center justify-between  px-6 pt-4">
-            <h2 id={titleId} className="text-xl font-semibold text-[#262D3B]">
+          <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-800">
+            <h2
+              id={titleId}
+              className="font-extrabold text-xl leading-tight text-white tracking-tight"
+            >
               {title}
             </h2>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-[#F2F8F2]"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors cursor-pointer"
               aria-label="Close dialog"
             >
-              <Image src="/icons/CrossIcon.svg" alt="Close dialog" width={24} height={24} />
+              <Image src="/icons/CrossIcon.svg" alt="Close dialog" width={20} height={20} className="brightness-0 invert opacity-70 hover:opacity-100" />
             </button>
           </div>
         )}

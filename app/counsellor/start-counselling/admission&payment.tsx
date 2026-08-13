@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 import AdmissionInvoiceDialog from "./AdmissionInvoiceDialog";
 import {
     FormInputField,
@@ -12,7 +13,10 @@ import {
     BackToPreviousPageButton,
     Slider,
     MessageDialog,
+    Checkbox,
+    Tooltip,
 } from "@/components/ui";
+import { useGetPatientWalletBalanceQuery } from "@/store/api/doctorApi";
 import {
     useCompletePatientAdmissionMutation,
     usePaymentAndAllocateRoomMutation,
@@ -27,6 +31,9 @@ import {
     useGetCitiesQuery,
 } from "@/store/api/publicApi";
 import type { AttendantDetailsFormData } from "./createPackage";
+import { useAppSelector } from "@/store/hooks";
+import { selectUserBranchId } from "@/store/slices/authSlice";
+import { useSearchParams, useRouter } from "next/navigation";
 
 interface CompletePatientAdmissionAddress {
     address?: string;
@@ -45,6 +52,8 @@ interface CompletePatientAdmissionPaymentRecord {
 }
 
 interface CompletePatientAdmissionResult {
+    discountAmount?: number
+    freeDays?:number; 
     patientId?: number;
     patientPackageId?: number;
     invoiceId?: number;
@@ -66,11 +75,17 @@ interface CompletePatientAdmissionResult {
 }
 
 interface AdmissionPaymentProps {
+    // discountAmount?:number|string;
     activePackage: {
         packageName?: string;
         packageType?: string;
         remark?: string;
     };
+    nurseFee?:number,
+    attendantFee?:number,
+    roomtype?:string,
+    therapyFee?:number,
+    packagetotalPrice?:number,
     finalAmountPayable: number;
     roomRentPerDay: number;
     medicinePerDay: number;
@@ -90,8 +105,9 @@ interface AdmissionPaymentProps {
     originalAmount: number;
     discountAmount: number;
     netPayable: number;
+    panelId?: number;
     roomAllocation?: CompletePatientAdmissionRoom | null;
-    attendantDetails?: AttendantDetailsFormData | null;
+    attendantDetails?: AttendantDetailsFormData[] | null;
     requireRoomAllocation?: boolean;
     initialAdmissionDate?: string;
     initialSpecialInstructions?: string;
@@ -106,8 +122,10 @@ interface AdmissionPaymentProps {
         patientId: number | string;
         id: number | string;
     };
+    onAdmissionComplete?: (patientId: number) => void;
     onNext: () => void;
     onBack: () => void;
+    onExit?: () => void;
 }
 
 function mapAdmissionTypeToPayload(type: string): string {
@@ -115,6 +133,11 @@ function mapAdmissionTypeToPayload(type: string): string {
     if (type === "scheduled") return "Schedule";
     if (type === "tentative") return "Tentative";
     return type;
+}
+
+function isDayCarePatientType(patientType: string): boolean {
+    const normalized = patientType.trim().toLowerCase().replace(/-/g, "_");
+    return normalized === "day_care" || normalized === "daycare";
 }
 
 type GeoLookupData = { data?: { id: number | string; name: string }[] };
@@ -318,6 +341,12 @@ function PaymentMethodRow({
     onConfirm,
     upiId,
     onUpiIdChange,
+    amountError,
+    disabled = false,
+    showAddMore = false,
+    onAddMore,
+    showRemove = false,
+    onRemove,
 }: {
     icon: React.ReactNode;
     title: string;
@@ -330,9 +359,21 @@ function PaymentMethodRow({
     onConfirm: () => void;
     upiId?: string;
     onUpiIdChange?: (value: string) => void;
+    amountError?: string;
+    disabled?: boolean;
+    showAddMore?: boolean;
+    onAddMore?: () => void;
+    showRemove?: boolean;
+    onRemove?: () => void;
 }) {
+    const isInteractionDisabled = disabled && !paid;
+
     return (
-        <div className="flex flex-col gap-3 p-4 border border-[#DFE0E2] rounded-[14px] bg-white">
+        <div
+            className={`flex flex-col gap-3 p-2 border border-[#DFE0E2] rounded-[14px] bg-white ${
+                isInteractionDisabled ? "opacity-50" : ""
+            }`}
+        >
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                     <span className="w-10 h-10 shrink-0 rounded-xl bg-[#F2F8F2] flex items-center justify-center p-2">
@@ -347,34 +388,55 @@ function PaymentMethodRow({
                 </div>
 
                 {!paid ? (
-                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                        <div className="w-[110px]">
-                            <FormInputField
-                                label=""
-                                type="text"
-                                inputMode="decimal"
-                                value={amount}
-                                onChange={(e) => {
-                                    const value = e.target.value;
-                                    if (value === "" || /^\d{0,15}(\.\d{0,2})?$/.test(value)) {
-                                        onAmountChange(value);
-                                    }
-                                }}
-                                height={38}
-                                width={110}
-                                className="font-bold text-xs"
-                                suffix={<span className="text-xs font-bold text-[#787E8C]">₹</span>}
-                            />
+                    <div className="flex flex-col gap-1 w-full sm:w-auto">
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <div className="w-[110px]">
+                                <FormInputField
+                                    label=""
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={amount}
+                                    onChange={(e) => {
+                                        if (isInteractionDisabled) return;
+                                        const value = e.target.value;
+                                        if (value === "" || /^\d{0,15}(\.\d{0,2})?$/.test(value)) {
+                                            onAmountChange(value);
+                                        }
+                                    }}
+                                    placeholder="Amount"
+                                    height={38}
+                                    width={110}
+                                    className="font-bold text-xs"
+                                    suffix={<span className="text-xs font-bold text-[#787E8C]">₹</span>}
+                                    disabled={isInteractionDisabled}
+                                />
+                            </div>
+                            <Button
+                                type="button"
+                                variant="primary"
+                                size="medium"
+                                className="h-[38px] shrink-0"
+                                onClick={onConfirm}
+                                disabled={isInteractionDisabled}
+                            >
+                                {confirmLabel}
+                            </Button>
+                            {showRemove && onRemove ? (
+                                <button
+                                    type="button"
+                                    onClick={onRemove}
+                                    disabled={isInteractionDisabled}
+                                    className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full border border-[#EF4444]/30 bg-white text-[#EF4444] shadow-sm transition-colors hover:bg-[#FEF2F2] disabled:opacity-50"
+                                    aria-label="Remove"
+                                    title="Remove"
+                                >
+                                    <Image src="/icons/TrashRedIcon.svg" alt="Remove" width={16} height={16} />
+                                </button>
+                            ) : null}
                         </div>
-                        <Button
-                            type="button"
-                            variant="primary"
-                            size="medium"
-                            className="h-[38px] shrink-0"
-                            onClick={onConfirm}
-                        >
-                            {confirmLabel}
-                        </Button>
+                        {amountError ? (
+                            <p className="text-xs text-[#F6776E]">{amountError}</p>
+                        ) : null}
                     </div>
                 ) : (
                     <div className="flex items-center gap-2 text-[#0B8C00] font-extrabold text-sm select-none">
@@ -382,6 +444,28 @@ function PaymentMethodRow({
                         <Badge variant="success" className="text-[10px] font-extrabold uppercase tracking-wider">
                             ✓ {paidLabel}
                         </Badge>
+                        {showRemove && onRemove ? (
+                            <button
+                                type="button"
+                                onClick={onRemove}
+                                className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-[#EF4444]/30 bg-white text-[#EF4444] shadow-sm transition-colors hover:bg-[#FEF2F2]"
+                                aria-label="Remove"
+                                title="Remove"
+                            >
+                                <Image src="/icons/TrashRedIcon.svg" alt="Remove" width={16} height={16} />
+                            </button>
+                        ) : null}
+                        {showAddMore && onAddMore ? (
+                            <button
+                                type="button"
+                                onClick={onAddMore}
+                                className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-[#0B8C00]/30 bg-white text-[#0B8C00] shadow-sm transition-colors hover:bg-[#F2FAF2]"
+                                aria-label="Add more"
+                                title="Add more"
+                            >
+                                <Image src="/icons/AddIcon.svg" alt="Add more" width={16} height={16} />
+                            </button>
+                        ) : null}
                     </div>
                 )}
             </div>
@@ -391,13 +475,39 @@ function PaymentMethodRow({
                     label="Patient UPI ID / Number"
                     type="text"
                     value={upiId || ""}
-                    onChange={(e) => onUpiIdChange(e.target.value)}
+                    onChange={(e) => {
+                        if (!isInteractionDisabled) onUpiIdChange(e.target.value);
+                    }}
                     placeholder="Enter Patient UPI ID / Number"
                     height={44}
+                    disabled={isInteractionDisabled}
                 />
             )}
         </div>
     );
+}
+
+function validatePaymentAmount(amount: string): string {
+    if (!amount.trim()) return "Please enter payment amount.";
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) return "Please enter a valid payment amount.";
+    return "";
+}
+
+interface CashPaymentEntry {
+    id: string;
+    amount: string;
+    paid: boolean;
+    amountError: string;
+}
+
+function createCashPaymentEntry(): CashPaymentEntry {
+    return {
+        id: `cash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        amount: "",
+        paid: false,
+        amountError: "",
+    };
 }
 
 export default function AdmissionPayment({
@@ -407,9 +517,13 @@ export default function AdmissionPayment({
     medicinePerDay,
     mealsPerDay,
     doctorFee,
+    nurseFee,
+    attendantFee,
+    roomtype,
+    therapyFee,
+    packagetotalPrice,
     patientName = "Patient",
     patientUhid = "",
-    branchId,
     appointmentId,
     packageId,
     numberOfDays,
@@ -421,6 +535,7 @@ export default function AdmissionPayment({
     originalAmount,
     discountAmount,
     netPayable,
+    panelId,
     roomAllocation,
     attendantDetails,
     requireRoomAllocation = true,
@@ -430,14 +545,28 @@ export default function AdmissionPayment({
     isEditMode = false,
     editPatientId,
     futureAdmissionPayment,
+    onAdmissionComplete,
     onNext,
     onBack,
+    onExit,
 }: AdmissionPaymentProps) {
+    const router = useRouter();
     const [completePatientAdmission, { isLoading: isCompletingAdmission }] = useCompletePatientAdmissionMutation();
     const [paymentAndAllocateRoom, { isLoading: isPaymentAllocating }] = usePaymentAndAllocateRoomMutation();
     const isSubmitting = isCompletingAdmission || isPaymentAllocating;
-    const attendantCountryId = attendantDetails?.address.country;
-    const attendantStateId = attendantDetails?.address.state;
+    // const authUserBranchId = useAppSelector(selectUserBranchId);
+    const searchParams = useSearchParams();
+    const branchhid = Number(searchParams?.get("branchId")) || null;
+    const authUserBranchId = branchhid;
+
+    console.log("editPaymentAmounts",editPaymentAmounts)
+
+    const apiBranchId = useMemo(() => {
+        const n = Number(authUserBranchId);
+        return Number.isFinite(n) && n > 0 ? n : 0;
+    }, [authUserBranchId]);
+    const attendantCountryId = attendantDetails?.[0]?.address.country;
+    const attendantStateId = attendantDetails?.[0]?.address.state;
     const { data: countriesData } = useGetCountriesQuery();
     const { data: statesData } = useGetStatesQuery(
         attendantCountryId ? { countryId: attendantCountryId } : undefined,
@@ -449,6 +578,7 @@ export default function AdmissionPayment({
     );
     const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
     const [admissionResult, setAdmissionResult] = useState<CompletePatientAdmissionResult | null>(null);
+    const [isAdmissionCompleted, setIsAdmissionCompleted] = useState(false);
     const [admissionDate, setAdmissionDate] = useState(
         () => initialAdmissionDate || getTodayDateInputValue()
     );
@@ -456,24 +586,94 @@ export default function AdmissionPayment({
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [paymentFinalizeError, setPaymentFinalizeError] = useState("");
+    const paymentFinalizeErrorRef = useRef<HTMLDivElement>(null);
 
-    const [razorpayUpiAmount, setRazorpayUpiAmount] = useState("100");
+    const [razorpayUpiAmount, setRazorpayUpiAmount] = useState("");
     const [razorpayUpiId, setRazorpayUpiId] = useState("");
     const [razorpayUpiPaid, setRazorpayUpiPaid] = useState(false);
-    const [razorpayCardAmount, setRazorpayCardAmount] = useState("100");
+    const [razorpayUpiAmountError, setRazorpayUpiAmountError] = useState("");
+    const [razorpayCardAmount, setRazorpayCardAmount] = useState("");
     const [razorpayCardPaid, setRazorpayCardPaid] = useState(false);
+    const [razorpayCardAmountError, setRazorpayCardAmountError] = useState("");
 
-    const [payuUpiAmount, setPayuUpiAmount] = useState("100");
+    const [payuUpiAmount, setPayuUpiAmount] = useState("");
     const [payuUpiId, setPayuUpiId] = useState("");
     const [payuUpiPaid, setPayuUpiPaid] = useState(false);
+    const [payuUpiAmountError, setPayuUpiAmountError] = useState("");
 
-    const [cashAmount, setCashAmount] = useState("100");
-    const [cashPaid, setCashPaid] = useState(false);
+    const [cashEntries, setCashEntries] = useState<CashPaymentEntry[]>([createCashPaymentEntry()]);
 
     const [othersMethod, setOthersMethod] = useState<string | null>(null);
     const [othersAmount, setOthersAmount] = useState("");
     const [othersReferenceId, setOthersReferenceId] = useState("");
     const [othersPaid, setOthersPaid] = useState(false);
+
+    const [useWalletBalance, setUseWalletBalance] = useState(false);
+    const [walletAmount, setWalletAmount] = useState("");
+    const [walletOtp, setWalletOtp] = useState("");
+    const [walletOtpPending, setWalletOtpPending] = useState(false);
+    const [walletPaid, setWalletPaid] = useState(false);
+    const [walletAmountError, setWalletAmountError] = useState("");
+    const [walletOtpError, setWalletOtpError] = useState("");
+
+    // const { data: walletResponse } = useGetPatientWalletBalanceQuery(patientUhid || "", {
+    //     skip: !patientUhid?.trim(),
+    // });
+    // const walletInfo = walletResponse?.data;
+    // const walletAvailableBalance = useMemo(() => {
+    //     if (!walletInfo?.walletExists) return 0;
+    //     const balance = Number(walletInfo.availableBalance ?? walletInfo.currentBalance ?? 0);
+    //     return Number.isFinite(balance) && balance > 0 ? balance : 0;
+    // }, [walletInfo]);
+    // const formattedWalletBalance = walletAvailableBalance.toLocaleString("en-IN", {
+    //     minimumFractionDigits: 2,
+    //     maximumFractionDigits: 2,
+    // });
+
+    const resetWalletPaymentState = useCallback(() => {
+        setUseWalletBalance(false);
+        setWalletAmount("");
+        setWalletOtp("");
+        setWalletOtpPending(false);
+        setWalletPaid(false);
+        setWalletAmountError("");
+        setWalletOtpError("");
+    }, []);
+
+    // const handleWalletUse = () => {
+    //     const amount = Number(walletAmount);
+    //     if (!walletAmount.trim() || !Number.isFinite(amount) || amount <= 0) {
+    //         setWalletAmountError("Please enter a valid amount.");
+    //         return;
+    //     }
+    //     if (amount > walletAvailableBalance) {
+    //         setWalletAmountError(`Amount cannot exceed available balance (₹ ${formattedWalletBalance}).`);
+    //         return;
+    //     }
+    //     setWalletAmountError("");
+    //     setWalletOtpError("");
+    //     setWalletOtp("");
+    //     setWalletOtpPending(true);
+    //     setWalletPaid(false);
+    // };
+
+    // const handleWalletVerifyOtp = () => {
+    //     if (!walletOtp.trim()) {
+    //         setWalletOtpError("Please enter OTP.");
+    //         return;
+    //     }
+    //     setWalletOtpError("");
+    //     setWalletPaid(true);
+    //     setWalletOtpPending(false);
+    // };
+
+    // const handleWalletResendOtp = () => {
+    //     setWalletOtp("");
+    //     setWalletOtpError("");
+    //     setWalletPaid(false);
+    //     setWalletOtpPending(true);
+    // };
 
     useEffect(() => {
         if (!isEditMode) return;
@@ -485,33 +685,26 @@ export default function AdmissionPayment({
         }
     }, [isEditMode, initialAdmissionDate, initialSpecialInstructions]);
 
-    useEffect(() => {
-        if (!isEditMode || !editPaymentAmounts) return;
-        const payableRemaining =
-            editPaymentAmounts.remainingAmount != null && editPaymentAmounts.remainingAmount > 0
-                ? String(editPaymentAmounts.remainingAmount)
-                : finalAmountPayable > 0
-                    ? String(finalAmountPayable)
-                    : "";
-        setRazorpayUpiAmount(payableRemaining);
-        setRazorpayCardAmount(payableRemaining);
-        setPayuUpiAmount(payableRemaining);
-        setCashAmount(payableRemaining);
-    }, [isEditMode, editPaymentAmounts, finalAmountPayable]);
-
     const totalReceived = useMemo(() => {
+        const cashTotal = cashEntries.reduce(
+            (sum, entry) => sum + (entry.paid ? Number(entry.amount) || 0 : 0),
+            0
+        );
+
         return (
+            (walletPaid ? Number(walletAmount) || 0 : 0) +
             (razorpayUpiPaid ? Number(razorpayUpiAmount) || 0 : 0) +
             (razorpayCardPaid ? Number(razorpayCardAmount) || 0 : 0) +
             (payuUpiPaid ? Number(payuUpiAmount) || 0 : 0) +
-            (cashPaid ? Number(cashAmount) || 0 : 0) +
+            cashTotal +
             (othersPaid ? Number(othersAmount) || 0 : 0)
         );
     }, [
+        walletPaid, walletAmount,
         razorpayUpiPaid, razorpayUpiAmount,
         razorpayCardPaid, razorpayCardAmount,
         payuUpiPaid, payuUpiAmount,
-        cashPaid, cashAmount,
+        cashEntries,
         othersPaid, othersAmount,
     ]);
 
@@ -519,28 +712,113 @@ export default function AdmissionPayment({
         return Math.max(0, finalAmountPayable - totalReceived);
     }, [finalAmountPayable, totalReceived]);
 
+    const hasPendingCashEntries = useMemo(
+        () => cashEntries.some((entry) => !entry.paid),
+        [cashEntries]
+    );
+
+    useEffect(() => {
+        if (totalReceived > 0 && !hasPendingCashEntries && paymentFinalizeError) {
+            setPaymentFinalizeError("");
+        }
+    }, [totalReceived, hasPendingCashEntries, paymentFinalizeError]);
+
+    useEffect(() => {
+        if (!paymentFinalizeError) return;
+
+        const timer = window.setTimeout(() => {
+            paymentFinalizeErrorRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+            });
+        }, 100);
+
+        return () => window.clearTimeout(timer);
+    }, [paymentFinalizeError]);
+
+    const paymentSources = useMemo(() => {
+        const sources: Array<{ label: string; amount: number }> = [];
+
+        if (walletPaid) {
+            sources.push({ label: "Wallet", amount: Number(walletAmount) || 0 });
+        }
+        if (razorpayUpiPaid) {
+            sources.push({ label: "UPI (Razorpay)", amount: Number(razorpayUpiAmount) || 0 });
+        }
+        if (razorpayCardPaid) {
+            sources.push({ label: "Credit Card", amount: Number(razorpayCardAmount) || 0 });
+        }
+        if (payuUpiPaid) {
+            sources.push({ label: "UPI (PayU)", amount: Number(payuUpiAmount) || 0 });
+        }
+        cashEntries.forEach((entry, index) => {
+            if (!entry.paid) return;
+            sources.push({
+                label: cashEntries.length > 1 ? `Cash ${index + 1}` : "Cash",
+                amount: Number(entry.amount) || 0,
+            });
+        });
+        if (othersPaid && othersMethod) {
+            sources.push({
+                label: othersPaymentMethodOptions.find((option) => option.value === othersMethod)?.label || "Others",
+                amount: Number(othersAmount) || 0,
+            });
+        }
+
+        return sources;
+    }, [
+        walletPaid,
+        walletAmount,
+        razorpayUpiPaid,
+        razorpayUpiAmount,
+        razorpayCardPaid,
+        razorpayCardAmount,
+        payuUpiPaid,
+        payuUpiAmount,
+        cashEntries,
+        othersPaid,
+        othersMethod,
+        othersAmount,
+    ]);
+
     const progressPercent = useMemo(() => {
         if (finalAmountPayable <= 0) return 0;
         return Math.min(100, Math.round((totalReceived / finalAmountPayable) * 100));
     }, [finalAmountPayable, totalReceived]);
 
+    console.log("editPatientId",editPatientId)
+
+    const handleExit = useCallback(() => {
+        if (onExit) {
+            onExit();
+            return;
+        }
+
+        if(editPatientId != null && editPatientId != undefined ){
+          router.push("/counsellor/future-admissions");
+        }
+        router.push("/counsellor/dashboard");
+    }, [onExit, router]);
+
     const handleCancelSession = () => {
         setRazorpayUpiPaid(false);
         setRazorpayCardPaid(false);
         setPayuUpiPaid(false);
-        setCashPaid(false);
         setOthersPaid(false);
         setOthersMethod(null);
         setOthersAmount("");
         setOthersReferenceId("");
         setRazorpayUpiId("");
         setPayuUpiId("");
-        if (!isEditMode) {
-            setRazorpayUpiAmount("");
-            setRazorpayCardAmount("");
-            setPayuUpiAmount("");
-            setCashAmount("");
-        }
+        setRazorpayUpiAmountError("");
+        setRazorpayCardAmountError("");
+        setPayuUpiAmountError("");
+        setRazorpayUpiAmount("");
+        setRazorpayCardAmount("");
+        setPayuUpiAmount("");
+        setCashEntries([createCashPaymentEntry()]);
+        resetWalletPaymentState();
+        setPaymentFinalizeError("");
     };
 
     const collectPaidEntries = useCallback(() => {
@@ -551,6 +829,14 @@ export default function AdmissionPayment({
             remarks?: string;
         }> = [];
 
+        if (walletPaid) {
+            paidEntries.push({
+                method: "wallet",
+                amount: Number(walletAmount) || 0,
+                transactionId: walletOtp || `WALLET${Date.now()}`,
+                remarks: "Wallet payment",
+            });
+        }
         if (razorpayUpiPaid) {
             paidEntries.push({
                 method: "upi",
@@ -575,14 +861,15 @@ export default function AdmissionPayment({
                 remarks: "PayU UPI payment",
             });
         }
-        if (cashPaid) {
+        cashEntries.forEach((entry) => {
+            if (!entry.paid) return;
             paidEntries.push({
                 method: "cash",
-                amount: Number(cashAmount) || 0,
+                amount: Number(entry.amount) || 0,
                 transactionId: "",
                 remarks: "Cash payment received",
             });
-        }
+        });
         if (othersPaid && othersMethod) {
             paidEntries.push({
                 method: othersMethod,
@@ -594,10 +881,11 @@ export default function AdmissionPayment({
 
         return paidEntries;
     }, [
+        walletPaid, walletAmount, walletOtp,
         razorpayUpiPaid, razorpayUpiAmount, razorpayUpiId,
         razorpayCardPaid, razorpayCardAmount,
         payuUpiPaid, payuUpiAmount, payuUpiId,
-        cashPaid, cashAmount,
+        cashEntries,
         othersPaid, othersMethod, othersAmount, othersReferenceId,
     ]);
 
@@ -677,15 +965,117 @@ export default function AdmissionPayment({
         };
     }, [collectPaidEntries]);
 
+    const handleRazorpayUpiVerify = () => {
+        const amountError = validatePaymentAmount(razorpayUpiAmount);
+        setRazorpayUpiAmountError(amountError);
+        if (amountError) return;
+        setRazorpayUpiPaid(true);
+    };
+
+    const handleRazorpayCardPay = () => {
+        const amountError = validatePaymentAmount(razorpayCardAmount);
+        setRazorpayCardAmountError(amountError);
+        if (amountError) return;
+        setRazorpayCardPaid(true);
+    };
+
+    const handlePayuUpiVerify = () => {
+        const amountError = validatePaymentAmount(payuUpiAmount);
+        setPayuUpiAmountError(amountError);
+        if (amountError) return;
+        setPayuUpiPaid(true);
+    };
+
+    const handleCashConfirm = (entryId: string) => {
+        const entry = cashEntries.find((item) => item.id === entryId);
+        if (!entry) return;
+
+        const amountError = validatePaymentAmount(entry.amount);
+        if (amountError) {
+            setCashEntries((prev) =>
+                prev.map((item) =>
+                    item.id === entryId ? { ...item, amountError } : item
+                )
+            );
+            return;
+        }
+
+        setCashEntries((prev) =>
+            prev.map((item) =>
+                item.id === entryId ? { ...item, paid: true, amountError: "" } : item
+            )
+        );
+    };
+
+    const handleAddCashEntry = () => {
+        const hasUnpaidEntry = cashEntries.some((entry) => !entry.paid);
+        if (hasUnpaidEntry) return;
+        setCashEntries((prev) => [...prev, createCashPaymentEntry()]);
+    };
+
+    const handleCancelCashEntry = (entryId: string) => {
+        const entry = cashEntries.find((item) => item.id === entryId);
+        if (!entry) return;
+
+        if (entry.paid && cashEntries.some((item) => !item.paid)) {
+            setCashEntries((prev) => prev.filter((item) => item.paid));
+            return;
+        }
+
+        if (!entry.paid) {
+            setCashEntries((prev) => {
+                if (prev.length === 1) {
+                    return [createCashPaymentEntry()];
+                }
+                return prev.filter((item) => item.id !== entryId);
+            });
+            return;
+        }
+
+        setCashEntries((prev) => {
+            if (prev.length === 1) {
+                return prev.map((item) =>
+                    item.id === entryId
+                        ? { ...item, paid: false, amountError: "" }
+                        : item
+                );
+            }
+            return prev.filter((item) => item.id !== entryId);
+        });
+    };
+
+    const handleCashAmountChange = (entryId: string, value: string) => {
+        setCashEntries((prev) =>
+            prev.map((item) =>
+                item.id === entryId
+                    ? { ...item, amount: value, amountError: "" }
+                    : item
+            )
+        );
+    };
+
+    const notifyAdmissionPatientId = useCallback(
+        (id?: number | string | null) => {
+            const numericId = Number(id);
+            if (Number.isFinite(numericId) && numericId > 0) {
+                onAdmissionComplete?.(numericId);
+            }
+        },
+        [onAdmissionComplete]
+    );
+
     const handleCompleteAdmission = useCallback(async () => {
-        if (requireRoomAllocation && !roomAllocation) {
+        if (isAdmissionCompleted) return;
+
+        const isDayCare = isDayCarePatientType(patientType);
+
+        if (requireRoomAllocation && !isDayCare && !roomAllocation) {
             setErrorMessage("Please allocate a room and bed before completing payment.");
             setShowErrorDialog(true);
             return;
         }
-        if (totalReceived <= 0) {
-            setErrorMessage("Please confirm at least one payment method before finalizing.");
-            setShowErrorDialog(true);
+        if (totalReceived <= 0 || hasPendingCashEntries) {
+            setPaymentFinalizeError("Please confirm payment before finalizing.");
             return;
         }
 
@@ -698,6 +1088,8 @@ export default function AdmissionPayment({
                 );
                 const res = await paymentAndAllocateRoom(payload).unwrap();
                 if (res.success) {
+                    setIsAdmissionCompleted(true);
+                    notifyAdmissionPatientId(futureAdmissionPayment.patientId);
                     setShowSuccessDialog(true);
                 } else {
                     setErrorMessage(res.message || "Failed to complete payment and room allocation.");
@@ -736,11 +1128,13 @@ export default function AdmissionPayment({
             return;
         }
 
+        console.log("apiBranchIdhfywyegyeg",admissionType)
+
         const paymentPayload = buildPaymentPayload();
         const includeOffer = Boolean(offerApplied && offerId);
         const isEditAdmission = editPatientId != null;
         const payload: CompletePatientAdmissionRequest = {
-            branchId,
+            branchId: apiBranchId,
             ...(!isEditAdmission && appointmentId ? { appointmentId } : {}),
             ...(isEditAdmission ? { finalizeAdmission: admissionType !== "scheduled" ? true : false } : {}),
             patientType,
@@ -749,6 +1143,7 @@ export default function AdmissionPayment({
             numberOfDays,
             offerApplied: includeOffer,
             ...(includeOffer ? { offerId } : {}),
+            ...(panelId != null && Number.isFinite(panelId) ? { panelId } : {}),
             admissionType: mapAdmissionTypeToPayload(admissionType),
             admissionDate: admissionType === "scheduled" ? admissionDate : getTodayDateInputValue(),
             ...(admissionType === "scheduled" && specialInstructions.trim()
@@ -758,14 +1153,16 @@ export default function AdmissionPayment({
             discountAmount,
             netPayable,
             ...paymentPayload,
-            ...(roomAllocation ? { room: roomAllocation } : {}),
-            ...(attendantDetails
+            ...(roomAllocation && !isDayCare ? { room: roomAllocation } : {}),
+            ...(attendantDetails && attendantDetails.length > 0
                 ? {
-                    attendant: mapAttendantToPayload(attendantDetails, {
-                        countries: countriesData,
-                        states: statesData,
-                        cities: citiesData,
-                    }),
+                    attendant: attendantDetails.map((details) =>
+                        mapAttendantToPayload(details, {
+                            countries: countriesData,
+                            states: statesData,
+                            cities: citiesData,
+                        })
+                    ),
                 }
                 : {}),
         };
@@ -775,14 +1172,14 @@ export default function AdmissionPayment({
                 editPatientId != null ? { body: payload, editPatientId } : payload
             ).unwrap();
             if (res.success) {
+                setIsAdmissionCompleted(true);
                 if (res.data) {
                     setAdmissionResult(res.data as CompletePatientAdmissionResult);
+                    notifyAdmissionPatientId(
+                        res.data.patientId ?? (editPatientId != null ? editPatientId : undefined)
+                    );
                 }
-                if (futureAdmissionPayment) {
-                    setShowSuccessDialog(true);
-                } else {
-                    setIsInvoiceDialogOpen(true);
-                }
+                setShowSuccessDialog(true);
             } else {
                 setErrorMessage(res.message || "Failed to complete patient admission.");
                 setShowErrorDialog(true);
@@ -803,14 +1200,17 @@ export default function AdmissionPayment({
         requireRoomAllocation,
         roomAllocation,
         totalReceived,
+        hasPendingCashEntries,
         buildPaymentPayload,
         buildPaymentAndAllocateRoomPayload,
-        branchId,
+        apiBranchId,
+        notifyAdmissionPatientId,
         patientType,
         diseaseType,
         numberOfDays,
         offerApplied,
         offerId,
+        panelId,
         specialInstructions,
         originalAmount,
         discountAmount,
@@ -822,14 +1222,46 @@ export default function AdmissionPayment({
         completePatientAdmission,
         paymentAndAllocateRoom,
         editPatientId,
+        notifyAdmissionPatientId,
+        isAdmissionCompleted,
     ]);
 
     const isScheduledAdmission = admissionType === "scheduled";
 
+    const handleSuccessDialogDismiss = () => {
+        setShowSuccessDialog(false);
+        if (futureAdmissionPayment) {
+            onNext();
+            return;
+        }
+        setIsInvoiceDialogOpen(true);
+    };
+
     const invoicePatientAddress = admissionResult?.patientDetails?.address;
     const perDayCost = Number(admissionResult?.perDayCost ?? 0);
+    const checkfreedays =  admissionResult?.freeDays || 0;
+    const discountAmountt = Number(checkfreedays <= 0) ? admissionResult?.discountAmount : 0;
+    const freeDays = admissionResult?.freeDays || 0
+
+    // console.log("admissionResult",discountAmount, freeDays)
     const invoiceProps = useMemo(() => {
         const patient = admissionResult?.patientDetails;
+        const packageInvoiceTotal =
+            originalAmount > 0
+                ? originalAmount
+                : perDayCost > 0 && numberOfDays > 0
+                  ? perDayCost * numberOfDays
+                  : netPayable > 0
+                    ? netPayable
+                    : perDayCost;
+        const lineItemLabel =
+            numberOfDays > 0
+                ? perDayCost > 0
+                    ? `Package Cost (${numberOfDays} Days @ ₹${perDayCost.toLocaleString("en-IN")}/day)`
+                    : `Package Cost (${numberOfDays} Days)`
+                : "Package Cost";
+
+                // console.log("patient",patient)
         return {
             patientName: patient?.patientName || patientName,
             address: formatAdmissionStreetAddress(invoicePatientAddress),
@@ -843,10 +1275,10 @@ export default function AdmissionPayment({
             contactNumber: patient?.contactNumber,
             admissionType: admissionResult?.admissionType,
             admissionDate: formatAdmissionDisplayDate(admissionResult?.admissionDate),
-            consultationCharges: perDayCost,
-            subtotal: perDayCost,
+            consultationCharges: packageInvoiceTotal,
+            subtotal: packageInvoiceTotal,
             tax: 0,
-            totalAmount: perDayCost,
+            totalAmount: packageInvoiceTotal,
             billDate: formatAdmissionBillDate(admissionResult?.admissionDate),
             transactionId: admissionResult?.paymentId ? String(admissionResult.paymentId) : undefined,
             paymentMode: "completed",
@@ -854,9 +1286,18 @@ export default function AdmissionPayment({
             dueAmount: admissionResult?.dueAmount,
             paymentStatus: admissionResult?.firstDayPaymentStatus,
             paymentRecords: admissionResult?.paymentRecords,
-            lineItemLabel: "Per Day Cost",
+            lineItemLabel,
         };
-    }, [admissionResult, invoicePatientAddress, patientName, patientUhid, perDayCost]);
+    }, [
+        admissionResult,
+        invoicePatientAddress,
+        patientName,
+        patientUhid,
+        perDayCost,
+        numberOfDays,
+        originalAmount,
+        netPayable,
+    ]);
 
     const handlePrintInvoiceClick = () => {
         if (!admissionResult) {
@@ -866,6 +1307,20 @@ export default function AdmissionPayment({
         }
         setIsInvoiceDialogOpen(true);
     };
+
+    console.log("admissionType",admissionType)
+
+    // console.log("activePackagefhsjfhsh",activePackage)
+    // const roomRent = item.branchRoomType?.roomRentPrice ? Number(item.branchRoomType.roomRentPrice) : 0;
+    // const medicine = item.medicineEnabled ? Number(item.medicinePrice) : 0;
+    // const meals = item.mealsEnabled ? Number(item.mealsPrice) : 0;
+    // const doctor = item.doctorFeeEnabled ? Number(item.doctorFeePrice) : 0;
+    // const nurse = item.nurseFeeEnabled ? Number(item.nurseFeePrice) : 0;
+    // const attendant = item.attendantFeeEnabled ? Number(item.attendantFeePrice) : 0;
+    // const therapy = item.therapyEnabled ? Number(item.therapyPrice) : 0;
+    // const totalPrice = roomRent + medicine + meals + doctor + nurse + attendant + therapy;
+
+    console.log("activePackage",invoiceProps)
 
     return (
         <div className="w-full flex flex-col gap-6 mt-6">
@@ -895,6 +1350,41 @@ export default function AdmissionPayment({
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
                 {/* Column 1: Payment Gateways */}
                 <div className="flex flex-col gap-4">
+                          <PaymentGatewayCard title="Cash">
+                        {cashEntries.map((entry, index) => (
+                            <PaymentMethodRow
+                                key={entry.id}
+                                icon={<Image src="/icons/cash.svg" alt="Cash" width={20} height={20} className="object-contain" />}
+                                title={cashEntries.length > 1 ? ` Payment ${index + 1}` : "Payment"}
+                                //  title={""}
+                                paidLabel=""
+                                pendingLabel=""
+                                confirmLabel="Confirm"
+                                amount={entry.amount}
+                                onAmountChange={(value) => handleCashAmountChange(entry.id, value)}
+                                paid={entry.paid}
+                                onConfirm={() => handleCashConfirm(entry.id)}
+                                amountError={entry.amountError}
+                                showAddMore={entry.paid && index === cashEntries.length - 1}
+                                onAddMore={handleAddCashEntry}
+                                showRemove={
+                                    (!entry.paid && cashEntries.length > 1) ||
+                                    (entry.paid && index === cashEntries.length - 1)
+                                }
+                                onRemove={() => handleCancelCashEntry(entry.id)}
+                            />
+                        ))}
+                            {paymentFinalizeError ? (
+                        <div
+                            ref={paymentFinalizeErrorRef}
+                            data-field="payment-finalize-error"
+                            className="scroll-mt-6 px-1"
+                        >
+                            <p className="text-sm text-[#F6776E]">{paymentFinalizeError}</p>
+                        </div>
+                    ) : null}
+                    </PaymentGatewayCard>
+                
                     <PaymentGatewayCard title="Razorpay Gateway">
                         <PaymentMethodRow
                             icon={<Image src="/icons/upi.svg" alt="UPI" width={20} height={20} className="object-contain"/>}
@@ -903,11 +1393,16 @@ export default function AdmissionPayment({
                             pendingLabel="Ready to Pay"
                             confirmLabel="Verify"
                             amount={razorpayUpiAmount}
-                            onAmountChange={setRazorpayUpiAmount}
+                            onAmountChange={(value) => {
+                                setRazorpayUpiAmount(value);
+                                if (razorpayUpiAmountError) setRazorpayUpiAmountError("");
+                            }}
                             paid={razorpayUpiPaid}
-                            onConfirm={() => setRazorpayUpiPaid(true)}
+                            onConfirm={handleRazorpayUpiVerify}
                             upiId={razorpayUpiId}
                             onUpiIdChange={setRazorpayUpiId}
+                            amountError={razorpayUpiAmountError}
+                            disabled
                         />
                         <PaymentMethodRow
                             icon={<Image src="/icons/card.svg" alt="Credit Card" width={20} height={20} className="object-contain" />}
@@ -916,9 +1411,14 @@ export default function AdmissionPayment({
                             pendingLabel="Ready to Pay"
                             confirmLabel="Pay Now"
                             amount={razorpayCardAmount}
-                            onAmountChange={setRazorpayCardAmount}
+                            onAmountChange={(value) => {
+                                setRazorpayCardAmount(value);
+                                if (razorpayCardAmountError) setRazorpayCardAmountError("");
+                            }}
                             paid={razorpayCardPaid}
-                            onConfirm={() => setRazorpayCardPaid(true)}
+                            onConfirm={handleRazorpayCardPay}
+                            amountError={razorpayCardAmountError}
+                            disabled
                         />
                     </PaymentGatewayCard>
 
@@ -930,30 +1430,23 @@ export default function AdmissionPayment({
                             pendingLabel="Ready to Pay"
                             confirmLabel="Verify"
                             amount={payuUpiAmount}
-                            onAmountChange={setPayuUpiAmount}
+                            onAmountChange={(value) => {
+                                setPayuUpiAmount(value);
+                                if (payuUpiAmountError) setPayuUpiAmountError("");
+                            }}
                             paid={payuUpiPaid}
-                            onConfirm={() => setPayuUpiPaid(true)}
+                            onConfirm={handlePayuUpiVerify}
                             upiId={payuUpiId}
                             onUpiIdChange={setPayuUpiId}
+                            amountError={payuUpiAmountError}
+                            disabled
                         />
                     </PaymentGatewayCard>
 
-                    <PaymentGatewayCard title="Cash">
-                        <PaymentMethodRow
-                            icon={<Image src="/icons/cash.svg" alt="Cash" width={20} height={20} className="object-contain" />}
-                            title="Cash Payment"
-                            paidLabel="Verified"
-                            pendingLabel="Pending Confirmation"
-                            confirmLabel="Confirm"
-                            amount={cashAmount}
-                            onAmountChange={setCashAmount}
-                            paid={cashPaid}
-                            onConfirm={() => setCashPaid(true)}
-                        />
-                    </PaymentGatewayCard>
+              
 
                     <PaymentGatewayCard title="Others">
-                        <div className="grid grid-cols-1 gap-4">
+                        <div className="grid grid-cols-1 gap-4 opacity-50">
                             <FormSelectField
                                 label="Payment Method"
                                 options={othersPaymentMethodOptions}
@@ -961,7 +1454,7 @@ export default function AdmissionPayment({
                                 onChange={(value) => setOthersMethod(value as string)}
                                 placeholder="Select"
                                 height={44}
-                                disabled={othersPaid}
+                                disabled
                             />
                             <FormInputField
                                 label="Amount"
@@ -975,7 +1468,7 @@ export default function AdmissionPayment({
                                     }
                                 }}
                                 height={44}
-                                disabled={othersPaid}
+                                disabled
                                 suffix={<span className="text-sm font-bold text-[#787E8C]">₹</span>}
                             />
                         </div>
@@ -987,15 +1480,16 @@ export default function AdmissionPayment({
                             onChange={(e) => setOthersReferenceId(e.target.value)}
                             placeholder="Enter Reference ID"
                             height={44}
-                            disabled={othersPaid}
+                            disabled
+                            className="opacity-50"
                         />
 
                         {!othersPaid ? (
                             <Button
                                 type="button"
                                 variant="primary"
-                                className="w-full h-12 rounded-full font-bold"
-                                disabled={!othersMethod || !othersAmount || !othersReferenceId}
+                                className="w-full h-12 rounded-full font-bold opacity-50"
+                                disabled
                                 onClick={() => setOthersPaid(true)}
                             >
                                 Confirm & Verify
@@ -1011,8 +1505,146 @@ export default function AdmissionPayment({
                     </PaymentGatewayCard>
                 </div>
 
-                {/* Column 2: Payment Summary */}
-                <div className="w-full xl:sticky xl:top-6">
+                {/* Column 2: Wallet + Payment Summary */}
+                <div className="w-full flex flex-col gap-4">
+              
+                    {/* Wallet info */}
+
+                    {/* <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-5 shadow-sm flex flex-col gap-4">
+                        <div className="flex items-center gap-2">
+                            <span className="w-9 h-9 rounded-xl bg-[#F2F8F2] flex items-center justify-center">
+                                <Image src="/icons/walletbenifit.svg" alt="Wallet" width={20} height={20} className="object-contain" />
+                            </span>
+                            <h4 className="text-base font-bold text-[#262D3B]">Wallet Information</h4>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-[#434956]">Available Wallet Balance</span>
+                            <span className="text-lg font-extrabold text-[#0B8C00]">
+                                ₹ {formattedWalletBalance}
+                            </span>
+                        </div>
+
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <Checkbox
+                                checked={useWalletBalance}
+                                onChange={(checked) => {
+                                    setUseWalletBalance(checked);
+                                    if (!checked) {
+                                        resetWalletPaymentState();
+                                    }
+                                }}
+                                disabled={walletAvailableBalance <= 0 || walletPaid}
+                            />
+                            <span className="text-sm font-semibold text-[#262D3B]">
+                                Use Wallet Balance (₹{formattedWalletBalance} Available)
+                            </span>
+                        </label>
+
+                        {useWalletBalance ? (
+                            <div className="flex flex-col gap-4">
+                                {!walletPaid ? (
+                                    <>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-end gap-3">
+                                                <div className="flex-1">
+                                                    <FormInputField
+                                                        label="Amount"
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={walletAmount}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value;
+                                                            if (value === "" || /^\d{0,15}(\.\d{0,2})?$/.test(value)) {
+                                                                setWalletAmount(value);
+                                                                if (walletAmountError) setWalletAmountError("");
+                                                            }
+                                                        }}
+                                                        placeholder="Enter amount"
+                                                        height={44}
+                                                        disabled={walletOtpPending}
+                                                        suffix={<span className="text-sm font-bold text-[#787E8C]">₹</span>}
+                                                    />
+                                                </div>
+                                                {!walletOtpPending ? (
+                                                    <Button
+                                                        type="button"
+                                                        variant="primary"
+                                                        className="h-11 shrink-0 px-6"
+                                                        onClick={handleWalletUse}
+                                                    >
+                                                        Use
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                            {walletAmountError ? (
+                                                <p className="text-xs text-[#F6776E]">{walletAmountError}</p>
+                                            ) : null}
+                                        </div>
+
+                                        {walletOtpPending ? (
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex items-end gap-3">
+                                                        <div className="flex-1">
+                                                            <FormInputField
+                                                                label="Enter OTP"
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                value={walletOtp}
+                                                                onChange={(e) => {
+                                                                    const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                                                                    setWalletOtp(value);
+                                                                    if (walletOtpError) setWalletOtpError("");
+                                                                }}
+                                                                placeholder="Enter OTP"
+                                                                height={44}
+                                                            />
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            variant="primary"
+                                                            className="h-11 shrink-0 px-6"
+                                                            onClick={handleWalletVerifyOtp}
+                                                        >
+                                                            Verify OTP
+                                                        </Button>
+                                                    </div>
+                                                    {walletOtpError ? (
+                                                        <p className="text-xs text-[#F6776E]">{walletOtpError}</p>
+                                                    ) : null}
+                                                </div>
+                                                <p className="text-xs text-[#787E8C]">
+                                                    Didn&apos;t receive the OTP?{" "}
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleWalletResendOtp}
+                                                        className="font-semibold text-[#0B8C00] hover:underline"
+                                                    >
+                                                        Resend OTP
+                                                    </button>
+                                                </p>
+                                            </div>
+                                        ) : null}
+                                    </>
+                                ) : (
+                                    <div className="flex items-center justify-between rounded-[14px] border border-[#0B8C00]/20 bg-[#F2FAF2] px-4 py-3">
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-sm font-extrabold text-[#262D3B]">Wallet Applied</span>
+                                            <span className="text-xs font-semibold text-[#787E8C]">Verified successfully</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[#0B8C00] font-extrabold text-sm">
+                                            <span>₹ {Number(walletAmount || 0).toLocaleString("en-IN")}</span>
+                                            <Badge variant="success" className="text-[10px] font-extrabold uppercase tracking-wider">
+                                                ✓ Verified
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
+                    </div> */}
+
                     <div className="w-full rounded-[24px] bg-[#0B8C00] text-white p-6 flex flex-col gap-5 shadow-md select-none min-h-[420px]">
                         <h4 className="text-xl font-bold border-b border-white/20 pb-3">Payment Summary</h4>
 
@@ -1034,30 +1666,161 @@ export default function AdmissionPayment({
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/90">Remaining Amount</span>
                                         <span className="font-extrabold text-base">
-                                            ₹ {(editPaymentAmounts.remainingAmount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {/* ₹ {(editPaymentAmounts.remainingAmount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} */}
+                                            {/* ₹ {(finalAmountPayable - (editPaymentAmounts?.advanceAmount ?? 0)).toLocaleString("en-IN", {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                                })} */}
+                                                {/* ₹ {(
+                                                    finalAmountPayable -
+                                                    totalReceived -
+                                                    (editPaymentAmounts?.advanceAmount ?? 0)
+                                                    ).toLocaleString("en-IN", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                    })} */}
+                                                    ₹ {Math.max(
+                                                    finalAmountPayable -
+                                                        totalReceived -
+                                                        (editPaymentAmounts?.advanceAmount ?? 0),
+                                                    0
+                                                    ).toLocaleString("en-IN", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                    })}
                                         </span>
                                     </div>
                                     <div className="border-t border-white/20 my-1" />
                                 </>
                             ) : null}
                             <div className="flex justify-between items-center">
+                                <span className="text-white/90">Total Amount</span>
+                                <span className="font-extrabold text-base">
+                                    ₹ {finalAmountPayable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+
+                            {paymentSources.length > 0 ? (
+                                <div className="flex flex-col gap-2">
+                                    <span className="text-sm font-bold text-white/95">Payment Sources</span>
+                                    {paymentSources.map((source) => (
+                                        <div key={source.label} className="flex justify-between items-center text-sm">
+                                            <span className="text-white/90">• {source.label}</span>
+                                            <span className="font-extrabold">
+                                                ₹ {source.amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            <div className="border-t border-white/20 my-1" />
+
+                            {/* <div className="flex justify-between items-center">
                                 <span className="text-white/90">Total Advance</span>
                                 <span className="font-extrabold text-base">₹ {finalAmountPayable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                            </div>
+                            </div> */}
                             <div className="flex justify-between items-center">
                                 <span className="text-white/90">Total Received</span>
                                 <span className="font-extrabold text-base">₹ {totalReceived.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-white/90">Allocated Not Paid</span>
-                                <span className="font-extrabold text-base">₹ {balanceOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                {/* <span className="font-extrabold text-base">₹ {balanceOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> */}
+                                
+                                   <span className="font-extrabold text-lg">
+                                {/* {isEditMode && editPaymentAmounts ? (
+                                       <>
+                                        ₹{" "}
+                                        {(
+                                        (totalReceived ?? 0) -
+                                        (editPaymentAmounts?.remainingAmount ?? 0)
+                                        ).toLocaleString("en-IN", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                        })}
+                                    </>
+                                ) : (
+                                    <>₹ {balanceOutstanding.toLocaleString("en-IN", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                    })}</>
+                                )} */}
+
+                                {isEditMode && editPaymentAmounts ? (
+                                <>
+                                    {/* ₹{" "}
+                                    {Math.abs(
+                                    (totalReceived ?? 0) -
+                                    (editPaymentAmounts?.remainingAmount ?? 0)
+                                    ).toLocaleString("en-IN", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                    })} */}
+
+                                    {/* ₹ {(finalAmountPayable - (editPaymentAmounts?.advanceAmount ?? 0)).toLocaleString("en-IN", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                        })} */}
+                                        ₹ {Math.max(
+                                        finalAmountPayable - totalReceived- (editPaymentAmounts?.advanceAmount ?? 0),
+                                        0
+                                        ).toLocaleString("en-IN", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                        })}
+                                </>
+                                ) : (
+                                <>
+                                    ₹{" "}
+                                    {(balanceOutstanding ?? 0).toLocaleString("en-IN", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                    })}
+                                </>
+                                )}
+                                </span>
                             </div>
 
                             <div className="border-t border-white/20 my-1" />
 
                             <div className="flex justify-between items-center">
                                 <span className="font-bold">Balance Outstanding</span>
-                                <span className="font-extrabold text-lg">₹ {balanceOutstanding.toLocaleString()}</span>
+                                {/* <span className="font-extrabold text-lg">   ₹ {balanceOutstanding.toLocaleString()}</span> */}
+                                <span className="font-extrabold text-lg">
+                                    {isEditMode && editPaymentAmounts ? (
+                                    <>
+                                        {/* ₹{" "}
+                                        {Math.abs(
+                                        (totalReceived ?? 0) -
+                                        (editPaymentAmounts?.remainingAmount ?? 0)
+                                        ).toLocaleString("en-IN", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                        })} */}
+                                         {/* ₹ {(finalAmountPayable - (editPaymentAmounts?.advanceAmount ?? 0)).toLocaleString("en-IN", {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                                })} */}
+
+                                                ₹ {Math.max(
+                                                finalAmountPayable - totalReceived - (editPaymentAmounts?.advanceAmount ?? 0),
+                                                0
+                                                ).toLocaleString("en-IN", {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                                })}
+                                    </>
+                                    ) : (
+                                    <>
+                                        ₹{" "}
+                                        {(balanceOutstanding ?? 0).toLocaleString("en-IN", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                        })}
+                                    </>
+                                    )}
+                                </span>
                             </div>
 
                             <div className="flex justify-between items-start gap-4 text-xs font-bold">
@@ -1065,78 +1828,130 @@ export default function AdmissionPayment({
                                 <span className="text-right text-white leading-relaxed">{numberToWords(finalAmountPayable)}</span>
                             </div>
 
-                            <div className="[&_input]:accent-white [&_span]:!text-white pt-2">
-                                <Slider label="Success Progress" value={progressPercent} onChange={() => { }} disabled />
+                            <div className="[&_span]:!text-white pt-2">
+                                <Slider label="Success Progress" value={progressPercent} onChange={() => { }} disabled variant="onDark" />
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-auto">
+                        <div
+                            className={`grid gap-3 mt-auto ${
+                                isAdmissionCompleted ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"
+                            }`}
+                        >
                             <button
                                 type="button"
                                 onClick={handleCompleteAdmission}
-                                disabled={isSubmitting}
-                                className="h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm hover:bg-opacity-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-60"
+                                disabled={isSubmitting || isAdmissionCompleted}
+                                className="h-12 bg-white text-[#0B8C00] rounded-full font-bold text-sm hover:bg-opacity-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                                {isSubmitting ? "Submitting..." : "Confirm & Finalize"}
+                                {isSubmitting
+                                    ? "Submitting..."
+                                    : isAdmissionCompleted
+                                      ? "Finalized"
+                                      : "Confirm & Finalize"}
                             </button>
                             <button
                                 type="button"
                                 onClick={handleCancelSession}
-                                className="h-12 border border-white text-white rounded-full font-bold text-sm hover:bg-white/10 transition-colors flex items-center justify-center"
+                                disabled={isAdmissionCompleted}
+                                className="h-12 border border-white text-white rounded-full font-bold text-sm hover:bg-white/10 transition-colors flex items-center justify-center disabled:opacity-60 disabled:cursor-not-allowed"
                             >
                                 Cancel Session
                             </button>
+                            {isAdmissionCompleted ? (
+                                <BackToPreviousPageButton
+                                    text="Exit"
+                                    onClick={handleExit}
+                                    className="h-12 w-full !border-white !text-white hover:!bg-white/10 focus:ring-white/20"
+                                    icon={
+                                        <Image
+                                            src="/icons/LeftArrowIcon.svg"
+                                            alt=""
+                                            width={20}
+                                            height={20}
+                                            className="shrink-0 brightness-0 invert"
+                                        />
+                                    }
+                                />
+                            ) : null}
                         </div>
                     </div>
                 </div>
 
                 {/* Column 3: Package Details */}
-                <div className="w-full flex flex-col gap-6 xl:sticky xl:top-6">
+                <div className="w-full flex flex-col gap-6">
                     <div className="w-full rounded-[20px] border border-[#DFE0E2] bg-white p-6 shadow-sm flex flex-col gap-6 select-none">
                         <div className="border-b border-[#DFE0E2] pb-4 flex flex-col gap-1">
                             <h3 className="text-xl font-bold text-[#262D3B]">
-                                {activePackage.packageName || "Cardiac Premium Care"}
+                                {activePackage.packageName || ""}
                             </h3>
                             <span className="text-sm font-semibold text-[#787E8C]">
-                                {roomRentPerDay > 0 ? `${roomRentPerDay.toLocaleString()}rs /day` : "N/A"}
+                                {packagetotalPrice  ? `${packagetotalPrice.toLocaleString()} /day` : "N/A"}
                             </span>
                         </div>
-
+                   {/* Scrollable content */}
+                        <div className="max-h-[260px] custom-scroll overflow-y-auto">
                         <div className="flex flex-col border border-[#DFE0E2] rounded-lg overflow-hidden">
-                            <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                                <span className="text-[#787E8C] font-medium">Package Name</span>
-                                <span className="text-[#262D3B] font-bold truncate max-w-[55%] text-right">
-                                    {activePackage.packageName || "Advanced Recovery Package"}
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                                <span className="text-[#787E8C] font-medium">Room Type Selection</span>
-                                <span className="text-[#262D3B] font-bold uppercase truncate max-w-[55%] text-right">
-                                    {activePackage.packageType || "Private Suite"}
-                                </span>
-                            </div>
-                            {medicinePerDay > 0 && (
-                                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                                    <span className="text-[#787E8C] font-medium">Medicine</span>
-                                    <span className="text-[#262D3B] font-bold">₹ {medicinePerDay.toLocaleString()}</span>
+                            <div>
+                             <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Room Type Selection</span>
+                                <Tooltip
+                                    position="top"
+                                    content={
+                                        <span className="inline-block w-max whitespace-normal break-words text-left text-inherit">
+                                            {roomtype || "N/A"}
+                                        </span>
+                                    }
+                                >
+                                    <span className="text-[#262D3B] font-bold uppercase truncate max-w-[60%]">{roomtype || "N/A"}</span>
+                                </Tooltip>
                                 </div>
-                            )}
-                            {doctorFee > 0 && (
+                                         {/* {medicinePerDay > 0 && ( */}
                                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                                    <span className="text-[#787E8C] font-medium">Doctor Fees</span>
-                                    <span className="text-[#262D3B] font-bold">₹ {doctorFee.toLocaleString()}</span>
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Medicine</span>
+                                    <span className="text-[#262D3B] font-bold">{medicinePerDay ? `₹ ${formatIndianAmount(medicinePerDay)}` : "N/A"}</span>
                                 </div>
-                            )}
-                            {mealsPerDay > 0 && (
+                            {/* )} */}
+                            {/* {doctorFee > 0 && ( */}
                                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                                    <span className="text-[#787E8C] font-medium">Meals</span>
-                                    <span className="text-[#262D3B] font-bold">₹ {mealsPerDay.toLocaleString()}</span>
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Doctor Fees</span>
+                                    <span className="text-[#262D3B] font-bold">{doctorFee ? `₹ ${formatIndianAmount(doctorFee)}` : "N/A"}</span>
                                 </div>
-                            )}
-                            <div className="flex justify-between items-center px-4 py-3 text-sm bg-white">
-                                <span className="text-[#787E8C] font-medium">Price</span>
-                                <span className="text-[#262D3B] font-bold">₹ {roomRentPerDay.toLocaleString()}</span>
-                            </div>
+
+                                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Nurse Fees</span>
+                                    <span className="text-[#262D3B] font-bold">{nurseFee ? `₹ ${formatIndianAmount(nurseFee)}` : "N/A"}</span>
+                                </div>
+
+                            {/* // )} */}
+                            {/* {mealsPerDay > 0 && ( */}
+                                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Meals</span>
+                                    <span className="text-[#262D3B] font-bold">{mealsPerDay ? `₹ ${formatIndianAmount(mealsPerDay)}` : "N/A"}</span>
+                                </div>
+                            {/* )} */}
+
+
+                                  <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Therapy Charges</span>
+                                    <span className="text-[#262D3B] font-bold">{therapyFee ? `₹ ${formatIndianAmount(therapyFee)}` : "N/A"}</span>
+                                </div>
+
+                              
+
+                                   <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Attendant Charges</span>
+                                    <span className="text-[#262D3B] font-bold">{attendantFee ? `₹ ${formatIndianAmount(attendantFee)}` : "N/A"}</span>
+                                </div>
+
+
+                                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Room Rent</span>
+                                    <span className="text-[#262D3B] font-bold">{roomRentPerDay ? `₹ ${formatIndianAmount(roomRentPerDay)}` : "N/A"}</span>
+                                </div>
+
+                        </div>
+                        </div>
                         </div>
 
                         <div className="flex flex-col gap-1 items-start">
@@ -1147,9 +1962,9 @@ export default function AdmissionPayment({
                         </div>
 
                         <div className="h-14 px-4 bg-[#E3EEE1] flex justify-between items-center rounded-lg font-semibold text-sm">
-                            <span className="text-[#262D3B] font-bold">Total Price</span>
-                            <span className="text-[#262D3B] font-extrabold text-lg">
-                                ₹ {finalAmountPayable.toLocaleString()}
+                            <span className="text-[20px] text-[#262D3B] font-bold">Total Price</span>
+                            <span className="text-[18px] text-[#434956] font-bold">
+                                {packagetotalPrice ? `₹ ${formatIndianAmount(packagetotalPrice)}` : ""}
                             </span>
                         </div>
 
@@ -1175,7 +1990,7 @@ export default function AdmissionPayment({
 
             {/* Footer Actions */}
             <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-[#DFE0E2] select-none">
-                <BackToPreviousPageButton text="Back" onClick={onBack} />
+                <BackToPreviousPageButton text="Back" disabled={isAdmissionCompleted} onClick={onBack} />
 
                 <div className="flex flex-col sm:flex-row items-center gap-4">
                     <Button
@@ -1227,6 +2042,8 @@ export default function AdmissionPayment({
                 admissionDate={invoiceProps.admissionDate}
                 consultationCharges={invoiceProps.consultationCharges}
                 subtotal={invoiceProps.subtotal}
+                discountAmount ={discountAmountt}
+                feeDays={freeDays}
                 tax={invoiceProps.tax}
                 totalAmount={invoiceProps.totalAmount}
                 billDate={invoiceProps.billDate}
@@ -1251,26 +2068,35 @@ export default function AdmissionPayment({
 
             <MessageDialog
                 open={showSuccessDialog}
-                onClose={() => {
-                    setShowSuccessDialog(false);
-                    onNext();
-                }}
+                onClose={handleSuccessDialogDismiss}
                 icon="/icons/SuccessCheck.svg"
                 iconBgColor="#E8F5E9"
                 message={
                     <div className="flex flex-col items-center text-center">
-                        <span className="text-lg font-bold text-[#1E293B] mb-1">Admission Completed</span>
+                        <span className="text-lg font-bold text-[#1E293B] mb-1">
+
+                         {admissionType === "scheduled"
+                            ? "Scheduled Admission Submitted"
+                            : admissionType === "immediate"
+                            ? "Admission Completed"
+                            : ""}
+                            
+                        
+                            
+                        </span>
                         <span className="text-sm text-[#475569]">
-                            Patient admission and payment have been finalized successfully.
+                     {admissionType === "scheduled"
+                            ? "The patient scheduled admission and payment have been finalized successfully."
+                            : admissionType === "immediate"
+                            ? "The patient admission and payment have been finalized successfully."
+                            : ""}   
+
                         </span>
                     </div>
                 }
                 confirmText="OK"
                 showCancel={false}
-                onConfirm={() => {
-                    setShowSuccessDialog(false);
-                    onNext();
-                }}
+                onConfirm={handleSuccessDialogDismiss}
             />
         </div>
     );

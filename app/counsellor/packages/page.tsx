@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import {
@@ -11,8 +11,11 @@ import {
     FormSelectField,
 } from "@/components/ui";
 import { useGetCounsellorAllPackagesQuery } from "@/store/api/counsellorApi";
-import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { useGetPanelsQuery } from "@/store/api/settingsApi";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
 import { useDebounce } from "@/hooks/useDebounce";
+import type { SelectOption } from "@/components/ui/FormSelectField";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 // ─── Package Card Component ───────────────────────────────────────────────────
 type PackageListCardProps = {
@@ -31,6 +34,8 @@ function PackageListCard({ item }: PackageListCardProps) {
 
     const isPremium = item.packageName?.toLowerCase().includes("premium");
 
+    console.log("itemfdyfgys",item)
+
     return (
         <div className="w-full flex flex-col gap-6 p-5 rounded-[20px] border border-[#DFE0E2] bg-white shadow-sm hover:shadow-md hover:border-[#CBD5E1] transition-all duration-200 select-none">
             {/* Card Header */}
@@ -44,62 +49,89 @@ function PackageListCard({ item }: PackageListCardProps) {
                     </span>
                 )}
             </div>
+       {/* Scrollable content */}
+               <div className="max-h-[260px] custom-scroll overflow-y-auto">
 
-            {/* Card Details (Rectangle shape with border complete) */}
             <div className="flex flex-col border border-[#DFE0E2] rounded-lg overflow-hidden">
-                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                    <span className="text-[#787E8C] font-medium">Branch</span>
-                    <Tooltip
-                        position="top"
-                        content={
-                            <span className="inline-block w-max whitespace-normal break-words text-left text-inherit">
-                                {item.branchName || "N/A"}
-                            </span>
-                        }
-                    >
-                        <span className="text-[#262D3B] font-bold truncate max-w-[60%] cursor-pointer select-none">
-                            {item.branchName || "N/A"}
-                        </span>
-                    </Tooltip>
-                </div>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                    <span className="text-[#787E8C] font-medium">Package Name</span>
-                    <Tooltip
+                {/* <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Package Name</span> */}
+                    {/* <Tooltip
                         position="top"
                         content={
                             <span className="inline-block w-max whitespace-normal break-words text-left text-inherit">
                                 {item.diseaseCategoryType || "N/A"}
                             </span>
                         }
+                    > */}
+                        {/* <span className="text-[#262D3B] font-bold truncate max-w-[60%] select-none">
+                            {item.packageName || "N/A"}
+                        </span> */}
+                    {/* </Tooltip> */}
+                {/* </div> */}
+                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Room Type Selection</span>
+                         <Tooltip
+                        position="top"
+                        content={
+                            <span className="inline-block w-max whitespace-normal break-words text-left text-inherit">
+                                {item?.roomType?.name || "N/A"}
+                            </span>
+                        }
                     >
-                        <span className="text-[#262D3B] font-bold truncate max-w-[60%] cursor-pointer select-none">
-                            {item.diseaseCategoryType || "N/A"}
-                        </span>
-                    </Tooltip>
+                    <span className="text-[#262D3B] font-bold uppercase truncate max-w-[60%]">{item?.roomType?.name  || "N/A"}</span>
+                       </Tooltip>
                 </div>
                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                    <span className="text-[#787E8C] font-medium">Room Type Selection</span>
-                    <span className="text-[#262D3B] font-bold uppercase truncate max-w-[60%]">{item.packageType || "N/A"}</span>
-                </div>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                    <span className="text-[#787E8C] font-medium">Medicine</span>
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Medicine</span>
                     <span className="text-[#262D3B] font-bold">
-                        {medicine > 0 ? `₹ ${medicine.toLocaleString()}` : "N/A"}
+                        {medicine > 0 ? `₹ ${formatIndianAmount(medicine)}` : "N/A"}
                     </span>
                 </div>
                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
-                    <span className="text-[#787E8C] font-medium">Doctor Fees</span>
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Doctor Fees</span>
                     <span className="text-[#262D3B] font-bold">
-                        {doctor > 0 ? `₹ ${doctor.toLocaleString()}` : "N/A"}
+                        {doctor > 0 ? `₹ ${formatIndianAmount(doctor)}` : "N/A"}
                     </span>
                 </div>
-                <div className="flex justify-between items-center px-4 py-3 text-sm bg-white">
-                    <span className="text-[#787E8C] font-medium">Price</span>
+                <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Nurse Fees</span>
                     <span className="text-[#262D3B] font-bold">
-                        {roomRent > 0 ? `₹ ${roomRent.toLocaleString()}` : "N/A"}
+                        {nurse > 0 ? `₹ ${formatIndianAmount(nurse)}` : "N/A"}
                     </span>
                 </div>
+      
+                  <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Meals</span>
+                    <span className="text-[#262D3B] font-bold">
+                        {meals > 0 ? `₹ ${formatIndianAmount(meals)}` : "N/A"}
+                    </span>
+                </div>
+                 <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Therapy Charges</span>
+                    <span className="text-[#262D3B] font-bold">
+                        {therapy > 0 ? `₹ ${formatIndianAmount(therapy)}` : "N/A"}
+                    </span>
+                </div>
+                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Attendant Charges</span>
+                    <span className="text-[#262D3B] font-bold">
+                        {attendant > 0 ? `₹ ${formatIndianAmount(attendant)}` : "N/A"}
+                    </span>
+                </div>
+                    <div className="flex justify-between items-center px-4 py-3 border-b border-[#DFE0E2] text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Room Rent</span>
+                    <span className="text-[#262D3B] font-bold">
+                        {roomRent > 0 ? `₹ ${formatIndianAmount(roomRent)}` : "N/A"}
+                    </span>
+                </div>
+                {/* <div className="flex justify-between items-center px-4 py-3 text-sm bg-white">
+                    <span className="text-[14px] font-normal leading-[120%] tracking-[0px] text-[#434956]">Price</span>
+                    <span className="text-[#262D3B] font-bold">
+                        {roomRent > 0 ? `₹ ${formatIndianAmount(roomRent)}` : "N/A"}
+                    </span>
+                </div> */}
             </div>
+        </div>
 
             {/* Description Section */}
             <div className="flex flex-col gap-1 items-start">
@@ -122,7 +154,7 @@ function PackageListCard({ item }: PackageListCardProps) {
             <div className="h-14 px-4 bg-[#E3EEE1] flex justify-between items-center rounded-lg font-semibold text-sm mt-auto">
                 <span className="text-[#262D3B] font-bold">Total Price</span>
                 <span className="text-[#262D3B] font-extrabold text-lg">
-                    ₹ {totalPrice.toLocaleString()}
+                    ₹ {formatIndianAmount(totalPrice)}
                 </span>
             </div>
         </div>
@@ -142,16 +174,38 @@ export default function CounsellorPackagesPage() {
         branchFilterOptions: hookBranchFilterOptions,
         isLoadingBranches: isLoadingBranchFilter,
         isBranchFilterDisabled,
-        filterBranchId,
-    } = useBranchFilter();
+        resolvedFilterBranchId,
+    } = useCounsellorResolvedBranchId();
 
     const [selectedPackageTypeFilter, setSelectedPackageTypeFilter] = useState("");
     const [selectedDiseaseCategoryFilter, setSelectedDiseaseCategoryFilter] = useState("");
+    const [selectedPanel, setSelectedPanel] = useState("");
+
+    const { data: filterPanelsRes, isLoading: isLoadingFilterPanels } = useGetPanelsQuery(
+        resolvedFilterBranchId != null ? { page: 1, limit: 100, branchId: resolvedFilterBranchId } : undefined,
+        { skip: resolvedFilterBranchId == null }
+    );
+
+    const filterPanelOptions: SelectOption[] = useMemo(() => {
+        if (!filterPanelsRes?.success || !Array.isArray(filterPanelsRes.data)) return [];
+        return [
+            { value: "", label: "All Panels" },
+            ...filterPanelsRes.data
+                .filter((p) => p.status === "active" || p.status === "Active")
+                .map((p) => ({ value: String(p.id), label: p.name })),
+        ];
+    }, [filterPanelsRes]);
+
+    useEffect(() => {
+        if (!selectedBranch) {
+            setSelectedPanel("");
+        }
+    }, [selectedBranch]);
 
     // Reset page when search or filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [debouncedSearch, selectedBranch, selectedPackageTypeFilter, selectedDiseaseCategoryFilter]);
+    }, [debouncedSearch, selectedBranch, selectedPackageTypeFilter, selectedDiseaseCategoryFilter, selectedPanel]);
 
     // Active query parameters (displays active packages)
     const getAllPackagesParams = {
@@ -160,13 +214,17 @@ export default function CounsellorPackagesPage() {
         sortBy: "",
         order: "ASC" as const,
         search: debouncedSearch.trim() || undefined,
-        branchId: filterBranchId,
+        branchId: resolvedFilterBranchId,
         packageType: selectedPackageTypeFilter || undefined,
         diseaseCategoryType: selectedDiseaseCategoryFilter || undefined,
+        panelId: selectedPanel ? Number.parseInt(selectedPanel, 10) : undefined,
         isPackageActive: true,
     };
 
-    const { data: packagesRes, isLoading: isPackagesLoading, isError: isPackagesError, error: packagesQueryError } = useGetCounsellorAllPackagesQuery(getAllPackagesParams);
+    const { data: packagesRes, isLoading: isPackagesLoading, isError: isPackagesError, error: packagesQueryError } = useGetCounsellorAllPackagesQuery(getAllPackagesParams,  {
+    skip: resolvedFilterBranchId == null,
+    refetchOnMountOrArgChange: true,
+  });
     const currentList = packagesRes?.data || [];
     const totalItems = packagesRes?.total || 0;
 
@@ -201,6 +259,26 @@ export default function CounsellorPackagesPage() {
                                         background="normal"
                                         width={280}
                                         disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                    />
+                                    <FormSelectField
+                                        label=""
+                                        hideLabel
+                                        options={filterPanelOptions}
+                                        value={selectedPanel}
+                                        onChange={(value) => {
+                                            setSelectedPanel(Array.isArray(value) ? value[0] : value || "");
+                                        }}
+                                        placeholder={
+                                            !selectedBranch
+                                                ? "Select Branch First"
+                                                : isLoadingFilterPanels
+                                                  ? "Loading Panels..."
+                                                  : "Select Panel"
+                                        }
+                                        mode="single"
+                                        background="normal"
+                                        width={280}
+                                        disabled={!selectedBranch || isLoadingFilterPanels}
                                     />
                                     <FormSelectField
                                         label=""
@@ -270,7 +348,7 @@ export default function CounsellorPackagesPage() {
                                     setItemsPerPage(items);
                                     setCurrentPage(1);
                                 },
-                                itemsPerPageOptions: [10, 20, 50, 100],
+                                itemsPerPageOptions: [10, 30, 50, 100],
                             },
                         },
                     ]}

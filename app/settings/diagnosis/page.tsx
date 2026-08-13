@@ -16,7 +16,7 @@ import {
 } from "@/components/ui";
 import { ListBorder } from "@/components/ui/ListBorder";
 import type { SelectOption } from "@/components/ui/FormSelectField";
-import { 
+import {
     useGetDiagnosisCategoriesQuery,
     useCreateDiagnosisCategoryMutation,
     useUpdateDiagnosisCategoryMutation
@@ -141,7 +141,7 @@ export default function DiagnosisPage() {
 
     // Debounce search to avoid too many API calls
     const debouncedSearchTerm = useDebounce(searchTerm, 500);
-    
+
     // Trim the debounced search term to remove leading and trailing spaces
     const trimmedSearchTerm = debouncedSearchTerm.trim();
     const searchParam = trimmedSearchTerm || undefined;
@@ -169,7 +169,7 @@ export default function DiagnosisPage() {
 
     // Create diagnosis mutation
     const [createDiagnosisCategory, { isLoading: isCreating }] = useCreateDiagnosisCategoryMutation();
-    
+
     // Update diagnosis mutation
     const [updateDiagnosisCategory, { isLoading: isUpdating }] = useUpdateDiagnosisCategoryMutation();
 
@@ -185,9 +185,9 @@ export default function DiagnosisPage() {
 
     // Filter by status if statusFilter is set
     const filteredDiagnoses = statusFilter
-        ? diagnoses.filter((diagnosis) => 
+        ? diagnoses.filter((diagnosis) =>
             diagnosis.status.toLowerCase() === statusFilter.toLowerCase()
-          )
+        )
         : diagnoses;
 
     const handleAddNew = () => {
@@ -245,7 +245,7 @@ export default function DiagnosisPage() {
 
         try {
             let result;
-            
+
             if (dialogMode === "add") {
                 const payload = {
                     diagnosisCategory: formValues.name.trim(),
@@ -299,7 +299,7 @@ export default function DiagnosisPage() {
             } else if (err?.message) {
                 errorMsg = err.message;
             }
-            
+
             setApiErrorMessage(errorMsg);
             setShowApiErrorDialog(true);
         }
@@ -412,8 +412,8 @@ export default function DiagnosisPage() {
                     (dialogMode === "add"
                         ? canAdd
                         : dialogMode === "edit"
-                          ? canEdit
-                          : canView)
+                            ? canEdit
+                            : canView)
                 }
                 onClose={() => {
                     setDialogMode(null);
@@ -422,13 +422,14 @@ export default function DiagnosisPage() {
                 }}
                 title={dialogMode === "add" ? "Add Diagnosis" : dialogMode === "edit" ? "Edit Diagnosis" : "View Sub Diagnoses"}
                 width={686}
+                closeOnOutsideClick={false}
             >
                 {dialogMode === "view" ? (
                     <div className="space-y-4">
                         {(() => {
                             const selectedDiagnosisData = fullDiagnosisData.find((d) => d.id === selectedDiagnosis?.id);
                             const subDiagnoses = selectedDiagnosisData?.subDiagnoses || [];
-                            
+
                             if (subDiagnoses.length === 0) {
                                 return (
                                     <div className="py-8 text-center text-sm text-[#9CA3AF]">
@@ -436,7 +437,7 @@ export default function DiagnosisPage() {
                                     </div>
                                 );
                             }
-                            
+
                             return (
                                 <div className="flex flex-wrap gap-2">
                                     {subDiagnoses.map((subDiagnosis) => (
@@ -460,6 +461,11 @@ export default function DiagnosisPage() {
                                     value={formValues.name}
                                     onChange={(event) => {
                                         let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                        value = value.replace(/^\s+/, "");
+                                        value = value.replace(/(.)\1{2,}/g, "$1$1");
+                                        if (value.length > 0) {
+                                            value = value.charAt(0).toUpperCase() + value.slice(1);
+                                        }
                                         value = value.slice(0, 100);
                                         setFormValues((prev) => ({ ...prev, name: value }));
                                         setFormErrors((prev) => ({ ...prev, name: "" }));
@@ -491,8 +497,8 @@ export default function DiagnosisPage() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3">
-                            <Button 
-                                type="submit" 
+                            <Button
+                                type="submit"
                                 variant="primary"
                                 isLoading={isCreating || isUpdating}
                                 disabled={isCreating || isUpdating}

@@ -1,822 +1,982 @@
 "use client";
 
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeading } from "@/components/layout/PageHeading";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { FaInfoCircle, FaUserAlt, FaUsers } from "react-icons/fa";
-import { FaUserDoctor } from "react-icons/fa6";
-import { PiStethoscopeBold } from "react-icons/pi";
-import { useAppSelector } from "@/store/hooks";
-import { selectPermissionsMap, selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
-import { hasOnlyGateModuleViewAccess } from "@/utils/permission";
-import { useGetBranchesQuery } from "@/store/api/settingsApi";
-import { useBranchFilter } from "@/hooks/useBranchFilter";
-import { FormSelectField } from "@/components/ui";
-import type { SelectOption } from "@/components/ui/FormSelectField";
+import { useState, useMemo } from "react";
 import {
-  useGetAppointmentsCountQuery,
-  useGetYesterdayAppointmentsCountQuery,
-  useGetTodayRegistrationCountQuery,
-  useGetOpdPatientTypeWiseCountQuery,
-  useGetTodayTotalConsultancyQuery,
-  useGetSupportContactsQuery,
-} from "@/store/api/dashboardApi";
-import type { DashboardSupportCategory, DashboardSupportContact } from "@/store/api/dashboardApi";
-import { useGetDoctorsByBranchQuery } from "@/store/api/registrationApi";
-import { useGetNursesQuery } from "@/store/api/nurseApi";
-import { usePermission } from "@/hooks/usePermission";
+  FiUsers,
+  FiUserCheck,
+  FiUserX,
+  FiClock,
+  FiCheckCircle,
+  FiDollarSign,
+  FiTrendingUp,
+  FiArrowUpRight,
+  FiArrowDownRight,
+  FiFilter,
+  FiSearch,
+  FiCheck,
+  FiX,
+  FiEye,
+  FiPackage,
+  FiShare2,
+  FiPercent,
+  FiCalendar,
+  FiShield,
+  FiRefreshCw
+} from "react-icons/fi";
+import { FaCrown, FaWallet, FaExchangeAlt, FaUserTie } from "react-icons/fa";
 
-const DASHBOARD_ESCALATION_CARD_TITLE =
-  "If there is no response, kindly call the below-mentioned number.";
-
-function formatSupportContactLine(c: DashboardSupportContact): string {
-  const role = c.role?.trim();
-  const rolePart = role ? ` (${role})` : "";
-  return `${c.name}${rolePart} : ${c.phone}`;
+// Types for Withdrawal Requests
+interface WithdrawalRequest {
+  id: string;
+  user: {
+    name: string;
+    email: string;
+    avatar: string;
+    role: string;
+  };
+  amount: number;
+  method: string;
+  accountDetails: string;
+  date: string;
+  status: "pending" | "approved" | "rejected";
 }
 
-function chunkSupportContactsPairs(contacts: DashboardSupportContact[]): [DashboardSupportContact, DashboardSupportContact | undefined][] {
-  const pairs: [DashboardSupportContact, DashboardSupportContact | undefined][] = [];
-  for (let i = 0; i < contacts.length; i += 2) {
-    pairs.push([contacts[i], contacts[i + 1]]);
+// Types for Product Earning Plans
+interface ProductPlan {
+  id: string;
+  name: string;
+  price: number;
+  dailyInterest: number; // percentage
+  durationDays: number;
+  activeUsers: number;
+  totalPayouts: number;
+  color: string;
+  badge: string;
+  tierBadge: string;
+  bonusRewardBadge: string;
+  levelCommissions: {
+    level1: string;
+    level2: string;
+    level3: string;
+    level4: string;
+    level5: string;
+    level6: string;
+  };
+}
+
+// Types for Top Referral Users
+interface TopReferrer {
+  rank: number;
+  name: string;
+  email: string;
+  avatar: string;
+  directInvites: number;
+  teamSize: number;
+  totalTurnover: number;
+  referralEarnings: number;
+  level: string;
+}
+
+// Initial Mock Data for Admin Portal
+const INITIAL_WITHDRAWAL_REQUESTS: WithdrawalRequest[] = [
+  {
+    id: "WD-8921",
+    user: { name: "Rajesh Kumar", email: "rajesh.k@gmail.com", avatar: "RK", role: "Share Holder" },
+    amount: 1450.00,
+    method: "USDT (TRC20)",
+    accountDetails: "TX9z...kP3a9",
+    date: "2026-08-11 10:45 AM",
+    status: "pending"
+  },
+  {
+    id: "WD-8920",
+    user: { name: "Anita Sharma", email: "anita.s@yahoo.com", avatar: "AS", role: "Gold Investor" },
+    amount: 820.50,
+    method: "Bank Wire",
+    accountDetails: "HDFC Bank - 50100239102",
+    date: "2026-08-11 09:30 AM",
+    status: "pending"
+  },
+  {
+    id: "WD-8919",
+    user: { name: "Vikram Malhotra", email: "vikram.m@techcorp.in", avatar: "VM", role: "VIP Platinum" },
+    amount: 3200.00,
+    method: "USDT (BEP20)",
+    accountDetails: "0x8f2...b41c",
+    date: "2026-08-10 04:15 PM",
+    status: "pending"
+  },
+  {
+    id: "WD-8918",
+    user: { name: "Priya Patel", email: "priya.p@outlook.com", avatar: "PP", role: "Silver Investor" },
+    amount: 350.00,
+    method: "UPI Direct",
+    accountDetails: "priya@upi",
+    date: "2026-08-10 02:00 PM",
+    status: "approved"
+  },
+  {
+    id: "WD-8917",
+    user: { name: "Amit Verma", email: "verma.amit@gmail.com", avatar: "AV", role: "Share Holder" },
+    amount: 5000.00,
+    method: "USDT (TRC20)",
+    accountDetails: "TY3x...mQ9z1",
+    date: "2026-08-09 11:20 AM",
+    status: "approved"
+  },
+  {
+    id: "WD-8916",
+    user: { name: "Sunil Reddy", email: "sunil.reddy@gmail.com", avatar: "SR", role: "Bronze Member" },
+    amount: 150.00,
+    method: "Bank Wire",
+    accountDetails: "ICICI Bank - 00120194821",
+    date: "2026-08-08 05:40 PM",
+    status: "rejected"
   }
-  return pairs;
-}
+];
 
-function capitalizeFirst(str: string | null | undefined): string {
-  if (str == null || str === "") return "";
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
+const PRODUCT_PLANS: ProductPlan[] = [
+  {
+    id: "p1",
+    name: "Starter Yield Plan",
+    price: 250,
+    dailyInterest: 1.5,
+    durationDays: 60,
+    activeUsers: 3420,
+    totalPayouts: 185400,
+    color: "from-blue-600 to-indigo-700",
+    badge: "Popular for Beginners",
+    tierBadge: "STARTER TIER",
+    bonusRewardBadge: "⚡ Instant Activation Unlocked",
+    levelCommissions: { level1: "5%", level2: "3%", level3: "2%", level4: "1%", level5: "0.5%", level6: "0.5%" }
+  },
+  {
+    id: "p2",
+    name: "Gold Shareholder Plan",
+    price: 1000,
+    dailyInterest: 2.2,
+    durationDays: 60,
+    activeUsers: 4890,
+    totalPayouts: 642000,
+    color: "from-amber-500 to-yellow-600",
+    badge: "Highest Demand",
+    tierBadge: "SHARE HOLDER TIER",
+    bonusRewardBadge: "🔥 Daily Streak Bonus: +0.5% Extra Yield",
+    levelCommissions: { level1: "8%", level2: "4%", level3: "3%", level4: "2%", level5: "1%", level6: "0.5%" }
+  },
+  {
+    id: "p3",
+    name: "Platinum Executive Plan",
+    price: 2500,
+    dailyInterest: 3.0,
+    durationDays: 60,
+    activeUsers: 2150,
+    totalPayouts: 980500,
+    color: "from-emerald-600 to-teal-700",
+    badge: "Best Value",
+    tierBadge: "PLATINUM EXECUTIVE",
+    bonusRewardBadge: "🚀 2x Level Commissions Unlocked",
+    levelCommissions: { level1: "10%", level2: "5%", level3: "4%", level4: "3%", level5: "2%", level6: "1%" }
+  },
+  {
+    id: "p4",
+    name: "VIP Diamond Master",
+    price: 5000,
+    dailyInterest: 4.0,
+    durationDays: 60,
+    activeUsers: 840,
+    totalPayouts: 1240000,
+    color: "from-purple-600 to-pink-700",
+    badge: "Exclusive VIP Tier",
+    tierBadge: "VIP DIAMOND MASTER",
+    bonusRewardBadge: "👑 Max Tier Yield + Level 6 Override",
+    levelCommissions: { level1: "12%", level2: "6%", level3: "5%", level4: "4%", level5: "3%", level6: "2%" }
+  }
+];
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const permissionsMap = useAppSelector(selectPermissionsMap);
-  const dashboardPermission = usePermission("Dashboard");
-  const dashboardSubPermission = usePermission("Dashboard", { subModule: "Dashboard" });
-  const canView = dashboardPermission.canView || dashboardSubPermission.canView;
+const TOP_REFERRERS: TopReferrer[] = [
+  {
+    rank: 1,
+    name: "Suresh Menon",
+    email: "suresh.menon@dventures.com",
+    avatar: "SM",
+    directInvites: 142,
+    teamSize: 1850,
+    totalTurnover: 284000,
+    referralEarnings: 34080,
+    level: "Diamond Partner"
+  },
+  {
+    rank: 2,
+    name: "Kavita Rao",
+    email: "kavita.rao@gmail.com",
+    avatar: "KR",
+    directInvites: 98,
+    teamSize: 1240,
+    totalTurnover: 195000,
+    referralEarnings: 23400,
+    level: "Gold Shareholder"
+  },
+  {
+    rank: 3,
+    name: "Rohan Kapoor",
+    email: "rohan.kapoor@techin.com",
+    avatar: "RK",
+    directInvites: 84,
+    teamSize: 960,
+    totalTurnover: 142000,
+    referralEarnings: 17040,
+    level: "Gold Shareholder"
+  },
+  {
+    rank: 4,
+    name: "Deepak Mehta",
+    email: "deepak.mehta@yahoo.com",
+    avatar: "DM",
+    directInvites: 67,
+    teamSize: 720,
+    totalTurnover: 110000,
+    referralEarnings: 13200,
+    level: "Silver Leader"
+  },
+  {
+    rank: 5,
+    name: "Meera Nair",
+    email: "meera.nair@hotmail.com",
+    avatar: "MN",
+    directInvites: 59,
+    teamSize: 580,
+    totalTurnover: 89000,
+    referralEarnings: 10680,
+    level: "Silver Leader"
+  }
+];
 
-  const [showOccupiedTooltip, setShowOccupiedTooltip] = useState(false);
-  const userBranchId = useAppSelector(selectUserBranchId);
-  const headerSelectedBranch = useAppSelector(selectSelectedBranch);
+export default function AdminDashboardPage() {
+  const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "year">("month");
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>(INITIAL_WITHDRAWAL_REQUESTS);
+  const [withdrawalFilter, setWithdrawalFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedWithdrawal, setSelectedWithdrawal] = useState<WithdrawalRequest | null>(null);
+  const [modalAction, setModalAction] = useState<"approve" | "reject" | "view" | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (hasOnlyGateModuleViewAccess(permissionsMap)) {
-      router.replace("/gate");
-    }
-  }, [permissionsMap, router]);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
-  const {
-    selectedBranchFilter: selectedBranchId,
-    setSelectedBranchFilter: setSelectedBranchId,
-    branchFilterOptions: branchOptions,
-    isLoadingBranches,
-    isBranchFilterDisabled,
-    filterBranchId: hookFilterBranchId,
-    isSuperAdmin: isDashboardBranchSuperAdmin,
-  } = useBranchFilter();
+  // Stats calculation
+  const stats = useMemo(() => {
+    const totalUsers = 14850;
+    const activeUsers = 12420;
+    const inactiveUsers = 2430;
 
-  const { data: branchesData } = useGetBranchesQuery(undefined, {
-    skip: !isDashboardBranchSuperAdmin,
-  });
+    const pendingRequests = withdrawals.filter((w) => w.status === "pending");
+    const approvedRequests = withdrawals.filter((w) => w.status === "approved");
 
-  const branchOptionsWithType = useMemo((): SelectOption[] => {
-    const rows = branchesData?.data;
-    const mapped =
-      !Array.isArray(rows) || rows.length === 0
-        ? branchOptions
-        : branchOptions.map((opt) => {
-            if (opt.value === "") return opt;
-            const id = parseInt(String(opt.value), 10);
-            if (!Number.isFinite(id)) return opt;
-            const b = rows.find((x) => Number(x.id) === id);
-            const t = b?.type?.trim();
-            if (!b || !t) return opt;
-            return {
-              value: opt.value,
-              label: `${b.name} (${capitalizeFirst(t)})`,
-            };
-          });
-    if (isDashboardBranchSuperAdmin) {
-      return mapped.filter((o) => o.value !== "");
-    }
-    return mapped;
-  }, [branchOptions, branchesData, isDashboardBranchSuperAdmin]);
+    const pendingAmount = pendingRequests.reduce((acc, curr) => acc + curr.amount, 0);
+    const approvedAmount = approvedRequests.reduce((acc, curr) => acc + curr.amount, 0) + 684200; // adding historical baseline
 
-  /** Super Admin: default to first branch (no "All Branches" on dashboard). */
-  useEffect(() => {
-    if (!isDashboardBranchSuperAdmin) return;
-    if (isLoadingBranches) return;
-    const rows = branchesData?.data;
-    if (!Array.isArray(rows) || rows.length === 0) return;
-    if (selectedBranchId !== "") return;
-    setSelectedBranchId(String(rows[0].id));
-  }, [
-    isDashboardBranchSuperAdmin,
-    isLoadingBranches,
-    branchesData,
-    selectedBranchId,
-    setSelectedBranchId,
-  ]);
+    const totalReferralRevenue = 1284500; // $
+    const monthlyRevenue = 148900; // $
+    const dailyInterestPayoutToday = 28450; // $
 
-  const dashboardBranchId: number | null = isDashboardBranchSuperAdmin
-    ? hookFilterBranchId != null && Number.isFinite(hookFilterBranchId) && hookFilterBranchId > 0
-      ? hookFilterBranchId
-      : null
-    : userBranchId ?? 1;
+    return {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      pendingCount: pendingRequests.length,
+      pendingAmount,
+      completedCount: 3590 + approvedRequests.length,
+      completedAmount: approvedAmount,
+      totalReferralRevenue,
+      monthlyRevenue,
+      dailyInterestPayoutToday
+    };
+  }, [withdrawals]);
 
-  const skipBranch =
-    !canView ||
-    dashboardBranchId == null ||
-    typeof dashboardBranchId !== "number" ||
-    Number.isNaN(Number(dashboardBranchId));
+  // Filtered withdrawals
+  const filteredWithdrawals = useMemo(() => {
+    return withdrawals.filter((item) => {
+      const matchesStatus = withdrawalFilter === "all" || item.status === withdrawalFilter;
+      const matchesSearch =
+        item.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.method.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesStatus && matchesSearch;
+    });
+  }, [withdrawals, withdrawalFilter, searchTerm]);
 
-  const branchId = dashboardBranchId ?? 0;
-
-  const welcomeTitle = useMemo(() => {
-    if (isDashboardBranchSuperAdmin && hookFilterBranchId != null && branchesData?.data) {
-      const b = branchesData.data.find((x) => Number(x.id) === hookFilterBranchId);
-      if (b?.name) return b.name;
-    }
-    return headerSelectedBranch?.name?.trim() || "SHUDDHI DERABASSI";
-  }, [isDashboardBranchSuperAdmin, hookFilterBranchId, branchesData, headerSelectedBranch?.name]);
-
-  const { data: appointmentsCountData, isLoading: isAppointmentsCountLoading } = useGetAppointmentsCountQuery(
-    { branchId },
-    { skip: skipBranch, refetchOnMountOrArgChange: true }
-  );
-  const { data: yesterdayAppointmentsData, isLoading: isYesterdayAppointmentsLoading } =
-    useGetYesterdayAppointmentsCountQuery({ branchId }, { skip: skipBranch, refetchOnMountOrArgChange: true });
-  const { data: todayRegistrationData, isLoading: isTodayRegistrationLoading } = useGetTodayRegistrationCountQuery(
-    { branchId },
-    { skip: skipBranch, refetchOnMountOrArgChange: true }
-  );
-  const todayAppointmentCount = appointmentsCountData?.data?.count ?? null;
-  const yesterdayAppointmentCount = yesterdayAppointmentsData?.data?.count ?? null;
-  const newRegistrationCount = todayRegistrationData?.data?.count ?? null;
-  const { data: opdTypeWiseData, isLoading: isOpdTypeWiseLoading } = useGetOpdPatientTypeWiseCountQuery(
-    { branchId },
-    { skip: skipBranch, refetchOnMountOrArgChange: true }
-  );
-  const { data: todayConsultancyData, isLoading: isTodayConsultancyLoading } = useGetTodayTotalConsultancyQuery(
-    { branchId },
-    { skip: skipBranch, refetchOnMountOrArgChange: true }
-  );
-  const opdCounts = opdTypeWiseData?.data;
-  const todayConsultancyTotal = todayConsultancyData?.data?.total;
-  const consultancyDisplay =
-    isTodayConsultancyLoading
-      ? "—"
-      : todayConsultancyTotal != null
-        ? `₹ ${Number(todayConsultancyTotal).toLocaleString("en-IN")}`
-        : "N/A";
-  const showOpd = (n: number | undefined) =>
-    isOpdTypeWiseLoading ? "—" : n !== undefined ? n : "—";
-  const { data: doctorsData, isLoading: isDoctorsLoading } = useGetDoctorsByBranchQuery(
-    { branchId },
-    { skip: skipBranch, refetchOnMountOrArgChange: true }
-  );
-  const totalDoctorCount = doctorsData?.total ?? null;
-
-  const { data: nursesData, isLoading: isNursesLoading } = useGetNursesQuery(
-    { branchId, page: 1, limit: 100 },
-    { skip: skipBranch, refetchOnMountOrArgChange: true }
-  );
-  const totalNurseCount = nursesData?.total ?? null;
-  const {
-    data: supportContactsResponse,
-    isLoading: isSupportContactsLoading,
-    isError: isSupportContactsError,
-  } = useGetSupportContactsQuery(undefined, { skip: !canView });
-  const supportCategories = useMemo(() => {
-    const list = supportContactsResponse?.data;
-    if (!Array.isArray(list)) return [];
-    return [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) as DashboardSupportCategory[];
-  }, [supportContactsResponse?.data]);
-  if (!canView) {
-    return (
-      <AppShell>
-        <div className="rounded-[20px] border border-[#E3EEE1] bg-white px-6 py-10 text-center text-sm text-[#9CA3AF]">
-          You don&apos;t have permission to view dashboard.
-        </div>
-      </AppShell>
+  // Handle Approve / Reject
+  const handleUpdateStatus = (id: string, newStatus: "approved" | "rejected") => {
+    setWithdrawals((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
     );
-  }
+    const item = withdrawals.find((w) => w.id === id);
+    if (newStatus === "approved") {
+      showToast(`Success: Withdrawal request ${id} for $${item?.amount.toFixed(2)} has been APPROVED.`);
+    } else {
+      showToast(`Notice: Withdrawal request ${id} has been REJECTED.`);
+    }
+    setModalAction(null);
+    setSelectedWithdrawal(null);
+  };
 
   return (
     <AppShell>
-      <div className="flex justify-between items-start mb-6 gap-4 flex-wrap">
-        <div>
-          <h5 className="font-[Inter] font-medium text-md leading-[120%] text-[#262D3B]">Welcome</h5>
-          <PageHeading title={welcomeTitle} />
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 bg-[#1A2130] text-white rounded-xl shadow-2xl border border-amber-500/30 animate-bounce">
+          <FiCheckCircle className="text-amber-400 text-xl shrink-0" />
+          <span className="text-sm font-medium">{toastMessage}</span>
         </div>
-        {isDashboardBranchSuperAdmin ? (
-          <div className="flex-shrink-0" style={{ width: "300px" }}>
-            <FormSelectField
-              label=""
-              value={selectedBranchId}
-              onChange={(value) => {
-                const newValue = Array.isArray(value) ? value[0] : value ?? "";
-                setSelectedBranchId(newValue);
-              }}
-              options={branchOptionsWithType}
-              placeholder={isLoadingBranches ? "Loading branches..." : "Select branch"}
-              mode="single"
-              background="normal"
-              disabled={isBranchFilterDisabled || isLoadingBranches}
-            />
-          </div>
-        ) : null}
-        {/* <div className="flex gap-4 items-center">
-          <button className="flex flex-row justify-center items-center py-3 px-6 gap-1 lg:h-[48px] md:h-[36px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors">
-            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00] text-hide">Therapy Schedule</span>
-          </button>
-          <button className="flex flex-row justify-center items-center py-3 px-6 gap-1 lg:h-[48px] md:h-[36px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors">
-            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00] text-hide">Show Active Patient</span>
-          </button>
-          <button className="flex flex-row justify-center items-center py-3 px-6 gap-1 lg:h-[48px] md:h-[36px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors">
-            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00] text-hide">Show Patient Token</span>
-          </button>
-          <button className="flex flex-row justify-center items-center py-3 px-6 gap-1 lg:h-[48px] md:h-[36px] border border-[#0B8C00] rounded-[32px] cursor-pointer hover:bg-[#0B8C00]/10 transition-colors">
-            <span className="font-[Inter] font-medium text-sm leading-[120%] text-center text-[#0B8C00] text-hide">Mishu Beds Status</span>
-          </button>
+      )}
 
-        </div> */}
+      {/* Header Banner & Title */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-2 border-b border-gray-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-semibold text-xs uppercase tracking-wider flex items-center gap-1 border border-amber-300">
+              <FaCrown className="text-amber-600" /> Admin Control Portal
+            </span>
+            <span className="text-xs text-gray-500 font-medium">• Product Sales & Earning Engine</span>
+          </div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Platform Master Dashboard
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Real-time analytics for active members, product plan revenue, referral commissions, and withdrawal payouts.
+          </p>
+        </div>
+
+        {/* Action Controls & Range Filter */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200">
+            {(["today", "week", "month", "year"] as const).map((range) => (
+              <button
+                key={range}
+                onClick={() => setTimeRange(range)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all duration-200 ${
+                  timeRange === range
+                    ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                {range}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => showToast("Dashboard data refreshed successfully.")}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 transition-colors shadow-sm"
+          >
+            <FiRefreshCw className="text-sm" /> Refresh Data
+          </button>
+        </div>
       </div>
 
-      {/* today sales and support details */}
-      <div className="w-full rounded-[20px] border border-[#E3EEE1] p-5">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 ">
-            <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-              <Image src="/icons/todaysales.svg" alt="patient info" width={20} height={20} /> Today Sales
-            </h4>
-            <div className="bg-[rgba(11,140,0,0.05)] border border-[#EBECED] rounded-2xl p-4">
-              <div className="grid grid-cols-2">
-                <div className="border-b border-r border-[#DFE0E2] p-12 text-center">
-                  <p className="font-inter font-semibold text-[32px] leading-[120%] text-[#262D3B]">{consultancyDisplay}</p>
-                  <p className="font-inter font-normal text-[24px] leading-[120%] text-[#434956] mt-1">Consultancy</p>
-                </div>
-                <div className="border-b border-[#DFE0E2] p-12 text-center">
-                  <p className="font-inter font-semibold text-[32px] leading-[120%] text-[#262D3B]">N/A</p>
-                  <p className="font-inter font-normal text-[24px] leading-[120%] text-[#434956] mt-1">Service</p>
-                </div>
-                <div className="border-r border-[#DFE0E2] p-12 text-center">
-                  <p className="font-inter font-semibold text-[32px] leading-[120%] text-[#262D3B]">N/A</p>
-                  <p className="font-inter font-normal text-[24px] leading-[120%] text-[#434956] mt-1">Product</p>
-                </div>
-                <div className="border-0 border-[#DFE0E2] p-12 text-center">
-                  <p className="font-inter font-semibold text-[32px] leading-[120%] text-[#262D3B]">N/A</p>
-                  <p className="font-inter font-normal text-[24px] leading-[120%] text-[#434956] mt-1">Total</p>
-                </div>
-              </div>
+      {/* TOP STAT CARDS (7 Primary Metrics) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Card 1: Total Users */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-5 shadow-lg border border-slate-700 relative overflow-hidden group">
+          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-all" />
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Members</p>
+              <h3 className="text-3xl font-extrabold text-white mt-1">
+                {stats.totalUsers.toLocaleString()}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <FiUsers className="text-2xl" />
             </div>
           </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-700/80 text-xs">
+            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+              <FiArrowUpRight /> +12.4% this month
+            </span>
+            <span className="text-slate-400">Platform Total</span>
+          </div>
+        </div>
 
+        {/* Card 2: Active Users */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200/80 relative overflow-hidden group hover:border-emerald-300 transition-all">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Active Users</p>
+              <h3 className="text-3xl font-extrabold text-slate-900 mt-1">
+                {stats.activeUsers.toLocaleString()}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
+              <FiUserCheck className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+            <span className="text-emerald-600 font-semibold flex items-center gap-1">
+              83.6% Active Ratio
+            </span>
+            <span className="text-slate-400">With purchased plans</span>
+          </div>
+        </div>
+
+        {/* Card 3: Inactive Users */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200/80 relative overflow-hidden group hover:border-rose-300 transition-all">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Inactive Users</p>
+              <h3 className="text-3xl font-extrabold text-slate-900 mt-1">
+                {stats.inactiveUsers.toLocaleString()}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
+              <FiUserX className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+            <span className="text-rose-500 font-semibold flex items-center gap-1">
+              16.4% Inactive
+            </span>
+            <span className="text-slate-400">No active plan</span>
+          </div>
+        </div>
+
+        {/* Card 4: Monthly Revenue */}
+        <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-amber-100 uppercase tracking-wider">Monthly Sales Revenue</p>
+              <h3 className="text-3xl font-extrabold text-white mt-1">
+                ${stats.monthlyRevenue.toLocaleString()}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white">
+              <FiTrendingUp className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-white/20 text-xs">
+            <span className="text-amber-100 font-semibold flex items-center gap-1">
+              <FiArrowUpRight /> +18.2% vs last month
+            </span>
+            <span className="text-white/80">Product Plans</span>
+          </div>
+        </div>
+
+        {/* Card 5: Pending Withdrawal Requests */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200/80 relative overflow-hidden group hover:border-amber-400 transition-all">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Withdrawals</p>
+              <h3 className="text-3xl font-extrabold text-amber-600 mt-1">
+                ${stats.pendingAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center">
+              <FiClock className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+            <span className="text-amber-600 font-bold px-2 py-0.5 rounded bg-amber-50">
+              {stats.pendingCount} Requests Pending
+            </span>
+            <span className="text-slate-400">Needs Review</span>
+          </div>
+        </div>
+
+        {/* Card 6: Completed Withdrawals */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200/80 relative overflow-hidden group hover:border-emerald-300 transition-all">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Completed Withdrawals</p>
+              <h3 className="text-3xl font-extrabold text-slate-900 mt-1">
+                ${stats.completedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
+              <FiCheckCircle className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+            <span className="text-emerald-600 font-semibold">
+              {stats.completedCount.toLocaleString()} Processed
+            </span>
+            <span className="text-slate-400">Paid out</span>
+          </div>
+        </div>
+
+        {/* Card 7: Total Referral Revenue Generated */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200/80 relative overflow-hidden group hover:border-indigo-300 transition-all">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Referral Revenue Gen.</p>
+              <h3 className="text-3xl font-extrabold text-slate-900 mt-1">
+                ${stats.totalReferralRevenue.toLocaleString()}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center">
+              <FiShare2 className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+            <span className="text-indigo-600 font-semibold">Multi-Level Earning</span>
+            <span className="text-slate-400">All Tiers</span>
+          </div>
+        </div>
+
+        {/* Card 8: Today's Daily Interest Payouts */}
+        <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-200/80 relative overflow-hidden group hover:border-cyan-300 transition-all">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Daily Interest Issued</p>
+              <h3 className="text-3xl font-extrabold text-slate-900 mt-1">
+                ${stats.dailyInterestPayoutToday.toLocaleString()}
+              </h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-600 border border-cyan-200 flex items-center justify-center">
+              <FiPercent className="text-2xl" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+            <span className="text-cyan-600 font-semibold">Automated Engine</span>
+            <span className="text-slate-400">Today Payout</span>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION: SUPER ADMIN REFERRAL PROGRAM & LEVEL MILESTONES BANNER */}
+      <div className="bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 rounded-2xl p-6 shadow-xl border border-amber-300 text-slate-900">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
-            {isSupportContactsLoading && supportCategories.length === 0 ? (
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4">
-                <p className="font-inter font-medium text-[14px] leading-[120%] text-[#434956]">Loading support contacts…</p>
-              </div>
-            ) : isSupportContactsError ? (
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4">
-                <p className="font-inter font-medium text-[14px] leading-[120%] text-[#434956]">
-                  Could not load support contacts. Please try again later.
-                </p>
-              </div>
-            ) : supportCategories.length === 0 ? (
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4">
-                <p className="font-inter font-medium text-[14px] leading-[120%] text-[#434956]">No support contacts available.</p>
-              </div>
-            ) : (
-              supportCategories.map((category, categoryIndex) => {
-                const contacts = [...(category.contacts ?? [])].sort((a, b) => a.id - b.id);
-                const cardTitle =
-                  categoryIndex === 2 ? DASHBOARD_ESCALATION_CARD_TITLE : category.title;
-                const isFirstColumnLayout = categoryIndex === 0;
-                const contactRows = chunkSupportContactsPairs(contacts);
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-0.5 rounded-full bg-slate-900 text-amber-400 text-xs font-black uppercase tracking-wider">
+                👑 Super Admin Program Settings
+              </span>
+            </div>
+            <h2 className="text-xl font-black text-slate-900 mt-1">Referral Milestones & Sign-up Bonus Rules</h2>
+            <p className="text-xs text-slate-800 font-medium mt-0.5">
+              Active configuration for welcome bonuses, direct referral payouts, and Levels 1–6 cash unlock milestone tiers.
+            </p>
+          </div>
 
-                return (
-                  <div
-                    key={category.id}
-                    className={categoryIndex < supportCategories.length - 1 ? "mb-4" : ""}
-                  >
-                    <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4">
-                      <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5 border-b border-[#DFE0E2] pb-4">
-                        {cardTitle}
-                      </h4>
-                      {contacts.length === 0 ? (
-                        <p className="font-inter font-medium text-[14px] leading-[120%] text-[#434956]/80">
-                          No contacts listed.
-                        </p>
-                      ) : isFirstColumnLayout ? (
+          <div className="flex items-center gap-2">
+            <span className="px-3.5 py-1.5 bg-slate-900 text-amber-400 font-black rounded-xl text-xs shadow">
+              🎁 Welcome Bonus: $10.00
+            </span>
+            <span className="px-3.5 py-1.5 bg-slate-900 text-amber-400 font-black rounded-xl text-xs shadow">
+              💰 Direct Invite: $15.00
+            </span>
+          </div>
+        </div>
+
+        {/* Milestone Levels 1-6 Grid Summary */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
+          {[
+            { lvl: "Level 1", name: "Bronze Partner", target: "10-49", bonus: "$50", roi: "+0.2%" },
+            { lvl: "Level 2", name: "Silver Leader", target: "50-149", bonus: "$150", roi: "+0.5%" },
+            { lvl: "Level 3", name: "Gold Shareholder", target: "150-399", bonus: "$350", roi: "+1.0%" },
+            { lvl: "Level 4", name: "Platinum Executive", target: "400-699", bonus: "$750", roi: "+1.5%" },
+            { lvl: "Level 5", name: "Diamond VIP", target: "700-999", bonus: "$1,500", roi: "+2.0%" },
+            { lvl: "Level 6", name: "Master Crown", target: "1000+", bonus: "$3,000", roi: "+3.0%" },
+          ].map((m, idx) => (
+            <div key={idx} className="p-3 bg-white/90 backdrop-blur-md rounded-xl border border-slate-900/10 shadow-sm text-center">
+              <span className="text-[10px] font-black text-amber-900 uppercase block">{m.lvl}</span>
+              <span className="font-extrabold text-slate-900 text-xs truncate block">{m.name}</span>
+              <span className="text-[10px] font-bold text-slate-500 block mt-1">Quota: {m.target}</span>
+              <div className="mt-2 pt-2 border-t border-slate-200 flex justify-between items-center text-[10px]">
+                <span className="font-black text-emerald-700">{m.bonus} Cash</span>
+                <span className="font-bold text-amber-800">{m.roi} ROI</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* SECTION 2: PRODUCT SELLING & DAILY INTEREST PLANS OVERVIEW */}
+      <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200/80">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <FiPackage className="text-amber-500 text-xl" />
+              <h2 className="text-xl font-bold text-slate-900">Product Investment Plans & Daily Returns</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Product packages available for users to purchase. Each plan yields daily interest returns for specified duration.
+            </p>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
+            4 Active Product Packages
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {PRODUCT_PLANS.map((plan) => (
+            <div
+              key={plan.id}
+              className="rounded-2xl border border-amber-200/80 p-5 bg-gradient-to-b from-slate-50 via-white to-amber-50/20 relative flex flex-col justify-between hover:shadow-xl hover:border-amber-400 transition-all duration-300"
+            >
+              <div>
+                <div className="flex justify-between items-start mb-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase text-amber-900 bg-amber-200/80 border border-amber-300">
+                    ✨ {plan.tierBadge}
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">⏳ {plan.durationDays} Days</span>
+                </div>
+                
+                <h3 className="font-extrabold text-slate-900 text-base">{plan.name}</h3>
+                
+                <div className="my-2.5 flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-slate-900">${plan.price.toLocaleString()}</span>
+                  <span className="text-xs text-slate-500 font-medium">/ package</span>
+                </div>
+
+                {/* Yield Box */}
+                <div className="p-3 bg-slate-900 text-white rounded-xl mb-3 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold">Daily ROI:</span>
+                    <span className="font-extrabold text-emerald-400 text-sm">+{plan.dailyInterest}% / Day</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] text-amber-300 mt-1">
+                    <span>Est. Total Return:</span>
+                    <span className="font-bold">${(plan.price * (1 + (plan.dailyInterest * plan.durationDays) / 100)).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                  </div>
+                </div>
+
+                {/* Level 1-6 Referral Rewards Grid */}
+                <div className="mb-3">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
+                    🏆 Levels 1–6 Commission Rewards
+                  </span>
+                  <div className="grid grid-cols-3 gap-1.5 text-center">
+                    {[
+                      { l: "L1", pct: plan.levelCommissions.level1 },
+                      { l: "L2", pct: plan.levelCommissions.level2 },
+                      { l: "L3", pct: plan.levelCommissions.level3 },
+                      { l: "L4", pct: plan.levelCommissions.level4 },
+                      { l: "L5", pct: plan.levelCommissions.level5 },
+                      { l: "L6", pct: plan.levelCommissions.level6 },
+                    ].map((item, idx) => (
+                      <div key={idx} className="p-1 rounded-lg bg-amber-50 border border-amber-200/80">
+                        <span className="text-[9px] font-bold text-slate-500 block">{item.l}</span>
+                        <span className="text-xs font-black text-amber-900">{item.pct}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Perk Badge */}
+                <div className="p-2 bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-900 rounded-lg text-[10px] font-black text-center mb-3">
+                  {plan.bonusRewardBadge}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 text-xs flex justify-between items-center text-slate-600">
+                <span>Subscribers: <strong className="text-slate-900">{plan.activeUsers.toLocaleString()}</strong></span>
+                <span>Payouts: <strong className="text-slate-900">${(plan.totalPayouts / 1000).toFixed(0)}k</strong></span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* SECTION 3: PENDING & COMPLETED WITHDRAWAL REQUESTS TABLE */}
+      <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200/80">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <FaWallet className="text-amber-500 text-lg" />
+              <h2 className="text-xl font-bold text-slate-900">Withdrawal Request Management</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Review, approve, or reject user earnings withdrawal requests in real time.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            {/* Search Input */}
+            <div className="relative flex-1 md:w-64">
+              <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search user, ID, email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              />
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
+              {(["all", "pending", "approved", "rejected"] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setWithdrawalFilter(st)}
+                  className={`px-3 py-1.5 rounded-lg font-semibold capitalize transition-all ${
+                    withdrawalFilter === st
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Requests Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left text-xs text-slate-700">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px] tracking-wider">
+              <tr>
+                <th className="py-3.5 px-4">Request ID</th>
+                <th className="py-3.5 px-4">Member User</th>
+                <th className="py-3.5 px-4">Role Tier</th>
+                <th className="py-3.5 px-4">Amount ($)</th>
+                <th className="py-3.5 px-4">Payout Method</th>
+                <th className="py-3.5 px-4">Account / Wallet</th>
+                <th className="py-3.5 px-4">Date & Time</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {filteredWithdrawals.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-slate-400">
+                    No withdrawal requests matching your criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredWithdrawals.map((req) => (
+                  <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{req.id}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white font-bold flex items-center justify-center text-xs">
+                          {req.user.avatar}
+                        </div>
                         <div>
-                          {contacts.map((c) => (
-                            <p
-                              key={c.id}
-                              className="font-inter font-medium text-[14px] leading-[120%] text-[#434956] mb-3 last:mb-0"
-                            >
-                              {formatSupportContactLine(c)}
-                            </p>
-                          ))}
+                          <p className="font-bold text-slate-900">{req.user.name}</p>
+                          <p className="text-[11px] text-slate-400">{req.user.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+                        {req.user.role}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-extrabold text-slate-900 text-sm">
+                      ${req.amount.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-slate-700">{req.method}</td>
+                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500">{req.accountDetails}</td>
+                    <td className="py-3.5 px-4 text-slate-500 text-[11px]">{req.date}</td>
+                    <td className="py-3.5 px-4">
+                      {req.status === "pending" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold border border-amber-200">
+                          <FiClock className="text-xs" /> Pending
+                        </span>
+                      )}
+                      {req.status === "approved" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                          <FiCheckCircle className="text-xs" /> Approved
+                        </span>
+                      )}
+                      {req.status === "rejected" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 font-bold border border-rose-200">
+                          <FiX className="text-xs" /> Rejected
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {req.status === "pending" ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedWithdrawal(req);
+                              setModalAction("approve");
+                            }}
+                            className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-sm"
+                            title="Approve Request"
+                          >
+                            <FiCheck className="text-sm" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedWithdrawal(req);
+                              setModalAction("reject");
+                            }}
+                            className="p-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-sm"
+                            title="Reject Request"
+                          >
+                            <FiX className="text-sm" />
+                          </button>
                         </div>
                       ) : (
-                        <div>
-                          {contactRows.map(([left, right], rowIndex) => (
-                            <div
-                              key={`${left.id}-${right?.id ?? "x"}-${rowIndex}`}
-                              className={`flex justify-between items-center gap-2 ${rowIndex < contactRows.length - 1 ? "mb-3" : ""}`}
-                            >
-                              <p className="font-inter font-medium text-[14px] leading-[120%] text-[#434956] shrink min-w-0">
-                                {formatSupportContactLine(left)}
-                              </p>
-                              {right ? (
-                                <p className="font-inter font-medium text-[14px] leading-[120%] text-[#434956] shrink min-w-0 text-right">
-                                  {formatSupportContactLine(right)}
-                                </p>
-                              ) : (
-                                <span className="flex-1 min-w-0 shrink" aria-hidden />
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                        <span className="text-slate-400 text-[11px] italic">Completed</span>
                       )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SECTION 4: TOP REFERRAL PERFORMERS LEADERBOARD */}
+      <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200/80">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <FaCrown className="text-amber-500 text-lg" />
+              <h2 className="text-xl font-bold text-slate-900">Top Referral Leaderboard</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Highest performing users by direct network invitations and generated business turnover.
+            </p>
+          </div>
+          <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-200">
+            Top 5 Promoters
+          </span>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left text-xs text-slate-700">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px] tracking-wider">
+              <tr>
+                <th className="py-3.5 px-4 text-center">Rank</th>
+                <th className="py-3.5 px-4">Promoter User</th>
+                <th className="py-3.5 px-4">Level Role</th>
+                <th className="py-3.5 px-4">Direct Invites</th>
+                <th className="py-3.5 px-4">Total Team Size</th>
+                <th className="py-3.5 px-4">Turnover ($)</th>
+                <th className="py-3.5 px-4 text-right">Referral Earnings ($)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {TOP_REFERRERS.map((ref) => (
+                <tr key={ref.rank} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-3.5 px-4 text-center">
+                    <span
+                      className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold text-xs ${
+                        ref.rank === 1
+                          ? "bg-amber-400 text-slate-900 shadow"
+                          : ref.rank === 2
+                          ? "bg-slate-300 text-slate-800"
+                          : ref.rank === 3
+                          ? "bg-amber-700 text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {ref.rank}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs">
+                        {ref.avatar}
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-900">{ref.name}</p>
+                        <p className="text-[11px] text-slate-400">{ref.email}</p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200">
+                      {ref.level}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 font-bold text-slate-900">{ref.directInvites} Directs</td>
+                  <td className="py-3.5 px-4 font-semibold text-slate-600">{ref.teamSize.toLocaleString()} Members</td>
+                  <td className="py-3.5 px-4 font-bold text-slate-900">${ref.totalTurnover.toLocaleString()}</td>
+                  <td className="py-3.5 px-4 text-right font-extrabold text-emerald-600 text-sm">
+                    +${ref.referralEarnings.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-      {/* today sales and support details */}
 
-      {/* cards-registration and patient details */}
-      <div className="w-full rounded-[20px] border border-[#E3EEE1] p-5 ">
-        <div className="grid grid-cols-4 gap-4">
+      {/* CONFIRMATION / ACTION MODAL */}
+      {modalAction && selectedWithdrawal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative">
+            <button
+              onClick={() => {
+                setModalAction(null);
+                setSelectedWithdrawal(null);
+              }}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-lg"
+            >
+              <FiX className="text-xl" />
+            </button>
 
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">New Registration</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
-                {isTodayRegistrationLoading ? "—" : newRegistrationCount !== null ? newRegistrationCount : "—"}
-              </h4>
-            </div>
-            <div>
-              <PiStethoscopeBold fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Today Appointment</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
-                {isAppointmentsCountLoading ? "—" : todayAppointmentCount !== null ? todayAppointmentCount : "—"}
-              </h4>
-            </div>
-            <div>
-              <PiStethoscopeBold fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Yesterday Appointment</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
-                {isYesterdayAppointmentsLoading ? "—" : yesterdayAppointmentCount !== null ? yesterdayAppointmentCount : "—"}
-              </h4>
-            </div>
-            <div>
-              <PiStethoscopeBold fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Daycare Patient</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-            <div>
-              <PiStethoscopeBold fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Total Active IPD Patient • <span className="flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5.40209 1.03748L4.04167 3.79581L0.997921 4.23956C0.452088 4.31873 0.233338 4.99165 0.629171 5.37706L2.83125 7.52289L2.31042 10.5541C2.21667 11.1021 2.79375 11.5125 3.27709 11.2562L6 9.82498L8.72292 11.2562C9.20625 11.5104 9.78334 11.1021 9.68959 10.5541L9.16875 7.52289L11.3708 5.37706C11.7667 4.99165 11.5479 4.31873 11.0021 4.23956L7.95834 3.79581L6.59792 1.03748C6.35417 0.545813 5.64792 0.539563 5.40209 1.03748Z" fill="#FFC107" />
-              </svg> VIP: 0</span></p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-            <div>
-              <FaUsers fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Yesterday IPD Patient • <span className="flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5.40209 1.03748L4.04167 3.79581L0.997921 4.23956C0.452088 4.31873 0.233338 4.99165 0.629171 5.37706L2.83125 7.52289L2.31042 10.5541C2.21667 11.1021 2.79375 11.5125 3.27709 11.2562L6 9.82498L8.72292 11.2562C9.20625 11.5104 9.78334 11.1021 9.68959 10.5541L9.16875 7.52289L11.3708 5.37706C11.7667 4.99165 11.5479 4.31873 11.0021 4.23956L7.95834 3.79581L6.59792 1.03748C6.35417 0.545813 5.64792 0.539563 5.40209 1.03748Z" fill="#FFC107" />
-              </svg> VIP: 0</span></p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-            <div>
-              <FaUsers fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Today IPD Patient • <span className="flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5.40209 1.03748L4.04167 3.79581L0.997921 4.23956C0.452088 4.31873 0.233338 4.99165 0.629171 5.37706L2.83125 7.52289L2.31042 10.5541C2.21667 11.1021 2.79375 11.5125 3.27709 11.2562L6 9.82498L8.72292 11.2562C9.20625 11.5104 9.78334 11.1021 9.68959 10.5541L9.16875 7.52289L11.3708 5.37706C11.7667 4.99165 11.5479 4.31873 11.0021 4.23956L7.95834 3.79581L6.59792 1.03748C6.35417 0.545813 5.64792 0.539563 5.40209 1.03748Z" fill="#FFC107" />
-              </svg> VIP: 0</span></p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-            <div>
-              <FaUsers fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Today Daycare Patient</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-            <div>
-              <svg width="45" height="45" viewBox="0 0 45 45" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M42.1875 26.7188C42.1878 25.4241 41.8307 24.1546 41.1556 23.05C40.4804 21.9454 39.5134 21.0486 38.3611 20.4585C37.2088 19.8685 35.9159 19.608 34.625 19.7058C33.3341 19.8036 32.0953 20.2559 31.0451 21.0128C29.9948 21.7698 29.1739 22.802 28.6729 23.9957C28.1719 25.1895 28.0102 26.4983 28.2055 27.7781C28.4009 29.0579 28.9458 30.2589 29.7802 31.2487C30.6146 32.2385 31.7061 32.9788 32.9344 33.3879C32.6959 34.4862 32.0888 35.4699 31.2139 36.1753C30.3389 36.8808 29.2489 37.2655 28.125 37.2656H23.9062C22.6009 37.2656 21.349 36.7471 20.426 35.824C19.5029 34.901 18.9844 33.6491 18.9844 32.3438V25.8223C24.5619 24.8062 28.8281 19.8299 28.8281 13.9166V7.03125C28.8281 6.56957 28.7372 6.11241 28.5605 5.68588C28.3838 5.25934 28.1249 4.87178 27.7984 4.54533C27.472 4.21887 27.0844 3.95991 26.6579 3.78324C26.2313 3.60656 25.7742 3.51562 25.3125 3.51562H22.5C21.9406 3.51562 21.404 3.73786 21.0084 4.13345C20.6129 4.52903 20.3906 5.06556 20.3906 5.625C20.3906 6.18444 20.6129 6.72097 21.0084 7.11655C21.404 7.51214 21.9406 7.73438 22.5 7.73438H24.6094V13.9166C24.6094 18.2057 21.1869 21.7424 16.9787 21.7969C15.9543 21.8106 14.9374 21.6207 13.987 21.2382C13.0367 20.8556 12.1717 20.2881 11.4425 19.5685C10.7133 18.849 10.1343 17.9917 9.73913 17.0465C9.34397 16.1013 9.14053 15.087 9.14062 14.0625V7.73438H11.25C11.8094 7.73438 12.346 7.51214 12.7416 7.11655C13.1371 6.72097 13.3594 6.18444 13.3594 5.625C13.3594 5.06556 13.1371 4.52903 12.7416 4.13345C12.346 3.73786 11.8094 3.51562 11.25 3.51562H8.4375C7.5051 3.51562 6.61089 3.88602 5.95158 4.54533C5.29227 5.20464 4.92188 6.09885 4.92188 7.03125V14.0625C4.92199 16.8667 5.90804 19.5817 7.70753 21.7324C9.50702 23.8831 12.0054 25.3327 14.7656 25.8275V32.3438C14.7684 34.7671 15.7323 37.0905 17.4459 38.8041C19.1595 40.5177 21.4829 41.4816 23.9062 41.4844H28.125C30.3571 41.4817 32.5113 40.6633 34.1822 39.1831C35.853 37.703 36.9252 35.6632 37.1971 33.4477C38.6395 33.0078 39.9028 32.1168 40.8011 30.9055C41.6994 29.6943 42.1853 28.2268 42.1875 26.7188ZM35.1562 29.5312C34.6 29.5312 34.0562 29.3663 33.5937 29.0573C33.1312 28.7482 32.7707 28.309 32.5578 27.795C32.345 27.2811 32.2893 26.7156 32.3978 26.1701C32.5063 25.6245 32.7742 25.1233 33.1675 24.73C33.5608 24.3367 34.062 24.0688 34.6076 23.9603C35.1531 23.8518 35.7186 23.9075 36.2325 24.1203C36.7465 24.3332 37.1857 24.6937 37.4948 25.1562C37.8038 25.6187 37.9688 26.1625 37.9688 26.7188C37.9688 27.4647 37.6724 28.18 37.145 28.7075C36.6175 29.2349 35.9022 29.5312 35.1562 29.5312Z" fill="#0B8C00" />
-              </svg>
-            </div>
-          </div>
-
-        </div>
-      </div>
-      {/* cards-registration and patient details */}
-
-      {/* staff Overview  */}
-      <div className="w-full rounded-[20px] bg-white border border-[#E3EEE1] p-5 ">
-        <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-          <Image src="/icons/staffuser.svg" alt="staff info" width={20} height={20} /> Staff Overview
-        </h4>
-        <div className="grid grid-cols-3 gap-4">
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Doctor</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
-                {isDoctorsLoading ? "—" : totalDoctorCount !== null ? totalDoctorCount : "—"}
-              </h4>
-            </div>
-            <div>
-              <FaUserDoctor fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Nurse</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">
-                {isNursesLoading ? "—" : totalNurseCount !== null ? totalNurseCount : "—"}
-              </h4>
-            </div>
-            <div>
-              <FaUserDoctor fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-            <div>
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Therapist</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-            <div>
-              <FaUserAlt fontSize={45} color="#0B8C00" />
-            </div>
-          </div>
-
-        </div>
-      </div>
-      {/* staff Overview  */}
-
-      {/* Hospital Room & Bed Management */}
-      <div className="w-full rounded-[20px] bg-white border border-[#E3EEE1] p-5 relative">
-        <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-          <Image src="/icons/hospitalicon.svg" alt="Hospital info" width={20} height={20} /> Hospital Room & Bed Management
-        </h4>
-        <div className="grid grid-cols-6 gap-4">
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-center items-center">
-            <div className="text-center">
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Total Rooms</p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-center items-center relative">
-            <div className="text-center">
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex gap-1 items-center justify-center">
-                Occupied Beds
-                <span
-                  className="relative cursor-pointer"
-                  onMouseEnter={() => setShowOccupiedTooltip(true)}
-                  onMouseLeave={() => setShowOccupiedTooltip(false)}
-                >
-                  <FaInfoCircle fontSize={18} />
-                </span>
+            <div className="mb-4">
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 text-2xl ${
+                  modalAction === "approve" ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+                }`}
+              >
+                {modalAction === "approve" ? <FiCheckCircle /> : <FiX />}
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">
+                {modalAction === "approve" ? "Approve Withdrawal Request" : "Reject Withdrawal Request"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Are you sure you want to {modalAction} request <strong className="text-slate-900">{selectedWithdrawal.id}</strong>?
               </p>
-              
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
             </div>
-          </div>
 
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-center items-center">
-            <div className="text-center">
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex gap-1 items-center">Ready to Move
-              </p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-center items-center">
-            <div className="text-center">
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex gap-1 items-center">Cleaning
-              </p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-center items-center">
-            <div className="text-center">
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex gap-1 items-center">Total Discharge
-              </p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-center items-center">
-            <div className="text-center">
-              <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex gap-1 items-center">Reserved
-              </p>
-              <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-            </div>
-          </div>
-
-        </div>
-        {showOccupiedTooltip && (
-          <div className="info-details bg-[#CCEEDD] rounded-lg p-3 w-[75%] transition-all duration-200 absolute">
-            <div className="absolute top-[calc(100%+25px-18px)] left-6 z-[51]">
-                <div className="absolute top-0 left-0 w-0 h-0 border-l-[18px] border-r-[18px] border-b-[18px] border-l-transparent border-r-transparent border-b-white">
-                </div>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2 mb-6">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Member:</span>
+                <span className="font-bold text-slate-900">{selectedWithdrawal.user.name}</span>
               </div>
-            <div className="grid grid-cols-6 gap-4">
-
-              {/* Private */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Private</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Withdrawal Amount:</span>
+                <span className="font-extrabold text-amber-600 text-sm">${selectedWithdrawal.amount.toFixed(2)}</span>
               </div>
-
-              {/* Private Share */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Private Share</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Payment Method:</span>
+                <span className="font-semibold text-slate-800">{selectedWithdrawal.method}</span>
               </div>
-
-              {/* Semi-Private */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Semi-Private</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]"></h4>
-                </div>
-              </div>
-
-              {/* General Ward */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">General Ward</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* General Ward2 */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">General Ward2</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* VIP */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">VIP</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* Emergency */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Emergency</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* Staff */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Staff</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* Medical */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Medical</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* Cottage */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Cottage</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* Panchakarma */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Panchakarma</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-              {/* Hall */}
-              <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-3 flex justify-center items-center">
-                <div className="text-center">
-                  <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Hall</p>
-                  <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Hospital Room & Bed Management */}
-
-      {/* opd and ipd patient details */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="w-full rounded-[20px] bg-white border border-[#E3EEE1] p-5 ">
-          <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-            <Image src="/icons/multiuser.svg" alt="OPD info" width={20} height={20} /> OPD Patient
-          </h4>
-          <div className="grid grid-cols-3 gap-4">
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Private</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">{showOpd(opdCounts?.normal)}</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
+              <div className="flex justify-between">
+                <span className="text-slate-500">Destination:</span>
+                <span className="font-mono text-slate-800">{selectedWithdrawal.accountDetails}</span>
               </div>
             </div>
 
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Govt Emp <FaInfoCircle fontSize={18} /></p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">{showOpd(opdCounts?.panel)}</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setModalAction(null);
+                  setSelectedWithdrawal(null);
+                }}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleUpdateStatus(selectedWithdrawal.id, modalAction === "approve" ? "approved" : "rejected")}
+                className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs transition-colors shadow-md ${
+                  modalAction === "approve" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"
+                }`}
+              >
+                Confirm {modalAction === "approve" ? "Approval" : "Rejection"}
+              </button>
             </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Re-Visit/Old</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">{showOpd(opdCounts?.revisit)}</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Advance</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">0</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Pre Booking</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">{showOpd(opdCounts?.prebooking)}</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">TPA</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">{showOpd(opdCounts?.tpa)}</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
           </div>
         </div>
-
-        <div className="w-full rounded-[20px] bg-white border border-[#E3EEE1] p-5 ">
-          <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-            <Image src="/icons/multiuser.svg" alt="IPD info" width={20} height={20} /> IPD Active Patient
-          </h4>
-          <div className="grid grid-cols-3 gap-4">
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4">Private</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Govt Emp <FaInfoCircle fontSize={18} /></p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Re-Visit/Old</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Advance</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">Pre Booking</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-5 flex justify-between items-center">
-              <div>
-                <p className="font-medium text-[14px] leading-[120%] text-[#434956] mb-4 flex items-center gap-1">TPA</p>
-                <h4 className="font-semibold text-[24px] leading-[120%] text-[#434956]">-</h4>
-              </div>
-              <div>
-                <FaUsers fontSize={45} color="#0B8C00" />
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-      </div>
-      {/* opd and ipd patient details */}
+      )}
     </AppShell>
   );
 }

@@ -28,21 +28,22 @@ import { useGetBranchesQuery, useGetTherapiesQuery, useCreateTherapyMutation, us
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
+import { formatIndianAmount, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 
 type PanelTherapy = {
   id: number;
   branchId?: number;
   branch?: string;
   therapyName: string;
-  price: string;
+  price: string | number;
   productCode: string;
   hsnCode: string;
   category: string;
   status: "Active" | "Inactive";
   createdAt: string;
-  privatePrice?: string;
-  panelPrice?: string;
-  tpaPrice?: string;
+  privatePrice?: string | number;
+  panelPrice?: string | number;
+  tpaPrice?: string | number;
   privateStatus?: "Active" | "Inactive";
   panelStatus?: "Active" | "Inactive";
   tpaStatus?: "Active" | "Inactive";
@@ -65,6 +66,36 @@ const panelTabOptions = [
   { value: "tpa", label: "TPA" },
   { value: "all", label: "All" },
 ];
+
+function formatPriceVal(val?: string | number | null): string {
+  if (val === null || val === undefined || val === "" || val === "—" || val === "-") {
+    return "-";
+  }
+  const str = String(val).replace(/[₹,\s]/g, "").trim();
+  if (str === "" || str === "null" || str === "undefined") {
+    return "-";
+  }
+  const formatted = formatIndianAmount(str);
+  return `₹ ${formatted}`;
+}
+
+function formatPriceInputField(rawInput: string, maxIntDigits = 6): string {
+  const raw = parseIndianAmount(rawInput).replace(/[^\d.]/g, "");
+  if (!raw) return "";
+  const parts = raw.split(".");
+  let integerPart = parts[0];
+  if (integerPart.length > maxIntDigits) {
+    integerPart = integerPart.slice(0, maxIntDigits);
+  }
+  let fractionalPart = parts[1];
+  if (fractionalPart !== undefined) {
+    if (fractionalPart.length > 2) {
+      fractionalPart = fractionalPart.slice(0, 2);
+    }
+  }
+  const normalized = fractionalPart !== undefined ? `${integerPart}.${fractionalPart}` : integerPart;
+  return normalized ? formatIndianAmount(normalized) : "";
+}
 
 export default function PanelTherapyPage() {
   const therapyPermission = usePermission("settings", { subModule: "therapy" });
@@ -185,13 +216,7 @@ export default function PanelTherapyPage() {
     }
 
     return therapiesData.data.map((therapy) => {
-      const priceStr = therapy.price != null ? `₹ ${therapy.price}` : "";
       const statusVal = therapy.status === "active" ? "Active" : "Inactive";
-      const privatePriceStr = therapy.price != null ? `₹ ${therapy.price}` : "";
-      const panelPriceStr =
-        therapy.panelPrice != null ? `₹ ${therapy.panelPrice}` : privatePriceStr;
-      const tpaPriceStr =
-        therapy.tpaPrice != null ? `₹ ${therapy.tpaPrice}` : privatePriceStr;
       const panelStatusVal =
         therapy.panelStatus === "active" ? "Active" : "Inactive";
       const tpaStatusVal =
@@ -202,15 +227,15 @@ export default function PanelTherapyPage() {
         branchId: therapy.branches?.[0]?.id,
         branch: therapy.branches?.[0]?.name,
         therapyName: therapy.therapyName ?? "",
-        price: priceStr,
+        price: therapy.price ?? "",
         productCode: therapy.productCode,
         hsnCode: therapy.hsnCode,
         category: therapy.category,
         status: statusVal,
         createdAt: formatDate(therapy.createdAt),
-        privatePrice: privatePriceStr,
-        panelPrice: panelPriceStr,
-        tpaPrice: tpaPriceStr,
+        privatePrice: therapy.price ?? "",
+        panelPrice: therapy.panelPrice ?? therapy.price ?? "",
+        tpaPrice: therapy.tpaPrice ?? therapy.price ?? "",
         privateStatus: statusVal,
         panelStatus: panelStatusVal,
         tpaStatus: tpaStatusVal,
@@ -254,7 +279,10 @@ export default function PanelTherapyPage() {
       : (branchesData?.data ?? []).length > 0
         ? (branchesData?.data ?? []).map((b) => b.id.toString())
         : therapy.branches?.map((b) => b.id.toString()) ?? (therapy.branchId && therapy.branchId > 0 ? [therapy.branchId.toString()] : []);
-    const toRawPrice = (v: string | undefined) => (v || "").replace(/[₹,\s]/g, "") || "";
+    const toRawPrice = (v: string | number | undefined | null) => {
+      if (v === null || v === undefined) return "";
+      return String(v).replace(/[₹,\s]/g, "").trim();
+    };
     const privatePriceRaw = toRawPrice(therapy.privatePrice ?? therapy.price);
     const panelPriceRaw = toRawPrice(therapy.panelPrice ?? therapy.price);
     const tpaPriceRaw = toRawPrice(therapy.tpaPrice ?? therapy.price);
@@ -270,9 +298,9 @@ export default function PanelTherapyPage() {
       hsnCode: therapy.hsnCode,
       category: therapy.category || "",
       status: privateStatusVal,
-      privatePrice: privatePriceRaw,
-      panelPrice: panelPriceRaw,
-      tpaPrice: tpaPriceRaw,
+      privatePrice: privatePriceRaw ? formatIndianAmount(privatePriceRaw) : "",
+      panelPrice: panelPriceRaw ? formatIndianAmount(panelPriceRaw) : "",
+      tpaPrice: tpaPriceRaw ? formatIndianAmount(tpaPriceRaw) : "",
       privateStatus: privateStatusVal,
       panelStatus: panelStatusVal,
       tpaStatus: tpaStatusVal,
@@ -291,24 +319,41 @@ export default function PanelTherapyPage() {
     const errors: Record<string, string> = {};
     if (!formValues.branchIds?.length) errors.branchId = "At least one branch is required";
     if (!formValues.therapyName.trim()) errors.therapyName = "Therapy name is required";
-    if (!formValues.productCode.trim()) errors.productCode = "Product code is required";
-    if (!formValues.hsnCode.trim()) errors.hsnCode = "HSN code is required";
+    if (!formValues.productCode.trim()) {
+      errors.productCode = "Product code is required";
+    } else if (formValues.productCode.trim().length < 4 || formValues.productCode.trim().length > 13) {
+      errors.productCode = "Product code must be between 4 and 13 characters";
+    }
+    if (!formValues.hsnCode.trim()) {
+      errors.hsnCode = "HSN code is required";
+    } else if (formValues.hsnCode.trim().length < 4 || formValues.hsnCode.trim().length > 8) {
+      errors.hsnCode = "HSN code must be between 4 and 8 digits";
+    }
     if (!formValues.category) errors.category = "Category is required";
     // Price required when corresponding status is Active (only validate visible fields; in edit mode validate by tab)
     const isEdit = dialogMode === "edit";
     if (!isEdit || activeTab === "private" || activeTab === "all") {
+      const rawPrivate = parseIndianAmount(formValues.privatePrice);
       if (!formValues.privatePrice?.trim()) {
         errors.privatePrice = "Private price is required";
+      } else if (!/^\d{1,6}(\.\d{1,2})?$/.test(rawPrivate)) {
+        errors.privatePrice = "Enter a valid amount (max 6 digits before decimal)";
       }
     }
     if (!isEdit || activeTab === "panel" || activeTab === "all") {
+      const rawPanel = parseIndianAmount(formValues.panelPrice);
       if (formValues.panelStatus === "active" && !formValues.panelPrice?.trim()) {
         errors.panelPrice = "Price is required when Panel status is Active";
+      } else if (formValues.panelPrice?.trim() && !/^\d{1,6}(\.\d{1,2})?$/.test(rawPanel)) {
+        errors.panelPrice = "Enter a valid amount (max 6 digits before decimal)";
       }
     }
     if (!isEdit || activeTab === "tpa" || activeTab === "all") {
+      const rawTpa = parseIndianAmount(formValues.tpaPrice);
       if (formValues.tpaStatus === "active" && !formValues.tpaPrice?.trim()) {
         errors.tpaPrice = "Price is required when TPA status is Active";
+      } else if (formValues.tpaPrice?.trim() && !/^\d{1,6}(\.\d{1,2})?$/.test(rawTpa)) {
+        errors.tpaPrice = "Enter a valid amount (max 6 digits before decimal)";
       }
     }
     setFormErrors(errors);
@@ -337,13 +382,13 @@ export default function PanelTherapyPage() {
         const payload = {
           branchIds,
           therapyName: formValues.therapyName.trim(),
-          price: formValues.privatePrice.trim(),
+          price: parseIndianAmount(formValues.privatePrice),
           productCode: formValues.productCode.trim(),
           hsnCode: formValues.hsnCode.trim(),
           category: formValues.category,
           status: formValues.privateStatus,
-          tpaPrice: formValues.tpaPrice.trim() || undefined,
-          panelPrice: formValues.panelPrice.trim() || undefined,
+          tpaPrice: parseIndianAmount(formValues.tpaPrice) || undefined,
+          panelPrice: parseIndianAmount(formValues.panelPrice) || undefined,
           tpaStatus: formValues.tpaStatus,
           panelStatus: formValues.panelStatus,
         };
@@ -357,33 +402,33 @@ export default function PanelTherapyPage() {
         const basePayload: Parameters<typeof updateTherapy>[0] = {
           id: selectedTherapy.id,
           //  branchIds,
-            branchIds: selectedBranch === "" ? [] : branchIds,
+          branchIds: selectedBranch === "" ? [] : branchIds,
         };
         let payload: Parameters<typeof updateTherapy>[0];
         if (activeTab === "private") {
           payload = {
             ...basePayload,
-            price: formValues.privatePrice.trim(),
+            price: parseIndianAmount(formValues.privatePrice),
             status: formValues.privateStatus,
           };
         } else if (activeTab === "panel") {
           payload = {
             ...basePayload,
-            panelPrice: formValues.panelPrice.trim(),
+            panelPrice: parseIndianAmount(formValues.panelPrice),
             panelStatus: formValues.panelStatus,
           };
         } else if (activeTab === "tpa") {
           payload = {
             ...basePayload,
-            tpaPrice: formValues.tpaPrice.trim(),
+            tpaPrice: parseIndianAmount(formValues.tpaPrice),
             tpaStatus: formValues.tpaStatus,
           };
         } else {
           payload = {
             ...basePayload,
-            price: formValues.privatePrice.trim(),
-            panelPrice: formValues.panelPrice.trim(),
-            tpaPrice: formValues.tpaPrice.trim(),
+            price: parseIndianAmount(formValues.privatePrice),
+            panelPrice: parseIndianAmount(formValues.panelPrice),
+            tpaPrice: parseIndianAmount(formValues.tpaPrice),
             status: formValues.privateStatus,
             panelStatus: formValues.panelStatus,
             tpaStatus: formValues.tpaStatus,
@@ -573,20 +618,26 @@ export default function PanelTherapyPage() {
                     paginatedTherapies.map((therapy, index) => (
                       <TableRow key={therapy.id}>
                         <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                        <TableData>{therapy.therapyName}</TableData>
-                        <TableData className="whitespace-nowrap">{therapy.privatePrice ?? therapy.price}</TableData>
+                        <TableData className="min-w-0 max-w-[220px]">
+                          <Tooltip content={therapy.therapyName || "—"} position="top">
+                            <span className="inline-block max-w-[200px] truncate align-middle font-medium text-[#262D3B]">
+                              {therapy.therapyName || "—"}
+                            </span>
+                          </Tooltip>
+                        </TableData>
+                        <TableData className="whitespace-nowrap">{formatPriceVal(therapy.privatePrice ?? therapy.price)}</TableData>
                         <TableData>
                           <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.privateStatus ?? therapy.status)}`}>
                             {therapy.privateStatus ?? therapy.status}
                           </span>
                         </TableData>
-                        <TableData className="whitespace-nowrap">{therapy.panelPrice ?? therapy.price}</TableData>
+                        <TableData className="whitespace-nowrap">{formatPriceVal(therapy.panelPrice ?? therapy.price)}</TableData>
                         <TableData>
                           <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.panelStatus ?? therapy.status)}`}>
                             {therapy.panelStatus ?? therapy.status}
                           </span>
                         </TableData>
-                        <TableData className="whitespace-nowrap">{therapy.tpaPrice ?? therapy.price}</TableData>
+                        <TableData className="whitespace-nowrap">{formatPriceVal(therapy.tpaPrice ?? therapy.price)}</TableData>
                         <TableData>
                           <span className={`inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-[30px] border px-5 text-xs font-medium ${getStatusBadgeClass(therapy.tpaStatus ?? therapy.status)}`}>
                             {therapy.tpaStatus ?? therapy.status}
@@ -635,8 +686,14 @@ export default function PanelTherapyPage() {
                       return (
                         <TableRow key={therapy.id}>
                           <TableData position="first">{(currentPage - 1) * itemsPerPage + index + 1}</TableData>
-                          <TableData>{therapy.therapyName}</TableData>
-                          <TableData className="whitespace-nowrap">{priceForTab}</TableData>
+                          <TableData className="min-w-0 max-w-[220px]">
+                            <Tooltip content={therapy.therapyName || "—"} position="top">
+                              <span className="inline-block max-w-[200px] truncate align-middle font-medium text-[#262D3B]">
+                                {therapy.therapyName || "—"}
+                              </span>
+                            </Tooltip>
+                          </TableData>
+                          <TableData className="whitespace-nowrap">{formatPriceVal(priceForTab)}</TableData>
                           <TableData className="whitespace-nowrap">{therapy.productCode}</TableData>
                           <TableData className="whitespace-nowrap">{therapy.hsnCode}</TableData>
                           <TableData>{therapy.category}</TableData>
@@ -718,18 +775,23 @@ export default function PanelTherapyPage() {
           dialogMode === "add" ? "Add Therapy" : dialogMode === "edit" ? "Edit Therapy" : "View Therapy"
         }
         width={949}
+        closeOnOutsideClick={false}
       >
         {dialogMode === "view" && selectedTherapy ? (
           <div className="grid grid-cols-2 gap-6">
             {selectedBranch && selectedBranchName ? (
-              <div>
+              <div className="min-w-0 max-w-full">
                 <p className="text-sm text-[#7B8089]">Branch Name</p>
-                <p className="text-base font-medium text-[#262D3B]">{selectedBranchName}</p>
+                <Tooltip content={selectedBranchName} position="top">
+                  <p className="block max-w-full truncate text-base font-medium text-[#262D3B]">{selectedBranchName}</p>
+                </Tooltip>
               </div>
             ) : null}
-            <div>
+            <div className="min-w-0 max-w-full">
               <p className="text-sm text-[#7B8089]">Therapy</p>
-              <p className="text-base font-medium text-[#262D3B]">{selectedTherapy.therapyName}</p>
+              <Tooltip content={selectedTherapy.therapyName} position="top">
+                <p className="block max-w-full truncate text-base font-medium text-[#262D3B]">{selectedTherapy.therapyName}</p>
+              </Tooltip>
             </div>
             <div>
               <p className="text-sm text-[#7B8089]">Product Code</p>
@@ -747,7 +809,7 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <p className="text-sm text-[#7B8089]">Private Price</p>
-                  <p className="text-base font-medium text-[#262D3B]">{selectedTherapy.privatePrice ?? selectedTherapy.price}</p>
+                  <p className="text-base font-medium text-[#262D3B]">{formatPriceVal(selectedTherapy.privatePrice ?? selectedTherapy.price)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-[#7B8089]">Private Status</p>
@@ -759,7 +821,7 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <p className="text-sm text-[#7B8089]">Panel Price</p>
-                  <p className="text-base font-medium text-[#262D3B]">{selectedTherapy.panelPrice ?? selectedTherapy.price}</p>
+                  <p className="text-base font-medium text-[#262D3B]">{formatPriceVal(selectedTherapy.panelPrice ?? selectedTherapy.price)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-[#7B8089]">Panel Status</p>
@@ -771,7 +833,7 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <p className="text-sm text-[#7B8089]">TPA Price</p>
-                  <p className="text-base font-medium text-[#262D3B]">{selectedTherapy.tpaPrice ?? selectedTherapy.price}</p>
+                  <p className="text-base font-medium text-[#262D3B]">{formatPriceVal(selectedTherapy.tpaPrice ?? selectedTherapy.price)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-[#7B8089]">TPA Status</p>
@@ -811,6 +873,11 @@ export default function PanelTherapyPage() {
                 onChange={(event) => {
                   if (dialogMode === "view" || dialogMode === "edit") return;
                   let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                  value = value.replace(/^\s+/, "");
+                  value = value.replace(/(.)\1{2,}/g, "$1$1");
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
                   value = value.slice(0, 100);
                   setFormValues((prev) => ({ ...prev, therapyName: value }));
                   setFormErrors((prev) => ({ ...prev, therapyName: "" }));
@@ -829,14 +896,14 @@ export default function PanelTherapyPage() {
                 value={formValues.productCode}
                 onChange={(event) => {
                   if (dialogMode === "view" || dialogMode === "edit") return;
-                  let value = event.target.value.replace(/[^a-zA-Z0-9]/g, "");
-                  value = value.slice(0, 100);
+                  let value = event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                  value = value.slice(0, 13);
                   setFormValues((prev) => ({ ...prev, productCode: value }));
                   setFormErrors((prev) => ({ ...prev, productCode: "" }));
                 }}
                 height={44}
                 placeholder="Product Code"
-                maxLength={100}
+                maxLength={13}
                 required={dialogMode !== "view"}
                 disabled={dialogMode === "view" || dialogMode === "edit"}
               />
@@ -848,14 +915,14 @@ export default function PanelTherapyPage() {
                 value={formValues.hsnCode}
                 onChange={(event) => {
                   if (dialogMode === "view" || dialogMode === "edit") return;
-                  let value = event.target.value.replace(/[^a-zA-Z0-9]/g, "");
-                  value = value.slice(0, 100);
+                  let value = event.target.value.replace(/\D/g, "");
+                  value = value.slice(0, 8);
                   setFormValues((prev) => ({ ...prev, hsnCode: value }));
                   setFormErrors((prev) => ({ ...prev, hsnCode: "" }));
                 }}
                 height={44}
                 placeholder="HSN Code"
-                maxLength={100}
+                maxLength={8}
                 required={dialogMode !== "view"}
                 disabled={dialogMode === "view" || dialogMode === "edit"}
               />
@@ -888,8 +955,8 @@ export default function PanelTherapyPage() {
                     label="Private Price *"
                     value={formValues.privatePrice}
                     onChange={(event) => {
-                      const v = event.target.value.replace(/[^0-9.]/g, "");
-                      setFormValues((prev) => ({ ...prev, privatePrice: v }));
+                      const formatted = formatPriceInputField(event.target.value);
+                      setFormValues((prev) => ({ ...prev, privatePrice: formatted }));
                       setFormErrors((prev) => ({ ...prev, privatePrice: "" }));
                     }}
                     height={44}
@@ -915,11 +982,11 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <FormInputField
-                    label="Panel Price"
+                    label={formValues.panelStatus?.toLowerCase() === "active" ? "Panel Price *" : "Panel Price"}
                     value={formValues.panelPrice}
                     onChange={(event) => {
-                      const v = event.target.value.replace(/[^0-9.]/g, "");
-                      setFormValues((prev) => ({ ...prev, panelPrice: v }));
+                      const formatted = formatPriceInputField(event.target.value);
+                      setFormValues((prev) => ({ ...prev, panelPrice: formatted }));
                       setFormErrors((prev) => ({ ...prev, panelPrice: "" }));
                     }}
                     height={44}
@@ -945,11 +1012,11 @@ export default function PanelTherapyPage() {
               <>
                 <div>
                   <FormInputField
-                    label="TPA Price"
+                    label={formValues.tpaStatus?.toLowerCase() === "active" ? "TPA Price *" : "TPA Price"}
                     value={formValues.tpaPrice}
                     onChange={(event) => {
-                      const v = event.target.value.replace(/[^0-9.]/g, "");
-                      setFormValues((prev) => ({ ...prev, tpaPrice: v }));
+                      const formatted = formatPriceInputField(event.target.value);
+                      setFormValues((prev) => ({ ...prev, tpaPrice: formatted }));
                       setFormErrors((prev) => ({ ...prev, tpaPrice: "" }));
                     }}
                     height={44}

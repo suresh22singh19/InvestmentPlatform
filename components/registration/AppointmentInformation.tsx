@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { FormSelectField, DatePicker } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 
@@ -25,7 +25,7 @@ interface AppointmentInformationProps {
 }
 
 // All available time slots (value sent to API as-is, e.g. "10:00am - 12:00pm")
- const ALL_TIME_SLOTS: SelectOption[] = [
+const ALL_TIME_SLOTS: SelectOption[] = [
     { value: "12:00am - 02:00am", label: "12:00am - 02:00am" },
     { value: "01:00am - 03:00am", label: "01:00am - 03:00am" },
     { value: "02:00am - 04:00am", label: "02:00am - 04:00am" },
@@ -79,20 +79,26 @@ const parseTimeSlot = (value: string): { start: number; end: number } | null => 
 };
 
 // Helper function to check if a time slot has passed
-const isTimeSlotPassed = (timeSlotValue: string): boolean => {
+const isTimeSlotPassed = (timeSlotValue: string, referenceDate: Date = new Date()): boolean => {
     const parsed = parseTimeSlot(timeSlotValue);
     if (!parsed) return false;
 
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
+    const currentHour = referenceDate.getHours();
+    const currentMinute = referenceDate.getMinutes();
     const currentTimeInMinutes = currentHour * 60 + currentMinute;
 
-    // Convert slot end time to minutes (assuming 24-hour format)
-    const slotEndInMinutes = parsed.end * 60;
+    // Handle slots that cross midnight (end <= start), e.g. "11:00pm - 12:00am" or "11:00pm - 01:00am"
+    const normalizedEnd = parsed.end <= parsed.start ? parsed.end + 24 : parsed.end;
+    const durationHours = normalizedEnd - parsed.start;
 
-    // If current time is past the slot end time, the slot has passed
-    return currentTimeInMinutes >= slotEndInMinutes;
+    // Rule: For overlapping slots (e.g. 12:00pm - 02:00pm and 01:00pm - 03:00pm),
+    // once time reaches 1 hour + 1 minute (e.g. 1:01 PM), the earlier slot (12:00pm - 02:00pm)
+    // is no longer displayed, leaving only the next slot (01:00pm - 03:00pm).
+    const cutoffInMinutes = durationHours >= 2
+        ? parsed.start * 60 + 61
+        : normalizedEnd * 60;
+
+    return currentTimeInMinutes >= cutoffInMinutes;
 };
 
 // Helper function to get today's date in YYYY-MM-DD format
@@ -112,6 +118,16 @@ export default function AppointmentInformation({
     fieldRefs,
     errors,
 }: AppointmentInformationProps) {
+    // Real-time clock tick (updates every 3 seconds to re-evaluate time slots dynamically)
+    const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNowTick(Date.now());
+        }, 3000);
+        return () => clearInterval(timer);
+    }, []);
+
     // Auto-set today's date whenever appointmentDate is empty
     useEffect(() => {
         if (!formData.appointmentDate) {
@@ -119,41 +135,43 @@ export default function AppointmentInformation({
         }
     }, [formData.appointmentDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Filter time slots based on current time if appointment date is today
+    // Filter time slots based on current time in real-time if appointment date is today
     const availableTimeSlots = useMemo(() => {
         if (!formData.appointmentDate) {
             // If no date selected, show all slots
             return ALL_TIME_SLOTS;
         }
 
-        const appointmentDate = new Date(formData.appointmentDate);
-        const today = new Date();
+        const now = new Date(nowTick);
+        const parts = formData.appointmentDate.split("-");
+        const appointmentDate = parts.length === 3
+            ? new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+            : new Date(formData.appointmentDate);
 
         // Reset time to compare dates only
         const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
-        const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         // If appointment date is in the future, show all slots
         if (appointmentDateOnly > todayOnly) {
             return ALL_TIME_SLOTS;
         }
 
-        // If appointment date is today, filter out past time slots and show all available slots from current time to end
+        // If appointment date is today, filter out past time slots in real-time
         if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
-            // Show all time slots that haven't ended yet
-            return ALL_TIME_SLOTS.filter(slot => !isTimeSlotPassed(slot.value));
+            return ALL_TIME_SLOTS.filter(slot => !isTimeSlotPassed(slot.value, now));
         }
 
-        // If appointment date is in the past, show all slots (though this shouldn't happen due to disablePastDates)
+        // If appointment date is in the past, show all slots
         return ALL_TIME_SLOTS;
-    }, [formData.appointmentDate]);
+    }, [formData.appointmentDate, nowTick]);
 
-    // Clear selected time slot if it's no longer available
+    // Clear selected time slot in real-time if it's no longer available
     useEffect(() => {
         if (formData.timeSlot) {
             const isSlotAvailable = availableTimeSlots.some(slot => slot.value === formData.timeSlot);
             if (!isSlotAvailable) {
-                // Clear the time slot if it's no longer available
+                // Clear the time slot if it has timed out / closed
                 onChange("timeSlot", "");
             }
         }

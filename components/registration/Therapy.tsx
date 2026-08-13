@@ -5,14 +5,15 @@ import Image from "next/image";
 import { ScrollableContainer } from "../ui";
 import NoDataBox from "./NoDataBox";
 
-interface TherapyItem {
-    id: number;
+export interface TherapyItem {
+    id: number | string;
     therapyName: string;
     date: string;
     doctor: string;
     therapist: string;
-    doctorRemark: string;
-    therapistRemark: string;
+    doctorRemark?: string | null;
+    therapistRemark?: string | null;
+    status?: string;
 }
 
 interface TherapyProps {
@@ -20,26 +21,7 @@ interface TherapyProps {
 }
 
 export default function Therapy({
-    therapies = [
-        {
-            id: 1,
-            therapyName: "Uttar Basti",
-            date: "15-11-2025",
-            doctor: "Dr. Suyash Pratap Singh",
-            therapist: "Rahul Singh",
-            doctorRemark: "Patient shows mild dehydration; advised increased fluid intake.",
-            therapistRemark: "Patient able to perform basic exercises with minimal discomfort.",
-        },
-        {
-            id: 2,
-            therapyName: "Abhyanga Therapy",
-            date: "16-11-2025",
-            doctor: "Dr. Neha Kulkarni",
-            therapist: "Pooja Sharma",
-            doctorRemark: "Muscle stiffness observed; recommended oil massage therapy.",
-            therapistRemark: "Patient responded well; muscle tension reduced after session.",
-        },
-    ],
+    therapies,
 }: TherapyProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
@@ -47,7 +29,7 @@ export default function Therapy({
         setIsExpanded(!isExpanded);
     };
 
-    const hasTherapies = therapies && therapies.length > 0;
+    const hasTherapies = Array.isArray(therapies) && therapies.length > 0;
 
     return (
         <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-4 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
@@ -85,27 +67,40 @@ export default function Therapy({
                                                 <h3 className="font-inter text-[16px] leading-[120%] font-medium text-[#262D3B]">
                                                     {therapy.therapyName}
                                                 </h3>
-                                                <span className="font-inter text-[12px] leading-[120%] font-normal text-[#434956]">
-                                                    📅 {therapy.date}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {therapy.status && (
+                                                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                                                            therapy.status.toLowerCase() === "completed"
+                                                                ? "bg-green-100 text-green-700"
+                                                                : "bg-blue-100 text-blue-700"
+                                                        }`}>
+                                                            {therapy.status}
+                                                        </span>
+                                                    )}
+                                                    <span className="font-inter text-[12px] leading-[120%] font-normal text-[#434956]">
+                                                        📅 {therapy.date}
+                                                    </span>
+                                                </div>
                                             </div>
 
                                             <p className="font-inter text-[12px] leading-[120%] font-normal text-[#434956] mb-[6px]">
                                                 Doctor: {therapy.doctor} • Therapist: {therapy.therapist}
                                             </p>
 
-                                            <p className="mb-[6px] font-inter text-[14px] leading-[120%] font-normal text-[#434956]">
-                                                <span className="font-inter text-[14px] leading-[120%] font-bold text-[#434956]">
-                                                    Doctor Remark:
-                                                </span>{" "}
-                                                {therapy.doctorRemark}
-                                            </p>
+                                            {therapy.doctorRemark && therapy.doctorRemark !== "N/A" && (
+                                                <p className="mb-[6px] font-inter text-[14px] leading-[120%] font-normal text-[#434956]">
+                                                    <span className="font-inter text-[14px] leading-[120%] font-bold text-[#434956]">
+                                                        Doctor Remark:
+                                                    </span>{" "}
+                                                    {therapy.doctorRemark}
+                                                </p>
+                                            )}
 
                                             <p className="font-inter text-[14px] leading-[120%] font-normal text-[#434956]">
                                                 <span className="font-inter text-[14px] leading-[120%] font-bold text-[#434956]">
                                                     Therapist Remark:
                                                 </span>{" "}
-                                                {therapy.therapistRemark}
+                                                {therapy.therapistRemark || "N/A"}
                                             </p>
                                         </div>
                                     ))}

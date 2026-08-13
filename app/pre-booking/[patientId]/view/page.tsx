@@ -9,6 +9,7 @@ import Image from "next/image";
 import { useGetAppointmentWithRegistrationQuery } from "@/store/api/registrationApi";
 import type { AppointmentWithRegistration } from "@/store/api/registrationApi";
 import { useMemo, useState } from "react";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 // Static pre-booking view data (matches static list on /pre-booking) – used when API has no data
 const STATIC_PRE_BOOKING_VIEW: Record<string, AppointmentWithRegistration> = {
@@ -394,7 +395,7 @@ export default function ViewRegistrationFormPage() {
         setSendAddressConfirmOpen(false);
         setShowSuccessDialog(true);
         setSuccessMessage("Booking confirmed successfully.");
-        };
+    };
 
     const handleConfirmBookingSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -405,7 +406,7 @@ export default function ViewRegistrationFormPage() {
             setSuccessMessage("Booking confirmed successfully.");
             setShowSuccessDialog(true);
         } else {
-            setApiErrorMessage("Please fill required fields (JS Health Card and Govt Empanelment).");
+            setApiErrorMessage("Please fill required fields (Health Card and Govt Empanelment).");
             setShowApiErrorDialog(true);
         }
     };
@@ -460,7 +461,7 @@ export default function ViewRegistrationFormPage() {
                 <div className="flex items-start justify-between">
                     <PageHeading title="View Pre Booking Form" />
                     <div className="px-5 flex items-center gap-3">
-                      
+
                         <button
                             type="button"
                             className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 bg-[#0B8C00] rounded-[32px] font-inter font-medium text-sm leading-[120%] text-center text-white hover:bg-[#0A7A00] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -485,7 +486,7 @@ export default function ViewRegistrationFormPage() {
                     {/* personal details  */}
                     <div className="w-full overflow-hidden lg:rounded-[20px] lg:border lg:border-[#E3EEE1] lg:p-4 mb-4">
                         {/* <h3 className="font-inter font-semibold text-[18px] md:text-[20px] lg:text-[24px] leading-[120%] text-[#262D3B] mb-4">Personal Information</h3> */}
-                      
+
                         <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
                             <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
                                 <Image src="/icons/CalendarIconDark.svg" alt="patient info" width={20} height={20} /> Pre Booking Patient Detail
@@ -494,8 +495,8 @@ export default function ViewRegistrationFormPage() {
                                 {/* Grid 1 */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0 break-words">
-                                    <p className="text-xs font-medium text-[#7B8089]">Pre Booking ID</p>
-                                    <p className="text-sm font-medium text-[#262D3B]">62267</p>
+                                        <p className="text-xs font-medium text-[#7B8089]">Pre Booking ID</p>
+                                        <p className="text-sm font-medium text-[#262D3B]">62267</p>
                                     </div>
 
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
@@ -534,7 +535,7 @@ export default function ViewRegistrationFormPage() {
                                     {/*  */}
                                 </div>
 
-                               
+
 
                             </div>
                         </div>
@@ -607,7 +608,7 @@ export default function ViewRegistrationFormPage() {
                                     </div>
 
                                     <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                        <p className="text-xs font-medium text-[#7B8089]">JS Health Card No.</p>
+                                        <p className="text-xs font-medium text-[#7B8089]">Health Card No.</p>
                                         <p className="text-sm font-medium text-[#262D3B]">{patientData.jsHealthCardNo || "N/A"}</p>
                                     </div>
                                 </div>
@@ -617,7 +618,7 @@ export default function ViewRegistrationFormPage() {
                                         <p className="text-sm font-medium text-[#262D3B]">{patientData.uhid || "N/A"}</p>
                                     </div>
 
-                                   
+
                                 </div>
 
                             </div>
@@ -689,7 +690,7 @@ export default function ViewRegistrationFormPage() {
                         </div>
                         <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
                             <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                                <Image src="/icons/patientinfo.svg" alt="patient info" width={20} height={20} /> Patient Type 
+                                <Image src="/icons/patientinfo.svg" alt="patient info" width={20} height={20} /> Patient Type
                             </h4>
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
@@ -803,9 +804,9 @@ export default function ViewRegistrationFormPage() {
                             </h4>
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                    <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                        <p className="text-xs font-medium text-[#7B8089]">Consultation Charges</p>
-                                        <p className="text-sm font-medium text-[#262D3B]">{appointment.doctorFee || patientData.payment?.doctorFee || "0"}</p>
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Consultation Charges</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{formatIndianAmount(appointment.doctorFee || patientData.payment?.doctorFee || "0")}</p>
                                     </div>
 
                                     <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
@@ -830,45 +831,45 @@ export default function ViewRegistrationFormPage() {
                             </div>
                         </div>
                         {(patientData.payment?.gstNumber || patientData.gstNumber) && (
-                                <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
-                                    <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
-                                        <Image src="/icons/patientinfo.svg" alt="Billing info" width={20} height={20} /> Billing Information
-                                    </h4>
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">GST Number</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.gstNumber || patientData.gstNumber || "N/A"}</p>
-                                            </div>
-
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">Company Name</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.companyName || "N/A"}</p>
-                                            </div>
-
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">State</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.state || "N/A"}</p>
-                                            </div>
-
-                                            <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
-                                                <p className="text-xs font-medium text-[#7B8089]">City</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.city || "N/A"}</p>
-                                            </div>
+                            <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-4 mb-4">
+                                <h4 className="text-base font-medium leading-[120%] text-[#262D3B] flex gap-2 items-center mb-5">
+                                    <Image src="/icons/patientinfo.svg" alt="Billing info" width={20} height={20} /> Billing Information
+                                </h4>
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">GST Number</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.gstNumber || patientData.gstNumber || "N/A"}</p>
                                         </div>
-                                        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-4 border-t border-b border-[#DFE0E2] mb-4">
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">Pincode</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.pincode || "N/A"}</p>
-                                            </div>
-                                            <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
-                                                <p className="text-xs font-medium text-[#7B8089]">Billing Address</p>
-                                                <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.billingAddress || "N/A"}</p>
-                                            </div>
+
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Company Name</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.companyName || "N/A"}</p>
+                                        </div>
+
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">State</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.state || "N/A"}</p>
+                                        </div>
+
+                                        <div className="space-y-1 last:border-0 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4">
+                                            <p className="text-xs font-medium text-[#7B8089]">City</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.city || "N/A"}</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-4 border-t border-b border-[#DFE0E2] mb-4">
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Pincode</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.pincode || "N/A"}</p>
+                                        </div>
+                                        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
+                                            <p className="text-xs font-medium text-[#7B8089]">Billing Address</p>
+                                            <p className="text-sm font-medium text-[#262D3B]">{patientData.payment?.billingAddress || "N/A"}</p>
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        )}
                     </div>
                     {/* Payment details  */}
 
@@ -913,6 +914,9 @@ export default function ViewRegistrationFormPage() {
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                             <p className="text-xs font-medium text-[#7B8089]">Diet Type</p>
                                             <p className="text-sm font-medium text-[#262D3B]">{patientData.dietType || "N/A"}</p>
+                                            {patientData?.lastDayFullDiet && (
+                                                <p className="text-xs font-medium text-[#7B8089] mt-0.5 break-words">{patientData.lastDayFullDiet}</p>
+                                            )}
                                         </div>
 
                                         <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
@@ -1030,7 +1034,7 @@ export default function ViewRegistrationFormPage() {
                                             <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 md:px-0 lg:px-4 last:border-0">
                                                 <p className="text-xs font-medium text-[#7B8089]">Addiction</p>
                                                 <p className="text-sm font-medium text-[#262D3B]">
-                                                    {patientData.addictionType?.length 
+                                                    {patientData.addictionType?.length
                                                         ? patientData.addictionType.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(", ")
                                                         : "Other"}
                                                 </p>
@@ -1100,10 +1104,10 @@ export default function ViewRegistrationFormPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                             <FormInputField
-                                label="JS Health Card *"
+                                label="Health Card *"
                                 value={confirmBookingForm.jsHealthCard}
                                 onChange={(e) => setConfirmBookingForm((prev) => ({ ...prev, jsHealthCard: e.target.value }))}
-                                placeholder="JS Health Card"
+                                placeholder="Health Card"
                                 required
                                 height={44}
                             />

@@ -19,6 +19,7 @@ import {
   useGetAllRoomTypesQuery,
   useCreateRoomTypeMutation,
   useUpdateRoomTypeMutation,
+  useDeleteRoomTypeMutation,
 } from "@/store/api/settingsApi";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/usePermission";
@@ -62,7 +63,10 @@ const loadState = (): StoredState => {
       if (parsed.itemsPerPage < 10) {
         parsed.itemsPerPage = 10;
       }
-      return parsed;
+      return {
+        ...parsed,
+        currentPage: 1, // Always reset to page 1 when navigating to this screen
+      };
     }
   } catch (error) {
     console.error("Failed to load state from localStorage:", error);
@@ -97,7 +101,7 @@ function deriveRoomTypeCodes(roomType: string): { roomTypeCode: string; roomNumb
     .replace(/^-+|-+$/g, "");
   const roomTypeCode = (slug.length > 0 ? slug : "room").slice(0, 120);
   /** Uppercase version of the same segments (for room number prefix / legacy consumers). */
-  const roomNumberPrefix = roomTypeCode.toUpperCase().slice(0, 40);
+  const roomNumberPrefix = roomTypeCode.toUpperCase().slice(0, 25);
   return { roomTypeCode, roomNumberPrefix };
 }
 
@@ -106,6 +110,7 @@ export default function RoomTypePage() {
   const canView = roomTypePermission.canView;
   const canAdd = roomTypePermission.canAdd;
   const canEdit = roomTypePermission.canEdit;
+  const canDelete = roomTypePermission.canDelete;
 
   const [searchTerm, setSearchTerm] = useState<string>(() => loadState().searchTerm);
   const [currentPage, setCurrentPage] = useState<number>(() => loadState().currentPage);
@@ -121,6 +126,9 @@ export default function RoomTypePage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
+
+  const [itemToDelete, setItemToDelete] = useState<RoomTypeRow | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const trimmedSearchTerm = debouncedSearchTerm.trim();
@@ -145,6 +153,41 @@ export default function RoomTypePage() {
 
   const [createRoomType, { isLoading: isCreating }] = useCreateRoomTypeMutation();
   const [updateRoomType, { isLoading: isUpdating }] = useUpdateRoomTypeMutation();
+  const [deleteRoomType, { isLoading: isDeleting }] = useDeleteRoomTypeMutation();
+
+  const handleDelete = (room: RoomTypeRow) => {
+    if (!canDelete) return;
+    setItemToDelete(room);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    try {
+      const result = await deleteRoomType({ id: itemToDelete.id }).unwrap();
+      setSuccessMessage(result?.message || "Room type deleted successfully");
+      setShowSuccessDialog(true);
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
+      await refetchList();
+    } catch (error: any) {
+      console.error("Failed to delete room type:", error);
+      let errorMsg = "Failed to delete room type. Please try again.";
+      if (error?.data?.message) {
+        errorMsg = error.data.message;
+      } else if (error?.data?.error) {
+        errorMsg = error.data.error;
+      } else if (error?.error) {
+        errorMsg = error.error;
+      } else if (error?.message) {
+        errorMsg = error.message;
+      }
+      setApiErrorMessage(errorMsg);
+      setShowApiErrorDialog(true);
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
+    }
+  };
 
   const cardRows: CardRow[] =
     listData?.data?.map((item) => ({
@@ -280,69 +323,72 @@ export default function RoomTypePage() {
               You don&apos;t have permission to view room type.
             </div>
           ) : (
-          <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
+            <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
-              <div className="flex items-center gap-3">
-                <TableSearchInput
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  placeholder="Search Here..."
-                />
+                <div className="flex items-center gap-3">
+                  <TableSearchInput
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    placeholder="Search Here..."
+                    className="!w-[300px] min-w-[300px] max-w-[300px] shrink-0"
+                  />
 
-                {canAdd ? (
-                  <button
-                    type="button"
-                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap whitespace-nowrap"
-                    onClick={handleAddNew}
-                  >
-                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    <span className="text-hide">Add Room Type</span>
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {isLoadingList ? (
-              <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {cardRows.map((row) => (
-                    <PanelCard
-                      key={row.id}
-                      id={row.id}
-                      name={row.name}
-                      status={row.status}
-                      isDefaultPanel={false}
-                      statusBadgeVariant="chargeable"
-                      statusYesNoTooltips={{ yes: "Rented", no: "Not Rented" }}
-                      onView={() => openForm(row.room, "view")}
-                      onEdit={() => openForm(row.room, "edit")}
-                      showViewButton={canView}
-                      showEditButton={canEdit}
-                    />
-                  ))}
+                  {canAdd ? (
+                    <button
+                      type="button"
+                      className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap whitespace-nowrap"
+                      onClick={handleAddNew}
+                    >
+                      <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                      <span className="text-hide">Add Room Type</span>
+                    </button>
+                  ) : null}
                 </div>
+              </div>
 
-                {cardRows.length === 0 && (
-                  <div className="py-12 text-center text-sm text-[#9CA3AF]">No room types found</div>
-                )}
-              </>
-            )}
+              {isLoadingList ? (
+                <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    {cardRows.map((row) => (
+                      <PanelCard
+                        key={row.id}
+                        id={row.id}
+                        name={row.name}
+                        status={row.status}
+                        isDefaultPanel={false}
+                        statusBadgeVariant="chargeable"
+                        statusYesNoTooltips={{ yes: "Rented", no: "Not Rented" }}
+                        variant="view-edit-delete"
+                        onView={() => openForm(row.room, "view")}
+                        onEdit={() => openForm(row.room, "edit")}
+                        onDelete={canDelete ? () => handleDelete(row.room) : undefined}
+                        showViewButton={canView}
+                        showEditButton={canEdit}
+                      />
+                    ))}
+                  </div>
 
-            {!isLoadingList && (listData?.total ?? cardRows.length) > 0 && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={listData?.total ?? cardRows.length}
-                itemsPerPage={itemsPerPage}
-                onPageChange={handlePageChange}
-                onItemsPerPageChange={handleItemsPerPageChange}
-                itemsPerPageOptions={[10, 20, 50, 100]}
-              />
-            )}
-          </div>
+                  {cardRows.length === 0 && (
+                    <div className="py-12 text-center text-sm text-[#9CA3AF]">No room types found</div>
+                  )}
+                </>
+              )}
+
+              {!isLoadingList && (listData?.total ?? cardRows.length) > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={listData?.total ?? cardRows.length}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={handlePageChange}
+                  onItemsPerPageChange={handleItemsPerPageChange}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
+                />
+              )}
+            </div>
           )}
         </ListBorder>
       </div>
@@ -360,6 +406,7 @@ export default function RoomTypePage() {
         }}
         title={dialogMode === "add" ? "Add Room Type" : dialogMode === "edit" ? "Edit Room Type" : "View Room Type"}
         width={686}
+        closeOnOutsideClick={false}
       >
         <form onSubmit={dialogMode !== "view" ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
           <div className="space-y-6">
@@ -369,13 +416,19 @@ export default function RoomTypePage() {
                 value={formValues.roomType}
                 onChange={(event) => {
                   if (formDisabled) return;
-                  const value = event.target.value.replace(/[^a-zA-Z0-9\s\-]/g, "").slice(0, 120);
+                  let value = event.target.value.replace(/[^a-zA-Z0-9\s\-]/g, "");
+                  value = value.replace(/^\s+/, "");
+                  value = value.replace(/(.)\1{2,}/g, "$1$1");
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
+                  value = value.slice(0, 100);
                   setFormValues((prev) => ({ ...prev, roomType: value }));
                   setFormErrors((prev) => ({ ...prev, roomType: "" }));
                 }}
                 height={44}
                 placeholder="e.g. IPD - Ward"
-                maxLength={120}
+                maxLength={100}
                 required={dialogMode !== "view"}
                 disabled={formDisabled}
                 error={formErrors.roomType}
@@ -455,6 +508,36 @@ export default function RoomTypePage() {
         showCancel={false}
         onConfirm={() => {
           setShowApiErrorDialog(false);
+        }}
+      />
+
+      <MessageDialog
+        open={showDeleteConfirm}
+        onClose={() => {
+          if (isDeleting) return;
+          setShowDeleteConfirm(false);
+          setItemToDelete(null);
+        }}
+        closeOnOutsideClick={false}
+        icon="/icons/transhExtraDarkIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={
+          itemToDelete ? (
+            <span>
+              Are you sure you want to delete this room type?
+            </span>
+          ) : (
+            ""
+          )
+        }
+        confirmText="Confirm"
+        cancelText="Cancel"
+        showCancel={true}
+        isActionLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setItemToDelete(null);
         }}
       />
     </AppShell>

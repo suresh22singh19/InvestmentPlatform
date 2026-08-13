@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { createPortal } from "react-dom";
+import { Tooltip } from "./Tooltip";
 import {
   useCallback,
   useEffect,
@@ -16,6 +17,7 @@ import {
 type SizeValue = number | string;
 
 export type SelectOption = {
+  roleName?: string;
   label: string;
   value: string;
   description?: string;
@@ -121,7 +123,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
       error,
       emptyMessage = "No results found",
       hideLabel = false,
-      className="",
+      className = "",
       labelSlot,
       onBlur,
       onOpen,
@@ -129,504 +131,492 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
     }: FormSelectFieldProps,
     ref
   ) => {
-  const isMultiple = props.mode === "multiple";
-  const Check_Cursor_pointer = className ? className : "";
-  
-  const renderLabel = useMemo(() => {
-    if (label.includes("*")) {
-      const parts = label.split("*");
-      return (
-        <>
-          {parts[0]}
-          <span className="text-[#F6776E]">*</span>
-          {parts.slice(1).join("*")}
-        </>
-      );
-    }
-    return label;
-  }, [label]);
-  const [open, setOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [keyboardSearch, setKeyboardSearch] = useState("");
-  const [keyboardSearchTimeout, setKeyboardSearchTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [mounted, setMounted] = useState(false);
-  const [dropdownStyle, setDropdownStyle] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    placement: "bottom" | "top";
-    maxHeight: number;
-  } | null>(null);
+    const isMultiple = props.mode === "multiple";
+    const Check_Cursor_pointer = className ? className : "";
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+    const renderLabel = useMemo(() => {
+      if (label.includes("*")) {
+        const parts = label.split("*");
+        return (
+          <>
+            {parts[0]}
+            <span className="text-[#F6776E]">*</span>
+            {parts.slice(1).join("*")}
+          </>
+        );
+      }
+      return label;
+    }, [label]);
+    const [open, setOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [keyboardSearch, setKeyboardSearch] = useState("");
+    const [keyboardSearchTimeout, setKeyboardSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+    const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const [mounted, setMounted] = useState(false);
+    const [dropdownStyle, setDropdownStyle] = useState<{
+      top: number;
+      left: number;
+      width: SizeValue;
+      placement: "bottom" | "top";
+      maxHeight: number;
+    } | null>(null);
 
-  const initialSingleValue: string | null =
-    !isMultiple
-      ? typeof props.value === "string" || props.value === null
-        ? (props.value ?? null)
-        : typeof props.defaultValue === "string" || props.defaultValue === null
-          ? (props.defaultValue ?? null)
-          : null
-      : null;
+    useEffect(() => {
+      setMounted(true);
+    }, []);
 
-  const initialMultipleValue: string[] =
-    isMultiple
-      ? Array.isArray(props.value)
-        ? props.value
-        : Array.isArray(props.defaultValue)
-          ? props.defaultValue
-          : []
-      : [];
+    const initialSingleValue: string | null =
+      !isMultiple
+        ? typeof props.value === "string" || props.value === null
+          ? (props.value ?? null)
+          : typeof props.defaultValue === "string" || props.defaultValue === null
+            ? (props.defaultValue ?? null)
+            : null
+        : null;
 
-  const [internalSingle, setInternalSingle] = useState<string | null>(initialSingleValue);
-  const [internalMultiple, setInternalMultiple] = useState<string[]>(initialMultipleValue);
+    const initialMultipleValue: string[] =
+      isMultiple
+        ? Array.isArray(props.value)
+          ? props.value
+          : Array.isArray(props.defaultValue)
+            ? props.defaultValue
+            : []
+        : [];
 
-  const selectedValue = useMemo(() => {
-    if (isMultiple) {
-      if (Array.isArray(props.value)) {
+    const [internalSingle, setInternalSingle] = useState<string | null>(initialSingleValue);
+    const [internalMultiple, setInternalMultiple] = useState<string[]>(initialMultipleValue);
+
+    const selectedValue = useMemo(() => {
+      if (isMultiple) {
+        if (Array.isArray(props.value)) {
+          return props.value;
+        }
+        return internalMultiple;
+      }
+      if (typeof props.value === "string" || props.value === null) {
         return props.value;
       }
-      return internalMultiple;
-    }
-    if (typeof props.value === "string" || props.value === null) {
-      return props.value;
-    }
-    return internalSingle ?? null;
-  }, [isMultiple, props.value, internalMultiple, internalSingle]);
+      return internalSingle ?? null;
+    }, [isMultiple, props.value, internalMultiple, internalSingle]);
 
-  const filteredOptions = useMemo(() => {
-    const searchQuery = searchTerm.trim() || keyboardSearch.trim();
-    if (!searchQuery) {
-      return options;
-    }
+    const filteredOptions = useMemo(() => {
+      const searchQuery = searchTerm.trim() || keyboardSearch.trim();
+      if (!searchQuery) {
+        return options;
+      }
 
-    const query = searchQuery.toLowerCase();
-    return options.filter((option) => option.label.toLowerCase().includes(query));
-  }, [options, searchTerm, keyboardSearch]);
+      const query = searchQuery.toLowerCase();
+      return options.filter((option) => option.label.toLowerCase().includes(query));
+    }, [options, searchTerm, keyboardSearch]);
 
-  const updateDropdownPosition = useCallback(() => {
-    if (!containerRef.current) {
-      return;
-    }
+    const updateDropdownPosition = useCallback(() => {
+      if (!containerRef.current) {
+        return;
+      }
 
-    const triggerRect = containerRef.current.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    const margin = 12;
-    const offset = 6;
-    // Use dropdownWidth if provided, otherwise use input field width
-    const widthValue = dropdownWidth 
-      ? (typeof dropdownWidth === "number" ? dropdownWidth : parseFloat(String(dropdownWidth)))
-      : triggerRect.width;
-    const spaceBelow = viewportHeight - triggerRect.bottom - margin;
-    const spaceAbove = triggerRect.top - margin;
+      const triggerRect = containerRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      const margin = 12;
+      const offset = 6;
 
-    let placement: "bottom" | "top" = "bottom";
+      // Use dropdownWidth if provided, otherwise use input field width
+      let widthValue: SizeValue = triggerRect.width;
+      let numericWidth = triggerRect.width;
 
-    if (spaceBelow < 220 && spaceAbove > spaceBelow) {
-      placement = "top";
-    }
+      if (dropdownWidth !== undefined && dropdownWidth !== null) {
+        if (typeof dropdownWidth === "number") {
+          numericWidth = dropdownWidth;
+          widthValue = `${dropdownWidth}px`;
+        } else if (typeof dropdownWidth === "string") {
+          widthValue = dropdownWidth;
+          const parsed = parseFloat(dropdownWidth);
+          if (!isNaN(parsed) && !dropdownWidth.includes("%")) {
+            numericWidth = parsed;
+          }
+        }
+      }
 
-    const availableSpace = placement === "bottom" ? spaceBelow : spaceAbove;
-    const maxHeight = Math.min(360, Math.max(220, availableSpace));
+      const spaceBelow = viewportHeight - triggerRect.bottom - margin;
+      const spaceAbove = triggerRect.top - margin;
 
-    let left = triggerRect.left;
-    if (left + widthValue + margin > viewportWidth) {
-      left = viewportWidth - widthValue - margin;
-    }
-    left = Math.max(left, margin);
+      let placement: "bottom" | "top" = "bottom";
 
-    const top =
-      placement === "bottom"
-        ? triggerRect.bottom + offset
-        : triggerRect.top - offset;
+      if (spaceBelow < 220 && spaceAbove > spaceBelow) {
+        placement = "top";
+      }
 
-    setDropdownStyle({
-      top,
-      left,
-      width: widthValue,
-      placement,
-      maxHeight,
-    });
-  }, [dropdownWidth]);
+      const availableSpace = placement === "bottom" ? spaceBelow : spaceAbove;
+      const maxHeight = Math.min(360, Math.max(220, availableSpace));
 
-  useLayoutEffect(() => {
-    if (open) {
-      updateDropdownPosition();
-      // Focus search input when dropdown opens
-      requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
+      let left = triggerRect.left;
+      if (left + numericWidth + margin > viewportWidth) {
+        left = viewportWidth - numericWidth - margin;
+      }
+      left = Math.max(left, margin);
+
+      const top =
+        placement === "bottom"
+          ? triggerRect.bottom + offset
+          : triggerRect.top - offset;
+
+      setDropdownStyle({
+        top,
+        left,
+        width: widthValue,
+        placement,
+        maxHeight,
       });
-    }
-  }, [open, updateDropdownPosition, filteredOptions.length]);
+    }, [dropdownWidth]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(target) &&
-        panelRef.current &&
-        !panelRef.current.contains(target)
-      ) {
-        setOpen(false);
-        setSearchTerm("");
-        setKeyboardSearch("");
-        setHighlightedIndex(-1);
-        onBlur?.(); // Call onBlur when dropdown closes
+    useLayoutEffect(() => {
+      if (open) {
+        updateDropdownPosition();
+        // Focus search input when dropdown opens
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+        });
       }
-    };
+    }, [open, updateDropdownPosition, filteredOptions.length]);
 
-    const handleFocusChange = (event: FocusEvent) => {
-      // Check if focus is moving to an element outside our component
-      const target = event.target as Node | null;
-      if (
-        target &&
-        containerRef.current &&
-        !containerRef.current.contains(target) &&
-        panelRef.current &&
-        !panelRef.current.contains(target)
-      ) {
-        // Focus moved outside, close dropdown
-        setOpen(false);
-        setSearchTerm("");
-        setKeyboardSearch("");
-        setHighlightedIndex(-1);
-        onBlur?.();
+    useEffect(() => {
+      if (!open) {
+        return;
       }
-    };
 
-    const handleWindowChange = () => {
-      updateDropdownPosition();
-    };
+      const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as Node;
+        if (
+          containerRef.current &&
+          !containerRef.current.contains(target) &&
+          panelRef.current &&
+          !panelRef.current.contains(target)
+        ) {
+          setOpen(false);
+          setSearchTerm("");
+          setKeyboardSearch("");
+          setHighlightedIndex(-1);
+          onBlur?.(); // Call onBlur when dropdown closes
+        }
+      };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("focusin", handleFocusChange);
-    window.addEventListener("resize", handleWindowChange);
-    window.addEventListener("scroll", handleWindowChange, true);
+      const handleFocusChange = (event: FocusEvent) => {
+        // Check if focus is moving to an element outside our component
+        const target = event.target as Node | null;
+        if (
+          target &&
+          containerRef.current &&
+          !containerRef.current.contains(target) &&
+          panelRef.current &&
+          !panelRef.current.contains(target)
+        ) {
+          // Focus moved outside, close dropdown
+          setOpen(false);
+          setSearchTerm("");
+          setKeyboardSearch("");
+          setHighlightedIndex(-1);
+          onBlur?.();
+        }
+      };
 
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("focusin", handleFocusChange);
-      window.removeEventListener("resize", handleWindowChange);
-      window.removeEventListener("scroll", handleWindowChange, true);
-    };
-  }, [open, updateDropdownPosition, onBlur]);
+      const handleWindowChange = () => {
+        updateDropdownPosition();
+      };
 
-  useEffect(() => {
-    if (listRef.current && open) {
-      listRef.current.scrollTop = 0;
-    }
-  }, [open, searchTerm]);
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("focusin", handleFocusChange);
+      window.addEventListener("resize", handleWindowChange);
+      window.addEventListener("scroll", handleWindowChange, true);
 
-  const prevOpenRef = useRef(false);
-  useEffect(() => {
-    if (open && !prevOpenRef.current) {
-      onOpen?.();
-    }
-    prevOpenRef.current = open;
-  }, [open, onOpen]);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("focusin", handleFocusChange);
+        window.removeEventListener("resize", handleWindowChange);
+        window.removeEventListener("scroll", handleWindowChange, true);
+      };
+    }, [open, updateDropdownPosition, onBlur]);
 
-  // Clear keyboard search after timeout
-  useEffect(() => {
-    if (keyboardSearchTimeout) {
-      clearTimeout(keyboardSearchTimeout);
-    }
-    if (keyboardSearch) {
-      const timeout = setTimeout(() => {
-        setKeyboardSearch("");
-      }, 1000); // Clear after 1 second of no typing
-      setKeyboardSearchTimeout(timeout);
-    }
-    return () => {
+    useEffect(() => {
+      if (listRef.current && open) {
+        listRef.current.scrollTop = 0;
+      }
+    }, [open, searchTerm]);
+
+    const prevOpenRef = useRef(false);
+    useEffect(() => {
+      if (open && !prevOpenRef.current) {
+        onOpen?.();
+      }
+      prevOpenRef.current = open;
+    }, [open, onOpen]);
+
+    // Clear keyboard search after timeout
+    useEffect(() => {
       if (keyboardSearchTimeout) {
         clearTimeout(keyboardSearchTimeout);
       }
-    };
-  }, [keyboardSearch]);
+      if (keyboardSearch) {
+        const timeout = setTimeout(() => {
+          setKeyboardSearch("");
+        }, 1000); // Clear after 1 second of no typing
+        setKeyboardSearchTimeout(timeout);
+      }
+      return () => {
+        if (keyboardSearchTimeout) {
+          clearTimeout(keyboardSearchTimeout);
+        }
+      };
+    }, [keyboardSearch]);
 
     const toggleOpen = useCallback(() => {
-    if (disabled) {
-      return;
-    }
-
-    setOpen((prev) => {
-      const next = !prev;
-      if (!next) {
-        // When closing, call onBlur to trigger validation
-        setSearchTerm("");
-        setKeyboardSearch("");
-        setHighlightedIndex(-1);
-        // Call onBlur when dropdown closes (even without selection)
-        setTimeout(() => {
-          onBlur?.();
-        }, 0);
-      } else {
-        // Reset highlighted index when opening
-        setHighlightedIndex(-1);
-      }
-      return next;
-    });
-  }, [disabled, onBlur]);
-
-  const handleSingleSelect = useCallback(
-    (value: string) => {
-      const option = options.find((item) => String(item.value) === String(value)) ?? null;
-      if (option?.disabled) {
-        return;
-      }
-
-      if (props.value === undefined || !(typeof props.value === "string" || props.value === null)) {
-        setInternalSingle(value);
-      }
-
-      props.onChange?.(value, option);
-      setOpen(false);
-      setSearchTerm("");
-      setKeyboardSearch("");
-      setHighlightedIndex(-1);
-      
-      // Delay onBlur to ensure value change is processed first
-      setTimeout(() => {
-        onBlur?.(); // Call onBlur when dropdown closes, after value is updated
-      }, 0);
-    },
-    [options, props, onBlur]
-  );
-
-  const handleMultiToggle = useCallback(
-    (value: string) => {
-      const option = options.find((item) => String(item.value) === String(value));
-      if (option?.disabled) {
-        return;
-      }
-      const currentValues = Array.isArray(props.value) ? props.value : internalMultiple;
-      const nextValues = currentValues.includes(value)
-        ? currentValues.filter((item) => item !== value)
-        : [...currentValues, value];
-
-      if (!Array.isArray(props.value)) {
-        setInternalMultiple(nextValues);
-      }
-
-      const selectedOptions = options.filter((item) => nextValues.includes(item.value));
-      props.onChange?.(nextValues, selectedOptions);
-    },
-    [internalMultiple, options, props]
-  );
-
-  // Handle keyboard navigation
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (disabled) return;
-
-    // Space key - open dropdown
-    if (e.key === " " || e.key === "Spacebar") {
-      e.preventDefault();
-      if (!open) {
-        setOpen(true);
-        setSearchTerm("");
-        setKeyboardSearch("");
-      }
-      return;
-    }
-
-    // Escape key - close dropdown
-    if (e.key === "Escape") {
-      if (open) {
-        setOpen(false);
-        setSearchTerm("");
-        setKeyboardSearch("");
-        onBlur?.(); // Call onBlur when dropdown closes
-        setHighlightedIndex(-1);
-      }
-      return;
-    }
-
-    // Tab key - select matching/highlighted option if available, then move to next field
-    if (e.key === "Tab") {
-      // If field is disabled, manually skip to next enabled field
       if (disabled) {
-        e.preventDefault();
-        // Find next focusable field, skipping disabled select fields
-        const form = buttonRef.current?.closest("form") || document.body;
-        const allFocusable = Array.from(
-          form.querySelectorAll<HTMLElement>(
-            'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
-          )
-        ).filter((el) => {
-          const rect = el.getBoundingClientRect();
-          const isVisible = rect.width > 0 && rect.height > 0;
-          const isInPortal = panelRef.current?.contains(el);
-          // Skip disabled select fields (buttons with aria-haspopup="listbox" and disabled attribute)
-          const isDisabledSelect = el.tagName === "BUTTON" && 
-                                   el.getAttribute("aria-haspopup") === "listbox" && 
-                                   el.hasAttribute("disabled");
-          return isVisible && !isInPortal && !isDisabledSelect;
-        });
-        
-        const currentIndex = allFocusable.findIndex(el => el === buttonRef.current);
-        if (currentIndex >= 0) {
-          const nextIndex = e.shiftKey ? currentIndex - 1 : currentIndex + 1;
-          if (nextIndex >= 0 && nextIndex < allFocusable.length) {
-            allFocusable[nextIndex]?.focus();
-          }
-        }
         return;
       }
-      
-      // Always call onBlur when Tab is pressed (whether dropdown is open or not)
-      // This ensures validation runs when user tabs away without selecting
-      setTimeout(() => {
-        onBlur?.(); // Call onBlur when tabbing away
-      }, 0);
-      
-      // If dropdown is open, close it
-      if (open) {
+
+      setOpen((prev) => {
+        const next = !prev;
+        if (!next) {
+          // When closing, call onBlur to trigger validation
+          setSearchTerm("");
+          setKeyboardSearch("");
+          setHighlightedIndex(-1);
+          // Call onBlur when dropdown closes (even without selection)
+          setTimeout(() => {
+            onBlur?.();
+          }, 0);
+        } else {
+          // Reset highlighted index when opening
+          setHighlightedIndex(-1);
+        }
+        return next;
+      });
+    }, [disabled, onBlur]);
+
+    const handleSingleSelect = useCallback(
+      (value: string) => {
+        const option = options.find((item) => String(item.value) === String(value)) ?? null;
+        if (option?.disabled) {
+          return;
+        }
+
+        if (props.value === undefined || !(typeof props.value === "string" || props.value === null)) {
+          setInternalSingle(value);
+        }
+
+        props.onChange?.(value, option);
         setOpen(false);
         setSearchTerm("");
         setKeyboardSearch("");
         setHighlightedIndex(-1);
-      }
-      
-      // If there's a keyboard search or highlighted option, select it
-      if (keyboardSearch || (open && highlightedIndex >= 0 && highlightedIndex < filteredOptions.length)) {
-        let optionToSelect: SelectOption | null = null;
-        
-        if (open && highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
-          // Use highlighted option if dropdown is open
-          optionToSelect = filteredOptions[highlightedIndex];
-        } else if (keyboardSearch && filteredOptions.length > 0) {
-          // Use first matching option from keyboard search
-          optionToSelect = filteredOptions[0];
+
+        // Delay onBlur to ensure value change is processed first
+        setTimeout(() => {
+          onBlur?.(); // Call onBlur when dropdown closes, after value is updated
+        }, 0);
+      },
+      [options, props, onBlur]
+    );
+
+    const handleMultiToggle = useCallback(
+      (value: string) => {
+        const option = options.find((item) => String(item.value) === String(value));
+        if (option?.disabled) {
+          return;
         }
-        
-        if (optionToSelect) {
-          // Select the option
-          if (isMultiple) {
-            handleMultiToggle(optionToSelect.value);
-          } else {
-            handleSingleSelect(optionToSelect.value);
-          }
-          // Don't prevent default - let Tab proceed naturally to next field
-          // The selection will happen before the focus moves
+        const currentValues = Array.isArray(props.value) ? props.value : internalMultiple;
+        const nextValues = currentValues.includes(value)
+          ? currentValues.filter((item) => item !== value)
+          : [...currentValues, value];
+
+        if (!Array.isArray(props.value)) {
+          setInternalMultiple(nextValues);
         }
-      }
-      // Let Tab proceed normally (either with or without selection)
-      return;
-    }
 
-    // If dropdown is open, handle navigation
-    if (open) {
-      // Arrow keys - navigate options
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setHighlightedIndex((prev) => {
-          const next = prev < filteredOptions.length - 1 ? prev + 1 : prev;
-          // Scroll into view
-          if (listRef.current && next >= 0) {
-            setTimeout(() => {
-              const optionElement = listRef.current?.children[0]?.children[next + (isMultiple ? 1 : 0)] as HTMLElement;
-              if (optionElement) {
-                optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
-              }
-            }, 0);
-          }
-          return next;
-        });
-        return;
-      }
+        const selectedOptions = options.filter((item) => nextValues.includes(item.value));
+        props.onChange?.(nextValues, selectedOptions);
+      },
+      [internalMultiple, options, props]
+    );
 
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setHighlightedIndex((prev) => {
-          const next = prev > 0 ? prev - 1 : 0;
-          // Scroll into view
-          if (listRef.current && next >= 0) {
-            setTimeout(() => {
-              const optionElement = listRef.current?.children[0]?.children[next + (isMultiple ? 1 : 0)] as HTMLElement;
-              if (optionElement) {
-                optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
-              }
-            }, 0);
-          }
-          return next;
-        });
-        return;
-      }
+    // Handle keyboard navigation
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (disabled) return;
 
-      // Enter key - select highlighted option
-      if (e.key === "Enter") {
+      // Space key - open dropdown
+      if (e.key === " " || e.key === "Spacebar") {
         e.preventDefault();
-        if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
-          const option = filteredOptions[highlightedIndex];
-          if (isMultiple) {
-            handleMultiToggle(option.value);
-          } else {
-            handleSingleSelect(option.value);
-          }
-        }
-        return;
-      }
-    }
-
-    // Backspace key - focus search input
-    if (e.key === "Backspace") {
-      // If dropdown is open and search input is already focused, don't handle backspace here
-      // Let the search input handle it naturally
-      if (open && document.activeElement === searchInputRef.current) {
-        return; // Let the search input handle backspace normally
-      }
-      
-      // If there's keyboard search, clear it and focus search input
-      if (keyboardSearch) {
-        e.preventDefault();
-        const newSearch = keyboardSearch.slice(0, -1);
-        setKeyboardSearch(newSearch);
-        setSearchTerm(newSearch);
-        
-        // Open dropdown if closed
         if (!open) {
           setOpen(true);
+          setSearchTerm("");
+          setKeyboardSearch("");
         }
-        
-        // Focus search input with multiple attempts to ensure it works
-        const focusSearchInput = () => {
-          if (searchInputRef.current) {
-            searchInputRef.current.focus();
-            // Verify focus was successful, if not try again
-            if (document.activeElement !== searchInputRef.current) {
-              requestAnimationFrame(() => {
-                searchInputRef.current?.focus();
-              });
-            }
-          } else {
-            // If ref is not ready, try again after a short delay
-            setTimeout(focusSearchInput, 10);
-          }
-        };
-        
-        // Use requestAnimationFrame for better timing
-        requestAnimationFrame(() => {
-          focusSearchInput();
-        });
-      } else {
-        // If no keyboard search, just open dropdown and focus search input
-        if (!open) {
+        return;
+      }
+
+      // Escape key - close dropdown
+      if (e.key === "Escape") {
+        if (open) {
+          setOpen(false);
+          setSearchTerm("");
+          setKeyboardSearch("");
+          onBlur?.(); // Call onBlur when dropdown closes
+          setHighlightedIndex(-1);
+        }
+        return;
+      }
+
+      // Tab key - select matching/highlighted option if available, then move to next field
+      if (e.key === "Tab") {
+        // If field is disabled, manually skip to next enabled field
+        if (disabled) {
           e.preventDefault();
-          setOpen(true);
-          
+          // Find next focusable field, skipping disabled select fields
+          const form = buttonRef.current?.closest("form") || document.body;
+          const allFocusable = Array.from(
+            form.querySelectorAll<HTMLElement>(
+              'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+          ).filter((el) => {
+            const rect = el.getBoundingClientRect();
+            const isVisible = rect.width > 0 && rect.height > 0;
+            const isInPortal = panelRef.current?.contains(el);
+            // Skip disabled select fields (buttons with aria-haspopup="listbox" and disabled attribute)
+            const isDisabledSelect = el.tagName === "BUTTON" &&
+              el.getAttribute("aria-haspopup") === "listbox" &&
+              el.hasAttribute("disabled");
+            return isVisible && !isInPortal && !isDisabledSelect;
+          });
+
+          const currentIndex = allFocusable.findIndex(el => el === buttonRef.current);
+          if (currentIndex >= 0) {
+            const nextIndex = e.shiftKey ? currentIndex - 1 : currentIndex + 1;
+            if (nextIndex >= 0 && nextIndex < allFocusable.length) {
+              allFocusable[nextIndex]?.focus();
+            }
+          }
+          return;
+        }
+
+        // Always call onBlur when Tab is pressed (whether dropdown is open or not)
+        // This ensures validation runs when user tabs away without selecting
+        setTimeout(() => {
+          onBlur?.(); // Call onBlur when tabbing away
+        }, 0);
+
+        // If dropdown is open, close it
+        if (open) {
+          setOpen(false);
+          setSearchTerm("");
+          setKeyboardSearch("");
+          setHighlightedIndex(-1);
+        }
+
+        // If there's a keyboard search or highlighted option, select it
+        if (keyboardSearch || (open && highlightedIndex >= 0 && highlightedIndex < filteredOptions.length)) {
+          let optionToSelect: SelectOption | null = null;
+
+          if (open && highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+            // Use highlighted option if dropdown is open
+            optionToSelect = filteredOptions[highlightedIndex];
+          } else if (keyboardSearch && filteredOptions.length > 0) {
+            // Use first matching option from keyboard search
+            optionToSelect = filteredOptions[0];
+          }
+
+          if (optionToSelect) {
+            // Select the option
+            if (isMultiple) {
+              handleMultiToggle(optionToSelect.value);
+            } else {
+              handleSingleSelect(optionToSelect.value);
+            }
+            // Don't prevent default - let Tab proceed naturally to next field
+            // The selection will happen before the focus moves
+          }
+        }
+        // Let Tab proceed normally (either with or without selection)
+        return;
+      }
+
+      // If dropdown is open, handle navigation
+      if (open) {
+        // Arrow keys - navigate options
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setHighlightedIndex((prev) => {
+            const next = prev < filteredOptions.length - 1 ? prev + 1 : prev;
+            // Scroll into view
+            if (listRef.current && next >= 0) {
+              setTimeout(() => {
+                const optionElement = listRef.current?.children[0]?.children[next + (isMultiple ? 1 : 0)] as HTMLElement;
+                if (optionElement) {
+                  optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+              }, 0);
+            }
+            return next;
+          });
+          return;
+        }
+
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setHighlightedIndex((prev) => {
+            const next = prev > 0 ? prev - 1 : 0;
+            // Scroll into view
+            if (listRef.current && next >= 0) {
+              setTimeout(() => {
+                const optionElement = listRef.current?.children[0]?.children[next + (isMultiple ? 1 : 0)] as HTMLElement;
+                if (optionElement) {
+                  optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+              }, 0);
+            }
+            return next;
+          });
+          return;
+        }
+
+        // Enter key - select highlighted option
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+            const option = filteredOptions[highlightedIndex];
+            if (isMultiple) {
+              handleMultiToggle(option.value);
+            } else {
+              handleSingleSelect(option.value);
+            }
+          }
+          return;
+        }
+      }
+
+      // Backspace key - focus search input
+      if (e.key === "Backspace") {
+        // If dropdown is open and search input is already focused, don't handle backspace here
+        // Let the search input handle it naturally
+        if (open && document.activeElement === searchInputRef.current) {
+          return; // Let the search input handle backspace normally
+        }
+
+        // If there's keyboard search, clear it and focus search input
+        if (keyboardSearch) {
+          e.preventDefault();
+          const newSearch = keyboardSearch.slice(0, -1);
+          setKeyboardSearch(newSearch);
+          setSearchTerm(newSearch);
+
+          // Open dropdown if closed
+          if (!open) {
+            setOpen(true);
+          }
+
           // Focus search input with multiple attempts to ensure it works
           const focusSearchInput = () => {
             if (searchInputRef.current) {
@@ -642,200 +632,226 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
               setTimeout(focusSearchInput, 10);
             }
           };
-          
+
           // Use requestAnimationFrame for better timing
           requestAnimationFrame(() => {
             focusSearchInput();
           });
         } else {
-          // Dropdown is open but search input is not focused, focus it
-          e.preventDefault();
-          const focusSearchInput = () => {
-            if (searchInputRef.current) {
-              searchInputRef.current.focus();
-              // Verify focus was successful, if not try again
-              if (document.activeElement !== searchInputRef.current) {
-                requestAnimationFrame(() => {
-                  searchInputRef.current?.focus();
-                });
+          // If no keyboard search, just open dropdown and focus search input
+          if (!open) {
+            e.preventDefault();
+            setOpen(true);
+
+            // Focus search input with multiple attempts to ensure it works
+            const focusSearchInput = () => {
+              if (searchInputRef.current) {
+                searchInputRef.current.focus();
+                // Verify focus was successful, if not try again
+                if (document.activeElement !== searchInputRef.current) {
+                  requestAnimationFrame(() => {
+                    searchInputRef.current?.focus();
+                  });
+                }
+              } else {
+                // If ref is not ready, try again after a short delay
+                setTimeout(focusSearchInput, 10);
               }
-            } else {
-              // If ref is not ready, try again after a short delay
-              setTimeout(focusSearchInput, 10);
-            }
-          };
-          
+            };
+
+            // Use requestAnimationFrame for better timing
+            requestAnimationFrame(() => {
+              focusSearchInput();
+            });
+          } else {
+            // Dropdown is open but search input is not focused, focus it
+            e.preventDefault();
+            const focusSearchInput = () => {
+              if (searchInputRef.current) {
+                searchInputRef.current.focus();
+                // Verify focus was successful, if not try again
+                if (document.activeElement !== searchInputRef.current) {
+                  requestAnimationFrame(() => {
+                    searchInputRef.current?.focus();
+                  });
+                }
+              } else {
+                // If ref is not ready, try again after a short delay
+                setTimeout(focusSearchInput, 10);
+              }
+            };
+
+            requestAnimationFrame(() => {
+              focusSearchInput();
+            });
+          }
+        }
+        return;
+      }
+
+      // Typing - build search string and filter
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const newSearch = keyboardSearch + e.key;
+        setKeyboardSearch(newSearch);
+        setSearchTerm(newSearch); // Also update search input for consistency
+
+        // If dropdown is not open, open it
+        if (!open) {
+          setOpen(true);
+        }
+
+        // Ensure search input is focused when typing
+        if (open && document.activeElement !== searchInputRef.current) {
           requestAnimationFrame(() => {
-            focusSearchInput();
+            searchInputRef.current?.focus();
           });
         }
-      }
-      return;
-    }
 
-    // Typing - build search string and filter
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      const newSearch = keyboardSearch + e.key;
-      setKeyboardSearch(newSearch);
-      setSearchTerm(newSearch); // Also update search input for consistency
-      
-      // If dropdown is not open, open it
-      if (!open) {
-        setOpen(true);
-      }
-      
-      // Ensure search input is focused when typing
-      if (open && document.activeElement !== searchInputRef.current) {
-        requestAnimationFrame(() => {
-          searchInputRef.current?.focus();
-        });
-      }
+        // Calculate filtered options with new search term immediately
+        const query = newSearch.toLowerCase();
+        const filtered = options.filter((option) =>
+          option.label.toLowerCase().includes(query)
+        );
 
-      // Calculate filtered options with new search term immediately
-      const query = newSearch.toLowerCase();
-      const filtered = options.filter((option) => 
-        option.label.toLowerCase().includes(query)
-      );
-      
-      // Find first matching option that starts with the query
-      const matchIndex = filtered.findIndex((option) =>
-        option.label.toLowerCase().startsWith(query)
-      );
-      
-      // Set highlighted index immediately
-      if (matchIndex >= 0) {
-        setHighlightedIndex(matchIndex);
-        // Scroll into view after a brief delay to ensure DOM is updated
-        setTimeout(() => {
-          if (listRef.current && matchIndex >= 0) {
-            const optionElement = listRef.current?.children[0]?.children[matchIndex + (isMultiple ? 1 : 0)] as HTMLElement;
-            if (optionElement) {
-              optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        // Find first matching option that starts with the query
+        const matchIndex = filtered.findIndex((option) =>
+          option.label.toLowerCase().startsWith(query)
+        );
+
+        // Set highlighted index immediately
+        if (matchIndex >= 0) {
+          setHighlightedIndex(matchIndex);
+          // Scroll into view after a brief delay to ensure DOM is updated
+          setTimeout(() => {
+            if (listRef.current && matchIndex >= 0) {
+              const optionElement = listRef.current?.children[0]?.children[matchIndex + (isMultiple ? 1 : 0)] as HTMLElement;
+              if (optionElement) {
+                optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
+              }
             }
-          }
-        }, 10);
-      } else if (filtered.length > 0) {
-        // If no exact start match, highlight first filtered option
+          }, 10);
+        } else if (filtered.length > 0) {
+          // If no exact start match, highlight first filtered option
+          setHighlightedIndex(0);
+          // Scroll into view
+          setTimeout(() => {
+            if (listRef.current) {
+              const optionElement = listRef.current?.children[0]?.children[0 + (isMultiple ? 1 : 0)] as HTMLElement;
+              if (optionElement) {
+                optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
+              }
+            }
+          }, 10);
+        } else {
+          // No matches, reset highlight
+          setHighlightedIndex(-1);
+        }
+      }
+    }, [disabled, open, options, highlightedIndex, keyboardSearch, isMultiple, filteredOptions, handleSingleSelect, handleMultiToggle]);
+
+    // Reset highlighted index when filtered options change
+    useEffect(() => {
+      if (open && filteredOptions.length > 0 && highlightedIndex < 0) {
+        // Auto-highlight first option when dropdown opens
         setHighlightedIndex(0);
-        // Scroll into view
-        setTimeout(() => {
-          if (listRef.current) {
-            const optionElement = listRef.current?.children[0]?.children[0 + (isMultiple ? 1 : 0)] as HTMLElement;
-            if (optionElement) {
-              optionElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
-            }
-          }
-        }, 10);
-      } else {
-        // No matches, reset highlight
-        setHighlightedIndex(-1);
       }
-    }
-  }, [disabled, open, options, highlightedIndex, keyboardSearch, isMultiple, filteredOptions, handleSingleSelect, handleMultiToggle]);
+    }, [open, filteredOptions.length, highlightedIndex]);
 
-  // Reset highlighted index when filtered options change
-  useEffect(() => {
-    if (open && filteredOptions.length > 0 && highlightedIndex < 0) {
-      // Auto-highlight first option when dropdown opens
-      setHighlightedIndex(0);
-    }
-  }, [open, filteredOptions.length, highlightedIndex]);
+    const selectedLabel = useMemo(() => {
+      if (isMultiple) {
+        const values = (selectedValue as string[]) ?? [];
+        const selectedOptions = options.filter((opt) => values.includes(opt.value));
+        if (!selectedOptions.length) {
+          return placeholder;
+        }
+        return selectedOptions.map((opt) => opt.label).join(", ");
+      }
 
-  const selectedLabel = useMemo(() => {
-    if (isMultiple) {
-      const values = (selectedValue as string[]) ?? [];
-      const selectedOptions = options.filter((opt) => values.includes(opt.value));
-      if (!selectedOptions.length) {
+      const value = selectedValue as string | null;
+      if (!value) {
         return placeholder;
       }
-      return selectedOptions.map((opt) => opt.label).join(", ");
-    }
 
-    const value = selectedValue as string | null;
-    if (!value) {
-      return placeholder;
-    }
+      const match = options.find((opt) => String(opt.value) === String(value));
+      return match?.label ?? placeholder;
+    }, [isMultiple, options, placeholder, selectedValue]);
 
-    const match = options.find((opt) => String(opt.value) === String(value));
-    return match?.label ?? placeholder;
-  }, [isMultiple, options, placeholder, selectedValue]);
+    const wrapperStyles = useMemo(() => {
+      if (width === undefined) {
+        return {} as React.CSSProperties;
+      }
+      const w = normalizeSize(width);
+      return {
+        width: w,
+        minWidth: w,
+        flexShrink: 0,
+      } as React.CSSProperties;
+    }, [width]);
 
-  const wrapperStyles = useMemo(() => {
-    if (width === undefined) {
-      return {} as React.CSSProperties;
-    }
-    const w = normalizeSize(width);
-    return {
-      width: w,
-      minWidth: w,
-      flexShrink: 0,
-    } as React.CSSProperties;
-  }, [width]);
+    const triggerStyles = useMemo(() => {
+      return {
+        height: normalizeSize(height),
+      } as React.CSSProperties;
+    }, [height]);
 
-  const triggerStyles = useMemo(() => {
-    return {
-      height: normalizeSize(height),
-    } as React.CSSProperties;
-  }, [height]);
-
-  const selectedCount = isMultiple ? ((selectedValue as string[]) ?? []).length : 0;
-  const selectableValues = useMemo(
-    () => options.filter((opt) => !opt.disabled).map((opt) => opt.value),
-    [options]
-  );
-  const lockedValues = useMemo(
-    () => options.filter((opt) => opt.disabled).map((opt) => opt.value),
-    [options]
-  );
-  const areAllSelected = useMemo(() => {
-    if (!isMultiple) {
-      return false;
-    }
-    const values = (selectedValue as string[]) ?? [];
-    return (
-      selectableValues.length > 0 &&
-      selectableValues.every((value) => values.includes(value))
+    const selectedCount = isMultiple ? ((selectedValue as string[]) ?? []).length : 0;
+    const selectableValues = useMemo(
+      () => options.filter((opt) => !opt.disabled).map((opt) => opt.value),
+      [options]
     );
-  }, [isMultiple, selectableValues, selectedValue]);
+    const lockedValues = useMemo(
+      () => options.filter((opt) => opt.disabled).map((opt) => opt.value),
+      [options]
+    );
+    const areAllSelected = useMemo(() => {
+      if (!isMultiple) {
+        return false;
+      }
+      const values = (selectedValue as string[]) ?? [];
+      return (
+        selectableValues.length > 0 &&
+        selectableValues.every((value) => values.includes(value))
+      );
+    }, [isMultiple, selectableValues, selectedValue]);
 
-  const handleSelectAllToggle = useCallback(() => {
-    if (!isMultiple) {
-      return;
-    }
-    const currentValues = Array.isArray(props.value) ? props.value : internalMultiple;
-    const allSelectableSelected =
-      selectableValues.length > 0 &&
-      selectableValues.every((value) => currentValues.includes(value));
-    const nextValues = allSelectableSelected
-      ? [...lockedValues]
-      : [...new Set([...lockedValues, ...selectableValues])];
+    const handleSelectAllToggle = useCallback(() => {
+      if (!isMultiple) {
+        return;
+      }
+      const currentValues = Array.isArray(props.value) ? props.value : internalMultiple;
+      const allSelectableSelected =
+        selectableValues.length > 0 &&
+        selectableValues.every((value) => currentValues.includes(value));
+      const nextValues = allSelectableSelected
+        ? [...lockedValues]
+        : [...new Set([...lockedValues, ...selectableValues])];
 
-    if (!Array.isArray(props.value)) {
-      setInternalMultiple(nextValues);
-    }
+      if (!Array.isArray(props.value)) {
+        setInternalMultiple(nextValues);
+      }
 
-    const selectedOptions = options.filter((item) => nextValues.includes(item.value));
-    props.onChange?.(nextValues, selectedOptions);
-  }, [internalMultiple, isMultiple, lockedValues, options, props, selectableValues]);
+      const selectedOptions = options.filter((item) => nextValues.includes(item.value));
+      props.onChange?.(nextValues, selectedOptions);
+    }, [internalMultiple, isMultiple, lockedValues, options, props, selectableValues]);
 
-  const handleClearAll = useCallback(() => {
-    if (!isMultiple) {
-      return;
-    }
-    const nextValues = [...lockedValues];
+    const handleClearAll = useCallback(() => {
+      if (!isMultiple) {
+        return;
+      }
+      const nextValues = [...lockedValues];
 
-    if (!Array.isArray(props.value)) {
-      setInternalMultiple(nextValues);
-    }
+      if (!Array.isArray(props.value)) {
+        setInternalMultiple(nextValues);
+      }
 
-    const selectedOptions = options.filter((item) => nextValues.includes(item.value));
-    props.onChange?.(nextValues, selectedOptions);
-  }, [isMultiple, lockedValues, options, props]);
+      const selectedOptions = options.filter((item) => nextValues.includes(item.value));
+      props.onChange?.(nextValues, selectedOptions);
+    }, [isMultiple, lockedValues, options, props]);
 
-  const dropdownContent =
-    mounted && open && dropdownStyle
-      ? createPortal(
+    const dropdownContent =
+      mounted && open && dropdownStyle
+        ? createPortal(
           <div
             ref={panelRef}
             className={`z-[1000] flex max-h-[calc(100vh-96px)] flex-col rounded-[16px] border border-[#E6E8EC] bg-white shadow-[0px_28px_60px_rgba(47,72,61,0.16)]`}
@@ -883,20 +899,20 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                       const newValue = event.target.value;
                       setSearchTerm(newValue);
                       setKeyboardSearch(newValue); // Sync keyboard search
-                      
+
                       // Calculate filtered options immediately (don't wait for memoized value)
                       const query = newValue.trim().toLowerCase();
                       const filtered = query
                         ? options.filter((option) => option.label.toLowerCase().includes(query))
                         : options;
-                      
+
                       // Update highlighted index based on search
                       if (query) {
                         // Find first matching option that starts with the query
                         const matchIndex = filtered.findIndex((option) =>
                           option.label.toLowerCase().startsWith(query)
                         );
-                        
+
                         if (matchIndex >= 0) {
                           setHighlightedIndex(matchIndex);
                           // Scroll into view after a brief delay to ensure DOM is updated
@@ -935,7 +951,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                       // Enter key - select highlighted option or first option if available
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        
+
                         // If there's a highlighted option, select it
                         if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
                           const option = filteredOptions[highlightedIndex];
@@ -952,7 +968,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                           buttonRef.current?.focus();
                           return;
                         }
-                        
+
                         // If no highlighted option but there are filtered options, select the first one
                         if (filteredOptions.length > 0) {
                           const firstOption = filteredOptions[0];
@@ -969,7 +985,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                           buttonRef.current?.focus();
                           return;
                         }
-                        
+
                         // If no options available, just close dropdown
                         setOpen(false);
                         setSearchTerm("");
@@ -978,7 +994,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                         buttonRef.current?.focus();
                         return;
                       }
-                      
+
                       // Arrow keys - navigate options when in search input
                       if (e.key === "ArrowDown") {
                         e.preventDefault();
@@ -999,7 +1015,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                         }
                         return;
                       }
-                      
+
                       if (e.key === "ArrowUp") {
                         e.preventDefault();
                         if (filteredOptions.length > 0) {
@@ -1019,22 +1035,22 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                         }
                         return;
                       }
-                      
+
                       // Tab key - select highlighted or first matching option if search text exists, then move to next field
                       if (e.key === "Tab") {
                         e.preventDefault();
-                        
+
                         let optionToSelect: SelectOption | null = null;
-                        
+
                         // If there's a highlighted option, use it
                         if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
                           optionToSelect = filteredOptions[highlightedIndex];
-                        } 
+                        }
                         // Otherwise, if there's search text and filtered options, select the first one
                         else if (searchTerm && filteredOptions.length > 0) {
                           optionToSelect = filteredOptions[0];
                         }
-                        
+
                         // Select the option if we have one
                         if (optionToSelect) {
                           if (isMultiple) {
@@ -1052,27 +1068,27 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                             onBlur?.(); // Call onBlur when dropdown closes without selection
                           }, 0);
                         }
-                        
+
                         // Close dropdown
                         setOpen(false);
                         setSearchTerm("");
                         setKeyboardSearch("");
                         setHighlightedIndex(-1);
-                        
+
                         // First, return focus to the button to ensure selection is complete
                         // Then move to next field after a brief delay
                         if (optionToSelect) {
                           // Wait for selection to complete, then move focus
                           setTimeout(() => {
                             if (!buttonRef.current) return;
-                            
+
                             // Return focus to button briefly to ensure selection completes
                             buttonRef.current.focus();
-                            
+
                             // Then move to next field after selection is confirmed
                             setTimeout(() => {
                               if (!buttonRef.current) return;
-                              
+
                               // Find all focusable elements in the form/document
                               const form = buttonRef.current.closest('form') || document.body;
                               const allFocusable = Array.from(
@@ -1080,30 +1096,30 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                                   'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
                                 )
                               );
-                              
+
                               // Filter out elements that are not visible or are in portals/dropdowns
                               const focusableElements = allFocusable.filter(el => {
                                 const rect = el.getBoundingClientRect();
-                                const isVisible = rect.width > 0 && rect.height > 0 && 
-                                                window.getComputedStyle(el).visibility !== 'hidden' &&
-                                                window.getComputedStyle(el).display !== 'none';
-                                
+                                const isVisible = rect.width > 0 && rect.height > 0 &&
+                                  window.getComputedStyle(el).visibility !== 'hidden' &&
+                                  window.getComputedStyle(el).display !== 'none';
+
                                 // Check if element is in a portal (dropdown panel)
                                 const isInPortal = panelRef.current?.contains(el);
-                                
+
                                 // Skip disabled select fields
-                                const isDisabledSelect = el.tagName === "BUTTON" && 
-                                                         el.getAttribute("aria-haspopup") === "listbox" && 
-                                                         el.hasAttribute("disabled");
-                                
+                                const isDisabledSelect = el.tagName === "BUTTON" &&
+                                  el.getAttribute("aria-haspopup") === "listbox" &&
+                                  el.hasAttribute("disabled");
+
                                 return isVisible && !isInPortal && !isDisabledSelect;
                               });
-                              
+
                               // Find the button's index in the focusable elements
-                              const buttonIndex = focusableElements.findIndex(el => 
+                              const buttonIndex = focusableElements.findIndex(el =>
                                 el === buttonRef.current
                               );
-                              
+
                               if (buttonIndex >= 0) {
                                 if (e.shiftKey) {
                                   // Shift+Tab - focus previous element
@@ -1123,30 +1139,30 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                           // No selection, just move to next field
                           setTimeout(() => {
                             if (!buttonRef.current) return;
-                            
+
                             const form = buttonRef.current.closest('form') || document.body;
                             const allFocusable = Array.from(
                               form.querySelectorAll<HTMLElement>(
                                 'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
                               )
                             );
-                            
+
                             const focusableElements = allFocusable.filter(el => {
                               const rect = el.getBoundingClientRect();
-                              const isVisible = rect.width > 0 && rect.height > 0 && 
-                                              window.getComputedStyle(el).visibility !== 'hidden' &&
-                                              window.getComputedStyle(el).display !== 'none';
+                              const isVisible = rect.width > 0 && rect.height > 0 &&
+                                window.getComputedStyle(el).visibility !== 'hidden' &&
+                                window.getComputedStyle(el).display !== 'none';
                               const isInPortal = panelRef.current?.contains(el);
-                              const isDisabledSelect = el.tagName === "BUTTON" && 
-                                                       el.getAttribute("aria-haspopup") === "listbox" && 
-                                                       el.hasAttribute("disabled");
+                              const isDisabledSelect = el.tagName === "BUTTON" &&
+                                el.getAttribute("aria-haspopup") === "listbox" &&
+                                el.hasAttribute("disabled");
                               return isVisible && !isInPortal && !isDisabledSelect;
                             });
-                            
-                            const buttonIndex = focusableElements.findIndex(el => 
+
+                            const buttonIndex = focusableElements.findIndex(el =>
                               el === buttonRef.current
                             );
-                            
+
                             if (buttonIndex >= 0) {
                               if (e.shiftKey) {
                                 if (buttonIndex > 0) {
@@ -1160,7 +1176,7 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                             }
                           }, 10);
                         }
-                        
+
                         return;
                       }
                       // Escape key - close dropdown and return focus to button
@@ -1194,11 +1210,10 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                     >
                       <span className="flex items-center gap-3">
                         <span
-                          className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border-2 ${
-                            areAllSelected
-                              ? "border-[#0B8C00] bg-[#0B8C00]"
-                              : "border-[#D0D5DD] bg-white"
-                          }`}
+                          className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border-2 ${areAllSelected
+                            ? "border-[#0B8C00] bg-[#0B8C00]"
+                            : "border-[#D0D5DD] bg-white"
+                            }`}
                         >
                           {areAllSelected ? <CheckIconWhite /> : null}
                         </span>
@@ -1217,54 +1232,57 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
                         ? ((selectedValue as string[]) ?? []).includes(option.value)
                         : (selectedValue as string | null) === option.value;
                       const isHighlighted = highlightedIndex === index;
+                      const tooltipText = option.description ? `${option.label} (${option.description})` : option.label;
 
                       return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          disabled={isOptionDisabled}
-                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-3 text-sm font-medium transition-colors ${
-                            isOptionDisabled
+                        <Tooltip key={option.value} content={tooltipText} position="top" delay={150} disabled={!tooltipText || !tooltipText.trim()}>
+                          <button
+                            type="button"
+                            disabled={isOptionDisabled}
+                            // title={tooltipText}
+                            className={`cursor-pointer flex w-full items-center justify-between rounded-[10px] px-3 py-3 text-sm font-medium transition-colors ${isOptionDisabled
                               ? "cursor-not-allowed text-[#9CA3AF]"
-                              : `text-[#434956] ${
-                                  isHighlighted ? "bg-[#0B8C00]/10" : "hover:bg-[#F7FAF7]"
-                                }`
-                          }`}
-                          onClick={() =>
-                            isOptionDisabled
-                              ? undefined
-                              : isMultiple
-                                ? handleMultiToggle(option.value)
-                                : handleSingleSelect(option.value)
-                          }
-                          onMouseEnter={() => setHighlightedIndex(index)}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span
-                              className={`relative inline-block shrink-0 ${
-                                isMultiple
-                                  ? `h-4 w-4 rounded-[4px] border-2 ${
-                                      isSelected
-                                        ? "border-[#0B8C00] bg-[#0B8C00]"
-                                        : "border-[#D0D5DD] bg-white"
-                                    }`
-                                  : `h-5 w-5 rounded-full border-2 ${
-                                      isSelected ? "border-[#0B8C00]" : "border-[#B8BFC9]"
-                                    } bg-white`
+                              : `text-[#434956] ${isHighlighted ? "bg-[#0B8C00]/10" : "hover:bg-[#F7FAF7]"
+                              }`
                               }`}
-                              style={!isMultiple ? { aspectRatio: "1 / 1" } : undefined}
-                            >
-                              {isMultiple ? (
-                                <span className="absolute inset-0 flex items-center justify-center">
-                                  {isSelected ? <CheckIconWhite /> : null}
-                                </span>
-                              ) : isSelected ? (
-                                <RadioTick />
-                              ) : null}
+                            onClick={() =>
+                              isOptionDisabled
+                                ? undefined
+                                : isMultiple
+                                  ? handleMultiToggle(option.value)
+                                  : handleSingleSelect(option.value)
+                            }
+                            onMouseEnter={() => setHighlightedIndex(index)}
+                          >
+                            <span className="flex items-center gap-2 min-w-0 flex-1">
+                              <span
+                                className={`relative inline-block shrink-0 ${isMultiple
+                                  ? `h-4 w-4 rounded-[4px] border-2 ${isSelected
+                                    ? "border-[#0B8C00] bg-[#0B8C00]"
+                                    : "border-[#D0D5DD] bg-white"
+                                  }`
+                                  : `h-5 w-5 rounded-full border-2 ${isSelected ? "border-[#0B8C00]" : "border-[#B8BFC9]"
+                                  } bg-white`
+                                  }`}
+                                style={!isMultiple ? { aspectRatio: "1 / 1" } : undefined}
+                              >
+                                {isMultiple ? (
+                                  <span className="absolute inset-0 flex items-center justify-center">
+                                    {isSelected ? <CheckIconWhite /> : null}
+                                  </span>
+                                ) : isSelected ? (
+                                  <RadioTick />
+                                ) : null}
+                              </span>
+                              <div className="flex flex-col text-left py-0.5 min-w-0 flex-1">
+                                <span className="leading-tight truncate inline-block align-top">{option.label}</span>
+                                {option.description && (
+                                  <span className="text-[11px] text-[#F6776E] font-medium mt-0.5 leading-tight truncate">{option.description}</span>
+                                )}
+                              </div>
                             </span>
-                            <span className="text-left">{option.label}</span>
-                          </span>
-                        </button>
+                          </button>
+                        </Tooltip>
                       );
                     })
                   )}
@@ -1274,113 +1292,111 @@ export const FormSelectField = forwardRef<HTMLDivElement, FormSelectFieldProps>(
           </div>,
           document.body
         )
-      : null;
+        : null;
 
-  // Attach both internal and forwarded refs to the same container element
-  const setContainerRef = (node: HTMLDivElement | null) => {
-    containerRef.current = node;
-    if (typeof ref === "function") {
-      ref(node);
-    } else if (ref) {
-      (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
-    }
-  };
+    // Attach both internal and forwarded refs to the same container element
+    const setContainerRef = (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref) {
+        (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }
+    };
 
-  return (
-    <div
-      ref={setContainerRef}
-      className={`relative inline-flex flex-col ${width === undefined ? "w-full" : ""} ${hideLabel ? "gap-0" : "gap-2"} ${disabled ? "cursor-not-allowed" : ""}`}
-      style={wrapperStyles}
-    >
-      {!hideLabel ? (
-        <span className="absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089] flex items-center gap-1 pointer-events-none">
-          <span className="pointer-events-none">{renderLabel}</span>
-          {labelSlot ? <span className="pointer-events-auto">{labelSlot}</span> : null}
-        </span>
-      ) : null}
-
-      <button
-        ref={buttonRef}
-        type="button"
-        className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""} ${Check_Cursor_pointer}`}
-        onClick={toggleOpen}
-        onKeyDown={handleKeyDown}
-        onBlur={(e) => {
-          // Close dropdown when button loses focus
-          if (open) {
-            const relatedTarget = e.relatedTarget as Node | null;
-            // Check if focus is moving outside the component (not to search input or panel)
-            if (
-              relatedTarget &&
-              containerRef.current &&
-              !containerRef.current.contains(relatedTarget) &&
-              panelRef.current &&
-              !panelRef.current.contains(relatedTarget)
-            ) {
-              // Focus is moving outside, close dropdown
-              setOpen(false);
-              setSearchTerm("");
-              setKeyboardSearch("");
-              setHighlightedIndex(-1);
-              setTimeout(() => {
-                onBlur?.();
-              }, 0);
-            } else if (!relatedTarget) {
-              // If no related target (e.g., clicking outside), close dropdown
-              setOpen(false);
-              setSearchTerm("");
-              setKeyboardSearch("");
-              setHighlightedIndex(-1);
-              setTimeout(() => {
-                onBlur?.();
-              }, 0);
-            }
-          } else {
-            // Dropdown is already closed, just call onBlur for validation
-            const relatedTarget = e.relatedTarget as Node | null;
-            if (relatedTarget && containerRef.current && !containerRef.current.contains(relatedTarget) && panelRef.current && !panelRef.current.contains(relatedTarget)) {
-              setTimeout(() => {
-                onBlur?.();
-              }, 0);
-            } else if (!relatedTarget) {
-              setTimeout(() => {
-                onBlur?.();
-              }, 0);
-            }
-          }
-        }}
-        style={triggerStyles}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={disabled}
-        tabIndex={disabled ? 0 : undefined}
+    return (
+      <div
+        ref={setContainerRef}
+        className={`relative inline-flex flex-col ${width === undefined ? "w-full" : ""} ${hideLabel ? "gap-0" : "gap-2"} ${disabled ? "cursor-not-allowed" : ""}`}
+        style={wrapperStyles}
       >
-        <span
-          className={`flex-1 truncate ${
-            (!isMultiple && !(selectedValue as string | null)) ||
-            (isMultiple && !selectedCount)
+        {!hideLabel ? (
+          <span className="absolute left-6 top-0 -translate-y-1/2 rounded-full bg-white px-2 text-xs font-medium text-[#7B8089] flex items-center gap-1 pointer-events-none">
+            <span className="pointer-events-none">{renderLabel}</span>
+            {labelSlot ? <span className="pointer-events-auto">{labelSlot}</span> : null}
+          </span>
+        ) : null}
+
+        <button
+          ref={buttonRef}
+          type="button"
+          className={`flex w-full items-center justify-between rounded-[32px] border ${error ? "border-[#F87171]" : "border-[#EBECED]"} ${background === "white" ? "bg-white" : "bg-[#0B8C000D]"} px-6 text-left text-sm font-medium text-[#262D3B] transition-colors focus:border-[#0B8C00] focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 ${disabled ? "cursor-not-allowed" : ""} disabled:cursor-not-allowed ${open ? "border-[#0B8C00]" : ""} ${Check_Cursor_pointer}`}
+          onClick={toggleOpen}
+          onKeyDown={handleKeyDown}
+          onBlur={(e) => {
+            // Close dropdown when button loses focus
+            if (open) {
+              const relatedTarget = e.relatedTarget as Node | null;
+              // Check if focus is moving outside the component (not to search input or panel)
+              if (
+                relatedTarget &&
+                containerRef.current &&
+                !containerRef.current.contains(relatedTarget) &&
+                panelRef.current &&
+                !panelRef.current.contains(relatedTarget)
+              ) {
+                // Focus is moving outside, close dropdown
+                setOpen(false);
+                setSearchTerm("");
+                setKeyboardSearch("");
+                setHighlightedIndex(-1);
+                setTimeout(() => {
+                  onBlur?.();
+                }, 0);
+              } else if (!relatedTarget) {
+                // If no related target (e.g., clicking outside), close dropdown
+                setOpen(false);
+                setSearchTerm("");
+                setKeyboardSearch("");
+                setHighlightedIndex(-1);
+                setTimeout(() => {
+                  onBlur?.();
+                }, 0);
+              }
+            } else {
+              // Dropdown is already closed, just call onBlur for validation
+              const relatedTarget = e.relatedTarget as Node | null;
+              if (relatedTarget && containerRef.current && !containerRef.current.contains(relatedTarget) && panelRef.current && !panelRef.current.contains(relatedTarget)) {
+                setTimeout(() => {
+                  onBlur?.();
+                }, 0);
+              } else if (!relatedTarget) {
+                setTimeout(() => {
+                  onBlur?.();
+                }, 0);
+              }
+            }
+          }}
+          style={triggerStyles}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          disabled={disabled}
+          tabIndex={disabled ? 0 : undefined}
+        >
+          <span
+            className={`flex-1 truncate cursor-pointer ${(!isMultiple && !(selectedValue as string | null)) ||
+              (isMultiple && !selectedCount)
               ? "text-[#9CA3AF]"
               : "text-[#434956]"
-          }`}
-          title={selectedLabel}
-        >
-          {selectedLabel}
-        </span>
-        <span
-          className={`ml-0 transition-transform duration-200 ${
-            open ? "rotate-180" : "rotate-0"
-          }`}
-        >
-          {arrowIcon}
-        </span>
-      </button>
+              }`}
+          // title={selectedLabel}
+          >
+            {selectedLabel}
+          </span>
+          <span
+            className={`ml-0 transition-transform duration-200 ${open ? "rotate-180" : "rotate-0"
+              }`}
+          >
+            {arrowIcon}
+          </span>
+        </button>
 
-      {dropdownContent}
+        {dropdownContent}
 
-      {error ? <span className="text-xs text-[#F87171]">{error}</span> : null}
-    </div>
-  );
-});
+        {error ? <span className="text-xs text-[#F87171]">{error}</span> : null}
+      </div>
+    );
+  });
 
 FormSelectField.displayName = "FormSelectField";
 

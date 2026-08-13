@@ -17,7 +17,7 @@ interface JsHealthCardPointsCardProps {
 }
 
 export function JsHealthCardPointsCard({
-    title = "JS Health Card Points",
+    title = "Health Card Points",
     remainingAmountLabel = "Remaining Amount",
     remainingAmount,
     items,

@@ -19,11 +19,15 @@ export function clampBranchTextInput(raw: string, max = BRANCH_TEXT_INPUT_MAX_LE
   return raw.slice(0, max);
 }
 
-/** Letters and spaces only (facility / person-style names). */
+/** Letters and spaces only: no leading spaces, max 2 same consecutive chars, capitalized first char, max 100 chars. */
 export function filterLettersAndSpacesOnly(raw: string, max = BRANCH_TEXT_INPUT_MAX_LENGTH): string {
-  let s = raw.replace(/[^a-zA-Z\s]/g, "");
-  s = collapseConsecutiveSameCharsToMaxTwo(s);
-  return s.slice(0, max);
+  let value = raw.replace(/[^a-zA-Z\s]/g, "");
+  value = value.replace(/^\s+/, "");
+  value = value.replace(/(.)\1{2,}/g, "$1$1");
+  if (value.length > 0) {
+    value = value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  return value.slice(0, max);
 }
 
 /** Firm / org style: letters, digits, spaces, common punctuation. */

@@ -24,6 +24,7 @@ export interface BuildingDropdownResponse {
 export interface FloorDropdownItem {
   id: number;
   name: string;
+  floor?:string
 }
 
 export interface FloorDropdownResponse {
@@ -48,6 +49,7 @@ export interface DoctorDropdownResponse {
 export interface RoomTypeDropdownItem {
   id: number;
   name: string;
+  key?:string;
 }
 
 export interface RoomTypeDropdownResponse {
@@ -55,6 +57,22 @@ export interface RoomTypeDropdownResponse {
   statusCode: number;
   timestamp: string;
   data: RoomTypeDropdownItem[];
+}
+
+export interface UserDropdownItem {
+  id: number;
+  name: string;
+  empId: string;
+  roleCategoryType: string;
+  branchId: number;
+}
+
+export interface UserDropdownResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  data: UserDropdownItem[];
 }
 
 export const commonApi = baseApi.injectEndpoints({
@@ -88,6 +106,13 @@ export const commonApi = baseApi.injectEndpoints({
         params: params || undefined,
       }),
     }),
+    getUserDropdownList: builder.query<UserDropdownResponse, DropdownParams | void>({
+      query: (params) => ({
+        url: "/common/getUserDropdownList",
+        method: "GET",
+        params: params || undefined,
+      }),
+    }),
     getPresignedUrl: builder.query<
       {
         success: boolean;
@@ -104,6 +129,15 @@ export const commonApi = baseApi.injectEndpoints({
       }),
       // Presigned URLs expire in ~1 hour; don't cache beyond 55 minutes
       keepUnusedDataFor: 55 * 60,
+    }),
+    getPatientHealthCardByUhid: builder.query<
+      PatientHealthCardResponse,
+      { uhid: string }
+    >({
+      query: (params) => ({
+        url: `/common/getPatientHealthCardByUhid?uhid=${encodeURIComponent(params.uhid)}`,
+        method: "GET",
+      }),
     }),
     getPatientFiles: builder.query<
       {
@@ -140,16 +174,224 @@ export const commonApi = baseApi.injectEndpoints({
       // Cache data for 5 minutes after component unmounts
       keepUnusedDataFor: 300,
     }),
+    getAllMedicineByBranchList: builder.query<GetAllMedicineResponse, GetAllMedicineParams>({
+      query: (params) => ({
+        url: "/common/GetAllMedicineByBranchList",
+        method: "GET",
+        params: {
+          branchId: params.branchId,
+          search: params.search || "",
+        },
+      }),
+    }),
+    getPatientWalletData: builder.query<getPatientWalletDataResponse, getPatientWalletParams | void>({
+      query: (params) => ({
+        url: "/common/GetPatientWalletData",
+        method: "GET",
+        params: params
+          ? {
+              uhid: params.uhid,
+            }
+          : undefined,
+      }),
+    }),
+    getAdmittedPatientMedicalDetailsByPatientId: builder.query<GetAdmittedPatientMedicalDetailsResponse, { patientId: number | string }>({
+      query: (params) => ({
+        url: "/common/getAdmittedPatientMedicalDetailsByPatientId",
+        method: "GET",
+        params: {
+          patientId: params.patientId,
+        },
+      }),
+    }),
+    getIpdPatienRoomAndDoctorDetails: builder.query<GetIpdPatienRoomAndDoctorDetailsResponse, { patientId: number | string }>({
+      query: (params) => ({
+        url: "/common/getIpdPatienRoomAndDoctorDetails",
+        method: "GET",
+        params: {
+          patientId: params.patientId,
+        },
+      }),
+    }),
+    getAdmittedPatientTherapiesByPatientId: builder.query<GetAdmittedPatientTherapiesResponse, { patientId: number | string }>({
+      query: (params) => ({
+        url: "/common/GetAdmittedPatientTherapiesByPatientId",
+        method: "GET",
+        params: {
+          patientId: params.patientId,
+        },
+      }),
+    }),
   }),
 });
+
+export interface MedicalDetailsData {
+  patientId?: number;
+  isDiabetes?: boolean;
+  diabetesRemarks?: string;
+  isHypertension?: boolean;
+  hypertensionRemarks?: string;
+  isCad?: boolean;
+  cadRemarks?: string;
+  isThyroid?: boolean;
+  thyroidRemarks?: string;
+  addictionType?: string[];
+  addictionSpecify?: string;
+  diagnosisId?: number;
+  diagnosis?: {
+    id: number;
+    name: string;
+  } | string;
+  subDiagnosisId?: number;
+  subDiagnosis?: {
+    id: number;
+    name: string;
+  } | string;
+  diagnosisSymptoms?: string;
+}
+
+export interface GetAdmittedPatientMedicalDetailsResponse {
+  success: boolean;
+  message?: string;
+  data?: MedicalDetailsData;
+}
+
+export interface RoomAndDoctorDetailsData {
+  patientId?: number;
+  opdDoctorId?: number;
+  opdDoctorName?: string;
+  ipdDoctorId?: number;
+  ipdDoctorName?: string;
+  buildingName?: string;
+  floorName?: string;
+  roomType?: string;
+  roomNumber?: string;
+  bedNumber?: string;
+}
+
+export interface GetIpdPatienRoomAndDoctorDetailsResponse {
+  success?: boolean;
+  message?: string;
+  data?: RoomAndDoctorDetailsData;
+  patientId?: number;
+  opdDoctorId?: number;
+  opdDoctorName?: string;
+  ipdDoctorId?: number;
+  ipdDoctorName?: string;
+  buildingName?: string;
+  floorName?: string;
+  roomType?: string;
+  roomNumber?: string;
+  bedNumber?: string;
+}
+
+export interface MedicineItem {
+  id: number;
+  jatayuCd: string;
+  branchId: number;
+  name: string;
+  category: string;
+  quantity: number;
+  remainingQuantity: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GetAllMedicineResponse {
+  success: boolean;
+  data: MedicineItem[];
+}
+
+export interface getPatientWalletParams {
+  uhid: string;
+}
+
+export interface getPatientWalletDataResponse {
+  success: boolean;
+  message?: string;
+  statusCode?: number;
+  data: {
+    id?: string | number;
+    uhid: string;
+    branchId: number;
+    walletExists?: boolean;
+    currentBalance?: string | number;
+    availableBalance?: string | number;
+    holdAmount?: string | number;
+    totalCredit?: string | number;
+    totalDebit?: string | number;
+    totalDeposits?: number;
+    totalWithdrawals?: number;
+    packageName?: string | null;
+    packageAmount?: number | null;
+    discount?: number | string | null;
+    expireDate?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+}
+
+export interface PatientHealthCardDetails {
+  cardNumber: string;
+  arogyaCardId: number;
+  cardName: string;
+  image: string;
+}
+
+export interface PatientHealthCardResponse {
+  success: boolean;
+  data: PatientHealthCardDetails | null;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface GetAllMedicineParams {
+  branchId: number | string;
+  search?: string;
+}
+
+export interface AdmittedPatientTherapyItem {
+  sessionId?: number;
+  therapyId?: number;
+  therapyName?: string;
+  therapyDate?: string;
+  therapistRemark?: string | null;
+  therapistId?: number;
+  therapistName?: string;
+  status?: string;
+  doctorId?: number;
+  doctorName?: string;
+}
+
+export interface GetAdmittedPatientTherapiesResponse {
+  success?: boolean;
+  status?: number;
+  message?: string;
+  data?: AdmittedPatientTherapyItem[];
+}
 
 export const {
   useGetBuildingDropdownQuery,
   useGetFloorDropdownQuery,
   useGetDoctorDropdownQuery,
   useGetRoomTypeDropdownQuery,
+  useGetUserDropdownListQuery,
   useGetPresignedUrlQuery,
   useLazyGetPresignedUrlQuery,
   useGetPatientFilesQuery,
   useLazyGetPatientFilesQuery,
+  useGetAllMedicineByBranchListQuery,
+  useLazyGetAllMedicineByBranchListQuery,
+  useGetPatientWalletDataQuery,
+  useLazyGetPatientWalletDataQuery,
+  useGetAdmittedPatientMedicalDetailsByPatientIdQuery,
+  useLazyGetAdmittedPatientMedicalDetailsByPatientIdQuery,
+  useGetIpdPatienRoomAndDoctorDetailsQuery,
+  useLazyGetIpdPatienRoomAndDoctorDetailsQuery,
+  useGetPatientHealthCardByUhidQuery,
+  useLazyGetPatientHealthCardByUhidQuery,
+  useGetAdmittedPatientTherapiesByPatientIdQuery,
+  useLazyGetAdmittedPatientTherapiesByPatientIdQuery,
 } = commonApi;

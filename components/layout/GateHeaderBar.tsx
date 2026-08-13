@@ -15,6 +15,7 @@ import {
 } from "@/store/slices/authSlice";
 import { baseApi } from "@/store/api/baseApi";
 import { useLogoutMutation } from "@/store/api/authApi";
+import { ThreeDotLoader } from "@/components/ui/ThreeDotLoader";
 
 type GateHeaderBarProps = {
   userName?: string | null;
@@ -35,6 +36,9 @@ export function GateHeaderBar({
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [profileImageFailed, setProfileImageFailed] = useState(false);
   const [showLogoutSuccess, setShowLogoutSuccess] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [logoutApi] = useLogoutMutation();
 
@@ -168,19 +172,32 @@ export function GateHeaderBar({
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#D14D4F] transition hover:bg-[#FFF2F2] cursor-pointer"
+                className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-[#D14D4F] transition hover:bg-[#FFF2F2] cursor-pointer disabled:cursor-not-allowed disabled:opacity-75"
+                disabled={isLoggingOut}
                 onClick={async () => {
-                  setIsAccountMenuOpen(false);
+                  setIsLoggingOut(true);
                   try {
                     await logoutApi().unwrap();
-                  } catch {
-                    // proceed with logout even if API fails
+                    setIsAccountMenuOpen(false);
+                    setShowLogoutSuccess(true);
+                  } catch (err: any) {
+                    const errMsg = err?.data?.message || err?.message || "Failed to logout. Please try again.";
+                    setErrorMessage(errMsg);
+                    setShowErrorDialog(true);
+                  } finally {
+                    setIsLoggingOut(false);
                   }
-                  setShowLogoutSuccess(true);
                 }}
               >
-                <Image src="/icons/LogOutIcon.svg" alt="Logout" width={20} height={20} />
-                Logout
+                <div className="flex w-full items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Image src="/icons/LogOutIcon.svg" alt="Logout" width={20} height={20} />
+                    <span>Logout</span>
+                  </div>
+                  {isLoggingOut && (
+                    <ThreeDotLoader color="green" size="small" className="ml-auto" />
+                  )}
+                </div>
               </button>
             </div>
           )}
@@ -193,7 +210,7 @@ export function GateHeaderBar({
           setShowLogoutSuccess(false);
           onLogout?.();
         }}
-  icon="/icons/SuccessCheck.svg"
+        icon="/icons/SuccessCheck.svg"
         iconBgColor="#E9F8E8"
         message="Logout successfully"
         confirmText="OK"
@@ -202,6 +219,17 @@ export function GateHeaderBar({
           setShowLogoutSuccess(false);
           onLogout?.();
         }}
+      />
+
+      <MessageDialog
+        open={showErrorDialog}
+        onClose={() => setShowErrorDialog(false)}
+        icon="/icons/ErrorIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={errorMessage}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => setShowErrorDialog(false)}
       />
     </header>
   );

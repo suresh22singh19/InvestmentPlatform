@@ -1316,6 +1316,7 @@ export default function IPDRegistrationPage() {
                     {currentStep === 0 && (
                         <PersonalForm
                             formik={formik}
+                            isNewPatient={!isRevisitedPatient}
                             getFormErrors={getFormErrors}
                             scrollToFirstError={scrollToFirstError}
                             onNext={handleNextStep}

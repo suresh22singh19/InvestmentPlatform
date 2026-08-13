@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { FormInputField, FormSelectField } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import SelectPosMachineDialog from "./SelectPosMachineDialog";
 import type { RazorpayPosMachineUser } from "@/store/api/registrationApi";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 export interface PaymentDetailsFormData {
     consultationCharges: string;
@@ -66,6 +67,13 @@ export default function PaymentDetails({
     const consultationChargesAmount = parseFloat(formData.consultationCharges || "0") || 0;
     const showPaymentMode = consultationChargesAmount > 0;
 
+    const formattedConsultationChargesOptions = useMemo(() => {
+        return (consultationChargesOptions || []).map((option) => ({
+            ...option,
+            label: formatIndianAmount(option.label || option.value),
+        }));
+    }, [consultationChargesOptions]);
+
     // Handle payment mode change
     useEffect(() => {
         const currentPaymentMode = formData.paymentMode?.toLowerCase() || "";
@@ -80,7 +88,7 @@ export default function PaymentDetails({
         else if (currentPaymentMode !== "credit" && prevPaymentMode === "credit") {
             setShowPosDialog(false);
         }
-        
+
         // Update previous payment mode
         setPreviousPaymentMode(formData.paymentMode || "");
     }, [formData.paymentMode, previousPaymentMode]);
@@ -111,7 +119,7 @@ export default function PaymentDetails({
                 <div data-field="consultationCharges" className="scroll-mt-4" ref={fieldRefs?.consultationCharges}>
                     <FormSelectField
                         label="Consultation Charges *"
-                        options={consultationChargesOptions}
+                        options={formattedConsultationChargesOptions}
                         value={formData.consultationCharges || null}
                         onChange={(value) => {
                             const selectedValue = Array.isArray(value) ? value[0] : value;
@@ -142,8 +150,8 @@ export default function PaymentDetails({
                     <div data-field="paymentMode" className="scroll-mt-4" ref={fieldRefs?.paymentMode}>
                         <FormSelectField
                             label="Payment Mode *"
-                            options={hasPosMachineAccess 
-                                ? paymentModeOptions 
+                            options={hasPosMachineAccess
+                                ? paymentModeOptions
                                 : paymentModeOptions.filter(option => option.value !== "credit")
                             }
                             value={formData.paymentMode || null}

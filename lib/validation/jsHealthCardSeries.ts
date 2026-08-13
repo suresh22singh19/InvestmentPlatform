@@ -6,9 +6,9 @@ export function getJsHealthCardDigitCountFromSeries(seriesStart: string, seriesE
   return n;
 }
 
-/** User-facing copy for JS Health Card series range (shown under the input). */
+/** User-facing copy for Health Card series range (shown under the input). */
 export function buildJsHealthCardSeriesErrorMessage(seriesStart: string, seriesEnd: string): string {
-  return `Please enter the JS Health Card No. within the series ${seriesStart} - ${seriesEnd}`;
+  return `Please enter the Health Card No. within the series ${seriesStart} - ${seriesEnd}`;
 }
 
 export function isJsHealthCardNumberInSeries(
@@ -29,5 +29,5 @@ export function isJsHealthCardNumberInSeries(
 }
 
 export function isJsHealthCardSeriesRangeError(message: unknown): boolean {
-  return typeof message === "string" && message.includes("within the series");
+  return typeof message === "string" && (message.includes("within the series") || message.includes("Please match the series under") || message.includes("matching branch series"));
 }

@@ -89,11 +89,10 @@ export const UserCard = ({
           type="button"
           onClick={handleStatusClick}
           disabled={isTogglingStatus || !onStatusToggle}
-          className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] transition-colors ${
-            status === "Active"
+          className={`inline-flex h-[30px] min-w-[76px] shrink-0 items-center justify-center rounded-[30px] border px-5 text-xs font-medium leading-[120%] transition-colors ${status === "Active"
               ? "border-[#0B8C00]/20 bg-[#F2F8F2] text-[#0B8C00] hover:bg-[#E8F5E9]"
               : "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
-          } ${onStatusToggle ? "cursor-pointer" : "cursor-default"} ${isTogglingStatus ? "opacity-50 pointer-events-none" : ""}`}
+            } ${onStatusToggle ? "cursor-pointer" : "cursor-default"} ${isTogglingStatus ? "opacity-50 pointer-events-none" : ""}`}
         >
           {isTogglingStatus ? "..." : status}
         </button>
@@ -135,7 +134,7 @@ export const UserCard = ({
             <Image src="/icons/CalendarDarkIcon.svg" alt="Permission date" width={16} height={16} />
           </div>
           <div className="min-w-0">
-            <p className="text-xs leading-[120%] text-[#7B8089]">Permission date</p>
+            <p className="text-xs leading-[120%] text-[#7B8089]">Created At</p>
             <p className="mt-0.5 text-sm font-medium leading-[120%] text-[#434956]">{permissionDate}</p>
           </div>
         </div>

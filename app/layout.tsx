@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "HIIMS - Jeena Sikho",
+  title: "DVENTURES",
   description: "Healthcare Management System for Ayurveda Clinics & Hospitals",
   icons: {
     icon: "/images/logo.png",

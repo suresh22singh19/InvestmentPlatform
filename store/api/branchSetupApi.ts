@@ -248,7 +248,7 @@ export type GetAllFloorsResponse = {
 export type CreateFloorArgs = {
   branchId: number;
   buildingId: number;
-  floorId: number;
+  floorIds: number[];
 };
 
 export type CreateFloorResponse = {
@@ -618,6 +618,48 @@ export type GetAllRoomsByBranchResponse = {
   totalPages?: number;
 };
 
+export type UnconfiguredRoomRow = {
+  id: number;
+  branchId: number;
+  buildingId: number;
+  floorId: number;
+  roomType: string;
+  bedCapacity: number;
+  roomNumber: string;
+  roomImages?: string;
+  sort?: number;
+  roomToilet?: string;
+  status?: string;
+  roomCurrentStatus?: string | null;
+  roomUsage?: string | null;
+  roomConfigStatus?: string;
+  building?: { id: number; name: string };
+  floor?: { id: number; floor: string; description?: string };
+  roomTypeDetails?: { id: number; roomType: string; roomTypeCode?: string; roomNumberPrefix?: string };
+  [key: string]: any;
+};
+
+export type GetUnconfiguredRoomsResponse = {
+  success: boolean;
+  data: UnconfiguredRoomRow[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+};
+
+export type GetUnconfiguredRoomsArgs = {
+  branchId: number;
+  page?: number;
+  limit?: number;
+  buildingId?: string | number;
+  floorId?: string | number;
+  roomtypeId?: string | number;
+};
+
 /** Query args for GET /room/getAllRooms/:branchId (page/limit + optional filters if supported by API). */
 export type GetAllRoomsByBranchQueryArgs = {
   branchId: number;
@@ -724,12 +766,33 @@ export type UpdateRoomPayload = {
   status: string;
   roomToilet: string;
   roomCurrentStatus: string;
-  roomUsage: string;
+  roomUsage?: string | null;
   hardwares: { hardwareId: number; quantity: number }[];
   facilities: { facilityId: number }[];
 };
 
 export type UpdateRoomResponse = {
+  success?: boolean;
+  data?: unknown;
+  message?: string;
+  statusCode?: number;
+  timestamp?: string;
+};
+
+export type BulkUpdateRoomPayload = {
+  roomType: string;
+  bedCapacity: number;
+  roomNumber?: string;
+  status: string;
+  roomToilet: string;
+  roomCurrentStatus: string;
+  roomUsage?: string | null;
+  roomIds: number[];
+  hardwares: { hardwareId: number; quantity: number }[];
+  facilities: { facilityId: number }[];
+};
+
+export type BulkUpdateRoomResponse = {
   success?: boolean;
   data?: unknown;
   message?: string;
@@ -967,6 +1030,19 @@ export const branchSetupApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Branches"],
     }),
+    updateBranch: builder.mutation<CreateBranchApiResponse, { id: number; body: FormData }>({
+      /** PATCH /branch/updateBranch/:id with multipart FormData. */
+      query: ({ id, body }) => ({
+        url: `/branch/updateBranch/${id}`,
+        method: "PATCH",
+        body,
+        prepareHeaders: (headers: Headers) => {
+          headers.delete("Content-Type");
+          return headers;
+        },
+      }),
+      invalidatesTags: ["Branches"],
+    }),
     createBuilding: builder.mutation<CreateBuildingResponse, CreateBuildingArgs>({
       query: (body) => ({
         url: "/building/createBuilding",
@@ -1175,6 +1251,33 @@ export const branchSetupApi = baseApi.injectEndpoints({
         { type: "BranchRooms", id: `detail-${arg.roomId}` },
       ],
     }),
+    bulkUpdateRoom: builder.mutation<
+      BulkUpdateRoomResponse,
+      { branchId: number; body: BulkUpdateRoomPayload }
+    >({
+      query: ({ body }) => ({
+        url: "/room/bulkUpdateRoom",
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: (_res, _err, arg) => [
+        "Branches",
+        { type: "BranchRooms", id: String(arg.branchId) },
+      ],
+    }),
+    getUnconfiguredRooms: builder.query<GetUnconfiguredRoomsResponse, GetUnconfiguredRoomsArgs>({
+      query: ({ branchId, page = 1, limit = 10, buildingId = "", floorId = "", roomtypeId = "" }) => ({
+        url: `/room/getUnconfiguredRooms/${branchId}`,
+        params: {
+          page,
+          limit,
+          buildingId: buildingId ?? "",
+          floorId: floorId ?? "",
+          roomtypeId: roomtypeId ?? "",
+        },
+      }),
+      providesTags: (_res, _err, arg) => [{ type: "BranchRooms" as const, id: `unconfig-${arg.branchId}` }],
+    }),
     getAllBeds: builder.query<GetAllBedsResponse, GetAllBedsQueryArgs>({
       query: ({ branchId, floorId, roomId, page = 1, limit = 10 }) => ({
         url: `/bed/getAllBeds/${branchId}/${floorId}/${roomId}`,
@@ -1296,6 +1399,7 @@ export const {
   useGetBranchHierarchyTreeQuery,
   useGetCompleteBranchHierarchyTreeQuery,
   useCreateBranchMutation,
+  useUpdateBranchMutation,
   useCreateBuildingMutation,
   useGetAllFloorsQuery,
   useCreateFloorMutation,
@@ -1314,7 +1418,10 @@ export const {
   useCreateRoomsMutation,
   useGetSingleRoomQuery,
   useUpdateRoomMutation,
+  useBulkUpdateRoomMutation,
   useDeleteRoomMutation,
+  useGetUnconfiguredRoomsQuery,
+  useLazyGetUnconfiguredRoomsQuery,
   useGetAllBedsQuery,
   useCreateBedsMutation,
   useDeleteBedMutation,

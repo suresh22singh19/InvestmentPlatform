@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, SpinnerLoader } from "@/components/ui";
+import { BackToPreviousPageButton, Button, SpinnerLoader } from "@/components/ui";
 import {
     useLazyGetAdmissionDetailsQuery,
     type FutureAdmissionItem,
@@ -20,6 +20,21 @@ function mapAdmissionTypeToUi(type: string): string {
     return "scheduled";
 }
 
+function getProceedItemUhid(item: FutureAdmissionItem & { patientUhid?: string }): string {
+    return item.uhid || item.patientUhid || "";
+}
+
+function getProceedItemPackageLabel(
+    item: FutureAdmissionItem,
+    admissionDetails: AdmissionDetailsData | null
+): string {
+    return (
+        admissionDetails?.package?.packageName ||
+        item.package ||
+        "Selected Package"
+    );
+}
+
 export interface FutureAdmissionProceedFlowState {
     item: FutureAdmissionItem;
     paymentData: CheckFirstDayPaymentResponse["data"];
@@ -32,6 +47,7 @@ interface FutureAdmissionProceedFlowProps {
     onClose: () => void;
     onComplete: () => void;
     onStepChange: (step: number) => void;
+    backLabel?: string;
 }
 
 export default function FutureAdmissionProceedFlow({
@@ -39,6 +55,8 @@ export default function FutureAdmissionProceedFlow({
     onClose,
     onComplete,
     onStepChange,
+    // backLabel = "← Back to Future Admissions",
+     backLabel = "Back to Future Admissions",
 }: FutureAdmissionProceedFlowProps) {
     const { item, paymentData, showPaymentStep, currentStep } = flow;
     const patientIdForRoom = item.patientId ?? item.id;
@@ -50,6 +68,32 @@ export default function FutureAdmissionProceedFlow({
 
     const [fetchAdmissionDetails, { isFetching: isAdmissionLoading }] = useLazyGetAdmissionDetailsQuery();
 
+    const admissionPackage = admissionDetails?.package;
+    const resolvedPackageName = getProceedItemPackageLabel(item, admissionDetails);
+    const resolvedUhid = getProceedItemUhid(item);
+
+    const roomRentPerDay = admissionPackage?.branchRoomType?.roomRentPrice
+        ? Number(admissionPackage.branchRoomType.roomRentPrice)
+        : 0;
+    const medicinePerDay = admissionPackage?.medicineEnabled ? Number(admissionPackage.medicinePrice) : 0;
+    const mealsPerDay = admissionPackage?.mealsEnabled ? Number(admissionPackage.mealsPrice) : 0;
+    const doctorFee = admissionPackage?.doctorFeeEnabled ? Number(admissionPackage.doctorFeePrice) : 0;
+    const nurseFee = admissionPackage?.nurseFeeEnabled ? Number(admissionPackage.nurseFeePrice) : 0;
+    const attendantFee = admissionPackage?.attendantFeeEnabled
+        ? Number(admissionPackage.attendantFeePrice)
+        : 0;
+    const therapyFee = admissionPackage?.therapyEnabled ? Number(admissionPackage.therapyPrice) : 0;
+    const roomtype = admissionDetails?.roomType?.name
+        ? String(admissionDetails.roomType.name)
+        : admissionDetails?.roomType?.key
+          ? String(admissionDetails.roomType.key)
+          : "";
+
+    const totalPrice =
+        roomRentPerDay + medicinePerDay + mealsPerDay + doctorFee + nurseFee + attendantFee + therapyFee;
+    const resolvedDailyRate = totalPrice > 0 ? totalPrice : perDayCost;
+
+     const remainingvalues = admissionDetails?.remainingAmount
     const loadAdmissionDetails = useCallback(async () => {
         setAdmissionLoadError("");
         // const candidateIds = [
@@ -93,9 +137,8 @@ export default function FutureAdmissionProceedFlow({
     ]);
 
     useEffect(() => {
-        if (!showPaymentStep) return;
         void loadAdmissionDetails();
-    }, [showPaymentStep, loadAdmissionDetails]);
+    }, [loadAdmissionDetails]);
 
     const totalSteps = showPaymentStep ? 2 : 1;
     const isOnRoomStep = currentStep === 1;
@@ -108,6 +151,8 @@ export default function FutureAdmissionProceedFlow({
         }
         onComplete();
     };
+
+    // console.log("admissionDetails",item?.branchId)
 
     if (showPaymentStep && isOnPaymentStep && isAdmissionLoading && !admissionDetails) {
         return (
@@ -125,9 +170,13 @@ export default function FutureAdmissionProceedFlow({
                             </span>
                         </p>
                     </div>
-                    <Button variant="outline" onClick={onClose}>
-                        ← Back to Future Admissions
-                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={onClose}
+                        className="bg-transparent hover:bg-transparent active:bg-transparent"
+                        >
+                        {backLabel}
+                        </Button>
                 </div>
                 <div className="flex min-h-[320px] items-center justify-center">
                     <SpinnerLoader size={40} />
@@ -141,10 +190,11 @@ export default function FutureAdmissionProceedFlow({
             <div className="flex items-start justify-between gap-4">
                 <div className="flex flex-col gap-2">
                     <h2 className="text-xl font-bold text-[#262D3B]">
-                        {isOnPaymentStep ? "Admission Payment" : "Room Allocation"} — {item.patientName}
+                        {/* {isOnPaymentStep ? "Admission Payment" : "Room Allocation"} — {item.patientName} */}
+                        {isOnPaymentStep ? "" : "Room Allocation"}
                     </h2>
-                    <p className="text-xs font-semibold text-[#787E8C]">
-                        UHID: <span className="text-[#262D3B]">{item.uhid || "N/A"}</span>
+                    {/* <p className="text-xs font-semibold text-[#787E8C]">
+                    
                         {showPaymentStep && isOnPaymentStep ? (
                             <>
                                 {" "}
@@ -154,11 +204,12 @@ export default function FutureAdmissionProceedFlow({
                                 </span>
                             </>
                         ) : null}
-                    </p>
+                    </p> */}
                 </div>
-                <Button variant="outline" onClick={onClose}>
-                    ← Back to Future Admissions
-                </Button>
+                {/* <Button variant="outline" onClick={onClose}>
+                    {backLabel}
+                </Button> */}
+                <BackToPreviousPageButton className="h-[40px]" text={backLabel} onClick={onClose} />
             </div>
 
             <div className="flex items-center gap-2 self-end pr-2 select-none">
@@ -206,21 +257,26 @@ export default function FutureAdmissionProceedFlow({
 
             {isOnRoomStep ? (
                 <RoomAllocation
+                    branchIdd={item?.branchId}
                     roomAllocatedHitAPI={!showPaymentStep}
+                    initialRoomType={admissionDetails?.roomType}
                     activePackage={{
                         id: paymentData.patientPackageId?.toString(),
-                        packageName: item.package || "Selected Package",
+                        packageName: resolvedPackageName,
+                        remark: admissionPackage?.remark || "",
+                        totalAmount: resolvedDailyRate,
                         branchRoomType: {
-                            roomRentPrice: perDayCost || 1500,
+                            roomRentPrice: resolvedDailyRate || "N/A",
                         },
+
                     }}
                     id={item.id}
                     patientId={patientIdForRoom}
                     patientPackageId={paymentData.patientPackageId}
                     patientDetails={{
                         patientName: item.patientName,
-                        patientUhid: item.uhid,
-                        diagnosis: item.package,
+                        patientUhid: resolvedUhid,
+                        diagnosis: resolvedPackageName,
                         doctorName: item.doctorName,
                     }}
                     onConfirmAllocation={(allocation) => {
@@ -240,16 +296,29 @@ export default function FutureAdmissionProceedFlow({
             {isOnPaymentStep && admissionDetails ? (
                 <AdmissionPayment
                     activePackage={{
-                        packageName: item.package || admissionDetails.packageId?.toString(),
-                        remark: "",
+                        packageName: resolvedPackageName,
+                        remark: admissionPackage?.remark || "",
                     }}
-                    finalAmountPayable={remainingAmount > 0 ? remainingAmount : perDayCost}
-                    roomRentPerDay={perDayCost}
-                    medicinePerDay={0}
-                    mealsPerDay={0}
-                    doctorFee={0}
+                    
+                    // finalAmountPayable={paymentData > 0 ? paymentData : perDayCost}
+                    finalAmountPayable={Number(admissionDetails?.originalAmount)}
+                    // roomRentPerDay={perDayCost}
+                    // medicinePerDay={0}
+                    // mealsPerDay={0}
+                    // doctorFee={0}
+
+                    roomRentPerDay={roomRentPerDay}
+                    medicinePerDay={medicinePerDay}
+                    mealsPerDay={mealsPerDay}
+                    doctorFee={doctorFee}
+                    nurseFee={nurseFee}
+                    roomtype={roomtype}
+                    attendantFee={attendantFee}
+                    therapyFee={therapyFee}
+                    packagetotalPrice={totalPrice}
+
                     patientName={item.patientName}
-                    patientUhid={item.uhid}
+                    patientUhid={resolvedUhid}
                     branchId={admissionDetails.branchId}
                     appointmentId={admissionDetails.appointmentId}
                     packageId={admissionDetails.packageId}
@@ -266,8 +335,8 @@ export default function FutureAdmissionProceedFlow({
                     requireRoomAllocation={showPaymentStep}
                     editPaymentAmounts={{
                         advanceAmount: admissionDetails.advanceAmount,
-                        receivedAmount: paymentData.totalReceived,
-                        remainingAmount,
+                         receivedAmount: paymentData.totalReceived,
+                        remainingAmount :remainingvalues,
                     }}
                     isEditMode
                     futureAdmissionPayment={{
@@ -276,6 +345,7 @@ export default function FutureAdmissionProceedFlow({
                     }}
                     onNext={onComplete}
                     onBack={() => onStepChange(1)}
+                    onExit={onClose}
                 />
             ) : null}
 
@@ -294,12 +364,12 @@ export default function FutureAdmissionProceedFlow({
                 </div>
             ) : null}
 
-            {showPaymentStep && isOnRoomStep && totalSteps === 2 ? (
+            {/* {showPaymentStep && isOnRoomStep && totalSteps === 2 ? (
                 <div className="rounded-[20px] border border-[#E3EEE1] bg-[#F2FAF2] p-4 text-xs font-semibold text-[#475569]">
                     Complete room allocation first. The payment step will open next to collect the
                     remaining first-day amount of ₹ {remainingAmount.toLocaleString("en-IN")}.
                 </div>
-            ) : null}
+            ) : null} */}
         </div>
     );
 }

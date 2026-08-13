@@ -67,10 +67,32 @@ export interface CounsellorPatientListParams {
   order?: "ASC" | "DESC" | "asc" | "desc";
   page?: number;
   limit?: number;
+  branchId?: number;
+}
+
+function buildCounsellorPatientListQueryParams(
+  params?: CounsellorPatientListParams
+): Record<string, string> {
+  const queryParams: Record<string, string> = {};
+  if (!params) return queryParams;
+  if (params.search) queryParams.search = params.search;
+  if (params.fromDate) queryParams.fromDate = params.fromDate;
+  if (params.toDate) queryParams.toDate = params.toDate;
+  if (params.sortBy) queryParams.sortBy = params.sortBy;
+  if (params.order) queryParams.order = params.order;
+  if (params.page != null) queryParams.page = String(params.page);
+  if (params.limit != null) queryParams.limit = String(params.limit);
+  if (params.branchId != null && Number.isFinite(params.branchId)) {
+    queryParams.branchId = String(params.branchId);
+  }
+  return queryParams;
 }
 
 export interface CounsellorPatientListItem {
+  panelId?:number;
   id: number | string;
+  patientType?:string;
+  patientTitle?:string;
   patientName: string;
   patientUhid: string;
   patientId?: number | string;
@@ -102,16 +124,23 @@ export interface CounsellorTentativeOrArchivedParams {
   type: "tentative" | "archived";
   fromDate?: string;
   toDate?: string;
+  branchId?: number;
 }
 
 export interface CounsellorTentativeOrArchivedItem {
+  branchId?:number;
   id: string | number;
+  patientTitle?:string;
   patientName: string;
   patientUhid: string;
   contactNumber: string;
   diagnosis?: string | null;
   doctorName?: string | null;
   admissionDate?: string | null;
+  createdAt?: string | null;
+  appointmentId?: number | string | null;
+  opid?: number | string | null;
+  patientId?: number | string | null;
 }
 
 export interface CounsellorTentativeOrArchivedResponse {
@@ -242,6 +271,7 @@ export interface CompletePatientAdmissionRequest {
   numberOfDays: number;
   offerApplied: boolean;
   offerId?: number;
+  panelId?: number;
   admissionType: string;
   admissionDate: string;
   specialInstructions?: string;
@@ -255,7 +285,7 @@ export interface CompletePatientAdmissionRequest {
   receivedAmount: number;
   splits?: CompletePatientAdmissionSplit[];
   room?: CompletePatientAdmissionRoom;
-  attendant?: CompletePatientAdmissionAttendant;
+  attendant?: CompletePatientAdmissionAttendant[];
   finalizeAdmission?: boolean;
 }
 
@@ -313,11 +343,56 @@ export type CompletePatientAdmissionMutationArg =
 
 export interface AdmissionDetailsPatient {
   id: number;
+  diagnosis?:string;
+  status?:string;
+  diagnosisSymptoms?:string;
+  patientTitle?:string;
   uhid: string;
   name: string;
   age?: string;
   gender?: string;
   contactNumber?: string;
+  patientType?: string;
+  panelId?: number | null;
+  panelName?: string | null;
+}
+
+export interface AdmissionDetailsRoomType {
+  id?: number;
+  key?: string;
+  name?: string;
+}
+
+export interface AdmissionDetailsPackage {
+  id: number;
+  branchId: number;
+  branchRoomTypeId?: number;
+  diseaseCategoryType?: string;
+  packageType?: string;
+  packageName?: string;
+  remark?: string;
+  medicineEnabled?: boolean | number;
+  medicinePrice?: string;
+  mealsEnabled?: boolean | number;
+  mealsPrice?: string;
+  doctorFeeEnabled?: boolean | number;
+  doctorFeePrice?: string;
+  nurseFeeEnabled?: boolean | number;
+  nurseFeePrice?: string;
+  attendantFeeEnabled?: boolean | number;
+  attendantFeePrice?: string;
+  therapyEnabled?: boolean | number;
+  therapyPrice?: string;
+  therapyLoad?: number;
+  therapySessionsPerDay?: number;
+  isPackageActive?: boolean;
+  panelId?: number | null;
+  panelName?: string | null;
+  branchRoomType?: { id?: number; roomRentPrice?: number };
+  roomType?: { name?: string | null; key?: string | null };
+  branchName?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AdmissionDetailsData {
@@ -329,6 +404,9 @@ export interface AdmissionDetailsData {
   numberOfDays: number;
   offerApplied: boolean;
   offerId?: number;
+  panelId?: number | null;
+  panelName?: string | null;
+  patientCategory?: string | null;
   admissionType: string;
   admissionDate?: string;
   specialInstructions?: string;
@@ -341,14 +419,46 @@ export interface AdmissionDetailsData {
   receivedAmount?: number;
   remainingAmount?: number;
   patient: AdmissionDetailsPatient;
+  package?: AdmissionDetailsPackage;
+  roomType?: AdmissionDetailsRoomType;
   room?: CompletePatientAdmissionRoom;
-  attendant?: CompletePatientAdmissionAttendant;
+  attendant?: CompletePatientAdmissionAttendant[];
 }
 
 export interface AdmissionDetailsResponse {
   success: boolean;
   message: string;
   data?: AdmissionDetailsData;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface TentativeDetailsPatient {
+  diagnosisSymptoms?:string;
+  diagnosis?:string;
+  id: number;
+  uhid: string;
+  status: string;
+  name: string;
+  patientTitle?: string;
+  patientType?: string;
+  panelId?: number;
+  age?: string;
+  gender?: string;
+  contactNumber?: string;
+}
+
+export interface TentativeDetailsData {
+  patient: TentativeDetailsPatient;
+  branchId: number;
+  appointmentId: number;
+  admissionType: string;
+}
+
+export interface TentativeDetailsResponse {
+  success: boolean;
+  message: string;
+  data?: TentativeDetailsData;
   timestamp?: string;
   statusCode?: number;
 }
@@ -597,6 +707,7 @@ export interface PatientAdmissionDetailsData {
 }
 
 export interface PatientAdmissionDetailsResponse {
+  package?:string;
   success: boolean;
   data: PatientAdmissionDetailsData;
   message: string;
@@ -610,10 +721,11 @@ export const counsellorApi = baseApi.injectEndpoints({
     /**
      * Get counsellor dashboard stats (widgets)
      */
-    getCounsellorStats: builder.query<CounsellorDashboardStatsResponse, void>({
-      query: () => ({
+    getCounsellorStats: builder.query<CounsellorDashboardStatsResponse, { branchId?: number } | void>({
+      query: (params) => ({
         url: "/counsellor/dashboard/stats",
         method: "GET",
+        params: params?.branchId != null ? { branchId: params.branchId } : undefined,
       }),
     }),
 
@@ -624,7 +736,7 @@ export const counsellorApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: "/counsellor/opd-completed-patient-list",
         method: "GET",
-        params,
+        params: buildCounsellorPatientListQueryParams(params),
       }),
     }),
 
@@ -635,7 +747,7 @@ export const counsellorApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: "/counsellor/today-admission-list",
         method: "GET",
-        params,
+        params: buildCounsellorPatientListQueryParams(params),
       }),
     }),
 
@@ -646,7 +758,7 @@ export const counsellorApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: "/counsellor/today-available-room-list",
         method: "GET",
-        params,
+        params: buildCounsellorPatientListQueryParams(params),
       }),
     }),
 
@@ -884,6 +996,16 @@ export const counsellorApi = baseApi.injectEndpoints({
     }),
 
     /**
+     * Get tentative admission details by patient id
+     */
+    getTentativeDetailsByPatientId: builder.query<TentativeDetailsResponse, number | string>({
+      query: (patientId) => ({
+        url: `/counsellor/getTentativeDetailsByPatientId/${patientId}`,
+        method: "GET",
+      }),
+    }),
+
+    /**
      * Get all documents for counsellor IPD admission step
      */
     getAllDocuments: builder.query<CounsellorGetAllDocumentsResponse, void>({
@@ -1001,7 +1123,10 @@ export interface FutureAdmissionParams {
 }
 
 export interface FutureAdmissionItem {
+  branchRoomType?:string;
+  branchId:number;
   id: number;
+  patientTitle?:string;
   patientName: string;
   admissionType: string;
   uhid: string;
@@ -1053,6 +1178,8 @@ export interface PatientAdmissionListingParams {
 
 export interface PatientAdmissionItem {
   id: number;
+  expectedDischargeDate?:string;
+  patientTitle?:string;
   patientId: number;
   patientName: string;
   uhid: string;
@@ -1112,6 +1239,7 @@ export const {
   useLazyGetPackageDetailQuery,
   useGetAdmissionDetailsQuery,
   useLazyGetAdmissionDetailsQuery,
+  useGetTentativeDetailsByPatientIdQuery,
   useGetAllDocumentsQuery,
   useGetPatientAdmissionDetailsQuery,
   useUpdateDocumentsMutation,

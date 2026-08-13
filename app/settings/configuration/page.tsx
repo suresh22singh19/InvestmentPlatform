@@ -25,7 +25,7 @@ export default function SettingsConfigurationPage() {
     skip: !canView,
   });
   const [updateConfiguration, { isLoading: isUpdating }] = useUpdateConfigurationMutation();
-  
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -57,14 +57,14 @@ export default function SettingsConfigurationPage() {
   // Build configuration rows from API data
   const configurationRows = configurationData?.data
     ? [
-        {
-          id: 1,
-          label: "Invoice/Order Locked After Days",
-          value: String(configurationData.data.invoiceLockedDays),
-          channelLabel: "SMS / WhatsApp",
-          channelValue: formatSmsValue(configurationData.data.sms),
-        },
-      ]
+      {
+        id: 1,
+        label: "Invoice/Order Locked After Days",
+        value: String(configurationData.data.invoiceLockedDays),
+        channelLabel: "SMS / WhatsApp",
+        channelValue: formatSmsValue(configurationData.data.sms),
+      },
+    ]
     : [];
 
   const smsChannelOptions = [
@@ -74,7 +74,7 @@ export default function SettingsConfigurationPage() {
 
   const handleInvoiceDaysChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
-    
+
     // Only allow numeric input (0-9)
     if (value === "" || /^\d+$/.test(value)) {
       // Limit to 3 digits
@@ -98,10 +98,10 @@ export default function SettingsConfigurationPage() {
       setIsDialogOpen(false);
       return;
     }
-    
+
     // Clear previous errors
     setInvoiceLockedDaysError("");
-    
+
     // Validate invoice locked days field
     if (!formValues.invoiceLockedDays.trim()) {
       setInvoiceLockedDaysError("Invoice locked days is required");
@@ -109,7 +109,7 @@ export default function SettingsConfigurationPage() {
     }
 
     const daysValue = Number(formValues.invoiceLockedDays);
-    
+
     // Validate it's a valid number
     if (isNaN(daysValue)) {
       setInvoiceLockedDaysError("Please enter a valid number");
@@ -127,7 +127,7 @@ export default function SettingsConfigurationPage() {
       setShowApiErrorDialog(true);
       return;
     }
-    
+
     try {
       const result = await updateConfiguration({
         id: formValues.id,
@@ -141,7 +141,7 @@ export default function SettingsConfigurationPage() {
       setSuccessMessage(result?.message || "Configuration saved successfully");
       setShowSuccessDialog(true);
       setIsDialogOpen(false);
-      
+
       // Refetch configuration data to update the display
       refetch();
     } catch (error: unknown) {
@@ -229,6 +229,7 @@ export default function SettingsConfigurationPage() {
           }}
           title="Edit Configuration"
           width={686}
+          closeOnOutsideClick={false}
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 gap-4">

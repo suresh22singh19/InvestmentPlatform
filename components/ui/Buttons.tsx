@@ -30,6 +30,9 @@ type BackToPreviousPageButtonProps = {
   text?: string;
   iconOnly?: boolean;
   icon?: React.ReactNode;
+  width?: string | number;
+  height?: string | number;
+  style?: React.CSSProperties;
 };
 
 export const BackToPreviousPageButton = ({ 
@@ -38,17 +41,27 @@ export const BackToPreviousPageButton = ({
   className = "",
   text = "Back",
   iconOnly = false,
-  icon
+  icon,
+  width,
+  height,
+  style,
 }: BackToPreviousPageButtonProps) => {
   const defaultIcon = <Image src="/icons/LeftArrowIcon.svg" alt="Back" width={20} height={20} className="shrink-0" />;
   const buttonIcon = icon || defaultIcon;
   
+  const customStyles: React.CSSProperties = {
+    ...(width !== undefined ? { width: typeof width === "number" ? `${width}px` : width } : {}),
+    ...(height !== undefined ? { height: typeof height === "number" ? `${height}px` : height } : {}),
+    ...style,
+  };
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-11 items-center justify-center ${iconOnly ? 'px-3' : 'gap-2 px-6'} rounded-[32px] border border-[#9A7909] text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FDF8E8] focus:outline-none focus:ring-2 focus:ring-[#9A7909]/20 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      style={customStyles}
+      className={`flex ${height ? "" : "h-11"} items-center justify-center ${iconOnly ? 'px-3' : 'gap-2 px-6'} rounded-[32px] border border-[#9A7909] text-sm font-medium leading-[120%] text-[#9A7909] transition-colors hover:bg-[#FDF8E8] focus:outline-none focus:ring-2 focus:ring-[#9A7909]/20 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
     >
       {buttonIcon}
       {!iconOnly && <span>{text}</span>}

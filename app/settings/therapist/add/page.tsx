@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -12,7 +12,7 @@ import type { SelectOption } from "@/components/ui/FormSelectField";
 import {
   useCreateTherapistMutation,
   useGetBranchesQuery,
-  useGetBranchRoleByCategoryTypeQuery,
+  useGetTherapistRoleByBranchQuery,
   useGetTherapiesQuery,
 } from "@/store/api/settingsApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
@@ -21,7 +21,13 @@ import { sanitizeEmailInput, isValidEmailAddress } from "@/lib/utils/emailValida
 // ─── Input formatters ─────────────────────────────────────────────────────────
 
 function formatAlphaInput(raw: string, maxLen = 150): string {
-  return raw.replace(/[^a-zA-Z\s]/g, "").replace(/^\s+/, "").slice(0, maxLen);
+  let value = raw.replace(/[^a-zA-Z\s]/g, "");
+  value = value.replace(/^\s+/, "");
+  value = value.replace(/(.)\1{2,}/g, "$1$1");
+  if (value.length > 0) {
+    value = value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  return value.slice(0, maxLen);
 }
 
 function formatPhoneInput(raw: string): string {
@@ -30,6 +36,15 @@ function formatPhoneInput(raw: string): string {
 
 function formatEmpIdInput(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9\-]/g, "").slice(0, 20);
+}
+
+function isValidExperienceInput(val: string): boolean {
+  if (!val) return true;
+  if (!/^\d+$/.test(val)) return false;
+  if (val.length > 1 && parseInt(val, 10) === 0) return false;
+  const num = parseInt(val, 10);
+  if (isNaN(num) || num < 0 || num > 100) return false;
+  return true;
 }
 
 // ─── Static options ───────────────────────────────────────────────────────────
@@ -65,13 +80,54 @@ const emptyForm = {
   email: "",
   speciality: "",
   role: "",
-  loginType: "",
+  loginType: "no-auth",
   employeeId: "",
   experience: "",
   status: "active" as "active" | "inactive",
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+function TruncatedTherapyLabel({ text }: { text: string }) {
+  const value = text.trim();
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+
+    const checkTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+    };
+
+    checkTruncation();
+
+    const observer = new ResizeObserver(checkTruncation);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [value]);
+
+  if (!value) return null;
+
+  return (
+    <Tooltip
+      position="top"
+      maxWidth={280}
+      disabled={!isTruncated}
+      className="!overflow-visible !py-2.5"
+      content={
+        <p className="m-0 max-w-[260px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+          {value}
+        </p>
+      }
+    >
+      <span ref={textRef} className="block min-w-0 w-full truncate">
+        {value}
+      </span>
+    </Tooltip>
+  );
+}
 
 export default function AddTherapistPage() {
   const router = useRouter();
@@ -119,42 +175,21 @@ export default function AddTherapistPage() {
   }, [isBranchFilterSuperAdmin, branchesListData, branchFilterOptions]);
 
   useEffect(() => {
-    if (!isBranchFilterSuperAdmin) return;
-    if (isLoadingBranches) return;
-    const rows = branchesListData?.data;
-    if (!Array.isArray(rows) || rows.length === 0) return;
-    if (selectedBranchFilter !== "") return;
-    setSelectedBranchFilter(String(rows[0].id));
-  }, [isBranchFilterSuperAdmin, isLoadingBranches, branchesListData, selectedBranchFilter, setSelectedBranchFilter]);
-
-  useEffect(() => {
+    if (isBranchFilterSuperAdmin) return;
     const defaultBranchId =
-      selectedBranchFilter && /^\d+$/.test(selectedBranchFilter)
-        ? selectedBranchFilter
-        : filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1
-          ? String(filterBranchId)
-          : "";
+      filterBranchId != null && Number.isFinite(filterBranchId) && filterBranchId >= 1
+        ? String(filterBranchId)
+        : "";
     setFormBranchId(defaultBranchId);
-  }, [selectedBranchFilter, filterBranchId]);
+  }, [filterBranchId, isBranchFilterSuperAdmin]);
 
   const resolvedBranchId = useMemo(() => {
     const n = parseInt(formBranchId, 10);
     return Number.isFinite(n) && n >= 1 ? n : undefined;
   }, [formBranchId]);
 
-  const selectedBranchData = useMemo(() => {
-    if (!resolvedBranchId || !branchesListData?.data) return null;
-    return branchesListData.data.find((b) => b.id === resolvedBranchId) ?? null;
-  }, [resolvedBranchId, branchesListData]);
-
-  const branchType = useMemo((): "hospital" | "clinic" | undefined => {
-    const t = (selectedBranchData as { type?: string } | null)?.type;
-    if (!t) return undefined;
-    return t === "clinic" ? "clinic" : "hospital";
-  }, [selectedBranchData]);
-
-  const { data: rolesData, isFetching: isLoadingRoles } = useGetBranchRoleByCategoryTypeQuery(
-    { roleCategoryType: "facility_therapist", branchId: resolvedBranchId, branchType },
+  const { data: rolesData, isFetching: isLoadingRoles } = useGetTherapistRoleByBranchQuery(
+    { branchId: resolvedBranchId ?? 0 },
     { skip: !resolvedBranchId, refetchOnMountOrArgChange: true }
   );
 
@@ -164,9 +199,10 @@ export default function AddTherapistPage() {
   );
 
   const roleOptions = useMemo((): SelectOption[] =>
-    (rolesData?.data ?? [])
-      .filter((r) => r.isActive !== false)
-      .map((r) => ({ value: String(r.id), label: r.name })),
+    (rolesData?.data ?? []).map((r) => ({
+      value: String(r.roleId),
+      label: (r.roleName ?? "").toUpperCase(),
+    })),
     [rolesData]
   );
 
@@ -178,8 +214,6 @@ export default function AddTherapistPage() {
     setTherapyError("");
     setFormErrors((prev) => ({ ...prev, role: "" }));
   }, [resolvedBranchId]);
-
-  const roleFieldDisabled = !resolvedBranchId || isLoadingRoles || roleOptions.length === 0;
 
   const [createTherapist, { isLoading: isCreating }] = useCreateTherapistMutation();
 
@@ -201,12 +235,20 @@ export default function AddTherapistPage() {
     setCertError("");
   };
   const updateCertification = (idx: number, value: string) => {
-    setCertifications((prev) => prev.map((c, i) => (i === idx ? value : c)));
+    const formatted = formatAlphaInput(value, 100);
+    setCertifications((prev) => prev.map((c, i) => (i === idx ? formatted : c)));
     setCertError("");
   };
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
+
+    if (!resolvedBranchId) {
+      errors.branch = "Branch is required.";
+      errors.role = "Select branch first.";
+    } else if (!formValues.role) {
+      errors.role = "Role is required.";
+    }
 
     if (!formValues.name.trim()) {
       errors.name = "Therapist name is required.";
@@ -232,10 +274,6 @@ export default function AddTherapistPage() {
       errors.phone = "Contact must be 10 digits.";
     }
 
-    if (!formValues.role) {
-      errors.role = "Role is required.";
-    }
-
     if (!formValues.loginType) {
       errors.loginType = "Login type is required.";
     }
@@ -246,6 +284,11 @@ export default function AddTherapistPage() {
 
     if (!formValues.experience.trim()) {
       errors.experience = "Experience is required.";
+    } else {
+      const expNum = parseInt(formValues.experience.trim(), 10);
+      if (isNaN(expNum) || expNum < 0 || expNum > 100) {
+        errors.experience = "Experience must be between 0 and 100 years.";
+      }
     }
 
     const filledCerts = certifications.filter((c) => c.trim());
@@ -277,9 +320,9 @@ export default function AddTherapistPage() {
 
     const branchId = isBranchFilterSuperAdmin
       ? (() => {
-          const n = parseInt(formBranchId, 10);
-          return Number.isFinite(n) && n >= 1 ? n : undefined;
-        })()
+        const n = parseInt(formBranchId, 10);
+        return Number.isFinite(n) && n >= 1 ? n : undefined;
+      })()
       : filterBranchId;
 
     if (branchId === undefined || !Number.isFinite(branchId) || branchId < 1) {
@@ -289,6 +332,8 @@ export default function AddTherapistPage() {
     }
 
     const roleId = parseInt(formValues.role, 10);
+    // const selectedRole = rolesData?.data?.find((r) => r.roleId === roleId);
+    // const roleTypeId = selectedRole?.roleTypes?.[0]?.id ?? roleId;
 
     try {
       const result = await createTherapist({
@@ -297,7 +342,7 @@ export default function AddTherapistPage() {
         phone: formValues.phone.trim(),
         email: formValues.email.trim(),
         roleId,
-        roleTypeId: roleId,
+        // roleTypeId,
         empId: formValues.employeeId.trim(),
         loginType: formValues.loginType,
         status: formValues.status,
@@ -350,12 +395,16 @@ export default function AddTherapistPage() {
                       value={formBranchId}
                       onChange={(value) => {
                         if (!isBranchFilterSuperAdmin) return;
-                        setFormBranchId(Array.isArray(value) ? value[0] : value || "");
+                        const next = Array.isArray(value) ? value[0] : value || "";
+                        setFormBranchId(next);
+                        setSelectedBranchFilter(next);
+                        setFormErrors((prev) => ({ ...prev, branch: "", role: "" }));
                       }}
-                      placeholder={isLoadingBranches ? "Loading branches…" : "Select"}
+                      placeholder={isLoadingBranches ? "Loading branches…" : "Select branch"}
                       mode="single"
                       background="white"
                       disabled={isBranchFilterDisabled || isLoadingBranches || !isBranchFilterSuperAdmin}
+                      error={formErrors.branch}
                     />
                   </div>
 
@@ -372,11 +421,13 @@ export default function AddTherapistPage() {
                           ? "Select branch first"
                           : isLoadingRoles
                             ? "Loading roles…"
-                            : "Select Role"
+                            : roleOptions.length === 0
+                              ? "No roles available"
+                              : "Select role"
                       }
                       mode="single"
                       background="white"
-                      disabled={roleFieldDisabled}
+                      disabled={!resolvedBranchId || isLoadingRoles || roleOptions.length === 0}
                       error={formErrors.role}
                     />
                   </div>
@@ -439,27 +490,27 @@ export default function AddTherapistPage() {
                       mode="single"
                       background="white"
                       error={formErrors.loginType}
-                      labelSlot={
-                        <Tooltip
-                          position="top"
-                          content={
-                            <div className="text-left text-[10px]" style={{ whiteSpace: "nowrap" }}>
-                              <p className="mb-1 font-semibold">Login Type determines how the therapist can log in.</p>
-                              <p><span className="font-semibold">IP</span> — Login allowed only from registered hospital IP address.</p>
-                              <p><span className="font-semibold">OTP</span> — Login using One-Time Password verification.</p>
-                              <p><span className="font-semibold">IP/OTP</span> — Both IP restriction and OTP verification required.</p>
-                              <p><span className="font-semibold">No Auth</span> — Login without IP restriction or OTP verification.</p>
-                            </div>
-                          }
-                          maxWidth={420}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="cursor-default text-[#7B8089]">
-                            <circle cx="12" cy="12" r="10" />
-                            <line x1="12" y1="16" x2="12" y2="12" />
-                            <line x1="12" y1="8" x2="12.01" y2="8" />
-                          </svg>
-                        </Tooltip>
-                      }
+                    // labelSlot={
+                    //   <Tooltip
+                    //     position="top"
+                    //     content={
+                    //       <div className="text-left text-[10px]" style={{ whiteSpace: "nowrap" }}>
+                    //         <p className="mb-1 font-semibold">Login Type determines how the therapist can log in.</p>
+                    //         <p><span className="font-semibold">IP</span> — Login allowed only from registered hospital IP address.</p>
+                    //         <p><span className="font-semibold">OTP</span> — Login using One-Time Password verification.</p>
+                    //         <p><span className="font-semibold">IP/OTP</span> — Both IP restriction and OTP verification required.</p>
+                    //         <p><span className="font-semibold">No Auth</span> — Login without IP restriction or OTP verification.</p>
+                    //       </div>
+                    //     }
+                    //     maxWidth={420}
+                    //   >
+                    //     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="cursor-default text-[#7B8089]">
+                    //       <circle cx="12" cy="12" r="10" />
+                    //       <line x1="12" y1="16" x2="12" y2="12" />
+                    //       <line x1="12" y1="8" x2="12.01" y2="8" />
+                    //     </svg>
+                    //   </Tooltip>
+                    // }
                     />
                   </div>
 
@@ -478,9 +529,14 @@ export default function AddTherapistPage() {
                     <FormInputField
                       label="Experience *"
                       value={formValues.experience}
-                      onChange={(e) => setField("experience", e.target.value.slice(0, 100))}
-                      placeholder="Experience"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!isValidExperienceInput(val)) return;
+                        setField("experience", val);
+                      }}
+                      placeholder="Experience in year"
                       height={44}
+                      maxLength={4}
                       error={formErrors.experience}
                     />
                   </div>
@@ -503,7 +559,7 @@ export default function AddTherapistPage() {
                 {/* Certifications */}
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold text-[#1A1A1A]">Certifications</span>
+                    <span className="text-sm font-semibold text-[#1A1A1A]">Certifications <span className="text-[#F6776E]">*</span></span>
                     <button
                       type="button"
                       onClick={addCertification}
@@ -554,10 +610,7 @@ export default function AddTherapistPage() {
 
               {/* ── Right: therapy selection ── */}
               <div className="w-[390px] shrink-0 rounded-[20px] border border-[#E3EEE1] bg-white p-5">
-                <p className="mb-1 text-sm font-semibold text-[#1A1A1A]">Specializations</p>
-                {therapyError && (
-                  <p className="mb-3 text-xs text-red-500">{therapyError}</p>
-                )}
+                <p className="mb-1 text-sm font-semibold text-[#1A1A1A]">Specializations <span className="text-[#F6776E]">*</span></p>
                 {!therapyError && <div className="mb-3" />}
                 {therapyList.length === 0 ? (
                   <p className="text-xs text-[#9CA3AF]">
@@ -569,24 +622,26 @@ export default function AddTherapistPage() {
                   <div className="grid grid-cols-4 gap-2">
                     {therapyList.map((therapy) => {
                       const active = selectedTherapyIds.includes(therapy.id);
-                      const label = therapy.therapyName ?? therapy.medicineName;
+                      // const label = therapy.therapyName;
+                      const label = therapy.therapyName ? therapy.therapyName.charAt(0).toUpperCase() + therapy.therapyName.slice(1) : "";
                       return (
                         <button
                           key={therapy.id}
                           type="button"
                           onClick={() => toggleTherapy(therapy.id)}
-                          title={label}
-                          className={`rounded-full border px-2 py-1 text-xs font-medium transition-colors text-center truncate ${
-                            active
+                          className={`min-w-0 w-full rounded-full border px-2 py-1 text-xs text-[#525763] font-normal transition-colors text-center ${active
                               ? "border-[#0B8C00] bg-[#0B8C00] text-white"
                               : "border-[#D1D5DB] bg-white text-[#374151] hover:border-[#0B8C00] hover:text-[#0B8C00]"
-                          }`}
+                            }`}
                         >
-                          {label}
+                          <TruncatedTherapyLabel text={label} />
                         </button>
                       );
                     })}
                   </div>
+                )}
+                {therapyError && (
+                  <p className="mb-3 text-xs text-red-500 mt-2">{therapyError}</p>
                 )}
               </div>
             </div>

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 import {
     Button,
     Badge,
@@ -13,7 +14,7 @@ import {
     BackToPreviousPageButton,
 } from "@/components/ui";
 import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
+import { selectUserBranchId } from "@/store/slices/authSlice";
 import { useGetRoomListQuery, useGetRoomBedDetailQuery, useAllocateRoomMutation, type BedLayoutItem } from "@/store/api/counsellorApi";
 import { useGetBuildingDropdownQuery, useGetFloorDropdownQuery, useGetRoomTypeDropdownQuery } from "@/store/api/commonApi";
 
@@ -55,6 +56,11 @@ interface StatCardProps {
     iconSrc: string;
 }
 
+const capitalizeFirstLetter = (str:string) => {
+  if (!str) return "N/A";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 function ManageRoomStatCard({ label, value, iconSrc }: StatCardProps) {
     return (
         <div className="rounded-[20px] p-5 bg-white flex justify-between items-center transition-all duration-200 hover:shadow-md border border-[#DFE0E2] select-none">
@@ -93,11 +99,12 @@ interface RoomItem {
 
 interface RoomCardProps {
     room: RoomItem;
+    serialNumber: number;
     isSelected: boolean;
     onClick: () => void;
 }
 
-function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
+function RoomCard({ room, serialNumber, isSelected, onClick }: RoomCardProps) {
     const borderClass = isSelected
         ? "border-[#0B8C00] ring-2 ring-[#0B8C00]/10"
         : "border-[#DFE0E2] hover:border-[#CBD5E1]";
@@ -106,6 +113,7 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
     const isAvailable = statusLower === "available" || statusLower === "vacant";
     const isOccupied = statusLower === "occupied" || statusLower === "fully occupied";
     const isPartiallyOccupied = statusLower === "partially occupied";
+    const isNoBed = statusLower === "No Beds Available" || statusLower === "no beds available";
     const isReserved = statusLower === "reserved";
     const isUnderCleaning = statusLower === "under cleaning" || statusLower === "under maintenance" || statusLower === "not available";
     const isCheckout = statusLower === "checkout";
@@ -113,16 +121,16 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
     return (
         <div
             onClick={onClick}
-            className={`rounded-[20px] border bg-white flex flex-col select-none cursor-pointer transition-all duration-200 ${borderClass}`}
+            className={`rounded-[20px] border bg-white flex flex-col h-full select-none cursor-pointer transition-all duration-200 ${borderClass}`}
         >
             {/* Header Row */}
             <div className="p-5 flex justify-between items-center border-b border-[#DFE0E2] gap-2 h-[72px]">
                 <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-[#F5F6F8] text-[#787E8C] font-semibold text-sm flex items-center justify-center">
-                        {room.id}
+                        {serialNumber}
                     </span>
                     <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-[#787E8C] uppercase tracking-wider">Room Number</span>
+                        <span className="text-[12px] font-normal text-[#525763] tracking-wider">Room Number</span>
                         <span className="font-semibold text-sm text-[#262D3B]">{room.roomNumber}</span>
                     </div>
                 </div>
@@ -131,11 +139,22 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
                 {isAvailable && (
                     <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#0B8C00]">Available</Badge>
                 )}
+                {isNoBed && (
+                    <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#787E8C]">No Beds Available</Badge>
+                )}
                 {isOccupied && (
                     <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#EF444433] text-[#EF4444]">Fully Occupied</Badge>
                 )}
-                {isPartiallyOccupied && (
+                {/* {isPartiallyOccupied && (
                     <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#F59E0B33] text-[#F59E0B]">Partially Occupied</Badge>
+                )} */}
+                {isPartiallyOccupied && (
+                <Badge
+                    variant="occupied"
+                    className="text-[10px] font-normal px-3 py-1 bg-transparent !border-[#F59E0B]/20 text-[#F59E0B]"
+                >
+                    Partially Occupied
+                </Badge>
                 )}
                 {isReserved && (
                     <Badge variant="checkout" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#6B728033] text-[#6B7280]">Reserved</Badge>
@@ -149,29 +168,29 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
             </div>
 
             {/* Body Info */}
-            <div className="p-5 border-b border-[#DFE0E2] text-xs leading-normal flex flex-col justify-center h-[90px]">
+            <div className="p-5 border-b border-[#DFE0E2] text-xs leading-normal flex flex-col justify-center flex-1 min-h-[90px]">
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Branch</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate" title={room.branch || "N/A"}>
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Branch</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate" title={room.branch || "N/A"}>
                             {room.branch || "N/A"}
                         </span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Room Type</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate">
-                            {room.roomType || "N/A"}
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Room Type</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate">
+                            {capitalizeFirstLetter(room.roomType || "N/A")}
                         </span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Building</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate" title={room.building || "N/A"}>
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Building</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate" title={room.building || "N/A"}>
                             {room.building || "N/A"}
                         </span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <span className="text-[#787E8C] font-semibold text-[10px] uppercase tracking-wider">Floor</span>
-                        <span className="font-semibold text-[#262D3B] text-xs truncate">
+                        <span className="text-[#525763] font-normal text-[12px] tracking-wider">Floor</span>
+                        <span className="font-medium text-[#262D3B] text-xs truncate">
                             {room.floor || "N/A"}
                         </span>
                     </div>
@@ -179,20 +198,20 @@ function RoomCard({ room, isSelected, onClick }: RoomCardProps) {
             </div>
 
             {/* Bottom Row */}
-            <div className="p-5 flex items-center justify-between text-xs h-[76px] bg-[#FAFBFD] rounded-b-[20px]">
+            <div className="p-5 flex items-center justify-between text-xs min-h-[76px] mt-auto bg-[#FAFBFD] rounded-b-[20px]">
                 <div className="flex flex-col gap-0.5">
-                    <span className="text-[#787E8C] font-semibold text-[9px] uppercase tracking-wider">Available Beds</span>
+                    <span className="text-[12px] text-[#787E8C] font-normal text-[9px] tracking-wider">Available Beds</span>
                     <span className="font-bold text-[#0B8C00] text-xs">
                         {room.availableBeds} / {room.totalBeds} Beds
                     </span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                    <span className={`font-semibold text-xs ${isSelected ? "text-[#0B8C00]" : "text-[#787E8C]"}`}>
+                    <span className={`font-normal text-xs ${isSelected ? "text-[#0B8C00]" : "text-[#787E8C]"}`}>
                         {isSelected ? "Selected" : "Select"}
                     </span>
                     {isSelected ? (
-                        <span className="w-5 h-5 rounded-full border border-[#0B8C00] text-[#0B8C00] font-semibold text-[10px] flex items-center justify-center bg-[#E3EEE1]">
+                        <span className="w-5 h-5 rounded-full border border-[#0B8C00] text-[#0B8C00] font-normal text-[10px] flex items-center justify-center bg-[#E3EEE1]">
                             ✓
                         </span>
                     ) : (
@@ -216,9 +235,11 @@ interface BedCardProps {
     bed: BedItem;
     isBedSelected: boolean;
     onClick: () => void;
+    onView?: () => void;
+    showViewAction?: boolean;
 }
 
-function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
+function BedCard({ bed, isBedSelected, onClick, onView, showViewAction = false }: BedCardProps) {
     const statusLower = bed.status?.toLowerCase() || "";
     const isAvailable = statusLower === "available" || statusLower === "free";
     const isOccupied = statusLower === "occupied" || statusLower === "fully occupied";
@@ -266,46 +287,97 @@ function BedCard({ bed, isBedSelected, onClick }: BedCardProps) {
                 : "text-[#434956]";
 
     return (
-        <div
-            onClick={onClick}
-            className={`p-3 rounded-xl flex flex-col items-center gap-1.5 text-center cursor-pointer transition-all duration-200 min-h-[96px] justify-center ${styleClass}`}
-        >
-            <div className="w-5 h-5 flex items-center justify-center">
-                <Image
-                    src="/icons/bedDarkIcon.svg"
-                    alt=""
-                    width={16}
-                    height={16}
-                    className="shrink-0"
-                    style={{ filter: iconFilter }}
-                />
+        <div className="relative h-full">
+            <div
+                onClick={onClick}
+                className={`relative flex h-[118px] w-full flex-col items-center justify-between rounded-xl p-3 text-center cursor-pointer transition-all duration-200 ${styleClass}`}
+            >
+                {showViewAction ? (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onView?.();
+                        }}
+                        className="absolute top-2 right-2 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-[#0B8C00]/30 bg-white text-[#0B8C00] shadow-sm transition-colors hover:bg-[#F2FAF2]"
+                        aria-label="View bed details"
+                    >
+                        <Image src="/icons/openEye.svg" alt="" width={14} height={14} />
+                    </button>
+                ) : null}
+
+                <div className="flex w-full flex-col items-center gap-1">
+                    <div className="flex h-5 w-5 items-center justify-center">
+                        <Image
+                            src="/icons/bedDarkIcon.svg"
+                            alt=""
+                            width={16}
+                            height={16}
+                            className="shrink-0"
+                            style={{ filter: iconFilter }}
+                        />
+                    </div>
+
+                    <span className={`font-semibold text-xs leading-tight ${labelClass}`}>
+                        {bed.label}
+                    </span>
+
+                    <span className={`text-[10px] font-medium leading-tight ${statusClass}`}>
+                        {isReserved ? "Reserved" : isOccupied ? "Occupied" : "Available"}
+                    </span>
+                </div>
+
+                <div className="flex min-h-[30px] w-full flex-col items-center justify-end gap-0.5 px-1">
+                    <span
+                        className={`max-w-full truncate text-[9px] font-normal leading-tight ${
+                            bed.patientName ? "text-[#434956]" : "invisible"
+                        }`}
+                    >
+                        {bed.patientName || "\u00A0"}
+                    </span>
+                    <span
+                        className={`max-w-full truncate text-[9px] font-normal leading-tight ${
+                            bed.patientUhid ? "text-[#787E8C]" : "invisible"
+                        }`}
+                    >
+                        {bed.patientUhid || "\u00A0"}
+                    </span>
+                </div>
             </div>
-
-            <span className={`font-semibold text-xs ${labelClass}`}>
-                {bed.label}
-            </span>
-
-            <span className={`text-[10px] font-medium leading-tight ${statusClass}`}>
-                {isReserved ? "Reserved" : isOccupied ? "Occupied" : "Available"}
-            </span>
-
-            {bed.patientName && (
-                <span className="text-[9px] font-normal text-[#434956] truncate max-w-full leading-tight">
-                    {bed.patientName}
-                </span>
-            )}
-
-            {bed.patientUhid && (
-                <span className="text-[9px] font-normal text-[#787E8C] truncate max-w-full leading-tight mt-0.5">
-                    {bed.patientUhid}
-                </span>
-            )}
         </div>
     );
 }
 
+function resolveRoomTypeDropdownValue(
+    roomType: { id?: number; key?: string; name?: string } | undefined,
+    options: { label: string; value: string }[]
+): string {
+    if (!roomType) return "";
+
+    const candidates = [roomType.key, roomType.name].filter(
+        (value): value is string => Boolean(value?.trim())
+    );
+
+    for (const candidate of candidates) {
+        const normalized = candidate.trim().toLowerCase();
+        const exactValue = options.find((option) => option.value === candidate);
+        if (exactValue) return exactValue.value;
+
+        const caseInsensitive = options.find(
+            (option) =>
+                option.value.trim().toLowerCase() === normalized ||
+                option.label.trim().toLowerCase() === normalized
+        );
+        if (caseInsensitive) return caseInsensitive.value;
+    }
+
+    return "";
+}
+
 interface RoomAllocationProps {
+    branchIdd?:number
     id?: number;
+    packagetotalPrice?:string;
     roomAllocatedHitAPI?: boolean;
     activePackage: {
         id?: string;
@@ -313,7 +385,7 @@ interface RoomAllocationProps {
         remark?: string;
         totalAmount?: number;
         branchRoomType?: {
-            roomRentPrice?: number;
+            roomRentPrice?: number | string ;
         };
     };
     patientId?: number | string;
@@ -342,12 +414,15 @@ interface RoomAllocationProps {
     setSelectedBed?: (bed: string | null) => void;
     setSelectedRoom?: (room: any) => void;
     counsellingSummary?: CounsellingSummary;
+    initialRoomType?: { id?: number; key?: string; name?: string };
 }
 
 export default function RoomAllocation({
+    branchIdd,
     id,
     roomAllocatedHitAPI = false,
     activePackage,
+    packagetotalPrice,
     patientId,
     patientPackageId,
     patientDetails,
@@ -361,11 +436,19 @@ export default function RoomAllocation({
     setSelectedBed: controlledSetBed,
     setSelectedRoom,
     counsellingSummary,
+    initialRoomType,
 
 }: RoomAllocationProps) {
-    const selectedBranch = useAppSelector(selectSelectedBranch);
-    const userBranchId = useAppSelector(selectUserBranchId);
-    const branchId = selectedBranch?.id || userBranchId || 1;
+  const authUserBranchId = useAppSelector(selectUserBranchId);
+
+    const getBranchId = () => {
+    const value = branchIdd || authUserBranchId;
+    const n = Number(value);
+
+    return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+
+    const branchId = getBranchId();
 
     const [localRoomId, setLocalRoomId] = useState<number | null>(null);
     const [localBed, setLocalBed] = useState<string | null>(null);
@@ -388,8 +471,15 @@ export default function RoomAllocation({
     const setSelectedBed = isControlledBed ? controlledSetBed : setLocalBed;
 
     // Dynamic dropdown hooks from common API
-    const { data: buildingData } = useGetBuildingDropdownQuery({ branchId });
-    const { data: floorData } = useGetFloorDropdownQuery({ branchId });
+    const isBranchIdReady = branchId > 0;
+    const { data: buildingData } = useGetBuildingDropdownQuery(
+        { branchId },
+        { skip: !isBranchIdReady }
+    );
+    const { data: floorData } = useGetFloorDropdownQuery(
+        { branchId },
+        { skip: !isBranchIdReady }
+    );
     const { data: roomTypeData } = useGetRoomTypeDropdownQuery();
 
     // Filter states
@@ -433,10 +523,25 @@ export default function RoomAllocation({
         const opts = [{ label: "All", value: "" }];
         const list = roomTypeData?.data || [];
         list.forEach((rt) => {
-            opts.push({ label: rt.name, value: rt.name });
+            opts.push({ label: rt.name, value: `${rt.key || ""}` });
         });
         return opts;
     }, [roomTypeData]);
+
+    const isRoomTypeFilterLocked = useMemo(() => {
+        if (!initialRoomType) return false;
+        return Boolean(initialRoomType.key?.trim() || initialRoomType.name?.trim());
+    }, [initialRoomType]);
+
+    useEffect(() => {
+        if (!isRoomTypeFilterLocked || roomTypeOptions.length <= 1) return;
+        const resolved = resolveRoomTypeDropdownValue(initialRoomType, roomTypeOptions);
+        if (!resolved) return;
+        setSelectedRoomType(resolved);
+        setCurrentPage(1);
+    }, [initialRoomType, isRoomTypeFilterLocked, roomTypeOptions]);
+
+    // console.log("roomTypeOptions",roomTypeOptions)
 
     // Rooms list query
     const roomParams = {
@@ -449,7 +554,9 @@ export default function RoomAllocation({
         limit: itemsPerPage,
     };
 
-    const { data: roomListRes, isLoading: isRoomsLoading } = useGetRoomListQuery(roomParams);
+    const { data: roomListRes, isLoading: isRoomsLoading } = useGetRoomListQuery(roomParams, {
+        skip: !isBranchIdReady,
+    });
 
     const stats = roomListRes?.data?.stats || {
         totalCapacity: 0,
@@ -499,10 +606,10 @@ export default function RoomAllocation({
             ? Number(activePackage.branchRoomType.roomRentPrice)
             : 0;
         if (roomRent > 0) {
-            return `₹${roomRent.toLocaleString("en-IN")}/days`;
+            return `₹${formatIndianAmount(roomRent)}/days`;
         }
         if (counsellingSummary?.finalAmountPayable) {
-            return `₹${counsellingSummary.finalAmountPayable.toLocaleString("en-IN")}`;
+            return `₹${formatIndianAmount(counsellingSummary.finalAmountPayable)}`;
         }
         return "N/A";
     }, [activePackage, counsellingSummary?.finalAmountPayable]);
@@ -522,15 +629,15 @@ export default function RoomAllocation({
         const bedIdStr = bed.bedId.toString();
 
         if (isAvailable) {
-            if (selectedBed === bedIdStr) {
-                setSelectedBed(null);
-                setBedDetailsModalBed(null);
-                setShowBedDetailsDialog(false);
-                return;
-            }
-            setSelectedBed(bedIdStr);
+            setSelectedBed(selectedBed === bedIdStr ? null : bedIdStr);
+            return;
         }
 
+        setBedDetailsModalBed(bed);
+        setShowBedDetailsDialog(true);
+    };
+
+    const handleBedView = (bed: BedLayoutItem) => {
         setBedDetailsModalBed(bed);
         setShowBedDetailsDialog(true);
     };
@@ -640,7 +747,7 @@ export default function RoomAllocation({
         return name.slice(0, 2).toUpperCase();
     };
 
-    // console.log("activePackageHASHDJAHJ", activePackage?.totalAmount);
+    console.log("activePackageHASHDJAHJ", activePackage);
 
     return (
         <div className="flex flex-col gap-6 select-none mt-6">
@@ -693,7 +800,7 @@ export default function RoomAllocation({
                     <div className="flex flex-col gap-0.5">
                         <span className="text-xs font-bold text-white/80 uppercase tracking-wider">Package Selected</span>
                         <h3 className="text-xl font-bold">{activePackage.packageName || "Deluxe Single"}</h3>
-                        <Tooltip
+                        {/* <Tooltip
                             position="top"
                             maxWidth={600}
                             content={
@@ -701,18 +808,18 @@ export default function RoomAllocation({
                                     {activePackage.remark || "Premium suite with private lounge and high-dependency monitoring equipment."}
                                 </span>
                             }
-                        >
-                            <p className="text-xs text-white/90 font-medium leading-relaxed whitespace-nowrap truncate max-w-[1200px] cursor-pointer" >
-                                {activePackage.remark || "Premium suite with private lounge and high-dependency monitoring equipment."}
+                        > */}
+                            <p className="text-xs text-white/90 font-medium leading-relaxed whitespace-nowrap truncate max-w-[1200px]" >
+                                {activePackage.remark || ""}
                             </p>
-                        </Tooltip>
+                        {/* </Tooltip> */}
                     </div>
                 </div>
                 <div className="flex flex-col md:items-end gap-0.5">
                     <span className="text-lg font-normal tracking-wider">Daily Rate</span>
                     <div className="flex items-baseline gap-1">
-                        {/* <span className="text-2xl font-black">₹ {((activePackage.branchRoomType?.roomRentPrice || 1500) * 9).toLocaleString()}</span> */}
-                         <span className="text-2xl font-black">₹ {((activePackage?.totalAmount)?.toLocaleString())}</span>
+                        <span className="text-2xl font-black">₹ {formatIndianAmount(packagetotalPrice || activePackage?.branchRoomType?.roomRentPrice || 0)}</span>
+                         {/* <span className="text-2xl font-black">₹ {((activePackage?.totalAmount)?.toLocaleString())}</span> */}
                         <span className="text-lg font-normal">/day</span>
                     </div>
                 </div>
@@ -744,10 +851,10 @@ export default function RoomAllocation({
                         {
                             id: "rooms-list",
                             title: "Rooms",
-                            titleRightContent: (
-                                <div className="flex items-center gap-3 w-full justify-end flex-wrap md:flex-nowrap">
-                                    {/* Dynamic Building Selector */}
-                                    <div className="w-[240px] shrink-0">
+                            customContent: (
+                                <>
+                                    <div className="mb-6 grid grid-cols-4 gap-3">
+                                        <div className="min-w-0">
                                         <FormSelectField
                                             label="Building"
                                             hideLabel
@@ -762,9 +869,8 @@ export default function RoomAllocation({
                                                 setCurrentPage(1);
                                             }}
                                         />
-                                    </div>
-                                    {/* Dynamic Floor Selector */}
-                                    <div className="w-[240px] shrink-0">
+                                        </div>
+                                        <div className="min-w-0">
                                         <FormSelectField
                                             label="Floor"
                                             hideLabel
@@ -779,9 +885,8 @@ export default function RoomAllocation({
                                                 setCurrentPage(1);
                                             }}
                                         />
-                                    </div>
-                                    {/* Room Type Selector */}
-                                    <div className="w-[240px] shrink-0">
+                                        </div>
+                                        <div className="min-w-0">
                                         <FormSelectField
                                             label="Room Type"
                                             hideLabel
@@ -790,15 +895,15 @@ export default function RoomAllocation({
                                             mode="single"
                                             background="normal"
                                             value={selectedRoomType}
+                                            disabled={isRoomTypeFilterLocked}
                                             onChange={(val) => {
                                                 const v = typeof val === "string" ? val : "";
                                                 setSelectedRoomType(v);
                                                 setCurrentPage(1);
                                             }}
                                         />
-                                    </div>
-                                    {/* Room Status Selector */}
-                                    <div className="w-[240px] shrink-0">
+                                        </div>
+                                        <div className="min-w-0">
                                         <FormSelectField
                                             label="Room Status"
                                             hideLabel
@@ -808,7 +913,7 @@ export default function RoomAllocation({
                                                 { label: "Fully Occupied", value: "fully occupied" },
                                                 { label: "Partially Occupied", value: "partially occupied" },
                                                 { label: "Reserved", value: "reserved" },
-                                                { label: "Under Maintenance", value: "under maintenance" }
+                                                { label: "Under Maintenance", value: "under maintenance" },
                                             ]}
                                             placeholder="Room Status"
                                             mode="single"
@@ -819,31 +924,34 @@ export default function RoomAllocation({
                                                 setCurrentPage(1);
                                             }}
                                         />
+                                        </div>
                                     </div>
-                                </div>
-                            ),
-                            customContent: isRoomsLoading ? (
-                                <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
-                                    Loading Rooms...
-                                </div>
-                            ) : roomsData.length === 0 ? (
-                                <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
-                                    No rooms found matching filters.
-                                </div>
-                            ) : (
-                                <div className={`grid grid-cols-1 md:grid-cols-2 ${selectedRoomId ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-6 pb-2`}>
-                                    {roomsData.map((room) => (
-                                        <RoomCard
-                                            key={room.id}
-                                            room={room}
-                                            isSelected={selectedRoomId === room.id}
-                                            onClick={() => {
-                                                setSelectedRoomId(room.id === selectedRoomId ? null : room.id);
-                                                setSelectedBed(null);
-                                            }}
-                                        />
-                                    ))}
-                                </div>
+
+                                    {isRoomsLoading ? (
+                                        <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
+                                            Loading Rooms...
+                                        </div>
+                                    ) : roomsData.length === 0 ? (
+                                        <div className="flex items-center justify-center p-12 text-sm text-[#787E8C]">
+                                            No rooms found matching filters.
+                                        </div>
+                                    ) : (
+                                        <div className={`grid grid-cols-1 md:grid-cols-2 ${selectedRoomId ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-6 pb-2 items-stretch`}>
+                                            {roomsData.map((room, index) => (
+                                                <RoomCard
+                                                    key={room.id}
+                                                    room={room}
+                                                    serialNumber={(currentPage - 1) * itemsPerPage + index + 1}
+                                                    isSelected={selectedRoomId === room.id}
+                                                    onClick={() => {
+                                                        setSelectedRoomId(room.id === selectedRoomId ? null : room.id);
+                                                        setSelectedBed(null);
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
                             ),
                             pagination: {
                                 currentPage: currentPage,
@@ -907,8 +1015,14 @@ export default function RoomAllocation({
                                     No beds configured for this room.
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-4 gap-3">
-                                    {bedDetailRes.data.bedLayout.map((bed) => (
+                                <div className="grid grid-cols-4 gap-3 items-stretch">
+                                    {bedDetailRes.data.bedLayout.map((bed) => {
+                                        const statusLower = bed.status?.toLowerCase() || "";
+                                        const isAvailable =
+                                            statusLower === "available" || statusLower === "free";
+                                        const isSelected = selectedBed === bed.bedId.toString();
+
+                                        return (
                                         <BedCard
                                             key={bed.bedId}
                                             bed={{
@@ -918,14 +1032,13 @@ export default function RoomAllocation({
                                                 patientName: bed.patientName,
                                                 patientUhid: bed.patientUhid,
                                             }}
-                                            isBedSelected={
-                                                selectedBed === bed.bedId.toString() ||
-                                                (showBedDetailsDialog &&
-                                                    bedDetailsModalBed?.bedId === bed.bedId)
-                                            }
+                                            isBedSelected={isSelected}
+                                            showViewAction={isAvailable && isSelected}
                                             onClick={() => handleBedClick(bed)}
+                                            onView={() => handleBedView(bed)}
                                         />
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
 
@@ -978,7 +1091,7 @@ export default function RoomAllocation({
                     </Button> */}
 
                      <BackToPreviousPageButton text="Back" onClick={onBack} />
-                    <Button
+                    {/* <Button
                         type="button"
                         variant="outline"
                         className="!border-[#0B8C00] !text-[#0B8C00] hover:!bg-[#F2FAF2] px-6 h-11 rounded-full font-bold"
@@ -988,7 +1101,7 @@ export default function RoomAllocation({
                         }}
                     >
                         Cancel
-                    </Button>
+                    </Button> */}
                     <Button
                         type="button"
                         variant="primary"

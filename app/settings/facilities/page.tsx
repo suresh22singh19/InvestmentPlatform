@@ -96,6 +96,8 @@ export default function FacilitiesPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<RowItem | null>(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const trimmedSearchTerm = debouncedSearchTerm.trim();
@@ -122,7 +124,7 @@ export default function FacilitiesPage() {
 
   const [createItem, { isLoading: isCreating }] = useCreateHardwareOrFacilitiesMutation();
   const [updateItem, { isLoading: isUpdating }] = useUpdateHardwareOrFacilitiesMutation();
-  const [deleteItem] = useDeleteHardwareOrFacilitiesMutation();
+  const [deleteItem, { isLoading: isDeleting }] = useDeleteHardwareOrFacilitiesMutation();
 
   const rows: RowItem[] =
     listData?.data?.map((item) => ({
@@ -159,13 +161,20 @@ export default function FacilitiesPage() {
     setDialogMode("view");
   };
 
-  const handleDelete = async (row: RowItem) => {
+  const handleDelete = (row: RowItem) => {
     if (!canDelete) return;
-    if (!window.confirm(`Delete "${row.name}"? This cannot be undone.`)) return;
+    setItemToDelete(row);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
     try {
-      const result = await deleteItem({ id: row.id }).unwrap();
+      const result = await deleteItem({ id: itemToDelete.id }).unwrap();
       setSuccessMessage(result?.message || "Facility deleted successfully");
       setShowSuccessDialog(true);
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
       await refetchList();
     } catch (error: any) {
       console.error("Failed to delete facility:", error);
@@ -181,6 +190,8 @@ export default function FacilitiesPage() {
       }
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
     }
   };
 
@@ -269,69 +280,69 @@ export default function FacilitiesPage() {
               You don&apos;t have permission to view facilities.
             </div>
           ) : (
-          <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
+            <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-lg font-semibold leading-[120%] text-[#434956]"></h2>
 
-              <div className="flex items-center gap-3">
-                <TableSearchInput
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  placeholder="Search Here..."
-                />
-                {canAdd ? (
-                  <button
-                    type="button"
-                    className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap whitespace-nowrap"
-                    onClick={handleAddNew}
-                  >
-                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                    <span className="text-hide">Add Facilities</span>
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {isLoadingList ? (
-              <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {paginatedRows.map((row) => (
-                    <PanelCard
-                      key={row.id}
-                      id={row.id}
-                      name={row.name}
-                      status={row.status}
-                      isDefaultPanel={row.isDefaultPanel}
-                      showStatusBadge={false}
-                      variant="view-edit-delete"
-                      showViewButton={canView}
-                      showEditButton={canEdit}
-                      onView={() => handleView(row)}
-                      onEdit={() => handleEdit(row)}
-                      onDelete={canDelete ? () => handleDelete(row) : undefined}
-                    />
-                  ))}
+                <div className="flex items-center gap-3">
+                  <TableSearchInput
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    placeholder="Search Here..."
+                  />
+                  {canAdd ? (
+                    <button
+                      type="button"
+                      className="flex h-11 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap whitespace-nowrap"
+                      onClick={handleAddNew}
+                    >
+                      <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                      <span className="text-hide">Add Facilities</span>
+                    </button>
+                  ) : null}
                 </div>
+              </div>
 
-                {filteredRows.length === 0 && (
-                  <div className="py-12 text-center text-sm text-[#9CA3AF]">No facilities found</div>
-                )}
-              </>
-            )}
+              {isLoadingList ? (
+                <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    {paginatedRows.map((row) => (
+                      <PanelCard
+                        key={row.id}
+                        id={row.id}
+                        name={row.name}
+                        status={row.status}
+                        isDefaultPanel={row.isDefaultPanel}
+                        showStatusBadge={false}
+                        variant="view-edit-delete"
+                        showViewButton={canView}
+                        showEditButton={canEdit}
+                        onView={() => handleView(row)}
+                        onEdit={() => handleEdit(row)}
+                        onDelete={canDelete ? () => handleDelete(row) : undefined}
+                      />
+                    ))}
+                  </div>
 
-            {!isLoadingList && (listData?.total ?? filteredRows.length) > 0 && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={listData?.total ?? filteredRows.length}
-                itemsPerPage={itemsPerPage}
-                onPageChange={handlePageChange}
-                onItemsPerPageChange={handleItemsPerPageChange}
-                itemsPerPageOptions={[10, 20, 50, 100]}
-              />
-            )}
-          </div>
+                  {filteredRows.length === 0 && (
+                    <div className="py-12 text-center text-sm text-[#9CA3AF]">No facilities found</div>
+                  )}
+                </>
+              )}
+
+              {!isLoadingList && (listData?.total ?? filteredRows.length) > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={listData?.total ?? filteredRows.length}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={handlePageChange}
+                  onItemsPerPageChange={handleItemsPerPageChange}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
+                />
+              )}
+            </div>
           )}
         </ListBorder>
       </div>
@@ -349,6 +360,7 @@ export default function FacilitiesPage() {
         }}
         title={dialogMode === "add" ? "Add Facilities" : dialogMode === "view" ? "View Facilities" : "Edit Facilities"}
         width={686}
+        closeOnOutsideClick={false}
       >
         <form onSubmit={dialogMode === "view" ? (e) => e.preventDefault() : handleSubmit} className="space-y-6">
           <div className="space-y-6">
@@ -359,6 +371,11 @@ export default function FacilitiesPage() {
                 onChange={(event) => {
                   if (dialogMode === "view") return;
                   let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                  value = value.replace(/^\s+/, "");
+                  value = value.replace(/(.)\1{2,}/g, "$1$1");
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
                   value = value.slice(0, 100);
                   setFormValues((prev) => ({ ...prev, name: value }));
                   setFormErrors((prev) => ({ ...prev, name: "" }));
@@ -441,6 +458,36 @@ export default function FacilitiesPage() {
         showCancel={false}
         onConfirm={() => {
           setShowApiErrorDialog(false);
+        }}
+      />
+
+      <MessageDialog
+        open={showDeleteConfirm}
+        onClose={() => {
+          if (isDeleting) return;
+          setShowDeleteConfirm(false);
+          setItemToDelete(null);
+        }}
+        closeOnOutsideClick={false}
+        icon="/icons/transhExtraDarkIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={
+          itemToDelete ? (
+            <span>
+              Are you sure you want to delete this facility?
+            </span>
+          ) : (
+            ""
+          )
+        }
+        confirmText="Confirm"
+        cancelText="Cancel"
+        showCancel={true}
+        isActionLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setItemToDelete(null);
         }}
       />
     </AppShell>

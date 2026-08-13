@@ -47,6 +47,7 @@ interface MedicalInformationProps {
     };
     errors?: Record<string, string>;
     gender?: string; // Gender value to conditionally show/hide Menstrual field
+    readOnlyFields?: string[];
 }
 
 export default function MedicalInformation({
@@ -56,17 +57,30 @@ export default function MedicalInformation({
     fieldRefs,
     errors,
     gender,
+    readOnlyFields = [],
 }: MedicalInformationProps) {
     const yesNoOptions = ["Yes", "No"];
 
+    const isFieldReadOnly = (fieldName: string) => readOnlyFields.includes(fieldName);
+
+    const sanitizeInput = (val: string) => {
+        let value = val.replace(/[^a-zA-Z\s]/g, "");
+        value = value.replace(/^\s+/, "");
+        value = value.replace(/(.)\1{2,}/g, "$1$1");
+        if (value.length > 0) {
+            value = value.charAt(0).toUpperCase() + value.slice(1);
+        }
+        return value.slice(0, 100);
+    };
+
     const handleCheckboxChange = (field: "alcohol" | "smoking" | "tobacco" | "drugs" | "addictionOther", checked: boolean) => {
         onChange(field, checked);
-        
+
         // If "Other" is unchecked, clear the specify field
         if (field === "addictionOther" && !checked) {
             onChange("addictionSpecify", "");
         }
-        
+
         setTimeout(() => {
             onBlur?.(field);
         }, 10);
@@ -103,11 +117,15 @@ export default function MedicalInformation({
                         label="Remarks"
                         value={formData.diabetesRemarks || ""}
                         onChange={(e) => {
-                            onChange("diabetesRemarks", e.target.value);
+                            if (!isFieldReadOnly("diabetesRemarks")) {
+                                onChange("diabetesRemarks", sanitizeInput(e.target.value));
+                            }
                         }}
                         onBlur={() => onBlur?.("diabetesRemarks")}
                         placeholder="Remarks Diabetes"
                         type="text"
+                        disabled={isFieldReadOnly("diabetesRemarks")}
+                        readOnly={isFieldReadOnly("diabetesRemarks")}
                         error={errors?.diabetesRemarks}
                     />
                 </div>
@@ -136,11 +154,15 @@ export default function MedicalInformation({
                         label="Remarks"
                         value={formData.htnRemarks || ""}
                         onChange={(e) => {
-                            onChange("htnRemarks", e.target.value);
+                            if (!isFieldReadOnly("htnRemarks")) {
+                                onChange("htnRemarks", sanitizeInput(e.target.value));
+                            }
                         }}
                         onBlur={() => onBlur?.("htnRemarks")}
                         placeholder="Remarks HTN"
                         type="text"
+                        disabled={isFieldReadOnly("htnRemarks")}
+                        readOnly={isFieldReadOnly("htnRemarks")}
                         error={errors?.htnRemarks}
                     />
                 </div>
@@ -169,11 +191,15 @@ export default function MedicalInformation({
                         label="Remarks"
                         value={formData.coronaryArteryDiseaseRemarks || ""}
                         onChange={(e) => {
-                            onChange("coronaryArteryDiseaseRemarks", e.target.value);
+                            if (!isFieldReadOnly("coronaryArteryDiseaseRemarks")) {
+                                onChange("coronaryArteryDiseaseRemarks", sanitizeInput(e.target.value));
+                            }
                         }}
                         onBlur={() => onBlur?.("coronaryArteryDiseaseRemarks")}
                         placeholder="Remarks Coronary Artery Disease"
                         type="text"
+                        disabled={isFieldReadOnly("coronaryArteryDiseaseRemarks")}
+                        readOnly={isFieldReadOnly("coronaryArteryDiseaseRemarks")}
                         error={errors?.coronaryArteryDiseaseRemarks}
                     />
                 </div>
@@ -202,11 +228,15 @@ export default function MedicalInformation({
                         label="Remarks"
                         value={formData.thyroidRemarks || ""}
                         onChange={(e) => {
-                            onChange("thyroidRemarks", e.target.value);
+                            if (!isFieldReadOnly("thyroidRemarks")) {
+                                onChange("thyroidRemarks", sanitizeInput(e.target.value));
+                            }
                         }}
                         onBlur={() => onBlur?.("thyroidRemarks")}
                         placeholder="Remarks Thyroid"
                         type="text"
+                        disabled={isFieldReadOnly("thyroidRemarks")}
+                        readOnly={isFieldReadOnly("thyroidRemarks")}
                         error={errors?.thyroidRemarks}
                     />
                 </div>
@@ -237,11 +267,15 @@ export default function MedicalInformation({
                                 label="Remarks"
                                 value={formData.menstrualRemarks || ""}
                                 onChange={(e) => {
-                                    onChange("menstrualRemarks", e.target.value);
+                                    if (!isFieldReadOnly("menstrualRemarks")) {
+                                        onChange("menstrualRemarks", sanitizeInput(e.target.value));
+                                    }
                                 }}
                                 onBlur={() => onBlur?.("menstrualRemarks")}
                                 placeholder="Remarks Menstrual"
                                 type="text"
+                                disabled={isFieldReadOnly("menstrualRemarks")}
+                                readOnly={isFieldReadOnly("menstrualRemarks")}
                                 error={errors?.menstrualRemarks}
                             />
                         </div>
@@ -382,12 +416,16 @@ export default function MedicalInformation({
                             label="Specify"
                             value={formData.addictionSpecify || ""}
                             onChange={(e) => {
-                                onChange("addictionSpecify", e.target.value);
+                                if (!isFieldReadOnly("addictionSpecify")) {
+                                    onChange("addictionSpecify", sanitizeInput(e.target.value));
+                                }
                             }}
                             onBlur={() => onBlur?.("addictionSpecify")}
                             placeholder="Please Specify"
                             required
                             type="text"
+                            disabled={isFieldReadOnly("addictionSpecify")}
+                            readOnly={isFieldReadOnly("addictionSpecify")}
                             error={errors?.addictionSpecify}
                         />
                     </div>

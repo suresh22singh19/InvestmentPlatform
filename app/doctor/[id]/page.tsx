@@ -1,14 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { notFound, useParams, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { Button } from "@/components/ui/Button";
 import { BackToPreviousPageButton } from "@/components/ui/Buttons";
 import { FormInputField } from "@/components/ui/FormInputField";
-import { Checkbox, MessageDialog } from "@/components/ui";
+import { Checkbox, MessageDialog, Tooltip } from "@/components/ui";
 import { API_BASE_URL } from "@/lib/config/api";
 import {
     LOGIN_TYPE_OPTIONS,
@@ -60,11 +60,55 @@ function resolveDoctorAttachmentSrc(path: string | null | undefined): string | n
     return `${origin}/${p.replace(/^\//, "")}`;
 }
 
-function FieldCell({ label, value }: { label: string; value: React.ReactNode }) {
+function TruncatedTextValue({ text }: { text: string | null | undefined }) {
+    const value = text?.trim() ? text.trim() : "—";
+    const textRef = useRef<HTMLSpanElement>(null);
+    const [isTruncated, setIsTruncated] = useState(false);
+
+    useEffect(() => {
+        const element = textRef.current;
+        if (!element) return;
+
+        const checkTruncation = () => {
+            setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+        };
+
+        checkTruncation();
+
+        const observer = new ResizeObserver(checkTruncation);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [value]);
+
+    if (value === "—") {
+        return <span>—</span>;
+    }
+
     return (
-        <div className="space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 last:border-0 md:px-0 lg:px-4 break-words">
-            <p className="text-xs font-medium text-[#7B8089]">{label}</p>
-            <p className="text-sm font-medium text-[#262D3B]">{value}</p>
+        <Tooltip
+            position="top"
+            maxWidth={360}
+            disabled={!isTruncated}
+            className="!overflow-visible !py-2.5"
+            content={
+                <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+                    {value}
+                </p>
+            }
+        >
+            <span ref={textRef} className="block min-w-0 w-full truncate whitespace-nowrap font-medium text-[#262D3B]">
+                {value}
+            </span>
+        </Tooltip>
+    );
+}
+
+function FieldCell({ label, value }: { label: string; value: React.ReactNode }) {
+    const renderValue = typeof value === "string" ? <TruncatedTextValue text={value} /> : value;
+    return (
+        <div className="min-w-0 overflow-hidden space-y-1 border-r border-[#DFE0E2] py-[10px] px-4 last:border-0 md:px-0 lg:px-4">
+            <p className="text-xs font-medium text-[#7B8089] truncate whitespace-nowrap">{label}</p>
+            <div className="text-sm font-medium text-[#262D3B] min-w-0 overflow-hidden truncate whitespace-nowrap">{renderValue}</div>
         </div>
     );
 }
@@ -257,14 +301,14 @@ export default function DoctorViewPage() {
         try {
             const body = showOldPasswordField
                 ? {
-                      oldPassword: oldPassword.trim(),
-                      newPassword: newPassword.trim(),
-                      confirmPassword: confirmPassword.trim(),
-                  }
+                    oldPassword: oldPassword.trim(),
+                    newPassword: newPassword.trim(),
+                    confirmPassword: confirmPassword.trim(),
+                }
                 : {
-                      newPassword: newPassword.trim(),
-                      confirmPassword: confirmPassword.trim(),
-                  };
+                    newPassword: newPassword.trim(),
+                    confirmPassword: confirmPassword.trim(),
+                };
             const res = await updatePassword({
                 id,
                 body,
@@ -405,7 +449,7 @@ export default function DoctorViewPage() {
                                             <div className="flex items-center gap-2">
                                                 <Checkbox
                                                     checked={passwordChecks.minLength}
-                                                    onChange={() => {}}
+                                                    onChange={() => { }}
                                                     width={16}
                                                     height={16}
                                                 />
@@ -418,7 +462,7 @@ export default function DoctorViewPage() {
                                             <div className="flex items-center gap-2">
                                                 <Checkbox
                                                     checked={passwordChecks.hasLower}
-                                                    onChange={() => {}}
+                                                    onChange={() => { }}
                                                     width={16}
                                                     height={16}
                                                 />
@@ -431,7 +475,7 @@ export default function DoctorViewPage() {
                                             <div className="flex items-center gap-2">
                                                 <Checkbox
                                                     checked={passwordChecks.hasUpper}
-                                                    onChange={() => {}}
+                                                    onChange={() => { }}
                                                     width={16}
                                                     height={16}
                                                 />
@@ -444,7 +488,7 @@ export default function DoctorViewPage() {
                                             <div className="flex items-center gap-2">
                                                 <Checkbox
                                                     checked={passwordChecks.hasNumber}
-                                                    onChange={() => {}}
+                                                    onChange={() => { }}
                                                     width={16}
                                                     height={16}
                                                 />

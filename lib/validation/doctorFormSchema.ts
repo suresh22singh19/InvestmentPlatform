@@ -17,7 +17,7 @@ export const doctorFormSchema = Yup.object({
   name: Yup.string()
     .trim()
     .required("Name is required")
-    .max(MAX_LEN, `Name cannot exceed ${MAX_LEN} characters`)
+    .max(96, "Name cannot exceed 96 characters")
     .matches(/^[a-zA-Z\s]+$/, "Only letters and spaces are allowed"),
   email: Yup.string()
     .trim()
@@ -44,8 +44,16 @@ export const doctorFormSchema = Yup.object({
   yearsExperience: Yup.string()
     .trim()
     .optional()
-    .max(3, "Year of Experience can be at most 3 digits")
-    .matches(/^\d*$/, "Only numbers are allowed"),
+    .test(
+      "valid-years-experience",
+      "Year of Experience must be between 0 and 100",
+      (value) => {
+        if (!value || value.trim() === "") return true;
+        if (!/^\d+$/.test(value)) return false;
+        const num = parseInt(value, 10);
+        return num >= 0 && num <= 100;
+      },
+    ),
   department: Yup.string()
     .trim()
     .required("Department is required")
@@ -66,8 +74,16 @@ export const doctorFormSchema = Yup.object({
   employeeId: Yup.string()
     .trim()
     .required("Employee Id is required")
-    .max(MAX_LEN, `Employee Id cannot exceed ${MAX_LEN} characters`)
-    .matches(/^[a-zA-Z0-9\-]+$/, "Only letters, numbers, and hyphens are allowed"),
+    .max(9, "Employee Id cannot exceed 9 characters")
+    .matches(
+      /^JS[-_]?[0-9]{1,6}$/,
+      "Invalid format (e.g. JS-01, JS_01, JS01, JS-9999)"
+    )
+    .test(
+      "not-all-zeros",
+      "Employee Id cannot be all zeros",
+      (val) => !val || !/^JS[-_]?0{6}$/.test(val.trim())
+    ),
   status: Yup.mixed<"Active" | "Inactive">().oneOf(["Active", "Inactive"]).required(),
   aiVoiceActivated: Yup.mixed<"Active" | "Inactive">().oneOf(["Active", "Inactive"]).required("Voice AI is required"),
   changeVoiceAiPassword: Yup.string().oneOf(["Yes", "No"]).optional(),
@@ -112,12 +128,29 @@ export const doctorFormSchema = Yup.object({
     .max(20, "Account Number cannot exceed 20 digits")
     .matches(/^\d*$/, "Account Number must contain only digits")
     .test(
+      "not-single-zero",
+      "Account Number cannot be a single zero",
+      (value) => {
+        const v = (value ?? "").trim();
+        return v !== "0";
+      },
+    )
+    .test(
       "account-min-length",
       "Account Number must be at least 8 digits",
       (value) => {
         const v = (value ?? "").trim();
         if (v.length === 0) return true;
         return v.length >= 8;
+      },
+    )
+    .test(
+      "not-all-zeros",
+      "Account Number cannot be all zeros",
+      (value) => {
+        const v = (value ?? "").trim();
+        if (!v) return true;
+        return !/^0+$/.test(v);
       },
     ),
   ifscCode: Yup.string()
@@ -132,23 +165,35 @@ export const doctorFormSchema = Yup.object({
     .of(
       Yup.object({
         id: Yup.string().required(),
-        qualification: Yup.string().trim().max(MAX_LEN).optional(),
+        qualification: Yup.string()
+          .trim()
+          .required("Qualification is required")
+          .max(MAX_LEN),
         college: Yup.string()
           .trim()
+          .required("College is required")
           .max(MAX_LEN, `College cannot exceed ${MAX_LEN} characters`)
           .matches(
-            /^[a-zA-Z\s,.()]*$/,
+            /^[a-zA-Z\s,.()]+$/,
             "Only letters, spaces, commas, parentheses, and periods are allowed",
-          )
-          .optional(),
+          ),
         completionYears: Yup.string()
           .trim()
-          .optional()
-          .max(4, "Completion year can be at most 4 digits")
-          .matches(/^\d*$/, "Only numbers are allowed"),
+          .required("Completion Year is required")
+          .test(
+            "valid-completion-year",
+            `Completion year must be between 1920 and ${new Date().getFullYear()}`,
+            (value) => {
+              if (!value || value.trim() === "") return false;
+              if (!/^\d{4}$/.test(value.trim())) return false;
+              const yr = parseInt(value.trim(), 10);
+              return yr >= 1920 && yr <= new Date().getFullYear();
+            },
+          ),
       }),
     )
-    .required(),
+    .min(1, "At least one education detail is required")
+    .required("At least one education detail is required"),
   specializations: Yup.array()
     .of(
       Yup.object({
@@ -177,8 +222,16 @@ export const doctorFormSchema = Yup.object({
         year: Yup.string()
           .trim()
           .optional()
-          .max(4, "Year can be at most 4 digits")
-          .matches(/^\d*$/, "Only numbers are allowed"),
+          .test(
+            "valid-reg-year",
+            `Year must be between 1920 and ${new Date().getFullYear()}`,
+            (value) => {
+              if (!value || value.trim() === "") return true;
+              if (!/^\d{4}$/.test(value)) return false;
+              const yr = parseInt(value, 10);
+              return yr >= 1920 && yr <= new Date().getFullYear();
+            },
+          ),
       }),
     )
     .required(),

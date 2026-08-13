@@ -1,76 +1,30 @@
-type RequiredDocumentItem = {
-  documentMasterId: number;
-};
-
-type OpenFileStep1Form = {
-  vitals: {
-    bloodPressure: string;
-    sugarLevel: string;
-    temperature: string;
-    pulseRate: string;
-    spo2: string;
-  };
-  dietary: {
-    clinicalNote: string;
-  };
-};
+import type {
+  CreateIpdAdmissionPayload,
+  OpenFileStep1Form,
+} from "@/lib/ipd-reception/types";
 
 type BuildCreateIpdAdmissionPayloadArgs = {
   patientId: number;
   branchId: number;
   patientName: string;
+  admissionNo: string;
   step1Form: OpenFileStep1Form;
-  requiredDocuments: RequiredDocumentItem[];
-  selectedDocuments: Record<string, boolean>;
-};
-
-type CreateIpdAdmissionPayload = {
-  patientId: number;
-  branchId: number;
-  patientName: string;
-  documents: {
-    documentMasterId: number;
-    isSubmitted: boolean;
-  }[];
-  vitals: {
-    bloodPressure: string;
-    sugarLevel: string;
-    temperature: string;
-    pulse: string;
-    spo2: string;
-    vitalsNote: string;
-    source: string;
-  };
 };
 
 export function buildCreateIpdAdmissionPayload({
   patientId,
   branchId,
   patientName,
+  admissionNo,
   step1Form,
-  requiredDocuments,
-  selectedDocuments,
 }: BuildCreateIpdAdmissionPayloadArgs): CreateIpdAdmissionPayload {
-  const { vitals, dietary } = step1Form;
-
-  const documents = requiredDocuments.map((doc) => ({
-    documentMasterId: doc.documentMasterId,
-    isSubmitted: Boolean(selectedDocuments[String(doc.documentMasterId)]),
-  }));
+  const patientTagId = Number(step1Form.patientIdTagNumber?.trim());
 
   return {
     patientId,
     branchId,
     patientName: patientName.trim() || "—",
-    documents,
-    vitals: {
-      bloodPressure: vitals.bloodPressure.trim(),
-      sugarLevel: vitals.sugarLevel.trim(),
-      temperature: vitals.temperature.trim(),
-      pulse: vitals.pulseRate.trim(),
-      spo2: vitals.spo2.trim(),
-      vitalsNote: dietary.clinicalNote.trim(),
-      source: "ipd_reception",
-    },
+    admissionNo: admissionNo.trim(),
+    patientTagId: Number.isFinite(patientTagId) ? patientTagId : 0,
   };
 }

@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useMemo, useCallback } from "react";
 import { FormikProps } from "formik";
-import { BackToPreviousPageButton, Dialog, Button, FormTextareaField } from "@/components/ui";
+import { BackToPreviousPageButton, Dialog, Button, FormTextareaField, isMeaningfulText } from "@/components/ui";
 import VitalsInformation from "@/components/registration/VitalsInformation";
 import type { RegistrationPersonalDetailsFormValues } from "@/lib/validation/registrationSchemas";
 import type { SelectOption } from "@/components/ui/FormSelectField";
@@ -13,22 +13,28 @@ import { selectUserBranchId, selectSelectedBranch } from "@/store/slices/authSli
 interface VitalFormProps {
     formik: FormikProps<RegistrationPersonalDetailsFormValues>;
     getFormErrors: () => Record<string, string>;
+    scrollToFirstError?: (errorsOverride?: Record<string, string>) => void;
     onNext: () => void;
     onBack: () => void;
     showBackButton?: boolean;
     allFieldsOptional?: boolean; // If true, all vitals fields are optional (no asterisks)
     /** When set (e.g. clinic registration), scopes GET /admin/registration/diet-list?branchId= */
     branchId?: number;
+    submitButtonText?: string;
+    isSubmitting?: boolean;
 }
 
 export default function VitalForm({
     formik,
     getFormErrors,
+    scrollToFirstError,
     onNext,
     onBack,
     showBackButton = true,
     allFieldsOptional = false,
     branchId: branchIdProp,
+    submitButtonText,
+    isSubmitting = false,
 }: VitalFormProps) {
     const [showDietDialog, setShowDietDialog] = useState(false);
     const [dietDetailText, setDietDetailText] = useState("");
@@ -38,6 +44,57 @@ export default function VitalForm({
     const [allergiesDetailText, setAllergiesDetailText] = useState("");
     const [showSurgeriesDialog, setShowSurgeriesDialog] = useState(false);
     const [surgeriesDetailText, setSurgeriesDetailText] = useState("");
+
+    const handleCloseDietDialog = useCallback(() => {
+        setShowDietDialog(false);
+        setDietDetailText("");
+    }, []);
+
+    const handleCloseAllergiesDialog = useCallback(() => {
+        const trimmed = allergiesDetailText.trim();
+        if (trimmed && isMeaningfulText(trimmed)) {
+            formik.setFieldValue("allergiesDetails", trimmed, false);
+            formik.setFieldValue("allergies", "yes", false);
+        } else {
+            const prevValid = formik.values.allergiesDetails?.trim();
+            if (prevValid && isMeaningfulText(prevValid)) {
+                formik.setFieldValue("allergiesDetails", prevValid, false);
+                formik.setFieldValue("allergies", "yes", false);
+            } else {
+                formik.setFieldValue("allergies", "no", false);
+                formik.setFieldValue("allergiesDetails", "", false);
+            }
+        }
+        setShowAllergiesDialog(false);
+        setAllergiesDetailText("");
+        setTimeout(() => {
+            formik.setFieldTouched("allergies", true, false);
+            formik.validateField("allergies");
+        }, 0);
+    }, [allergiesDetailText, formik]);
+
+    const handleCloseSurgeriesDialog = useCallback(() => {
+        const trimmed = surgeriesDetailText.trim();
+        if (trimmed && isMeaningfulText(trimmed)) {
+            formik.setFieldValue("surgeriesDetails", trimmed, false);
+            formik.setFieldValue("surgeries", "yes", false);
+        } else {
+            const prevValid = formik.values.surgeriesDetails?.trim();
+            if (prevValid && isMeaningfulText(prevValid)) {
+                formik.setFieldValue("surgeriesDetails", prevValid, false);
+                formik.setFieldValue("surgeries", "yes", false);
+            } else {
+                formik.setFieldValue("surgeries", "no", false);
+                formik.setFieldValue("surgeriesDetails", "", false);
+            }
+        }
+        setShowSurgeriesDialog(false);
+        setSurgeriesDetailText("");
+        setTimeout(() => {
+            formik.setFieldTouched("surgeries", true, false);
+            formik.validateField("surgeries");
+        }, 0);
+    }, [surgeriesDetailText, formik]);
 
     const headerSelectedBranch = useAppSelector(selectSelectedBranch);
     const authUserBranchId = useAppSelector(selectUserBranchId);
@@ -63,17 +120,19 @@ export default function VitalForm({
     const dietArray = Array.isArray(dietListData)
         ? dietListData
         : (dietListData as any)?.data && Array.isArray((dietListData as any).data)
-        ? (dietListData as any).data
-        : undefined;
+            ? (dietListData as any).data
+            : undefined;
 
-    const dietTypeOptions: SelectOption[] | undefined = dietArray
-        ? dietArray
-              .filter((diet: any) => diet.parentId === 0)
-              .map((diet: any) => ({
-                  value: diet.diet,
-                  label: diet.diet,
-              }))
-        : undefined;
+    const dietTypeOptions: SelectOption[] = [
+        {
+            label: "Vegetarian",
+            value: "Vegetarian",
+        },
+        {
+            label: "Non-Vegetarian",
+            value: "Non-Vegetarian",
+        },
+    ];
 
     const topLevelDietCount = useMemo(() => {
         if (!dietArray) return null;
@@ -168,35 +227,35 @@ export default function VitalForm({
             'heightFeet', 'heightInch', 'weight', 'bloodGroup', 'allergies', 'surgeries',
             'dietType', 'bloodPressure', 'sugarLevel', 'temperature', 'pulse', 'spo2',
         ];
-        
+
         step3Fields.forEach(field => {
             formik.setFieldTouched(field, true, false);
         });
-        
+
         const errors = await formik.validateForm();
         const step3Errors: Record<string, string> = {};
-        
+
         step3Fields.forEach(field => {
             const error = errors[field as keyof typeof errors];
             if (error && typeof error === 'string') {
                 step3Errors[field] = error;
             }
         });
-        
+
         if (Object.keys(step3Errors).length > 0) {
             formik.setErrors({ ...formik.errors, ...step3Errors });
             const firstErrorKey = VITAL_FIELD_ORDER.find((key) => step3Errors[key]) ?? Object.keys(step3Errors)[0];
             setTimeout(() => scrollToAndFocusVitalField(firstErrorKey), 150);
             return;
         }
-        
+
         onNext();
     };
 
     return (
         <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] p-5 mb-4">
             <h3 className="font-inter font-semibold text-[24px] leading-[120%] text-[#262D3B] mb-4">Vital Information</h3>
-            
+
             {/* Vitals Information Component */}
             <VitalsInformation
                 formData={{
@@ -205,8 +264,11 @@ export default function VitalForm({
                     weight: formik.values.weight || "",
                     bloodGroup: formik.values.bloodGroup || "",
                     allergies: formik.values.allergies || "",
+                    allergiesDetails: formik.values.allergiesDetails || "",
                     surgeries: formik.values.surgeries || "",
+                    surgeriesDetails: formik.values.surgeriesDetails || "",
                     dietType: formik.values.dietType || "",
+                    lastDayFullDiet: formik.values.lastDayFullDiet || "",
                     bloodPressure: formik.values.bloodPressure || "",
                     sugarLevel: formik.values.sugarLevel || "",
                     temperature: formik.values.temperature || "",
@@ -218,6 +280,17 @@ export default function VitalForm({
                 onChange={(field, value) => {
                     formik.setFieldValue(field, value, false);
 
+                    if (field === "bloodPressure") {
+                        const hasError = !!formik.errors.bloodPressure;
+                        const isComplete = value && value.trim().length === 7;
+                        const isEmpty = !value || value.trim() === "";
+                        if (isComplete || hasError || isEmpty) {
+                            setTimeout(() => {
+                                formik.validateField("bloodPressure");
+                            }, 10);
+                        }
+                    }
+
                     // For select fields, validate immediately
                     const selectFields = ["bloodGroup", "dietType"];
                     if (selectFields.includes(field) && value && value.trim() !== "") {
@@ -226,7 +299,7 @@ export default function VitalForm({
                             formik.validateField(field);
                         }, 10);
                     }
-                    
+
                     // Show dialog when diet type is selected
                     if (field === "dietType" && value && value.trim() !== "") {
                         // Set the current value if it exists, otherwise empty
@@ -300,43 +373,66 @@ export default function VitalForm({
 
             <div className="flex justify-end mt-4 gap-2">
                 {showBackButton && <BackToPreviousPageButton onClick={onBack} />}
-                <button 
-                    className="cursor-pointer flex flex-row justify-center items-center px-6 py-3 gap-2 bg-[#0B8C00] rounded-[32px] font-inter font-medium text-sm leading-[120%] text-center text-white hover:bg-[#0A7A00] transition-colors" 
+                <button
+                    disabled={isSubmitting}
+                    className={`flex flex-row justify-center items-center px-6 py-3 gap-2 rounded-[32px] font-inter font-medium text-sm leading-[120%] text-center text-white transition-colors ${isSubmitting
+                        ? "bg-gray-400 cursor-not-allowed opacity-50"
+                        : "bg-[#0B8C00] cursor-pointer hover:bg-[#0A7A00]"
+                        }`}
                     onClick={handleSubmit}
                 >
-                    Save & Next
+                    {isSubmitting ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                            <span className="h-2 w-2 animate-bounce rounded-full bg-white [animation-delay:-0.3s]" />
+                            <span className="h-2 w-2 animate-bounce rounded-full bg-white [animation-delay:-0.15s]" />
+                            <span className="h-2 w-2 animate-bounce rounded-full bg-white" />
+                            <span className="ml-1">{submitButtonText || "Save & Next"}</span>
+                        </div>
+                    ) : (
+                        submitButtonText || "Save & Next"
+                    )}
                 </button>
             </div>
-            
+
             {/* Diet Details Dialog */}
             <Dialog
                 open={showDietDialog}
-                onClose={() => {
-                    setShowDietDialog(false);
-                    setDietDetailText("");
-                }}
+                onClose={handleCloseDietDialog}
                 title="Last day full diet detail"
                 width={600}
+                closeOnOutsideClick={false}
             >
                 <div className="flex flex-col gap-6">
                     <FormTextareaField
                         label="Diet Details"
                         value={dietDetailText}
-                        onChange={(e) => setDietDetailText(e.target.value)}
-                        placeholder="Enter last day full diet details..."
+                        validateTextFormat={true}
+                        onChange={(e) => {
+                            let value = e.target.value;
+                            value = value.replace(/^\s+/, "");
+                            value = value.replace(/(.)\1{9,}/g, "$1$1$1$1$1$1$1$1$1");
+                            if (value.length > 0) {
+                                value = value.charAt(0).toUpperCase() + value.slice(1);
+                            }
+                            value = value.slice(0, 1000);
+                            setDietDetailText(value);
+                        }}
+                        placeholder="Please enter the diet (maximum 1,000 characters)"
                         height={200}
                         className="w-full"
+                        maxLength={1000}
                     />
-                    
+
+                    <div className="flex justify-end -mt-4 text-[12px] leading-[120%] text-[#7B8089]">
+                        Remaining characters: <span className="font-semibold ml-1 text-[#262D3B]">{1000 - dietDetailText.length}</span>
+                    </div>
+
                     <div className="flex items-center justify-start gap-3 pt-2">
                         <Button
                             type="button"
                             variant="outline"
                             size="medium"
-                            onClick={() => {
-                                setShowDietDialog(false);
-                                setDietDetailText("");
-                            }}
+                            onClick={handleCloseDietDialog}
                         >
                             Close
                         </Button>
@@ -345,7 +441,11 @@ export default function VitalForm({
                             variant="primary"
                             size="medium"
                             onClick={() => {
-                                formik.setFieldValue("lastDayFullDiet", dietDetailText.trim(), false);
+                                const trimmed = dietDetailText.trim();
+                                if (trimmed && !isMeaningfulText(trimmed)) {
+                                    return;
+                                }
+                                formik.setFieldValue("lastDayFullDiet", trimmed, false);
                                 setShowDietDialog(false);
                             }}
                         >
@@ -358,47 +458,43 @@ export default function VitalForm({
             {/* Allergies Details Dialog */}
             <Dialog
                 open={showAllergiesDialog}
-                onClose={() => {
-                    // If user closes without entering details, revert selection to "no".
-                    // PatientTypeButtonGroup compares values lowercased, so always store "yes"/"no" lowercase.
-                    setShowAllergiesDialog(false);
-                    setAllergiesDetailText("");
-                    formik.setFieldValue("allergies", "no", false);
-                    formik.setFieldValue("allergiesDetails", "", false);
-                    setTimeout(() => {
-                        formik.setFieldTouched("allergies", true, false);
-                        formik.validateField("allergies");
-                    }, 0);
-                }}
+                onClose={handleCloseAllergiesDialog}
                 title="Enter the allergies details"
                 width={600}
+                closeOnOutsideClick={false}
             >
                 <div className="flex flex-col gap-6">
                     <FormTextareaField
                         label="Details"
                         value={allergiesDetailText}
-                        onChange={(e) => setAllergiesDetailText(e.target.value)}
-                        placeholder="Enter the allergies details"
+                        validateTextFormat={true}
+                        onChange={(e) => {
+                            let value = e.target.value;
+                            value = value.replace(/^\s+/, "");
+                            value = value.replace(/(.)\1{9,}/g, "$1$1$1$1$1$1$1$1$1");
+                            if (value.length > 0) {
+                                value = value.charAt(0).toUpperCase() + value.slice(1);
+                            }
+                            value = value.slice(0, 1000);
+                            setAllergiesDetailText(value);
+                        }}
+                        placeholder="Please enter the allergies (maximum 1,000 characters)"
                         height={200}
                         className="w-full"
                         required
+                        maxLength={1000}
                     />
+
+                    <div className="flex justify-end -mt-4 text-[12px] leading-[120%] text-[#7B8089]">
+                        Remaining characters: <span className="font-semibold ml-1 text-[#262D3B]">{1000 - allergiesDetailText.length}</span>
+                    </div>
 
                     <div className="flex items-center justify-start gap-3 pt-2">
                         <Button
                             type="button"
                             variant="outline"
                             size="medium"
-                            onClick={() => {
-                                setShowAllergiesDialog(false);
-                                setAllergiesDetailText("");
-                                formik.setFieldValue("allergies", "no", false);
-                                formik.setFieldValue("allergiesDetails", "", false);
-                                setTimeout(() => {
-                                    formik.setFieldTouched("allergies", true, false);
-                                    formik.validateField("allergies");
-                                }, 0);
-                            }}
+                            onClick={handleCloseAllergiesDialog}
                         >
                             Close
                         </Button>
@@ -408,12 +504,15 @@ export default function VitalForm({
                             size="medium"
                             onClick={() => {
                                 const trimmed = allergiesDetailText.trim();
+                                if (trimmed && !isMeaningfulText(trimmed)) {
+                                    return;
+                                }
                                 // Empty details → treat as cancel: revert to "no"
                                 if (!trimmed) {
-                                    setShowAllergiesDialog(false);
-                                    setAllergiesDetailText("");
                                     formik.setFieldValue("allergies", "no", false);
                                     formik.setFieldValue("allergiesDetails", "", false);
+                                    setShowAllergiesDialog(false);
+                                    setAllergiesDetailText("");
                                     setTimeout(() => {
                                         formik.setFieldTouched("allergies", true, false);
                                         formik.validateField("allergies");
@@ -423,6 +522,7 @@ export default function VitalForm({
                                 formik.setFieldValue("allergiesDetails", trimmed, false);
                                 formik.setFieldValue("allergies", "yes", false);
                                 setShowAllergiesDialog(false);
+                                setAllergiesDetailText("");
                                 setTimeout(() => {
                                     formik.setFieldTouched("allergies", true, false);
                                     formik.validateField("allergies");
@@ -438,45 +538,43 @@ export default function VitalForm({
             {/* Surgeries Details Dialog */}
             <Dialog
                 open={showSurgeriesDialog}
-                onClose={() => {
-                    setShowSurgeriesDialog(false);
-                    setSurgeriesDetailText("");
-                    formik.setFieldValue("surgeries", "no", false);
-                    formik.setFieldValue("surgeriesDetails", "", false);
-                    setTimeout(() => {
-                        formik.setFieldTouched("surgeries", true, false);
-                        formik.validateField("surgeries");
-                    }, 0);
-                }}
+                onClose={handleCloseSurgeriesDialog}
                 title="Enter the surgeries details"
                 width={600}
+                closeOnOutsideClick={false}
             >
                 <div className="flex flex-col gap-6">
                     <FormTextareaField
                         label="Details"
                         value={surgeriesDetailText}
-                        onChange={(e) => setSurgeriesDetailText(e.target.value)}
-                        placeholder="Enter the surgeries details"
+                        validateTextFormat={true}
+                        onChange={(e) => {
+                            let value = e.target.value;
+                            value = value.replace(/^\s+/, "");
+                            value = value.replace(/(.)\1{9,}/g, "$1$1$1$1$1$1$1$1$1");
+                            if (value.length > 0) {
+                                value = value.charAt(0).toUpperCase() + value.slice(1);
+                            }
+                            value = value.slice(0, 1000);
+                            setSurgeriesDetailText(value);
+                        }}
+                        placeholder="Please enter the surgeries (maximum 1,000 characters)"
                         height={200}
                         className="w-full"
                         required
+                        maxLength={1000}
                     />
+
+                    <div className="flex justify-end -mt-4 text-[12px] leading-[120%] text-[#7B8089]">
+                        Remaining characters: <span className="font-semibold ml-1 text-[#262D3B]">{1000 - surgeriesDetailText.length}</span>
+                    </div>
 
                     <div className="flex items-center justify-start gap-3 pt-2">
                         <Button
                             type="button"
                             variant="outline"
                             size="medium"
-                            onClick={() => {
-                                setShowSurgeriesDialog(false);
-                                setSurgeriesDetailText("");
-                                formik.setFieldValue("surgeries", "no", false);
-                                formik.setFieldValue("surgeriesDetails", "", false);
-                                setTimeout(() => {
-                                    formik.setFieldTouched("surgeries", true, false);
-                                    formik.validateField("surgeries");
-                                }, 0);
-                            }}
+                            onClick={handleCloseSurgeriesDialog}
                         >
                             Close
                         </Button>
@@ -486,11 +584,14 @@ export default function VitalForm({
                             size="medium"
                             onClick={() => {
                                 const trimmed = surgeriesDetailText.trim();
+                                if (trimmed && !isMeaningfulText(trimmed)) {
+                                    return;
+                                }
                                 if (!trimmed) {
-                                    setShowSurgeriesDialog(false);
-                                    setSurgeriesDetailText("");
                                     formik.setFieldValue("surgeries", "no", false);
                                     formik.setFieldValue("surgeriesDetails", "", false);
+                                    setShowSurgeriesDialog(false);
+                                    setSurgeriesDetailText("");
                                     setTimeout(() => {
                                         formik.setFieldTouched("surgeries", true, false);
                                         formik.validateField("surgeries");
@@ -500,6 +601,7 @@ export default function VitalForm({
                                 formik.setFieldValue("surgeriesDetails", trimmed, false);
                                 formik.setFieldValue("surgeries", "yes", false);
                                 setShowSurgeriesDialog(false);
+                                setSurgeriesDetailText("");
                                 setTimeout(() => {
                                     formik.setFieldTouched("surgeries", true, false);
                                     formik.validateField("surgeries");

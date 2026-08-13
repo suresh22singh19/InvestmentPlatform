@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -12,6 +12,11 @@ import {
   type TableListingSection,
   MessageDialog,
   FormSelectField,
+  Tooltip,
+  ViewAppointment,
+  BackToPreviousPageButton,
+  SpinnerLoader,
+  Badge,
 } from "@/components/ui";
 import {
   useGetCounsellorStatsQuery,
@@ -20,9 +25,21 @@ import {
   useGetTodayAvailableRoomsQuery,
   useRevertToOpdMutation,
   useLazyCheckFirstDayPaymentQuery,
+  useLazyGetPatientDetailByAppointmentQuery,
+  type CounsellorPatientListItem,
+  type CounsellorTodayAdmissionItem,
+  type FutureAdmissionItem,
 } from "@/store/api/counsellorApi";
+import { useGetPatientFilesQuery, useGetPatientHealthCardByUhidQuery, useLazyGetPresignedUrlQuery } from "@/store/api/commonApi";
 import { useDebounce } from "@/hooks/useDebounce";
-import RoomAllocation from "../start-counselling/roomAllowcation";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
+import {
+  buildCounsellorViewAppointmentData,
+  resolveCounsellorAppointmentId,
+} from "@/lib/counsellor/patientView";
+import FutureAdmissionProceedFlow, {
+  type FutureAdmissionProceedFlowState,
+} from "../future-admissions/FutureAdmissionProceedFlow";
 
 // ─── Stat card component ──────────────────────────────────────────────────────
 type DashboardStatCardProps = {
@@ -74,15 +91,32 @@ interface DashboardRoomCardProps {
     branchName: string;
     buildingName: string;
     floorName: string;
+    roomUsage?:string;
   };
   index: number;
 }
 
+const capitalizeFirstLetter = (str:string) => {
+  if (!str) return "N/A";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 function DashboardRoomCard({ room, index }: DashboardRoomCardProps) {
-  const isVacant =
-    room.status?.toLowerCase() === "vacant" ||
-    room.status?.toLowerCase() === "available" ||
-    !room.status;
+  // const isVacant =
+  //   room.status?.toLowerCase() === "vacant" ||
+  //   room.status?.toLowerCase() === "available" ||
+  //   !room.status;
+
+  // console.log("room",room)
+
+    const statusLower = room.status?.toLowerCase() || "";
+    const isAvailable = statusLower === "available" || statusLower === "vacant";
+    const isOccupied = statusLower === "occupied" || statusLower === "fully occupied";
+    const isNoBed = statusLower === "No Beds Available" || statusLower === "no beds available";
+    const isPartiallyOccupied = statusLower === "partially occupied";
+    const isReserved = statusLower === "reserved";
+    const isUnderCleaning = statusLower === "under cleaning" || statusLower === "under maintenance" || statusLower === "not available";
+    const isCheckout = statusLower === "checkout";
 
   // Render overlapping D S R badges on index 1 matching the user's figma screenshot exactly
   const showDSR = index === 1;
@@ -96,33 +130,64 @@ function DashboardRoomCard({ room, index }: DashboardRoomCardProps) {
             {index}
           </span>
           <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-[#7E8B9A] uppercase tracking-wider">Room Number</span>
-            <span className="font-bold text-[#262D3B] text-base mt-0.5">{room.roomNumber || "N/A"}</span>
+            <span className="text-[12px] font-normal text-[#525763] tracking-wider">Room Number</span>
+            <span className="font-semibold  text-[14px] text-[#434956] text-base mt-0.5">{room.roomNumber || "N/A"}</span>
           </div>
         </div>
 
         {/* Status Pill Badge */}
-        <span
+        {/* <span
           className={`inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold border ${isVacant
             ? "border-[#0B8C00]/20 bg-[#0B8C00]/5 text-[#0B8C00]"
             : "border-[#F6776E]/20 bg-[#F6776E]/5 text-[#F6776E]"
             }`}
         >
           {isVacant ? "Available" : room.status}
-        </span>
+        </span> */}
+
+          {/* Status Badges */}
+          {isAvailable && (
+              <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#0B8C00]">Available</Badge>
+          )}
+            {isNoBed && (
+              <Badge variant="success" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#0B8C0033] text-[#787E8C]">No Beds Available</Badge>
+          )}
+          {isOccupied && (
+              <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#EF444433] text-[#EF4444]">Fully Occupied</Badge>
+          )}
+          {/* {isPartiallyOccupied && (
+              <Badge variant="occupied" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#F59E0B33] text-[#F59E0B]">Partially Occupied</Badge>
+          )} */}
+          {isPartiallyOccupied && (
+            <Badge
+              variant="occupied"
+              className="text-[10px] font-normal px-3 py-1 bg-transparent !border-[#F59E0B]/20 text-[#F59E0B]"
+            >
+              Partially Occupied
+            </Badge>
+          )}
+            {isReserved && (
+              <Badge variant="checkout" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#6B728033] text-[#6B7280]">Reserved</Badge>
+          )}
+          {isUnderCleaning && (
+              <Badge variant="cleaning" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#3B82F633] text-[#3B82F6]">Maintenance</Badge>
+          )}
+          {isCheckout && (
+              <Badge variant="checkout" className="text-[10px] font-normal px-3 py-1 bg-transparent border border-[#8B5CF633] text-[#8B5CF6]">Checkout</Badge>
+          )}
       </div>
 
       {/* 2. Body / Details Section (2-Column block) */}
-      <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs">
+      {/* <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[#7E8B9A] font-semibold text-[10px] uppercase tracking-wider">Floor</span>
-          <span className="font-semibold text-[#262D3B] text-sm mt-0.5">{room.floorName || "N/A"}</span>
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Floor</span>
+          <span className="font-medium text-[#262D3B] text-sm mt-0.5">{room.floorName || "N/A"}</span>
         </div>
 
         <div className="flex flex-col gap-0.5 relative">
-          <span className="text-[#7E8B9A] font-semibold text-[10px] uppercase tracking-wider">Building</span>
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Building</span>
           <span
-            className="font-semibold text-[#262D3B] text-sm mt-0.5 truncate"
+            className="font-medium text-[#262D3B] text-sm mt-0.5 truncate"
             title={room.buildingName || "N/A"}
           >
             {room.buildingName || "N/A"}
@@ -132,8 +197,41 @@ function DashboardRoomCard({ room, index }: DashboardRoomCardProps) {
         </div>
 
         <div className="flex flex-col gap-0.5 col-span-2">
-          <span className="text-[#7E8B9A] font-semibold text-[10px] uppercase tracking-wider">Room Type</span>
-          <span className="font-semibold text-[#262D3B] text-sm mt-0.5">{room.roomType || "N/A"}</span>
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Room Type</span>
+          <span className="font-medium text-[#262D3B] text-sm mt-0.5">{capitalizeFirstLetter(room.roomType || "N/A")}</span>
+        </div>
+      </div> */}
+
+
+      <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Floor</span>
+          <span className="font-medium text-[#262D3B] text-sm mt-0.5">
+            {room.floorName || "N/A"}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Building</span>
+          <span
+            className="font-medium text-[#262D3B] text-sm mt-0.5 truncate"
+            title={room.buildingName || "N/A"}
+          >
+            {room.buildingName || "N/A"}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Room Type</span>
+          <span className="font-medium text-[#262D3B] text-sm mt-0.5">
+            {capitalizeFirstLetter(room.roomType || "N/A")}
+          </span>
+        </div>
+          <div className="flex flex-col gap-0.5">
+          <span className="text-[#525763] font-normal text-[12px] tracking-wider">Gender</span>
+          <span className="font-medium text-[#262D3B] text-sm mt-0.5">
+            {capitalizeFirstLetter(room.roomUsage || "N/A")}
+          </span>
         </div>
       </div>
     </div>
@@ -147,6 +245,93 @@ const STAT_CARDS = [
   { id: "rooms", label: "Available Rooms Today", iconSrc: "/icons/bedDarkIcon.svg" },
 ];
 
+const TRUNCATED_TABLE_CELL_WIDTH = 150;
+
+function TruncatedTableCell({ text }: { text: string }) {
+  const value = text?.trim() ? text.trim() : "N/A";
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+
+    const checkTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+    };
+
+    checkTruncation();
+
+    const observer = new ResizeObserver(checkTruncation);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return (
+    <Tooltip
+      position="top"
+      maxWidth={360}
+      disabled={!isTruncated}
+      className="!overflow-visible !py-2.5"
+      content={
+        <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+          {value}
+        </p>
+      }
+    >
+      <div
+        className="flex min-w-0 items-center"
+        style={{ width: TRUNCATED_TABLE_CELL_WIDTH, maxWidth: TRUNCATED_TABLE_CELL_WIDTH }}
+      >
+        <span
+          ref={textRef}
+          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+        >
+          {value}
+        </span>
+        {isTruncated ? <span className="shrink-0 pl-1.5 text-[#434956]">...</span> : null}
+      </div>
+    </Tooltip>
+  );
+}
+
+// function mapTodayAdmissionToProceedItem(
+//   item: CounsellorTodayAdmissionItem & { patientId?: number; patientPackageId?: number; packageName?: string }
+// ): FutureAdmissionItem {
+
+//   console.log("itemdfauausduah",item)
+//   return {
+//     id: typeof item.id === "number" ? item.id : Number(item.id),
+//     patientName: item.patientName,
+//     admissionType: item.admissionType || "",
+//     uhid: item.patientUhid,
+//     bookingStatus: "",
+//     package: item.packageName || item.diagnosis || "Selected Package",
+//     patientPackageId: item.patientPackageId ?? 0,
+//     roomType: "",
+//     advance: "",
+//     admissionDate: "",
+//     doctorName: item.doctorName || "",
+//     patientId: item.patientId,
+//   };
+// }
+
+// Helper function to extract S3 key from image URL or key string
+const extractS3Key = (imageStr: string | null | undefined): string | null => {
+    if (!imageStr || !imageStr.trim()) return null;
+    let raw = imageStr.trim().split('?')[0];
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+        try {
+            const urlObj = new URL(raw);
+            return urlObj.pathname.replace(/^\//, "");
+        } catch {
+            const match = raw.match(/amazonaws\.com\/(.+)/);
+            if (match && match[1]) return match[1];
+        }
+    }
+    return raw;
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CounsellorDashboardPage() {
   const router = useRouter();
@@ -158,7 +343,16 @@ export default function CounsellorDashboardPage() {
   const [selectedRoomType, setSelectedRoomType] = useState("");
   const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("ASC");
   const [sortBy, setSortBy] = useState<string>("patientName");
-  const [activeAllocationPatient, setActiveAllocationPatient] = useState<{ patient: any; payment: any } | null>(null);
+  const [proceedFlow, setProceedFlow] = useState<FutureAdmissionProceedFlowState | null>(null);
+
+  const {
+    selectedBranchFilter: selectedBranch,
+    setSelectedBranchFilter: setSelectedBranch,
+    branchFilterOptions: hookBranchFilterOptions,
+    isLoadingBranches: isLoadingBranchFilter,
+    isBranchFilterDisabled,
+    resolvedFilterBranchId,
+  } = useCounsellorResolvedBranchId();
 
   // Confirmation dialog and submitting states
   const [pendingAction, setPendingAction] = useState<{ type: "refer" | "startAdmission"; item: any } | null>(null);
@@ -174,8 +368,134 @@ export default function CounsellorDashboardPage() {
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
 
+  const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
+  const [getPatientDetailByAppointment] = useLazyGetPatientDetailByAppointmentQuery();
+  const [loadingAppointmentId, setLoadingAppointmentId] = useState<number | null>(null);
+  const [fetchedPatientData, setFetchedPatientData] = useState<any>(null);
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | null>(null);
+  const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+  const [isFetchingPresignedImage, setIsFetchingPresignedImage] = useState<boolean>(false);
+
+  const [getPresignedUrl] = useLazyGetPresignedUrlQuery();
+  const { data: patientFilesResponse } = useGetPatientFilesQuery(
+    { uhid: fetchedPatientData?.appointmentDetail?.uhid || "" },
+    { skip: !fetchedPatientData?.appointmentDetail?.uhid, refetchOnMountOrArgChange: true }
+  );
+
+    // Fetch health card details by UHID
+      const { data: healthCardResponse, isLoading: isFetchingHealthCard } = useGetPatientHealthCardByUhidQuery(
+          { uhid: fetchedPatientData?.appointmentDetail?.uhid },
+          { skip: !fetchedPatientData?.appointmentDetail?.uhid }
+      );
+      const healthCardData = healthCardResponse?.data;
+
+        useEffect(() => {
+              const rawImage = healthCardData?.image;
+              if (!rawImage) {
+                  setCardImageUrl(null);
+                  return;
+              }
+      
+              const key = extractS3Key(rawImage);
+              if (!key) {
+                  setCardImageUrl(null);
+                  return;
+              }
+      
+              let isMounted = true;
+              setIsFetchingPresignedImage(true);
+      
+              getPresignedUrl({ key })
+                  .unwrap()
+                  .then((res) => {
+                      if (isMounted) {
+                          if (res?.data?.signedUrl) {
+                              setCardImageUrl(res.data.signedUrl);
+                          } else {
+                              setCardImageUrl(null);
+                          }
+                      }
+                  })
+                  .catch((err) => {
+                      console.error("Failed to fetch presigned URL for health card image:", err);
+                      if (isMounted) setCardImageUrl(null);
+                  })
+                  .finally(() => {
+                      if (isMounted) setIsFetchingPresignedImage(false);
+                  });
+      
+              return () => {
+                  isMounted = false;
+              };
+          }, [healthCardData?.image, getPresignedUrl]);
+
+       const isHealthCardLoading = isFetchingHealthCard || isFetchingPresignedImage;
+  // console.log("proceedFlowdfgshgsdh",proceedFlow)
+
+  const handleViewFile = async (filePath: string) => {
+    try {
+      const result = await getPresignedUrl({ key: filePath }).unwrap();
+      const signedUrl = result?.data?.signedUrl;
+      if (signedUrl) {
+        window.open(signedUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      console.error("Failed to get presigned URL:", err);
+      alert("Failed to open file. Please try again.");
+    }
+  };
+
+  const patientFilesItems = useMemo(() => {
+    const files = patientFilesResponse?.data;
+    if (!Array.isArray(files)) return [];
+    return files.map((file) => {
+      const formattedDate = file.createdAt
+        ? new Date(file.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+        : "";
+      return {
+        name: file.fileName || "File",
+        size: `${file.fileType || "Document"} • ${formattedDate}`,
+        onClick: () => void handleViewFile(file.path),
+        actionIconSrc: "/icons/ViewEyeIcon.svg",
+        actionIconAlt: "View File",
+      };
+    });
+  }, [patientFilesResponse]);
+
   const [revertToOpd] = useRevertToOpdMutation();
   const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
+
+  const handleViewPatientByUhid = async (
+    item: CounsellorPatientListItem | CounsellorTodayAdmissionItem
+  ) => {
+    const appointmentLookupId = resolveCounsellorAppointmentId(item);
+    if (!appointmentLookupId) {
+      setApiErrorMessage("Appointment ID not found for this patient.");
+      setShowApiErrorDialog(true);
+      return;
+    }
+
+    setLoadingAppointmentId(appointmentLookupId);
+    try {
+      const res = await getPatientDetailByAppointment(appointmentLookupId).unwrap();
+      if (res?.success) {
+        setFetchedPatientData(res.data);
+        setSelectedAppointmentId(appointmentLookupId);
+        setViewAppointmentMode(true);
+      } else {
+        setApiErrorMessage(res?.message || "Failed to load patient details.");
+        setShowApiErrorDialog(true);
+      }
+    } catch (err: unknown) {
+      const apiErr = err as { data?: { message?: string }; message?: string };
+      setApiErrorMessage(
+        apiErr?.data?.message || apiErr?.message || "An error occurred while fetching patient details."
+      );
+      setShowApiErrorDialog(true);
+    } finally {
+      setLoadingAppointmentId(null);
+    }
+  };
 
   const handleReferToOPD = async (item: any) => {
     setIsSubmitting(true);
@@ -225,51 +545,50 @@ export default function CounsellorDashboardPage() {
     }
   };
 
-  const handleStartAdmission = async (item: any) => {
+
+  const handleStartAdmission = async (item: FutureAdmissionItem) => {
     setIsSubmitting(true);
     try {
       const res = await checkFirstDayPayment(item.id).unwrap();
       if (res.success) {
         const remaining = parseFloat(res.data.remainingForFirstDay || "0");
         const complete = res.data.firstDayPaymentComplete;
-
+        // const proceedItem = mapTodayAdmissionToProceedItem(item);
+        // const proceedItem = item;
         if (remaining > 0 || !complete) {
-          // Case A: Payment not completed
-          setSuccessDialogConfig({
-            message: (
-              <div className="flex flex-col items-center text-center">
-                <span className="text-sm text-[#475569]">
-                  First day payment is not completed. Please complete the remaining amount{" "}
-                  <strong className="text-[#F6776E]">{res.data.remainingForFirstDay || "1500.00"}</strong> first, then proceed with room allocation.
-                </span>
-              </div>
-            ),
-            confirmText: "OK",
-            showCancel: false,
+          setProceedFlow({
+            // item: proceedItem,
+            item,
+            paymentData: res.data,
+            showPaymentStep: true,
+            currentStep: 1,
           });
-        } else {
-          // Case B: Payment completed
-          setSuccessDialogConfig({
-            message: (
-              <div className="flex flex-col items-center text-center">
-                <span className="text-sm text-[#475569]">
-                  Admission started for{" "}
-                  <strong className="text-[#0B8C00]">{item.patientName || "patient"}</strong>{" "}
-                  successfully! You can now proceed with room allocation.
-                </span>
-              </div>
-            ),
-            confirmText: "Assign Room & Bed",
-            cancelText: "Close",
-            showCancel: true,
-            onConfirm: () => {
-              setActiveAllocationPatient({
-                patient: item,
-                payment: res.data
-              });
-            },
-          });
+          return;
         }
+
+        setSuccessDialogConfig({
+          message: (
+            <div className="flex flex-col items-center text-center">
+              <span className="text-sm text-[#475569]">
+                Admission started for{" "}
+                <strong className="text-[#0B8C00]">{item.patientName || "patient"}</strong>{" "}
+                successfully! You can now proceed with room allocation.
+              </span>
+            </div>
+          ),
+          confirmText: "Assign Room & Bed",
+          cancelText: "Close",
+          showCancel: true,
+          onConfirm: () => {
+            setProceedFlow({
+              // item: proceedItem,
+              item,
+              paymentData: res.data,
+              showPaymentStep: false,
+              currentStep: 1,
+            });
+          },
+        });
       } else {
         setApiErrorMessage(res.message || "Failed to check payment status.");
         setShowApiErrorDialog(true);
@@ -283,56 +602,67 @@ export default function CounsellorDashboardPage() {
     }
   };
 
-  // Reset page when debounced search term changes
+  // Reset page when debounced search term or branch changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, selectedBranch]);
 
   // API Queries
-  const { data: statsRes, isLoading: isStatsLoading, refetch: refetchStats } = useGetCounsellorStatsQuery();
+  const { data: statsRes, isLoading: isStatsLoading, refetch: refetchStats } = useGetCounsellorStatsQuery(
+    resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : undefined
+  );
   const statsData = statsRes?.data;
 
   // 1. Referred Patients Query
-  const referredParams = {
+  const referredParams = useMemo(() => ({
     search: debouncedSearch.trim() || undefined,
     sortBy: sortBy === "patientName" || sortBy === "doctorName" ? sortBy : "patientName",
     order: sortOrder,
     page: currentPage,
     limit: itemsPerPage,
-  };
+    ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
+  }), [debouncedSearch, sortBy, sortOrder, currentPage, itemsPerPage, resolvedFilterBranchId]);
+
   const {
     data: referredRes,
     isLoading: isReferredLoading,
     refetch: refetchReferred,
     isUninitialized: isReferredUninitialized,
-  } = useGetReferredPatientsQuery(referredParams, { skip: activeCard !== "referred" });
+  } = useGetReferredPatientsQuery(referredParams, {
+    skip: activeCard !== "referred" || resolvedFilterBranchId == null,
+    refetchOnMountOrArgChange: true,
+  });
 
   // 2. Today's Admissions Query
-  const admissionsParams = {
+  const admissionsParams = useMemo(() => ({
     search: debouncedSearch.trim() || undefined,
     sortBy: sortBy === "patientName" ? "patientName" : undefined,
     order: sortOrder,
     page: currentPage,
     limit: itemsPerPage,
-  };
+    ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
+  }), [debouncedSearch, sortBy, sortOrder, currentPage, itemsPerPage, resolvedFilterBranchId]);
   const {
     data: admissionsRes,
     isLoading: isAdmissionsLoading,
     refetch: refetchAdmissions,
     isUninitialized: isAdmissionsUninitialized,
-  } = useGetTodayAdmissionsQuery(admissionsParams, { skip: activeCard !== "admissions" });
+  } = useGetTodayAdmissionsQuery(admissionsParams, { skip: activeCard !== "admissions" || resolvedFilterBranchId == null, 
+     refetchOnMountOrArgChange: true,
+  });
 
   // 3. Available Rooms Query
-  const roomsParams = {
+  const roomsParams = useMemo(() => ({
     search: debouncedSearch.trim() || undefined,
     sortBy: sortBy === "roomNumber" ? "roomNumber" : undefined,
     order: sortOrder,
     page: currentPage,
     limit: itemsPerPage,
-  };
+    ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
+  }), [debouncedSearch, sortBy, sortOrder, currentPage, itemsPerPage, resolvedFilterBranchId]);
   const { data: roomsRes, isLoading: isRoomsLoading } = useGetTodayAvailableRoomsQuery(
     roomsParams,
-    { skip: activeCard !== "rooms" }
+    { skip: activeCard !== "rooms" || resolvedFilterBranchId == null, refetchOnMountOrArgChange: true }
   );
 
   const handleCardClick = (id: string) => {
@@ -409,51 +739,69 @@ export default function CounsellorDashboardPage() {
 
   return (
     <AppShell>
-      {activeAllocationPatient ? (
+      {viewAppointmentMode ? (
         <div className="flex flex-col gap-6">
           <div className="flex items-start justify-between">
-            <PageHeading title={`Room Allocation - ${activeAllocationPatient.patient.patientName || "Patient"}`} />
-            <Button
-              variant="outline"
-              onClick={() => setActiveAllocationPatient(null)}
-            >
-              ← Back to Dashboard
-            </Button>
+            <PageHeading title="View" />
+            <BackToPreviousPageButton
+              text="Back"
+              onClick={() => {
+                setViewAppointmentMode(false);
+                setFetchedPatientData(null);
+                setSelectedAppointmentId(null);
+              }}
+            />
           </div>
+          {(() => {
+            const viewData = buildCounsellorViewAppointmentData(fetchedPatientData);
 
-          <RoomAllocation
-            activePackage={{
-              id: activeAllocationPatient.payment?.patientPackageId?.toString(),
-              packageName: activeAllocationPatient.patient?.packageName || "Selected Package",
-              branchRoomType: {
-                roomRentPrice: parseFloat(activeAllocationPatient.payment?.perDayCost || "1500")
-              }
-            }}
-            patientId={activeAllocationPatient.patient?.patientId || activeAllocationPatient.patient?.id}
-            patientPackageId={activeAllocationPatient.payment?.patientPackageId}
-            patientDetails={{
-              patientName: activeAllocationPatient.patient?.patientName,
-              patientUhid: activeAllocationPatient.patient?.patientUhid,
-              contactNumber: activeAllocationPatient.patient?.contactNumber,
-              diagnosis: activeAllocationPatient.patient?.diagnosis,
-              doctorName: activeAllocationPatient.patient?.doctorName,
-            }}
-            onSuccess={() => {
-              setActiveAllocationPatient(null);
-              try {
-                refetchAdmissions();
-              } catch (e) {
-                console.warn("Failed to refetch admissions:", e);
-              }
-              try {
-                refetchStats();
-              } catch (e) {
-                console.warn("Failed to refetch stats:", e);
-              }
-            }}
-            onCancel={() => setActiveAllocationPatient(null)}
-          />
+            return (
+              <ViewAppointment
+                appointmentId={selectedAppointmentId ?? undefined}
+                appointmentItems={viewData.appointmentItems}
+                walletRemainingAmount={viewData.remainingAmount}
+                walletDetails={viewData.walletDetails}
+                referralItems={viewData.referralItems}
+                patientName={viewData.patientName}
+                patientSubtitle={viewData.patientSubtitle}
+                patientBadges={viewData.patientBadges}
+                patientInfoItems={viewData.patientInfoItems}
+                showVitals={true}
+                vitalsItems={viewData.vitalsItems}
+                timelineItems={viewData.timelineItems.length > 0 ? viewData.timelineItems : undefined}
+                healthCardNo={viewData.healthCardNo}
+                healthCardImageUrl={cardImageUrl || undefined}
+                isHealthCardLoading={isHealthCardLoading}
+                medicalItems={viewData.medicalItems}
+                fileItems={patientFilesItems}
+                otherInfoItems={viewData.otherInfoItems}
+                hideBloodGroup={true}
+              />
+            );
+          })()}
         </div>
+      ) : proceedFlow ? (
+        <FutureAdmissionProceedFlow
+          flow={proceedFlow}
+          backLabel="Back to Dashboard"
+          onClose={() => setProceedFlow(null)}
+          onStepChange={(step) =>
+            setProceedFlow((prev) => (prev ? { ...prev, currentStep: step } : prev))
+          }
+          onComplete={() => {
+            setProceedFlow(null);
+            try {
+              refetchAdmissions();
+            } catch (e) {
+              console.warn("Failed to refetch admissions:", e);
+            }
+            try {
+              refetchStats();
+            } catch (e) {
+              console.warn("Failed to refetch stats:", e);
+            }
+          }}
+        />
       ) : (
         <>
           {/* Page Heading + Action Buttons */}
@@ -507,9 +855,10 @@ export default function CounsellorDashboardPage() {
 
         if (activeCard === "referred") {
           columns = [
-            { label: "Sr no.", position: "first" },
+            { label: "Sr no.", position: "first", className:"w-[80px] max-w-[80px]" },
             {
               label: "Patient Name",
+              className: "w-[150px] max-w-[150px]",
               sortable: true,
               sortDirection: sortBy === "patientName" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
               onSort: () => {
@@ -520,7 +869,7 @@ export default function CounsellorDashboardPage() {
             },
             { label: "Patient UHID" },
             { label: "Contact Number" },
-            { label: "Diagnosis / Symptoms" },
+            { label: "Diagnosis / Symptoms", className: "w-[170px] max-w-[170px]" },
             {
               label: "Referring Doctor",
               sortable: true,
@@ -535,9 +884,10 @@ export default function CounsellorDashboardPage() {
           ];
         } else if (activeCard === "admissions") {
           columns = [
-            { label: "Sr no.", position: "first" },
+            { label: "Sr no.", position: "first",className:"w-[80px] max-w-[80px]" },
             {
               label: "Patient Name",
+              className: "w-[150px] max-w-[150px]",
               sortable: true,
               sortDirection: sortBy === "patientName" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
               onSort: () => {
@@ -548,7 +898,7 @@ export default function CounsellorDashboardPage() {
             },
             { label: "Patient UHID" },
             { label: "Contact Number" },
-            { label: "Diagnosis" },
+            { label: "Diagnosis", className: "w-[150px] max-w-[150px]" },
             { label: "Admission Type" },
             { label: "Patient Type" },
             { label: "Referring Doctor" },
@@ -582,12 +932,22 @@ export default function CounsellorDashboardPage() {
           const sr = (currentPage - 1) * itemsPerPage + index + 1;
 
           if (activeCard === "referred") {
+            const appointmentLookupId = resolveCounsellorAppointmentId(item);
+            const isUhidLoading =
+              appointmentLookupId != null && loadingAppointmentId === appointmentLookupId;
             const uhid = (
-              <span className="text-[#0B8C00] font-medium cursor-pointer">
-                  {/* //  <span className="text-[#434956] font-medium"> */}
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-[#0B8C00] font-medium hover:underline cursor-pointer disabled:opacity-60"
+                onClick={() => void handleViewPatientByUhid(item)}
+                disabled={isUhidLoading}
+              >
+                {isUhidLoading ? <SpinnerLoader size={14} /> : null}
                 {item.patientUhid || "N/A"}
-              </span>
+              </button>
             );
+
+            // console.log("itemygdtsftsdf",item?.branchId)
             const actions = (
               <Button
                 variant="primary"
@@ -597,7 +957,7 @@ export default function CounsellorDashboardPage() {
                   const patientId = item.patientId ?? item.id;
                   const appointmentId = item.appointmentId;
                   const query = appointmentId != null && appointmentId !== ""
-                    ? `patientID=${patientId}&appointmentID=${appointmentId}`
+                    ? `patientID=${patientId}&appointmentID=${appointmentId}&branchId=${item?.branchId}`
                     : `patientID=${patientId}`;
                   router.push(`/counsellor/start-counselling?${query}`);
                 }}
@@ -607,18 +967,30 @@ export default function CounsellorDashboardPage() {
             );
             return [
               sr,
-              item.patientName || "N/A",
+              <TruncatedTableCell key={`referred-name-${item.id ?? index}`} text={`${item.patientTitle} ${item.patientName || "N/A"}`} />,
               uhid,
               item.contactNumber || "N/A",
-              item.diagnosisSymptoms || "N/A",
+              <TruncatedTableCell
+                key={`referred-diagnosis-${item.id ?? index}`}
+                text={item.diagnosisSymptoms || "N/A"}
+              />,
               item.doctorName || "N/A",
               actions,
             ];
           } else if (activeCard === "admissions") {
+            const appointmentLookupId = resolveCounsellorAppointmentId(item);
+            const isUhidLoading =
+              appointmentLookupId != null && loadingAppointmentId === appointmentLookupId;
             const uhid = (
-              <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-[#0B8C00] font-medium hover:underline cursor-pointer disabled:opacity-60"
+                onClick={() => void handleViewPatientByUhid(item)}
+                disabled={isUhidLoading}
+              >
+                {isUhidLoading ? <SpinnerLoader size={14} /> : null}
                 {item.patientUhid || "N/A"}
-              </span>
+              </button>
             );
             const actions = (
               <div className="flex items-center gap-2">
@@ -642,10 +1014,10 @@ export default function CounsellorDashboardPage() {
             );
             return [
               sr,
-              item.patientName || "N/A",
+              <TruncatedTableCell key={`admission-name-${item.id ?? index}`} text={`${item?.patientTitle} ${item.patientName || "N/A"} `} />,
               uhid,
               item.contactNumber || "N/A",
-              item.diagnosis || "N/A",
+              <TruncatedTableCell key={`admission-diagnosis-${item.id ?? index}`} text={item.diagnosis || "N/A"} />,
               item.admissionType || "N/A",
               item.patientType || "N/A",
               item.doctorName || "N/A",
@@ -702,7 +1074,22 @@ export default function CounsellorDashboardPage() {
               id: activeCard,
               title: tableTitle,
               titleRightContent: (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <FormSelectField
+                    label=""
+                    hideLabel
+                    options={hookBranchFilterOptions}
+                    value={selectedBranch}
+                    onChange={(value) => {
+                      setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                      setCurrentPage(1);
+                    }}
+                    placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                    mode="single"
+                    background="normal"
+                    width={280}
+                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                  />
                   {activeCard === "rooms" && (
                     <div style={{ width: "300px" }}>
                       <FormSelectField
@@ -719,11 +1106,12 @@ export default function CounsellorDashboardPage() {
                       />
                     </div>
                   )}
-                  <div style={{ width: "300px" }}>
+                  <div className="!w-[280px] min-w-[280px] max-w-[280px] shrink-0">
                     <TableSearchInput
                       value={searchTerm}
                       onChange={setSearchTerm}
                       placeholder="Search Here..."
+                      className="!w-full"
                     />
                   </div>
                 </div>
@@ -755,7 +1143,7 @@ export default function CounsellorDashboardPage() {
                 itemsPerPage,
                 onPageChange: setCurrentPage,
                 onItemsPerPageChange: (items: number) => { setItemsPerPage(items); setCurrentPage(1); },
-                itemsPerPageOptions: activeCard === "rooms" ? [6, 8, 12, 24, 48, 100] : [10, 20, 50, 100],
+                itemsPerPageOptions: activeCard === "rooms" ? [8, 12, 24, 48, 100] : [10, 30, 50, 100],
               },
             }]}
           />

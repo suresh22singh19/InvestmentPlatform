@@ -1,11 +1,25 @@
 "use client";
 
 import Image from "next/image";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 export interface PatientWalletDetailItem {
     label: string;
     value: string;
 }
+
+const formatWalletValue = (val: string): string => {
+    if (!val) return "";
+    const match = val.match(/^Rs\.\s*(.+)$/i);
+    if (match) {
+        return `Rs. ${formatIndianAmount(match[1])}`;
+    }
+    const cleanStr = val.replace(/[Rs.\s,]/gi, "").trim();
+    if (cleanStr && !isNaN(parseFloat(cleanStr))) {
+        return `Rs. ${formatIndianAmount(cleanStr)}`;
+    }
+    return val;
+};
 
 interface PatientWalletInformationCardProps {
     title?: string;
@@ -50,7 +64,7 @@ export function PatientWalletInformationCard({
                                 {remainingAmountLabel}
                             </h5>
                             <h4 className="font-bold text-2xl leading-[28px] text-center text-[#1D1B23]">
-                                {remainingAmount}
+                                {formatWalletValue(remainingAmount)}
                             </h4>
                         </div>
                         {details && details.length > 0 && (
@@ -59,7 +73,7 @@ export function PatientWalletInformationCard({
                                     <div key={item.label} className="flex justify-between items-center px-5 py-[18px]">
                                         <p className="font-inter font-normal text-sm leading-[120%] text-[#434956]">{item.label}</p>
                                         <p className="font-inter font-medium text-sm leading-[120%] text-right text-[#434956]">
-                                            {item.value}
+                                            {formatWalletValue(item.value)}
                                         </p>
                                     </div>
                                 ))}

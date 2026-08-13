@@ -390,7 +390,7 @@ export default function VoucherPage() {
                             </div>
                             <div>
                               <p className="mb-1 font-inter text-[12px] font-medium leading-[120%] text-[#434956]">
-                                JS Health Card Number
+                                Health Card Number
                               </p>
                               <p className="font-inter text-[16px] font-medium leading-[120%] text-[#262D3B]">
                                 {ud.jsHealthCardNumber}
@@ -552,7 +552,7 @@ export default function VoucherPage() {
                           <TableSearchInput
                             value={historySearch}
                             onChange={setHistorySearch}
-                            placeholder="Search by Name, UHID, or JS Health Card No."
+                            placeholder="Search by Name, UHID, or Health Card No."
                             isLoading={historyLoading}
                           />
                         </div>

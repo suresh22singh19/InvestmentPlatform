@@ -37,6 +37,12 @@ function getUserEmail(): string {
 
 let activeRefreshPromise: Promise<string> | null = null;
 let refreshTimeoutId: any = null;
+let activeLanguageFetchPromise: Promise<string> | null = null;
+let activeSessionRegisterPromise: Promise<string | null> | null = null;
+
+let isSessionRegistered = false;
+let registeredToken = "";
+let registeredSessionId = "";
 
 function getJwtExpiration(token: string): number | null {
     try {
@@ -77,7 +83,7 @@ function scheduleTokenRefresh(expiresInSeconds: number) {
     const refreshBuffer = Math.min(300, expiresInSeconds * 0.25);
     const delayMs = Math.max(0, (expiresInSeconds - refreshBuffer) * 1000);
 
-    console.log(`Scheduling proactive token refresh in ${delayMs / 1000} seconds (${Math.round(delayMs / 60000)} minutes)`);
+    // console.log(`Scheduling proactive token refresh in ${delayMs / 1000} seconds (${Math.round(delayMs / 60000)} minutes)`);
 
     refreshTimeoutId = setTimeout(async () => {
         try {
@@ -104,7 +110,7 @@ if (typeof window !== "undefined") {
                     scheduleTokenRefresh(timeRemaining);
                 } else {
                     console.log("Stored token is already expired. Refreshing immediately...");
-                    refreshJatayuToken().catch(err => console.error("Initial token refresh failed:", err));
+                    refreshJatayuToken({ silent: true }).catch(err => console.error("Initial token refresh failed:", err));
                 }
             }
         }
@@ -139,7 +145,32 @@ export async function loginJatayu(allowAutoLogout: boolean = true): Promise<{ to
     throw new Error("Jatayu session not found. Please log in through HIIMS.");
 }
 
-export async function refreshJatayuToken(): Promise<string> {
+export function dispatchJatayuSessionExpired(): void {
+    if (typeof window !== "undefined") {
+        localStorage.removeItem("jatayuToken");
+        localStorage.removeItem("jatayuRefreshToken");
+        localStorage.removeItem("jatayuSessionId");
+        localStorage.setItem("ai_voice_recording_active", "false");
+        localStorage.removeItem("ai_voice_recording_session_id");
+
+        window.dispatchEvent(new CustomEvent("jatayu:session_expired"));
+    }
+}
+
+export async function refreshJatayuToken(options: { silent?: boolean; force?: boolean } = {}): Promise<string> {
+    if (!options.force && typeof window !== "undefined") {
+        const currentToken = localStorage.getItem("jatayuToken");
+        if (currentToken) {
+            const exp = getJwtExpiration(currentToken);
+            if (exp) {
+                const nowSeconds = Math.floor(Date.now() / 1000);
+                if (exp - nowSeconds > 30) {
+                    return currentToken;
+                }
+            }
+        }
+    }
+
     if (activeRefreshPromise) {
         return activeRefreshPromise;
     }
@@ -149,6 +180,9 @@ export async function refreshJatayuToken(): Promise<string> {
             const refreshToken = typeof window !== "undefined" ? localStorage.getItem("jatayuRefreshToken") : null;
             if (!refreshToken) {
                 console.warn("No refresh token found, throwing JATAYU_SESSION_EXPIRED");
+                if (!options.silent) {
+                    dispatchJatayuSessionExpired();
+                }
                 throw new Error("JATAYU_SESSION_EXPIRED");
             }
 
@@ -165,6 +199,9 @@ export async function refreshJatayuToken(): Promise<string> {
             if (!response.ok) {
                 const errorText = await response.text().catch(() => "");
                 console.error(`Token refresh failed with status ${response.status}: ${errorText}`);
+                if (!options.silent) {
+                    dispatchJatayuSessionExpired();
+                }
                 throw new Error("JATAYU_SESSION_EXPIRED");
             }
 
@@ -192,48 +229,9 @@ export async function refreshJatayuToken(): Promise<string> {
                 scheduleTokenRefresh(data.expiresIn ? Number(data.expiresIn) : 3600);
 
                 // Register session after token refresh
-                try {
-                    const email = getUserEmail();
-                    const curTime = new Date()
-                        .toLocaleTimeString()
-                        .replace(" ", "-")
-                        .replace(/:/g, "-");
-
-                    const curDate = new Date().toLocaleDateString().replace(/\//g, "-");
-
-                    const rawSessionIdString = `${email}${curDate}${curTime}`;
-                    let session_id = "";
-                    if (typeof window !== "undefined") {
-                        session_id = window.btoa(rawSessionIdString);
-                    } else {
-                        session_id = Buffer.from(rawSessionIdString).toString("base64");
-                    }
-
-                    const sessionResponse = await fetch(
-                        `${HELPER_BASE_URL}/registerSession`,
-                        {
-                            method: "PUT",
-                            headers: {
-                                Authorization: `Bearer ${token}`,
-                                Accept: "application/json",
-                                "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({ session_id }),
-                        }
-                    );
-
-                    if (!sessionResponse.ok) {
-                        console.warn(`Jatayu registerSession API returned status ${sessionResponse.status} during refresh`);
-                    } else {
-                        const regData = await sessionResponse.json();
-                        console.log("Jatayu registerSession success during refresh:", regData);
-                        if (typeof window !== "undefined") {
-                            localStorage.setItem("jatayuSessionId", session_id);
-                        }
-                    }
-                } catch (sessionErr) {
-                    console.error("Failed to register session during refresh:", sessionErr);
-                }
+                await ensureAndRegisterSession(token).catch(err => {
+                    console.error("Failed to register session during refresh:", err);
+                });
             }
 
             return token;
@@ -258,6 +256,12 @@ export async function logoutJatayu(): Promise<void> {
     // Clear localStorage first so local state is cleaned up regardless of api result
     localStorage.removeItem("jatayuToken");
     localStorage.removeItem("jatayuRefreshToken");
+    localStorage.removeItem("jatayuSessionId");
+
+    // Reset memory state
+    isSessionRegistered = false;
+    registeredToken = "";
+    registeredSessionId = "";
 
     if (!token) return;
 
@@ -295,99 +299,207 @@ export async function uploadAudioReturn(payload: UploadReturnRequest): Promise<U
 
     if (response.status === 401) {
         console.warn("Jatayu token expired, attempting token refresh...");
-        const freshToken = await refreshJatayuToken();
-        response = await fetch(`${BASE_URL}/api/upload-and-transcribe`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${freshToken}`
-            },
-            body: JSON.stringify(payload)
-        });
+        try {
+            const freshToken = await refreshJatayuToken();
+            response = await fetch(`${BASE_URL}/api/upload-and-transcribe`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${freshToken}`
+                },
+                body: JSON.stringify(payload)
+            });
+        } catch (refreshErr) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
     }
 
     if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => "");
+        if (response.status === 401 || errorText.includes("Session expired") || errorText.includes("log in again")) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
         throw new Error(errorText || `API request failed with status ${response.status}`);
     }
 
     return response.json();
 }
 
-export async function fetchLanguageFromAPI(): Promise<string> {
+async function ensureAndRegisterSession(token: string): Promise<string | null> {
+    let session_id = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
+    if (!session_id) {
+        const email = getUserEmail() || "jeena1sikho@gmail.com";
+        const curTime = new Date()
+            .toLocaleTimeString()
+            .replace(" ", "-")
+            .replace(/:/g, "-");
+        const curDate = new Date().toLocaleDateString().replace(/\//g, "-");
+        const rawSessionIdString = `${email}${curDate}${curTime}`;
+        if (typeof window !== "undefined") {
+            session_id = window.btoa(rawSessionIdString);
+        } else {
+            session_id = Buffer.from(rawSessionIdString).toString("base64");
+        }
+    }
+
+    // If session is already registered successfully for this token and session ID, return it
+    if (isSessionRegistered && token === registeredToken && session_id === registeredSessionId) {
+        return session_id;
+    }
+
+    if (activeSessionRegisterPromise) {
+        return activeSessionRegisterPromise;
+    }
+
+    activeSessionRegisterPromise = (async () => {
+        try {
+            // console.log("Registering session ID:", session_id);
+            const sessionResponse = await fetch(
+                `${HELPER_BASE_URL}/registerSession`,
+                {
+                    method: "PUT",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ session_id }),
+                }
+            );
+
+            if (!sessionResponse.ok) {
+                console.warn(`Jatayu registerSession API returned status ${sessionResponse.status}`);
+                return null;
+            } else {
+                const regData = await sessionResponse.json();
+                // console.log("Jatayu registerSession success:", regData);
+                if (typeof window !== "undefined") {
+                    localStorage.setItem("jatayuSessionId", session_id);
+                }
+                isSessionRegistered = true;
+                registeredToken = token;
+                registeredSessionId = session_id;
+                return session_id;
+            }
+        } catch (sessionErr) {
+            console.error("Failed to register session:", sessionErr);
+            return null;
+        }
+    })();
+
     try {
-        let token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : "";
-        let sessionId = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
+        return await activeSessionRegisterPromise;
+    } finally {
+        activeSessionRegisterPromise = null;
+    }
+}
 
-        if (!token) {
-            console.warn("Jatayu token not found, attempting login...");
-            token = await refreshJatayuToken();
-            sessionId = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
-        }
+export async function fetchLanguageFromAPI(): Promise<string> {
+    if (activeLanguageFetchPromise) {
+        return activeLanguageFetchPromise;
+    }
 
-        if (!token) {
-            console.error("User not authenticated in Jatayu");
-            return "Auto (Default)";
-        }
+    activeLanguageFetchPromise = (async () => {
+        try {
+            let token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : "";
 
-        let response = await fetch(`${HELPER_BASE_URL}/getLanguage`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-                session_id: sessionId,
-            }),
-        });
+            if (activeRefreshPromise) {
+                token = await activeRefreshPromise;
+            } else if (!token) {
+                console.warn("Jatayu token not found, attempting login...");
+                token = await refreshJatayuToken({ silent: true });
+            }
 
-        if (response.status === 401) {
-            console.warn("Jatayu token expired, attempting refresh login...");
-            const freshToken = await refreshJatayuToken();
-            sessionId = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
-
-            if (!freshToken) {
-                console.error("Token refresh failed");
+            if (!token) {
+                console.error("User not authenticated in Jatayu");
                 return "Auto (Default)";
             }
 
-            response = await fetch(`${HELPER_BASE_URL}/getLanguage`, {
+            // Ensure session is registered and get valid sessionId first
+            const sessionId = await ensureAndRegisterSession(token);
+            if (!sessionId) {
+                console.error("Session registration failed, skipping getLanguage");
+                return "Auto (Default)";
+            }
+
+            let response = await fetch(`${HELPER_BASE_URL}/getLanguage`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${freshToken}`,
+                    "Authorization": `Bearer ${token}`,
                 },
                 body: JSON.stringify({
                     session_id: sessionId,
                 }),
             });
-        }
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch language: ${response.status}`);
-        }
+            if (response.status === 401) {
+                console.warn("Jatayu token expired, attempting refresh login...");
+                const freshToken = await refreshJatayuToken({ silent: true });
 
-        const data = await response.json();
-        return data.language || "Auto (Default)";
-    } catch (error) {
-        console.error("Error fetching language from API:", error);
-        return "Auto (Default)";
-    }
+                if (!freshToken) {
+                    console.error("Token refresh failed");
+                    return "Auto (Default)";
+                }
+
+                // Register session for refreshed token
+                const freshSessionId = await ensureAndRegisterSession(freshToken);
+                if (!freshSessionId) {
+                    console.error("Session registration failed during retry, skipping getLanguage");
+                    return "Auto (Default)";
+                }
+
+                response = await fetch(`${HELPER_BASE_URL}/getLanguage`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${freshToken}`,
+                    },
+                    body: JSON.stringify({
+                        session_id: freshSessionId,
+                    }),
+                });
+            }
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch language: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.language || "Auto (Default)";
+        } catch (error) {
+            console.error("Error fetching language from API:", error);
+            return "Auto (Default)";
+        } finally {
+            activeLanguageFetchPromise = null;
+        }
+    })();
+
+    return activeLanguageFetchPromise;
 }
 
-export async function saveLanguageToAPI(language: string): Promise<boolean> {
+export async function saveLanguageToAPI(language: string, isDefault?: boolean): Promise<boolean> {
     try {
         let token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : "";
-        let sessionId = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
 
-        if (!token) {
+        if (activeRefreshPromise) {
+            token = await activeRefreshPromise;
+        } else if (!token) {
             console.warn("Jatayu token not found, attempting login...");
             token = await refreshJatayuToken();
-            sessionId = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
         }
 
         if (!token) {
             console.error("User not authenticated in Jatayu");
+            return false;
+        }
+
+        // Ensure session is registered and get valid sessionId first
+        const sessionId = await ensureAndRegisterSession(token);
+        if (!sessionId) {
+            console.error("Session registration failed, skipping setLanguage");
             return false;
         }
 
@@ -400,16 +512,23 @@ export async function saveLanguageToAPI(language: string): Promise<boolean> {
             body: JSON.stringify({
                 language: language,
                 session_id: sessionId,
+                set_as_default: isDefault || false,
             }),
         });
 
         if (response.status === 401) {
             console.warn("Jatayu token expired, attempting refresh login...");
             const freshToken = await refreshJatayuToken();
-            sessionId = typeof window !== "undefined" ? localStorage.getItem("jatayuSessionId") : "";
 
             if (!freshToken) {
                 console.error("Token refresh failed");
+                return false;
+            }
+
+            // Register session for refreshed token
+            const freshSessionId = await ensureAndRegisterSession(freshToken);
+            if (!freshSessionId) {
+                console.error("Session registration failed during retry, skipping setLanguage");
                 return false;
             }
 
@@ -421,7 +540,8 @@ export async function saveLanguageToAPI(language: string): Promise<boolean> {
                 },
                 body: JSON.stringify({
                     language: language,
-                    session_id: sessionId,
+                    session_id: freshSessionId,
+                    set_as_default: isDefault || false,
                 }),
             });
         }
@@ -439,30 +559,42 @@ export async function saveLanguageToAPI(language: string): Promise<boolean> {
     }
 }
 
-export async function uploadAudioChunk(formData: FormData): Promise<any> {
+export async function uploadAudioChunk(formData: FormData, signal?: AbortSignal): Promise<any> {
     const token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
     let response = await fetch(`${BASE_URL}/api/upload-and-transcribe`, {
         method: "POST",
         headers: {
             "Authorization": `Bearer ${token}`
         },
-        body: formData
+        body: formData,
+        signal
     });
 
     if (response.status === 401) {
         console.warn("Jatayu token expired, attempting refresh login...");
-        const freshToken = await refreshJatayuToken();
-        response = await fetch(`${BASE_URL}/api/upload-and-transcribe`, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${freshToken}`
-            },
-            body: formData
-        });
+        try {
+            const freshToken = await refreshJatayuToken();
+            response = await fetch(`${BASE_URL}/api/upload-and-transcribe`, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${freshToken}`
+                },
+                body: formData,
+                signal
+            });
+        } catch (refreshErr) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
     }
 
     if (!response.ok) {
-        throw new Error(`Failed to upload chunk: ${response.status}`);
+        const errorText = await response.text().catch(() => "");
+        if (response.status === 401 || errorText.includes("Session expired") || errorText.includes("log in again")) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
+        throw new Error(errorText || `Failed to upload chunk: ${response.status}`);
     }
 
     return response.json();
@@ -476,7 +608,7 @@ export interface EndStreamRequest {
     language: string;
 }
 
-export async function endAudioStream(payload: EndStreamRequest): Promise<any> {
+export async function endAudioStream(payload: EndStreamRequest, signal?: AbortSignal): Promise<any> {
     const token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
     let response = await fetch(`${BASE_URL}/api/end-stream`, {
         method: "POST",
@@ -484,24 +616,36 @@ export async function endAudioStream(payload: EndStreamRequest): Promise<any> {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal
     });
 
     if (response.status === 401) {
         console.warn("Jatayu token expired, attempting refresh login...");
-        const freshToken = await refreshJatayuToken();
-        response = await fetch(`${BASE_URL}/api/end-stream`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${freshToken}`
-            },
-            body: JSON.stringify(payload)
-        });
+        try {
+            const freshToken = await refreshJatayuToken();
+            response = await fetch(`${BASE_URL}/api/end-stream`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${freshToken}`
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+        } catch (refreshErr) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
     }
 
     if (!response.ok) {
-        throw new Error(`Failed to end stream: ${response.status}`);
+        const errorText = await response.text().catch(() => "");
+        if (response.status === 401 || errorText.includes("Session expired") || errorText.includes("log in again")) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
+        throw new Error(errorText || `Failed to end stream: ${response.status}`);
     }
 
     return response.json();
@@ -513,7 +657,7 @@ export interface CombineAudioRequest {
     email: string;
 }
 
-export async function combineAudioChunks(payload: CombineAudioRequest): Promise<any> {
+export async function combineAudioChunks(payload: CombineAudioRequest, signal?: AbortSignal): Promise<any> {
     const token = typeof window !== "undefined" ? localStorage.getItem("jatayuToken") : null;
     let response = await fetch(`${BASE_URL}/api/upload-combined-audio`, {
         method: "POST",
@@ -521,24 +665,36 @@ export async function combineAudioChunks(payload: CombineAudioRequest): Promise<
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal
     });
 
     if (response.status === 401) {
         console.warn("Jatayu token expired, attempting refresh login...");
-        const freshToken = await refreshJatayuToken();
-        response = await fetch(`${BASE_URL}/api/upload-combined-audio`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${freshToken}`
-            },
-            body: JSON.stringify(payload)
-        });
+        try {
+            const freshToken = await refreshJatayuToken();
+            response = await fetch(`${BASE_URL}/api/upload-combined-audio`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${freshToken}`
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+        } catch (refreshErr) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
     }
 
     if (!response.ok) {
-        throw new Error(`Failed to combine audio: ${response.status}`);
+        const errorText = await response.text().catch(() => "");
+        if (response.status === 401 || errorText.includes("Session expired") || errorText.includes("log in again")) {
+            dispatchJatayuSessionExpired();
+            throw new Error("JATAYU_SESSION_EXPIRED");
+        }
+        throw new Error(errorText || `Failed to combine audio: ${response.status}`);
     }
 
     return response.json();

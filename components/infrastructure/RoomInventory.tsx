@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import Image from "next/image";
 import {
   Button,
   Dialog,
@@ -9,6 +10,7 @@ import {
   ConfigurationSummaryPanel,
   TableSearchInput,
   Pagination,
+  Tooltip,
 } from "@/components/ui";
 import { useDebounce } from "@/hooks/useDebounce";
 import { branchRoomTypeSelectOptions } from "@/lib/utils/branchRoomTypeOptions";
@@ -49,7 +51,7 @@ export type RoomInventoryItem = {
   status: "configured" | "incomplete";
   occupancyStatus: OccupancyStatus;
   capacity: number;
-  genderUsage: "Male" | "Female" | "Mixed";
+  genderUsage: "Male" | "Female" | "Mixed" | "";
   hasAC: boolean;
   hardwareCount: number;
   facilitiesCount: number;
@@ -148,24 +150,33 @@ function buildFloorIdToLabel(branch: HierarchyBranch | undefined): Map<number, s
   return m;
 }
 
+function mapRoomUsageToGender(u: string | null | undefined): "Male" | "Female" | "Mixed" | "" {
+  const t = (u ?? "").trim().toLowerCase();
+  if (t === "male") return "Male";
+  if (t === "female") return "Female";
+  if (t === "mixed" || t === "general") return "Mixed";
+  return "";
+}
+
 function mapApiRoomToInventoryItem(
   api: BranchRoomListRow,
   buildingName: string,
   floorLabel: string,
   branchTypeRows: BranchRoomTypeMappingRow[]
 ): RoomInventoryItem {
+  const incomplete = api.roomConfigStatus === "incomplete";
   const hf = api.hardwareFacilities ?? [];
   const hardwareParts = hf.filter((x) => x.hardwareFacilitiesType === "hardware");
   const facilityParts = hf.filter((x) => x.hardwareFacilitiesType === "facility");
-  const hardwareItems = hardwareParts.map((x) => ({
-    name: x.hardwareFacility?.name ?? `Hardware #${x.hardwareFacilityId}`,
-    qty: x.quantity ?? 1,
+
+  const hardwareItems = hardwareParts.map((h) => ({
+    name: h.hardwareFacility?.name ?? `Hardware #${h.hardwareFacilityId}`,
+    qty: h.quantity ?? 1,
   }));
   const facilityNames = facilityParts
-    .map((x) => x.hardwareFacility?.name)
-    .filter((n): n is string => n != null && String(n).trim() !== "");
+    .map((f) => f.hardwareFacility?.name)
+    .filter((n): n is string => Boolean(n));
 
-  const incomplete = api.roomConfigStatus === "incomplete";
   const rtid = resolveRoomtypeId(api.roomType, branchTypeRows);
 
   return {
@@ -178,7 +189,7 @@ function mapApiRoomToInventoryItem(
     status: incomplete ? "incomplete" : "configured",
     occupancyStatus: incomplete ? "Pending" : mapRoomCurrentStatus(api.roomCurrentStatus),
     capacity: api.bedCapacity ?? 1,
-    genderUsage: "Mixed",
+    genderUsage: mapRoomUsageToGender(api.roomUsage),
     hasAC: false,
     hardwareCount: hardwareParts.reduce((s, x) => s + (x.quantity ?? 1), 0),
     facilitiesCount: facilityParts.length,
@@ -443,31 +454,36 @@ export const RoomInventory = ({
       <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? "w-[80%]" : "w-full"}`}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
-            >
-              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <Tooltip content="Back to Previous Page">
+              <button
+                type="button"
+                onClick={onBack}
+                className="cursor-pointer flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+                aria-label="Back to Previous Page"
+              >
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </Tooltip>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Room Inventory</h1>
               <p className="text-sm text-gray-500">{facilityName}</p>
             </div>
           </div>
           {!isPanelOpen && (
-            <button
-              type="button"
-              onClick={() => setIsPanelOpen(true)}
-              className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
-              aria-label="Open Configuration Summary"
-            >
-              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            <Tooltip content="Open Configuration Summary">
+              <button
+                type="button"
+                onClick={() => setIsPanelOpen(true)}
+                className="cursor-pointer flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                aria-label="Open Configuration Summary"
+              >
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
         </div>
 
@@ -507,7 +523,7 @@ export const RoomInventory = ({
             />
           </div>
           <div className="flex flex-nowrap items-center gap-3 flex-shrink-0">
-            <div className="w-[180px]">
+            <div className="w-[220px]">
               <FormSelectField
                 label=""
                 options={buildingOptions}
@@ -518,7 +534,7 @@ export const RoomInventory = ({
                 emptyMessage={buildingsLoading ? "Loading…" : "No buildings"}
               />
             </div>
-            <div className="w-[180px]">
+            <div className="w-[220px]">
               <FormSelectField
                 label=""
                 options={typeOptions}
@@ -531,7 +547,7 @@ export const RoomInventory = ({
                 }
               />
             </div>
-            <div className="w-[140px]">
+            <div className="w-[220px]">
               <FormSelectField
                 label=""
                 options={STATUS_OPTIONS}
@@ -630,41 +646,60 @@ export const RoomInventory = ({
               </div>
 
               <div className="flex gap-2 items-center">
-                <button
-                  type="button"
-                  onClick={() => setViewRoom(room)}
-                  disabled={!canView}
-                  className="inline-flex items-center justify-center h-9 px-8 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
-                >
-                  View
-                </button>
+                <Tooltip content="View Room">
+                  <button
+                    type="button"
+                    onClick={() => setViewRoom(room)}
+                    disabled={!canView}
+                    className="cursor-pointer inline-flex items-center justify-center w-9 h-9 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </button>
+                </Tooltip>
+
                 {canEdit ? (
-                  <button
-                    type="button"
-                    onClick={() => handleBeds(room)}
-                    className="inline-flex items-center justify-center h-9 px-8 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
-                  >
-                    Beds
-                  </button>
+                  <Tooltip content="Manage Beds">
+                    <button
+                      type="button"
+                      onClick={() => handleBeds(room)}
+                      className="cursor-pointer inline-flex items-center justify-center w-9 h-9 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
+                    >
+                      <Image src="/icons/patientBed.svg" alt="Manage Beds" width={18} height={18} />
+                    </button>
+                  </Tooltip>
                 ) : null}
+
                 {canAdd || canEdit ? (
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(room)}
-                    disabled={room.status === "configured" ? !canEdit : !(canAdd || canEdit)}
-                    className="inline-flex items-center justify-center h-9 px-8 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 whitespace-nowrap"
-                  >
-                    Configure
-                  </button>
+                  <Tooltip content={room.status === "configured" ? "Edit Room" : "Configure Room"}>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(room)}
+                      disabled={room.status === "configured" ? !canEdit : !(canAdd || canEdit)}
+                      className="cursor-pointer inline-flex items-center justify-center w-9 h-9 text-xs font-semibold rounded-full border border-[#0B8C00] bg-white text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] active:bg-[#E4F2E4] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B8C00]/20 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
+                  </Tooltip>
                 ) : null}
+
                 {canDelete ? (
-                  <button
-                    type="button"
-                    onClick={() => setDeleteRoom(room)}
-                    className="inline-flex items-center justify-center h-9 px-6 text-xs font-semibold rounded-full border border-red-500 bg-white text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-500/20 whitespace-nowrap"
-                  >
-                    Delete
-                  </button>
+                  <Tooltip content="Delete Room">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteRoom(room)}
+                      className="cursor-pointer inline-flex items-center justify-center w-9 h-9 text-xs font-semibold rounded-full border border-red-500 bg-white text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-500/20 whitespace-nowrap"
+                    >
+                      <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </Tooltip>
                 ) : null}
               </div>
 
@@ -719,7 +754,7 @@ export const RoomInventory = ({
           </div>
         )}
 
-        <Dialog open={!!viewRoom} onClose={() => setViewRoom(null)} title="Room details" width={560}>
+        <Dialog open={!!viewRoom} onClose={() => setViewRoom(null)} title="Room details" width={560} closeOnOutsideClick={false}>
           {viewRoom && (
             <div className="space-y-6">
               <h3 className="text-base font-semibold text-gray-900">Room Configuration Summary</h3>
@@ -793,11 +828,12 @@ export const RoomInventory = ({
                 )}
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setViewRoom(null)}>
+                <Button variant="outline" className="cursor-pointer" onClick={() => setViewRoom(null)}>
                   Close
                 </Button>
                 <Button
                   variant="primary"
+                  className="cursor-pointer"
                   onClick={() => {
                     if (viewRoom.status === "configured" ? !canEdit : !(canAdd || canEdit)) return;
                     handleEdit(viewRoom);
@@ -823,6 +859,7 @@ export const RoomInventory = ({
           confirmText={deletingRoom ? "Deleting..." : "Delete"}
           onCancel={() => setDeleteRoom(null)}
           onConfirm={() => void handleDelete()}
+          closeOnOutsideClick={false}
         />
 
         <MessageDialog

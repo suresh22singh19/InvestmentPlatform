@@ -13,6 +13,8 @@ interface PatientTypeButtonGroupProps {
     fieldRef?: React.RefObject<HTMLDivElement | null>;
     dataField?: string;
     disabled?: boolean;
+    /** Fixed width (px) for each option button. */
+    buttonWidth?: number;
     /** Option values (lowercase) to disable, e.g. ["ipd"]. Disabled options show cursor-not-allowed and are not clickable. */
     disabledOptions?: string[];
 }
@@ -28,6 +30,7 @@ export function PatientTypeButtonGroup({
     fieldRef,
     dataField,
     disabled = false,
+    buttonWidth,
     disabledOptions = [],
 }: PatientTypeButtonGroupProps) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -195,7 +198,7 @@ export function PatientTypeButtonGroup({
                 </span>
             )}
 
-            <div className="flex w-full items-center gap-[7px]">
+            <div className={`flex items-center gap-[7px] ${buttonWidth ? "w-fit" : "w-full"}`}>
                 {options.map((option, index) => {
                     const optLower = option.toLowerCase();
                     const isOptionDisabled = disabled || disabledOptions.includes(optLower);
@@ -212,9 +215,10 @@ export function PatientTypeButtonGroup({
                             disabled={disabled}
                             aria-disabled={disabledOptions.includes(optLower) || undefined}
                             className={`
-                                font-inter min-w-0 flex-1 basis-0 font-medium text-[12px] leading-[120%]
+                                font-inter min-w-0 font-medium text-[12px] leading-[120%]
                                 flex flex-row justify-center items-center transition-all duration-200
                                 border focus:outline-none focus:ring-2 focus:ring-[#0B8C00]/20 focus:border-[#0B8C00]
+                                ${buttonWidth ? "shrink-0" : "flex-1 basis-0"}
                                 ${isOptionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}
                                 ${isActive
                                     ? "bg-[#0B8C00] text-white border-[#0B8C00]"
@@ -231,6 +235,7 @@ export function PatientTypeButtonGroup({
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
+                                ...(buttonWidth ? { width: `${buttonWidth}px` } : {}),
                             }}
                         >
                             {option}

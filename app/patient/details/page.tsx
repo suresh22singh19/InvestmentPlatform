@@ -1035,7 +1035,7 @@ const WALLET_ORDER_HISTORY_SECTIONS: TableListingSection[] = [
 const WALLET_HEALTH_CARD_TRANSACTION_SECTIONS: TableListingSection[] = [
     {
         id: "wallet-health-card-transaction",
-        title: "JS Health Card Transaction",
+        title: "Health Card Transaction",
         columns: [
             { label: "Sr no.", position: "first" },
             { label: "Points" },
@@ -3383,7 +3383,7 @@ export default function IpdPage() {
         return [
             {
                 id: "wallet-js-health-card-points",
-                title: "JS Health Card Points",
+                title: "Health Card Points",
                 columns: [
                     { label: "#", position: "first" as const },
                     { label: "UHID" },
@@ -3407,7 +3407,7 @@ export default function IpdPage() {
         return [
             {
                 id: "wallet-js-health-card-transaction",
-                title: "JS Health Card Transaction",
+                title: "Health Card Transaction",
                 columns: [
                     { label: "Sr no.", position: "first" as const },
                     { label: "Points" },

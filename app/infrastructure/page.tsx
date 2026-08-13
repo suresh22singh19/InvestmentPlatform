@@ -20,10 +20,12 @@ import {
   type BranchFacilityFormValues,
   type BranchLabTestSource,
 } from "@/lib/validation/branchFacilitySchemas";
+import { formatIndianAmount, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 import { useGetStatesQuery, useGetCitiesQuery, useGetTehsilsQuery, useGetAreasQuery } from "@/store/api/publicApi";
 import {
   useAssignModulesToBranchMutation,
   useCreateBranchMutation,
+  useUpdateBranchMutation,
   useGetAllBranchesQuery,
   useGetBranchInsightSummaryQuery,
   useLazyGetModulesWithBranchMappingQuery,
@@ -214,9 +216,15 @@ function buildCreateBranchFormData(
     tehsilName: string;
     areaName: string;
     areaId: number;
-  }
+  },
+  editingBranchId?: number | null
 ): FormData {
   const fd = new FormData();
+  if (editingBranchId != null) {
+    if (!values.branchId.trim()) {
+      fd.append("branchId", String(editingBranchId));
+    }
+  }
   const a = values.address;
   const isIndia = a.country === INDIA;
 
@@ -246,7 +254,7 @@ function buildCreateBranchFormData(
   fd.append("tinNo", values.tinNo.trim());
   fd.append("tat", values.tat.trim());
   fd.append("cstNo", values.cstNo.trim());
-  fd.append("creditLimit", values.creditLimit.trim());
+  fd.append("creditLimit", parseIndianAmount(values.creditLimit).trim());
   fd.append("description", values.description.trim());
   fd.append("type", values.facilityType.toLowerCase());
   fd.append("bankName", values.bankName.trim());
@@ -267,7 +275,7 @@ function buildCreateBranchFormData(
   fd.append("branchStatus", branchStatus);
   fd.append("branchUser", values.branchUser.trim());
   fd.append("userPassword", values.userPassword);
-  fd.append("advancedReferralAmount", values.advancedReferralAmount.trim() || "0");
+  fd.append("advancedReferralAmount", parseIndianAmount(values.advancedReferralAmount).trim() || "0");
   fd.append("referralAmountInPercent", values.referralAmountInPercent.trim() || "");
   fd.append("isPanel", "no");
   fd.append("panel", "");
@@ -286,11 +294,13 @@ function buildCreateBranchFormData(
   const stateIdNum = parseInt(stateIdRaw, 10);
   fd.append("stateId", Number.isFinite(stateIdNum) ? String(stateIdNum) : stateIdRaw);
 
-  const moduleNumericIds = values.moduleIds
-    .map((id) => parseInt(String(id), 10))
-    .filter((n) => Number.isFinite(n));
-  for (const id of moduleNumericIds) {
-    fd.append("moduleIds", String(id));
+  if (editingBranchId == null) {
+    const moduleNumericIds = values.moduleIds
+      .map((id) => parseInt(String(id), 10))
+      .filter((n) => Number.isFinite(n));
+    for (const id of moduleNumericIds) {
+      fd.append("moduleIds", String(id));
+    }
   }
 
   const cloneIdRaw = values.cloneBranchId.trim();
@@ -317,8 +327,8 @@ function buildCreateBranchFormData(
 
 const page = () => {
   const router = useRouter();
-  const infrastructurePermission = usePermission("Infrastructure");
-  const infrastructureSubPermission = usePermission("Infrastructure", { subModule: "Add Hospital/Clinic" });
+  const infrastructurePermission = usePermission("Settings");
+  const infrastructureSubPermission = usePermission("Settings", { subModule: "Add Hospital/Clinic" });
   const canView = infrastructurePermission.canView || infrastructureSubPermission.canView;
   const canAdd = infrastructurePermission.canAdd || infrastructureSubPermission.canAdd;
   const canEditBranchModules =
@@ -364,6 +374,9 @@ const page = () => {
   const { data: insightRes } = useGetBranchInsightSummaryQuery(undefined, { skip: !canView });
 
   const [createBranch, { isLoading: isCreating }] = useCreateBranchMutation();
+  const [updateBranch, { isLoading: isUpdating }] = useUpdateBranchMutation();
+  const [editingBranchId, setEditingBranchId] = useState<number | null>(null);
+  const canEditBranch = infrastructurePermission.canEdit || infrastructureSubPermission.canEdit || canAdd;
   const [modulesDialogBranch, setModulesDialogBranch] = useState<BranchListRow | null>(null);
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
   /** Snapshot from GET when dialog syncs; used to enable "Update modules" only when selection changes. */
@@ -413,7 +426,7 @@ const page = () => {
     validationSchema: branchFacilityFormSchema,
     validateOnChange: true,
     validateOnBlur: true,
-    onSubmit: () => {},
+    onSubmit: () => { },
   });
 
   const addr = formik.values.address;
@@ -452,6 +465,45 @@ const page = () => {
     return { stateName, districtName, tehsilName, areaName, areaId: Number.isFinite(areaId) ? areaId : 0 };
   }, [statesData, citiesData, tehsilsData, areasData, addr.state, addr.city, addr.tehsil, addr.area]);
 
+  useEffect(() => {
+    if (!isDialogOpen || editingBranchId == null) return;
+    const currentCity = formik.values.address.city;
+    if (citiesData?.data && currentCity) {
+      const match = citiesData.data.find(
+        (c) => String(c.id) === currentCity || c.name.toLowerCase() === currentCity.toLowerCase()
+      );
+      if (match && currentCity !== String(match.id)) {
+        void formik.setFieldValue("address.city", String(match.id));
+      }
+    }
+  }, [isDialogOpen, editingBranchId, citiesData, formik.values.address.city]);
+
+  useEffect(() => {
+    if (!isDialogOpen || editingBranchId == null) return;
+    const currentTehsil = formik.values.address.tehsil;
+    if (tehsilsData?.data && currentTehsil) {
+      const match = tehsilsData.data.find(
+        (t) => String(t.id) === currentTehsil || t.name.toLowerCase() === currentTehsil.toLowerCase()
+      );
+      if (match && currentTehsil !== String(match.id)) {
+        void formik.setFieldValue("address.tehsil", String(match.id));
+      }
+    }
+  }, [isDialogOpen, editingBranchId, tehsilsData, formik.values.address.tehsil]);
+
+  useEffect(() => {
+    if (!isDialogOpen || editingBranchId == null) return;
+    const currentArea = formik.values.address.area;
+    if (areasData?.data && currentArea) {
+      const match = areasData.data.find(
+        (a) => String(a.id) === currentArea || a.name.toLowerCase() === currentArea.toLowerCase()
+      );
+      if (match && currentArea !== String(match.id)) {
+        void formik.setFieldValue("address.area", String(match.id));
+      }
+    }
+  }, [isDialogOpen, editingBranchId, areasData, formik.values.address.area]);
+
   const resetFacilityForm = () => {
     formik.resetForm({
       values: {
@@ -463,17 +515,101 @@ const page = () => {
 
   const handleAddNew = () => {
     if (!canAdd) return;
+    setEditingBranchId(null);
     resetFacilityForm();
+    setIsDialogOpen(true);
+  };
+
+  const editingBranchModuleOptions: SelectOption[] = useMemo(() => {
+    if (editingBranchId == null) return [];
+    if (!modulesMappingRes?.success || !Array.isArray(modulesMappingRes.data)) return [];
+    return modulesMappingRes.data.map((m) => ({
+      value: String(m.id),
+      label: m.moduleName,
+      disabled: m.branchModuleId != null,
+    }));
+  }, [editingBranchId, modulesMappingRes]);
+
+  useEffect(() => {
+    if (editingBranchId == null || !isDialogOpen) return;
+    if (!modulesMappingRes?.success || !Array.isArray(modulesMappingRes.data)) return;
+    const assignedIds = modulesMappingRes.data
+      .filter((m) => m.branchModuleId != null)
+      .map((m) => String(m.id));
+    void formik.setFieldValue("moduleIds", assignedIds);
+  }, [editingBranchId, isDialogOpen, modulesMappingRes]);
+
+  const handleEditFacility = (row: BranchListRow) => {
+    if (!canEditBranch) return;
+    setEditingBranchId(row.id);
+    void fetchModulesMapping(row.id, false);
+    const r = row as Record<string, any>;
+    let facilityType: "Hospital" | "Clinic" | "Daycare" = "Hospital";
+    const rawType = (r.type || "").toString().toLowerCase();
+    if (rawType === "clinic") facilityType = "Clinic";
+    else if (rawType === "daycare") facilityType = "Daycare";
+
+    formik.resetForm({
+      values: {
+        ...initialBranchFacilityValues,
+        facilityType,
+        name: r.name || "",
+        phoneNumber: r.phoneNumber || "",
+        emailAddress: r.emailAddress || "",
+        firmName: r.firmName || "",
+        panNo: r.panNo || "",
+        description: r.description || "",
+        creditLimit: r.creditLimit != null && String(r.creditLimit).trim() !== "" ? formatIndianAmount(r.creditLimit) : "",
+        cstNo: r.cstNo || "",
+        tinNo: r.tinNo || "",
+        tat: r.tat || "",
+        gstNumber: r.gstNumber || "",
+        stock: r.stock != null ? String(r.stock) : "",
+        dp: r.dp != null ? String(r.dp) : "",
+        stateCode: r.stateCode || "",
+        branchCode: r.branchCode || "",
+        branchId: r.branchId != null ? String(r.branchId) : String(r.id || ""),
+        branchUser: r.branchUser || "",
+        userPassword: r.userPassword || "",
+        warehouse: r.warehouse || "",
+        sms: r.sms === "disabled" ? "OFF" : "ON",
+        advancedReferralAmount: r.advancedReferralAmount != null && String(r.advancedReferralAmount).trim() !== "" ? formatIndianAmount(r.advancedReferralAmount) : "",
+        referralAmountInPercent: r.referralAmountInPercent != null ? String(r.referralAmountInPercent) : "",
+        showToAgent: r.showToAgent || "yes",
+        isFranchise: r.isFranchise || "no",
+        branchStatus: r.branchStatus || r.status || "active",
+        wifiStatus: r.wifiStatus || "",
+        labTestSource: r.labTestSource || "",
+        apiStatus: r.status || "active",
+        maplink: r.maplink || "",
+        bankName: r.bankName || "",
+        accNo: r.accNo || "",
+        ifscCode: r.ifscCode || "",
+        bankBranchName: r.bankBranchName || "",
+        address: {
+          pinCode: r.pinCode || "",
+          country: r.countryId != null ? String(r.countryId) : (r.country || INDIA),
+          state: r.stateId != null ? String(r.stateId) : (r.state || ""),
+          city: r.districtId != null ? String(r.districtId) : (r.district || ""),
+          tehsil: r.tehsilId != null ? String(r.tehsilId) : (r.tehsil || ""),
+          area: r.areaId != null ? String(r.areaId) : (r.area || ""),
+          address: r.address || "",
+          addressLine1: r.addressLine1 || "",
+          addressLine2: r.addressLine2 || "",
+        },
+      },
+    });
     setIsDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
+    setEditingBranchId(null);
     resetFacilityForm();
   };
 
   const submitFacility = async () => {
-    if (!canAdd) return;
+    if (editingBranchId != null ? !canEditBranch : !canAdd) return;
     const hasBranchPhotoErrors =
       branchPhotoCaptureRef.current?.hasErrors() ||
       !!(branchPhotoCaptureErrors.vehiclePhoto || branchPhotoCaptureErrors.aadharPhoto);
@@ -501,34 +637,50 @@ const page = () => {
       return;
     }
 
-    const fd = buildCreateBranchFormData(formik.values, resolvedAddressLabels);
+    const fd = buildCreateBranchFormData(formik.values, resolvedAddressLabels, editingBranchId);
 
-    const createBranchPayloadPreview: Record<string, string | string[]> = {};
+    const branchPayloadPreview: Record<string, string | string[]> = {};
     for (const [key, value] of fd.entries()) {
       const v =
         value instanceof File ? `File:${value.name} (${value.size} bytes)` : String(value);
-      const existing = createBranchPayloadPreview[key];
+      const existing = branchPayloadPreview[key];
       if (existing === undefined) {
-        createBranchPayloadPreview[key] = v;
+        branchPayloadPreview[key] = v;
       } else if (Array.isArray(existing)) {
         existing.push(v);
       } else {
-        createBranchPayloadPreview[key] = [existing, v];
+        branchPayloadPreview[key] = [existing, v];
       }
     }
-    console.log("[createBranch] about to POST /branch/createBranch", createBranchPayloadPreview);
+    console.log(`[${editingBranchId != null ? "updateBranch" : "createBranch"}] about to submit`, branchPayloadPreview);
 
     try {
-      const res = await createBranch(fd).unwrap();
+      const res =
+        editingBranchId != null
+          ? await updateBranch({ id: editingBranchId, body: fd }).unwrap()
+          : await createBranch(fd).unwrap();
       if (res.success) {
+        if (editingBranchId != null && modulesMappingRes?.success && Array.isArray(modulesMappingRes.data)) {
+          const initialAssignedSet = new Set(
+            modulesMappingRes.data.filter((m) => m.branchModuleId != null).map((m) => String(m.id))
+          );
+          const newlyAddedModuleIds = formik.values.moduleIds.filter((id) => !initialAssignedSet.has(id));
+          if (newlyAddedModuleIds.length > 0) {
+            const mappings = newlyAddedModuleIds.map((id) => ({
+              branchId: editingBranchId,
+              moduleId: parseInt(id, 10),
+            }));
+            await assignModules({ mappings }).unwrap();
+          }
+        }
         setFacilitiesPage(1);
         setMsgSuccess(true);
-        setMsgText(res.message || "Facility created successfully.");
+        setMsgText(res.message || (editingBranchId != null ? "Facility updated successfully." : "Facility created successfully."));
         setMsgOpen(true);
         handleCloseDialog();
       } else {
         setMsgSuccess(false);
-        setMsgText(res.message || "Could not create facility.");
+        setMsgText(res.message || (editingBranchId != null ? "Could not update facility." : "Could not create facility."));
         setMsgOpen(true);
       }
     } catch (e: unknown) {
@@ -688,249 +840,260 @@ const page = () => {
           You don&apos;t have permission to view infrastructure.
         </div>
       ) : (
-      <>
-      <div className="flex min-h-[calc(100vh-12rem)] flex-col">
-        <div className="flex items-center justify-between border-b border-gray-200 pb-4">
-          <div>
-            <PageHeading title="Hospital Management System" />
-            <p className="mt-0 text-gray-400">Configure and manage hospitals, clinics, and their infrastructure</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <FormSelectField
-              label=""
-              hideLabel
-              options={branchFilterOptions}
-              value={selectedBranchFilter}
-              onChange={(value) => {
-                setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
-                setFacilitiesPage(1);
-              }}
-              placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
-              mode="single"
-              background="normal"
-              width={300}
-              disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-            />
-            {canAdd ? (
-              <Button
-                variant="primary"
-                size="medium"
-                onClick={handleAddNew}
-                leftIcon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                }
-              >
-                Add Hospital/Clinic
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* {infrastructureStats.map((stat) => (
+        <>
+          <div className="flex min-h-[calc(100vh-12rem)] flex-col">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+              <div>
+                <PageHeading title="Hospital Management System" />
+                <p className="mt-0 text-gray-400">Configure and manage hospitals, clinics, and their infrastructure</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <FormSelectField
+                  label=""
+                  hideLabel
+                  options={branchFilterOptions}
+                  value={selectedBranchFilter}
+                  onChange={(value) => {
+                    setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                    setFacilitiesPage(1);
+                  }}
+                  placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                  mode="single"
+                  background="normal"
+                  width={300}
+                  disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                />
+                {canAdd ? (
+                  <Button
+                    variant="primary"
+                    size="medium"
+                    onClick={handleAddNew}
+                    leftIcon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    }
+                  >
+                    Add Hospital/Clinic
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* {infrastructureStats.map((stat) => (
             <StatCard key={stat.title} title={stat.title} value={stat.value} />
           ))} */}
-        </div>
-        <div className="mb-10 mt-6">
-          <h2 className="mb-4 text-xl font-semibold text-gray-900">All Hospitals & Clinics</h2>
-          {isError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-              Could not load facilities.{" "}
-              <button type="button" className="font-medium underline" onClick={() => void refetch()}>
-                Retry
-              </button>
             </div>
-          ) : null}
-          <div className="space-y-4">
-            {isFetching && branchRows.length === 0 ? (
-              <p className="text-sm text-gray-500">Loading facilities…</p>
-            ) : null}
-            {branchRows.map((row) => {
-              const card = branchRowToFacilityCardProps(row);
-              return (
-                <FacilityCard
-                  key={row.id}
-                  name={card.name}
-                  type={card.type}
-                  address={card.address}
-                  setupStatus={card.setupStatus}
-                  setupDate={card.setupDate}
-                  completionPercentage={card.completionPercentage}
-                  buildings={card.buildings}
-                  floors={card.floors}
-                  roomsConfigured={card.roomsConfigured}
-                  totalRooms={card.totalRooms}
-                  onClick={() => handleFacilityClick(row)}
-                  onEditModules={
-                    canEditBranchModules ? () => handleOpenEditModules(row) : undefined
-                  }
+            <div className="mb-10 mt-6">
+              <h2 className="mb-4 text-xl font-semibold text-gray-900">All Hospitals & Clinics</h2>
+              {isError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  Could not load facilities.{" "}
+                  <button type="button" className="font-medium underline" onClick={() => void refetch()}>
+                    Retry
+                  </button>
+                </div>
+              ) : null}
+              <div className="space-y-4">
+                {isFetching && branchRows.length === 0 ? (
+                  <p className="text-sm text-gray-500">Loading facilities…</p>
+                ) : null}
+                {branchRows.map((row) => {
+                  const card = branchRowToFacilityCardProps(row);
+                  return (
+                    <FacilityCard
+                      key={row.id}
+                      name={card.name}
+                      type={card.type}
+                      address={card.address}
+                      setupStatus={card.setupStatus}
+                      setupDate={card.setupDate}
+                      completionPercentage={card.completionPercentage}
+                      buildings={card.buildings}
+                      floors={card.floors}
+                      roomsConfigured={card.roomsConfigured}
+                      totalRooms={card.totalRooms}
+                      onClick={() => handleFacilityClick(row)}
+                      onEdit={canEditBranch ? () => handleEditFacility(row) : undefined}
+                      onEditModules={
+                        canEditBranchModules ? () => handleOpenEditModules(row) : undefined
+                      }
+                    />
+                  );
+                })}
+                {!isFetching && !isError && branchRows.length === 0 ? (
+                  <p className="text-sm text-gray-500">No hospitals or clinics found.</p>
+                ) : null}
+              </div>
+              {branchListTotal > 0 ? (
+                <Pagination
+                  currentPage={facilitiesPage}
+                  totalItems={branchListTotal}
+                  itemsPerPage={facilitiesPerPage}
+                  onPageChange={setFacilitiesPage}
+                  onItemsPerPageChange={(n) => {
+                    setFacilitiesPerPage(n);
+                    setFacilitiesPage(1);
+                  }}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
                 />
-              );
-            })}
-            {!isFetching && !isError && branchRows.length === 0 ? (
-              <p className="text-sm text-gray-500">No hospitals or clinics found.</p>
-            ) : null}
-          </div>
-          {branchListTotal > 0 ? (
-            <Pagination
-              currentPage={facilitiesPage}
-              totalItems={branchListTotal}
-              itemsPerPage={facilitiesPerPage}
-              onPageChange={setFacilitiesPage}
-              onItemsPerPageChange={(n) => {
-                setFacilitiesPerPage(n);
-                setFacilitiesPage(1);
-              }}
-              itemsPerPageOptions={[10, 20, 50, 100]}
-            />
-          ) : null}
-        </div>
-      </div>
-
-      <Dialog
-        open={isDialogOpen && canAdd}
-        onClose={handleCloseDialog}
-        title="Add New Facility"
-        width={1300}
-        contentPadding="px-6 py-6"
-        contentOverflow="hidden"
-        closeOnOutsideClick={false}
-        closeOnEscape={false}
-      >
-        <div className="flex min-h-0 flex-1 flex-col gap-6">
-          <ScrollableContainer maxHeight="none" className="flex min-h-0 flex-1 flex-col gap-6 pr-1">
-            <BranchBasicInformation
-              formik={formik}
-              photoCaptureRef={branchPhotoCaptureRef}
-              onPhotoValidationChange={(_hasErrors, errs) => setBranchPhotoCaptureErrors(errs)}
-            />
-            <BranchBankInformation formik={formik} />
-            <AddressDetails
-              formData={formik.values.address}
-              onChange={(field, value) => formik.setFieldValue(`address.${field}`, value)}
-              onBlur={(field) => formik.setFieldTouched(`address.${field}`, true)}
-              dataFieldPrefix="address."
-              nationality="Indian"
-              title="Address"
-              errors={{
-                pinCode: formik.touched.address?.pinCode ? formik.errors.address?.pinCode : undefined,
-                country: formik.touched.address?.country ? formik.errors.address?.country : undefined,
-                state: formik.touched.address?.state ? formik.errors.address?.state : undefined,
-                city: formik.touched.address?.city ? formik.errors.address?.city : undefined,
-                tehsil: formik.touched.address?.tehsil ? formik.errors.address?.tehsil : undefined,
-                area: formik.touched.address?.area ? formik.errors.address?.area : undefined,
-                address: formik.touched.address?.address ? formik.errors.address?.address : undefined,
-                addressLine1: formik.touched.address?.addressLine1 ? formik.errors.address?.addressLine1 : undefined,
-                addressLine2: formik.touched.address?.addressLine2 ? formik.errors.address?.addressLine2 : undefined,
-              }}
-            />
-          </ScrollableContainer>
-
-          <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200 pt-4">
-            <Button
-              variant="outline"
-              onClick={handleCloseDialog}
-              className="min-w-[100px]"
-              disabled={isCreating}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              onClick={() => void submitFacility()}
-              className="min-w-[160px]"
-              disabled={isCreating}
-            >
-              {isCreating ? "Saving…" : "Create facility"}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={modulesDialogBranch != null && canEditBranchModules}
-        onClose={handleCloseModulesDialog}
-        title={
-          modulesDialogBranch
-            ? `Edit modules — ${textOrNA(modulesDialogBranch.name)}`
-            : "Edit modules"
-        }
-        width={520}
-        contentPadding="px-6 py-6"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-gray-500">
-            Select one or more modules to assign to this branch.
-          </p>
-          {isLoadingModules ? (
-            <p className="text-sm text-gray-500">Loading modules…</p>
-          ) : isModulesMappingError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-              Could not load modules.{" "}
-              <button
-                type="button"
-                className="font-medium underline"
-                onClick={() => {
-                  if (modulesBranchId != null) void fetchModulesMapping(modulesBranchId, false);
-                }}
-              >
-                Retry
-              </button>
+              ) : null}
             </div>
-          ) : (
-            <FormSelectField
-              label="Modules*"
-              mode="multiple"
-              options={moduleSelectOptions}
-              value={selectedModuleIds}
-              onChange={(value) => setSelectedModuleIds(Array.isArray(value) ? value : value ? [value] : [])}
-              placeholder="Select module(s)"
-              background="normal"
-              disabled={isSavingModules}
-            />
-          )}
-          <div className="flex justify-end gap-3 border-t border-gray-200 pt-4">
-            <Button
-              variant="outline"
-              onClick={handleCloseModulesDialog}
-              className="min-w-[100px]"
-              disabled={isSavingModules}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              onClick={() => void handleSaveBranchModules()}
-              className="min-w-[140px]"
-              isLoading={isSavingModules}
-              disabled={
-                isSavingModules ||
-                isLoadingModules ||
-                isModulesMappingError ||
-                modulesDialogBranch == null ||
-                !isModulesSelectionDirty
-              }
-            >
-              Update modules
-            </Button>
           </div>
-        </div>
-      </Dialog>
 
-      <MessageDialog
-        open={msgOpen}
-        onClose={() => setMsgOpen(false)}
-        message={msgText}
-        icon={msgSuccess ? "/icons/SuccessCheck.svg" : "/icons/CrossIcon.svg"}
-        iconBgColor={msgSuccess ? "#E8F5E9" : "#FEE2E2"}
-        showCancel={false}
-        confirmText="OK"
-        onConfirm={() => setMsgOpen(false)}
-      />
-      </>
+          <Dialog
+            open={isDialogOpen && (editingBranchId != null ? canEditBranch : canAdd)}
+            onClose={handleCloseDialog}
+            title={editingBranchId != null ? "Edit Facility" : "Add New Facility"}
+            width={1300}
+            contentPadding="px-6 py-6"
+            contentOverflow="hidden"
+            closeOnOutsideClick={false}
+            closeOnEscape={false}
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-6">
+              <ScrollableContainer maxHeight="none" className="flex min-h-0 flex-1 flex-col gap-6 pr-1">
+                <BranchBasicInformation
+                  formik={formik}
+                  photoCaptureRef={branchPhotoCaptureRef}
+                  onPhotoValidationChange={(_hasErrors, errs) => setBranchPhotoCaptureErrors(errs)}
+                  moduleOptions={editingBranchId != null ? editingBranchModuleOptions : undefined}
+                  isLoadingModules={editingBranchId != null ? isLoadingModules : undefined}
+                  isEditing={editingBranchId != null}
+                />
+                <BranchBankInformation formik={formik} />
+                <AddressDetails
+                  formData={formik.values.address}
+                  onChange={(field, value) => formik.setFieldValue(`address.${field}`, value)}
+                  onBlur={(field) => formik.setFieldTouched(`address.${field}`, true)}
+                  dataFieldPrefix="address."
+                  nationality="Indian"
+                  title="Address"
+                  errors={{
+                    pinCode: formik.touched.address?.pinCode ? formik.errors.address?.pinCode : undefined,
+                    country: formik.touched.address?.country ? formik.errors.address?.country : undefined,
+                    state: formik.touched.address?.state ? formik.errors.address?.state : undefined,
+                    city: formik.touched.address?.city ? formik.errors.address?.city : undefined,
+                    tehsil: formik.touched.address?.tehsil ? formik.errors.address?.tehsil : undefined,
+                    area: formik.touched.address?.area ? formik.errors.address?.area : undefined,
+                    address: formik.touched.address?.address ? formik.errors.address?.address : undefined,
+                    addressLine1: formik.touched.address?.addressLine1 ? formik.errors.address?.addressLine1 : undefined,
+                    addressLine2: formik.touched.address?.addressLine2 ? formik.errors.address?.addressLine2 : undefined,
+                  }}
+                />
+              </ScrollableContainer>
+
+              <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handleCloseDialog}
+                  className="min-w-[100px]"
+                  disabled={isCreating || isUpdating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="button"
+                  onClick={() => void submitFacility()}
+                  className="min-w-[160px]"
+                  disabled={isCreating || isUpdating}
+                >
+                  {editingBranchId != null
+                    ? isUpdating
+                      ? "Updating…"
+                      : "Update facility"
+                    : isCreating
+                      ? "Saving…"
+                      : "Create facility"}
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+
+          <Dialog
+            open={modulesDialogBranch != null && canEditBranchModules}
+            onClose={handleCloseModulesDialog}
+            title={
+              modulesDialogBranch
+                ? `Edit modules — ${textOrNA(modulesDialogBranch.name)}`
+                : "Edit modules"
+            }
+            width={520}
+            contentPadding="px-6 py-6"
+            closeOnOutsideClick={false}
+          >
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-gray-500">
+                Select one or more modules to assign to this branch.
+              </p>
+              {isLoadingModules ? (
+                <p className="text-sm text-gray-500">Loading modules…</p>
+              ) : isModulesMappingError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  Could not load modules.{" "}
+                  <button
+                    type="button"
+                    className="font-medium underline"
+                    onClick={() => {
+                      if (modulesBranchId != null) void fetchModulesMapping(modulesBranchId, false);
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <FormSelectField
+                  label="Modules*"
+                  mode="multiple"
+                  options={moduleSelectOptions}
+                  value={selectedModuleIds}
+                  onChange={(value) => setSelectedModuleIds(Array.isArray(value) ? value : value ? [value] : [])}
+                  placeholder="Select module(s)"
+                  background="normal"
+                  disabled={isSavingModules}
+                />
+              )}
+              <div className="flex justify-end gap-3 border-t border-gray-200 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handleCloseModulesDialog}
+                  className="min-w-[100px]"
+                  disabled={isSavingModules}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="button"
+                  onClick={() => void handleSaveBranchModules()}
+                  className="min-w-[140px]"
+                  isLoading={isSavingModules}
+                  disabled={
+                    isSavingModules ||
+                    isLoadingModules ||
+                    isModulesMappingError ||
+                    modulesDialogBranch == null ||
+                    !isModulesSelectionDirty
+                  }
+                >
+                  Update modules
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+
+          <MessageDialog
+            open={msgOpen}
+            onClose={() => setMsgOpen(false)}
+            message={msgText}
+            icon={msgSuccess ? "/icons/SuccessCheck.svg" : "/icons/CrossIcon.svg"}
+            iconBgColor={msgSuccess ? "#E8F5E9" : "#FEE2E2"}
+            showCancel={false}
+            confirmText="OK"
+            onConfirm={() => setMsgOpen(false)}
+          />
+        </>
       )}
     </AppShell>
   );

@@ -27,7 +27,7 @@ import {
 
 const REPORT_TYPE_OPTIONS: SelectOption[] = [
     { value: "old-new-registration", label: "Old / New Registration Report" },
-    { value: "health-card-issues", label: "JS Health Card Issue Report" },
+    { value: "health-card-issues", label: "Health Card Issue Report" },
     { value: "doctor-assigning", label: "Doctor Assigning Report" },
     { value: "branch-consultancy", label: "Branch Consultancy Report" },
     { value: "patient-time-stamping", label: "Time Stamping Report" },
@@ -85,17 +85,17 @@ export default function ReportPage() {
             !Array.isArray(rows) || rows.length === 0
                 ? branchOptions
                 : branchOptions.map((opt) => {
-                      if (opt.value === "") return opt;
-                      const id = parseInt(String(opt.value), 10);
-                      if (!Number.isFinite(id)) return opt;
-                      const b = rows.find((x) => Number(x.id) === id);
-                      const t = b?.type?.trim();
-                      if (!b || !t) return opt;
-                      return {
-                          value: opt.value,
-                          label: `${b.name} (${capitalizeFirst(t)})`,
-                      };
-                  });
+                    if (opt.value === "") return opt;
+                    const id = parseInt(String(opt.value), 10);
+                    if (!Number.isFinite(id)) return opt;
+                    const b = rows.find((x) => Number(x.id) === id);
+                    const t = b?.type?.trim();
+                    if (!b || !t) return opt;
+                    return {
+                        value: opt.value,
+                        label: `${b.name} (${capitalizeFirst(t)})`,
+                    };
+                });
         if (isReportsSuperAdmin) {
             return mapped.filter((o) => o.value !== "");
         }
@@ -194,12 +194,12 @@ export default function ReportPage() {
                 reportType === "health-card-issues"
                     ? await generateHealthCardCsv(payload).unwrap()
                     : reportType === "doctor-assigning"
-                      ? await generateDoctorAssigningCsv(payload).unwrap()
-                      : reportType === "branch-consultancy"
-                        ? await generateBranchConsultancyCsv(payload).unwrap()
-                        : reportType === "patient-time-stamping"
-                          ? await generatePatientTimeStampingCsv(payload).unwrap()
-                          : await generateOldNewCsv(payload).unwrap();
+                        ? await generateDoctorAssigningCsv(payload).unwrap()
+                        : reportType === "branch-consultancy"
+                            ? await generateBranchConsultancyCsv(payload).unwrap()
+                            : reportType === "patient-time-stamping"
+                                ? await generatePatientTimeStampingCsv(payload).unwrap()
+                                : await generateOldNewCsv(payload).unwrap();
             if (!result?.success) {
                 setErrorMessage(result?.message || "Something went wrong.");
                 setShowErrorDialog(true);
@@ -285,7 +285,7 @@ export default function ReportPage() {
                     </h2>
 
                     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <FormSelectField
+                        <FormSelectField
                             label="Date"
                             value={datePreset}
                             onChange={(value) => {
@@ -319,7 +319,7 @@ export default function ReportPage() {
                             maxLength={20}
                             width="100%"
                         />
-                      
+
                         {datePreset === "custom" && (
                             <>
                                 <DatePicker

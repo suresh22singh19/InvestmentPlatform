@@ -88,10 +88,12 @@ export interface GetAllPackagesParams {
   isPackageActive?: boolean;
   diseaseCategoryType?: string;
   packageType?: string;
+  panelId?: number;
 }
 
 export interface PackageItem {
   id: number;
+  roomType?: { name?: string | null; key?: string | null };
   branchId: number;
   branchRoomTypeId: number;
   diseaseCategoryType: string;
@@ -117,6 +119,8 @@ export interface PackageItem {
   branchName: string;
   createdAt: string;
   updatedAt: string;
+  panelId?: number;
+  panelName?: string | null;
 }
 
 export interface GetAllPackagesResponse {
@@ -152,6 +156,7 @@ export interface CreatePackageRequest {
   therapyLoad: number;
   therapySessionsPerDay: number;
   therapyPrice: number;
+  panelId?: number;
 }
 
 export interface CreatePackageResponse {
@@ -331,6 +336,37 @@ export type GetBranchRoleByCategoryTypeParams = {
   /** From branch `type` (GET /branches): hospital | clinic; daycare maps to hospital */
   branchType?: "hospital" | "clinic";
 };
+
+/** GET /admin/settings/therapist/getTherapistRoleByBranch */
+export type GetTherapistRoleByBranchParams = {
+  branchId: number;
+};
+
+export interface TherapistRoleTypeItem {
+  id: number;
+  roleType: string;
+}
+
+export interface TherapistRoleByBranchItem {
+  roleId: number;
+  roleName: string;
+  roleCategoryType: string;
+  roleTypes: TherapistRoleTypeItem[];
+}
+
+export type GetTherapistRoleByBranchResponse = {
+  data: TherapistRoleByBranchItem[];
+};
+
+function normalizeTherapistRoleByBranchResponse(raw: unknown): GetTherapistRoleByBranchResponse {
+  if (Array.isArray(raw)) {
+    return { data: raw as TherapistRoleByBranchItem[] };
+  }
+  if (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data)) {
+    return { data: (raw as { data: TherapistRoleByBranchItem[] }).data };
+  }
+  return { data: [] };
+}
 
 /** GET /admin/settings/getUsers */
 export interface SettingsApiUserBranch {
@@ -621,6 +657,128 @@ interface CreateLabTestResponse {
   statusCode?: number;
 }
 
+export interface RazorpayPosMachineUser {
+  id: number;
+  name: string;
+}
+
+export interface RazorpayPosMachineItem {
+  id: number;
+  branchId: number;
+  groupId: number | null;
+  username: string;
+  password: string;
+  razarpayTid: string;
+  deviceId: string;
+  status: string;
+  createdAt: string;
+  createdBy: number | null;
+  updatedAt: string;
+  updatedBy: number | null;
+  syncOrigin?: string;
+  syncLastUpdatedBy?: number | null;
+  branchName: string;
+  users: RazorpayPosMachineUser[];
+}
+
+export interface GetRazorpayPosMachinesParams {
+  page?: number;
+  limit?: number;
+  status?: "active" | "inactive" | "";
+  search?: string;
+  branchId?: number;
+  userId?: number;
+  sort?: string;
+  order?: "ASC" | "DESC";
+}
+
+export interface GetRazorpayPosMachinesResponse {
+  success: boolean;
+  data: RazorpayPosMachineItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface CreateRazorpayPosMachineRequest {
+  branchId: number;
+  userIds: number[];
+  username: string;
+  password: string;
+  razarpayTid: string;
+  deviceId: string;
+  status: "active" | "inactive";
+}
+
+export interface CreateRazorpayPosMachineResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface UpdateRazorpayPosMachineRequest {
+  id: number;
+  branchId: number;
+  userIds: number[];
+  username: string;
+  password: string;
+  razarpayTid: string;
+  deviceId: string;
+  status: "active" | "inactive";
+}
+
+export interface UpdateRazorpayPosMachineResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface RazorpayPosPaymentLogItem {
+  id: number;
+  patientUhid: string;
+  transactionId: string;
+  amount: string;
+  paymentType: string;
+  paymentStatus: string;
+  createdAt: string;
+  branchId: number;
+  branchName: string;
+  machineAssignedUserId: number | null;
+  machineAssignedUserName: string | null;
+  roleName: string | null;
+  patientName: string;
+  patientTitle: string;
+}
+
+export interface GetRazorpayPosPaymentLogsParams {
+  page?: number;
+  limit?: number;
+  branchId?: number;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  sort?: string;
+  order?: "ASC" | "DESC";
+}
+
+export interface GetRazorpayPosPaymentLogsResponse {
+  success: boolean;
+  data: RazorpayPosPaymentLogItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 interface BranchIP {
   id: number;
   networkips: string;
@@ -808,6 +966,74 @@ interface ApproveRejectDuplicateNumberExceptionRequest {
 }
 
 interface ApproveRejectDuplicateNumberExceptionResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export interface HealthCardChangeRequestItem {
+  id: number;
+  uhid: string;
+  registrationId: number;
+  branchId: number;
+  phone: string;
+  oldCardNumber: string;
+  newCardNumber: string;
+  reason?: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | string;
+  requestedBy: number;
+  approvedBy?: number | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  branch?: {
+    id: number;
+    name: string;
+  } | null;
+  requestedByUser?: {
+    id: number;
+    userName: string;
+  } | null;
+  approvedByUser?: {
+    id: number;
+    userName: string;
+  } | null;
+  registration?: {
+    id?: number;
+    patientName?: string;
+    patientTitle?: string;
+  } | null;
+}
+
+export interface GetHealthCardChangeRequestsParams {
+  page?: number;
+  limit?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  search?: string;
+  status?: "pending" | "approved" | "rejected" | "PENDING" | "APPROVED" | "REJECTED";
+}
+
+export interface GetHealthCardChangeRequestsResponse {
+  success: boolean;
+  data: HealthCardChangeRequestItem[];
+  total: number;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface ProcessCardChangeRequestPayload {
+  id: number;
+  status: "APPROVED" | "REJECTED";
+  approvedBy: number;
+  rejectionReason?: string;
+}
+
+export interface ProcessCardChangeRequestResponse {
   success: boolean;
   message: string;
   timestamp: string;
@@ -1004,7 +1230,7 @@ interface GetDiagnosisDietsParams {
 interface CreateDiagnosisDietRequest {
   diagnosisId: number;
   diagnosisName: string;
-  dietSchedule: string;
+  dietSchedule: string | string[];
   dietDetail: number[];
   instructions: string;
   status: "active" | "inactive";
@@ -1034,7 +1260,7 @@ interface UpdateDiagnosisDietResponse {
 
 interface DeleteDiagnosisDietRequest {
   id: number;
-  branchId: number;
+  branchId?: number;
 }
 
 interface DeleteDiagnosisDietResponse {
@@ -1212,6 +1438,13 @@ interface UpdateDocumentResponse {
   statusCode: number;
 }
 
+interface DeleteDocumentResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
 export type HardwareFacilitiesType = "hardware" | "facility";
 
 interface HardwareFacilitiesItem {
@@ -1353,6 +1586,80 @@ interface UpdateRoomTypeResponse {
 }
 
 interface DeleteRoomTypeResponse {
+  success: boolean;
+  data?: null;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface FloorMasterItem {
+  id: number;
+  floor: string;
+  description?: string;
+  floorNumber: number;
+  isActive: boolean;
+  createdAt?: string;
+  createdBy?: number | null;
+  updatedAt?: string;
+  updatedBy?: number | null;
+  deletedAt?: string | null;
+  deletedBy?: number | null;
+}
+
+export interface GetAllFloorMastersParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  isActive?: boolean;
+  sortBy?: string;
+  order?: "ASC" | "DESC";
+}
+
+export interface GetAllFloorMastersResponse {
+  success: boolean;
+  data: FloorMasterItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface CreateFloorMasterRequest {
+  floor: string;
+  floorNumber: number;
+  description?: string;
+  isActive?: boolean;
+}
+
+export interface CreateFloorMasterResponse {
+  success: boolean;
+  data?: FloorMasterItem | null;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface UpdateFloorMasterRequest {
+  id: number;
+  floor?: string;
+  floorNumber?: number;
+  description?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateFloorMasterResponse {
+  success: boolean;
+  data?: FloorMasterItem | null;
+  message: string;
+  timestamp?: string;
+  statusCode?: number;
+}
+
+export interface DeleteFloorMasterResponse {
   success: boolean;
   data?: null;
   message: string;
@@ -2086,22 +2393,44 @@ export interface UpdateSupportContactRequest {
   role?: string;
 }
 
+export interface DeleteSupportContactsRequest {
+  ids: number[];
+}
+
 // ─── Therapist Settings Module ───────────────────────────────────────────────
 
 interface TherapistSettingsItem {
   id: number;
+  userName?: string;
   therapistName?: string;
-  price: string;
-  productCode: string;
-  hsnCode: string;
-  category: string;
+  email?: string;
+  phone?: string;
+  empId?: string;
+  employeeId?: string;
+  experience?: string;
+  speciality?: string;
   status: "active" | "inactive";
+  createdAt: string;
+  branchId?: number;
+  roleId?: number;
+  roleName?: string;
+  loginType?: string;
+  roleCategoryType?: string;
+  role?: { id: number; name: string };
+  branch?: { id: number; name: string };
+  branches?: { id: number; name: string }[];
+  certifications?: string[];
+  therapyIds?: number[];
+  therapies?: Array<{ id: number; therapyName?: string }>;
+  /** @deprecated legacy pricing fields — may be absent on newer therapist records */
+  price?: string;
+  productCode?: string;
+  hsnCode?: string;
+  category?: string;
   tpaPrice?: number | string;
   panelPrice?: number | string;
   tpaStatus?: "active" | "inactive";
   panelStatus?: "active" | "inactive";
-  createdAt: string;
-  branches?: { id: number; name: string }[];
 }
 
 interface GetTherapistEntriesParams {
@@ -2190,7 +2519,7 @@ export interface CreateTherapistRequest {
   roleId: number;
   phone: string;
   empId?: string;
-  roleTypeId?: number;
+  // roleTypeId?: number;
   loginType: string;
   status: "active" | "inactive";
   experience?: string;
@@ -2206,9 +2535,42 @@ export interface CreateTherapistResponse {
   statusCode: number;
 }
 
+export interface UpdateTherapistRequest {
+  branchId: number;
+  userName: string;
+  phone: string;
+  loginType: string;
+  status: "active" | "inactive";
+  experience?: string;
+  speciality?: string;
+  certifications: string[];
+  therapyIds: number[];
+}
+
+export interface UpdateTherapistResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  statusCode: number;
+}
+
+export type ExportTherapistFileResponse = {
+  success: boolean;
+  data: { url: string; filename?: string };
+  message?: string;
+  timestamp?: string;
+  statusCode?: number;
+};
+
+interface ExportTherapistFileParams {
+  branchId: number | string;
+  search?: string;
+}
+
 // ─── End Create Therapist ─────────────────────────────────────────────────────
 
 export const settingsApi = baseApi.injectEndpoints({
+  overrideExisting: true,
   endpoints: (builder) => ({
     getAdminSupportContacts: builder.query<GetSupportContactsResponse, void>({
       query: () => ({
@@ -2242,6 +2604,17 @@ export const settingsApi = baseApi.injectEndpoints({
       query: ({ id, ...body }) => ({
         url: `/admin/settings/dashboard/updateSupportContacts/${id}`,
         method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    deleteSupportContacts: builder.mutation<
+      SupportContactMutationResponse,
+      DeleteSupportContactsRequest
+    >({
+      query: (body) => ({
+        url: "/admin/settings/dashboard/deleteSupportContacts",
+        method: "POST",
         body,
       }),
       invalidatesTags: ["Settings"],
@@ -2517,6 +2890,68 @@ export const settingsApi = baseApi.injectEndpoints({
       },
       providesTags: ["Settings"],
     }),
+    getRazorpayPosMachines: builder.query<GetRazorpayPosMachinesResponse, GetRazorpayPosMachinesParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append("page", params.page.toString());
+        if (params?.limit) queryParams.append("limit", params.limit.toString());
+        if (params?.status) queryParams.append("status", params.status);
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", params.branchId.toString());
+        }
+        if (params?.userId != null && Number.isFinite(params.userId)) {
+          queryParams.append("userId", params.userId.toString());
+        }
+        if (params?.sort) queryParams.append("sort", params.sort);
+        if (params?.order) queryParams.append("order", params.order);
+
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/razorpay-pos-machine${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createRazorpayPosMachine: builder.mutation<CreateRazorpayPosMachineResponse, CreateRazorpayPosMachineRequest>({
+      query: (body) => ({
+        url: "/admin/settings/razorpay-pos-machine",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateRazorpayPosMachine: builder.mutation<UpdateRazorpayPosMachineResponse, UpdateRazorpayPosMachineRequest>({
+      query: ({ id, ...body }) => ({
+        url: `/admin/settings/razorpay-pos-machine/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    getRazorpayPosPaymentLogs: builder.query<GetRazorpayPosPaymentLogsResponse, GetRazorpayPosPaymentLogsParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append("page", params.page.toString());
+        if (params?.limit) queryParams.append("limit", params.limit.toString());
+        if (params?.branchId != null && Number.isFinite(params.branchId)) {
+          queryParams.append("branchId", params.branchId.toString());
+        }
+        if (params?.fromDate) queryParams.append("fromDate", params.fromDate);
+        if (params?.toDate) queryParams.append("toDate", params.toDate);
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.sort) queryParams.append("sort", params.sort);
+        if (params?.order) queryParams.append("order", params.order);
+
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/getRazorpayPOSPaymentLogs${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
     createBranchIP: builder.mutation<
       CreateBranchIPResponse,
       CreateBranchIPRequest
@@ -2635,12 +3070,12 @@ export const settingsApi = baseApi.injectEndpoints({
     >({
       queryFn: async (payload, api) => {
         const state = api.getState() as RootState;
-        
+
         // Get user ID and token using helper functions
         const userId = getUserId(state);
         const token = getAuthToken(state);
         const visitIp = await getVisitClientIp();
-        
+
         const response = await fetch(`${API_BASE_URL}/admin/settings/duplicate-number-permission/${payload.id}`, {
           method: "PUT",
           headers: {
@@ -2655,7 +3090,7 @@ export const settingsApi = baseApi.injectEndpoints({
         });
 
         const data = await response.json();
-        
+
         if (response.ok) {
           return { data };
         } else {
@@ -2684,7 +3119,7 @@ export const settingsApi = baseApi.injectEndpoints({
           //   queryParams.append("branchId", params.branchId.toString());
           // }
         }
-        console.log(queryParams.toString(), "queryParams");
+        // console.log(queryParams.toString(), "queryParams");
         const queryString = queryParams.toString();
         return {
           url: `/admin/settings/discount-config${queryString ? `?${queryString}` : ""}`,
@@ -2812,6 +3247,13 @@ export const settingsApi = baseApi.injectEndpoints({
       },
       invalidatesTags: ["Document"],
     }),
+    deleteDocument: builder.mutation<DeleteDocumentResponse, { id: number }>({
+      query: (payload) => ({
+        url: `/admin/settings/deleteDocument/${payload.id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Document"],
+    }),
     getHardwareOrFacilities: builder.query<
       HardwareOrFacilitiesListResponse,
       GetHardwareOrFacilitiesParams
@@ -2915,6 +3357,49 @@ export const settingsApi = baseApi.injectEndpoints({
     deleteRoomType: builder.mutation<DeleteRoomTypeResponse, { id: number }>({
       query: (payload) => ({
         url: `/admin/settings/room-type/deleteRoomType/${payload.id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    getAllFloorMasters: builder.query<GetAllFloorMastersResponse, GetAllFloorMastersParams | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page != null) queryParams.append("page", params.page.toString());
+        if (params?.limit != null) queryParams.append("limit", params.limit.toString());
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.isActive !== undefined) queryParams.append("isActive", params.isActive.toString());
+        if (params?.sortBy) queryParams.append("sortBy", params.sortBy);
+        if (params?.order) queryParams.append("order", params.order);
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/floor-master/getAllFloorMasters${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    createFloorMaster: builder.mutation<CreateFloorMasterResponse, CreateFloorMasterRequest>({
+      query: (payload) => ({
+        url: "/admin/settings/floor-master/createFloorMaster",
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    updateFloorMaster: builder.mutation<UpdateFloorMasterResponse, UpdateFloorMasterRequest>({
+      query: (payload) => {
+        const { id, ...body } = payload;
+        return {
+          url: `/admin/settings/floor-master/updateFloorMaster/${id}`,
+          method: "PATCH",
+          body,
+        };
+      },
+      invalidatesTags: ["Settings"],
+    }),
+    deleteFloorMaster: builder.mutation<DeleteFloorMasterResponse, { id: number }>({
+      query: (payload) => ({
+        url: `/admin/settings/floor-master/deleteFloorMaster/${payload.id}`,
         method: "DELETE",
       }),
       invalidatesTags: ["Settings"],
@@ -3213,18 +3698,54 @@ export const settingsApi = baseApi.injectEndpoints({
       },
       providesTags: ["Settings"],
     }),
+    getHealthCardChangeRequests: builder.query<
+      GetHealthCardChangeRequestsResponse,
+      GetHealthCardChangeRequestsParams | void
+    >({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append("page", params.page.toString());
+        if (params?.limit) queryParams.append("limit", params.limit.toString());
+        if (params?.sort) queryParams.append("sort", params.sort);
+        if (params?.order) queryParams.append("order", params.order);
+        if (params?.search) queryParams.append("search", params.search);
+        if (params?.status) queryParams.append("status", params.status ? params.status.toUpperCase() : params.status);
+
+        const queryString = queryParams.toString();
+        return {
+          url: `/admin/settings/getHealthCardChangeRequests${queryString ? `?${queryString}` : ""}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Settings"],
+    }),
+    processCardChangeRequest: builder.mutation<
+      ProcessCardChangeRequestResponse,
+      ProcessCardChangeRequestPayload
+    >({
+      query: (payload) => ({
+        url: `/admin/settings/processCardChangeRequest/${payload.id}`,
+        method: "PATCH",
+        body: {
+          status: payload.status,
+          approvedBy: payload.approvedBy,
+          rejectionReason: payload.rejectionReason,
+        },
+      }),
+      invalidatesTags: ["Settings"],
+    }),
     approveRejectContactUpdate: builder.mutation<
       ApproveRejectContactUpdateResponse,
       ApproveRejectContactUpdateRequest
     >({
       queryFn: async (payload, api) => {
         const state = api.getState() as RootState;
-        
+
         // Get user ID and token using helper functions
         const userId = getUserId(state);
         const token = getAuthToken(state);
         const visitIp = await getVisitClientIp();
-        
+
         const response = await fetch(`${API_BASE_URL}/admin/settings/contact-change-request/${payload.id}`, {
           method: "PUT",
           headers: {
@@ -3239,7 +3760,7 @@ export const settingsApi = baseApi.injectEndpoints({
         });
 
         const data = await response.json();
-        
+
         if (response.ok) {
           return { data };
         } else {
@@ -3353,17 +3874,10 @@ export const settingsApi = baseApi.injectEndpoints({
       DeleteDiagnosisDietResponse,
       DeleteDiagnosisDietRequest
     >({
-      query: (payload) => {
-        const qs = new URLSearchParams();
-        if (payload.branchId != null && Number.isFinite(payload.branchId)) {
-          qs.append("branchId", String(payload.branchId));
-        }
-        const queryString = qs.toString();
-        return {
-          url: `/admin/settings/diagnosis/${payload.id}${queryString ? `?${queryString}` : ""}`,
-          method: "DELETE",
-        };
-      },
+      query: (payload) => ({
+        url: `/admin/settings/diagnosis-diet/${payload.id}`,
+        method: "DELETE",
+      }),
       invalidatesTags: ["Settings"],
     }),
 
@@ -3380,71 +3894,6 @@ export const settingsApi = baseApi.injectEndpoints({
         return {
           url: `/admin/settings/diet-category/${payload.id}${queryString ? `?${queryString}` : ""}`,
           method: "DELETE",
-        };
-      },
-      invalidatesTags: ["Settings"],
-    }),
-
-    getArogyaCards: builder.query<ArogyaCardsResponse, GetArogyaCardsParams | void>({
-      query: (params) => {
-        const queryParams = new URLSearchParams();
-        if (params?.page != null) queryParams.append("page", params.page.toString());
-        if (params?.limit != null) queryParams.append("limit", params.limit.toString());
-        if (params?.search) queryParams.append("search", params.search);
-        if (params?.branchId != null && Number.isFinite(params.branchId)) {
-          queryParams.append("branchId", params.branchId.toString());
-        }
-        const queryString = queryParams.toString();
-        return {
-          url: `/admin/settings/arogya-cards${queryString ? `?${queryString}` : ""}`,
-          method: "GET",
-        };
-      },
-      providesTags: ["Settings"],
-    }),
-    createArogyaCard: builder.mutation<
-      CreateArogyaCardResponse,
-      CreateArogyaCardRequest
-    >({
-      queryFn: async (payload, api) => {
-        const state = api.getState() as RootState;
-        const userId = getUserId(state);
-        const token = getAuthToken(state);
-        const body = {
-          ...payload,
-          branchRule: {
-            addedBy: userId ?? 0,
-            ...payload.branchRule,
-          },
-        };
-        const visitIp = await getVisitClientIp();
-        const response = await fetch(`${API_BASE_URL}/admin/settings/arogya-card`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-            ...(visitIp ? { "x-forwarded-for": visitIp } : {}),
-          },
-          body: JSON.stringify(body),
-        });
-        const data = await response.json();
-        if (response.ok) {
-          return { data };
-        }
-        return { error: data };
-      },
-      invalidatesTags: ["Settings"],
-    }),
-    updateArogyaCard: builder.mutation<
-      UpdateArogyaCardResponse,
-      UpdateArogyaCardRequest
-    >({
-      query: (payload) => {
-        const { id, ...body } = payload;
-        return {
-          url: `/admin/settings/arogya-card/${id}`,
-          method: "PATCH",
-          body,
         };
       },
       invalidatesTags: ["Settings"],
@@ -3478,6 +3927,7 @@ export const settingsApi = baseApi.injectEndpoints({
         if (params?.isPackageActive != null) queryParams.append("isPackageActive", params.isPackageActive.toString());
         if (params?.diseaseCategoryType) queryParams.append("diseaseCategoryType", params.diseaseCategoryType);
         if (params?.packageType) queryParams.append("packageType", params.packageType);
+        if (params?.panelId != null && Number.isFinite(params.panelId)) queryParams.append("panelId", params.panelId.toString());
         const queryString = queryParams.toString();
         return {
           url: `/admin/settings/package/getAllPackages${queryString ? `?${queryString}` : ""}`,
@@ -3556,15 +4006,15 @@ export const settingsApi = baseApi.injectEndpoints({
     getTherapistEntries: builder.query<TherapistEntriesResponse, GetTherapistEntriesParams | void>({
       query: (params) => {
         const searchParams = new URLSearchParams();
-        if (params?.branchId != null) searchParams.set("branchId", String(params.branchId));
-        if (params?.page != null) searchParams.set("page", String(params.page));
-        if (params?.limit != null) searchParams.set("limit", String(params.limit));
-        if (params?.sort) searchParams.set("sort", params.sort);
-        if (params?.order) searchParams.set("order", params.order);
-        if (params?.search) searchParams.set("search", params.search);
-        const queryString = searchParams.toString();
+        if (params?.branchId != null) searchParams?.set("branchId", String(params.branchId));
+        if (params?.page != null) searchParams?.set("page", String(params.page));
+        if (params?.limit != null) searchParams?.set("limit", String(params.limit));
+        if (params?.sort) searchParams?.set("sort", params.sort);
+        if (params?.order) searchParams?.set("order", params.order);
+        if (params?.search) searchParams?.set("search", params.search);
+        const queryString = searchParams?.toString();
         return {
-          url: `/admin/settings/therapist${queryString ? `?${queryString}` : ""}`,
+          url: `/admin/settings/therapist/getTherapists${queryString ? `?${queryString}` : ""}`,
           method: "GET",
         };
       },
@@ -3601,6 +4051,17 @@ export const settingsApi = baseApi.injectEndpoints({
       },
       invalidatesTags: ["Settings"],
     }),
+    getTherapistRoleByBranch: builder.query<
+      GetTherapistRoleByBranchResponse,
+      GetTherapistRoleByBranchParams
+    >({
+      query: ({ branchId }) => ({
+        url: `/admin/settings/therapist/getTherapistRoleByBranch?branchId=${branchId}`,
+        method: "GET",
+      }),
+      transformResponse: (raw: unknown) => normalizeTherapistRoleByBranchResponse(raw),
+      providesTags: ["Settings"],
+    }),
     createTherapist: builder.mutation<CreateTherapistResponse, CreateTherapistRequest>({
       query: (body) => ({
         url: "/admin/settings/therapist/createTherapist",
@@ -3608,6 +4069,29 @@ export const settingsApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: ["Settings"],
+    }),
+    updateTherapist: builder.mutation<
+      UpdateTherapistResponse,
+      { id: number; body: UpdateTherapistRequest }
+    >({
+      query: ({ id, body }) => ({
+        url: `/admin/settings/therapist/updateTherapist/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["Settings"],
+    }),
+    generatePdfForTherapist: builder.query<ExportTherapistFileResponse, ExportTherapistFileParams>({
+      query: ({ branchId, search = "" }) => ({
+        url: `/admin/settings/therapist/generatePdfForTherapist?branchId=${branchId}&search=${encodeURIComponent(search)}`,
+        method: "GET",
+      }),
+    }),
+    generateCsvForTherapist: builder.query<ExportTherapistFileResponse, ExportTherapistFileParams>({
+      query: ({ branchId, search = "" }) => ({
+        url: `/admin/settings/therapist/generateCsvForTherapist?branchId=${branchId}&search=${encodeURIComponent(search)}`,
+        method: "GET",
+      }),
     }),
   }),
 });
@@ -3617,6 +4101,7 @@ export const {
   useLazyGetSupportContactByPhoneQuery,
   useCreateSupportContactsMutation,
   useUpdateSupportContactMutation,
+  useDeleteSupportContactsMutation,
   useGetMasterSettingsQuery,
   useCreateMasterSettingMutation,
   useUpdateMasterSettingMutation,
@@ -3639,6 +4124,10 @@ export const {
   useUpdateLabTestMutation,
   useUpdateLabTestByBranchMutation,
   useGetBranchIPsQuery,
+  useGetRazorpayPosMachinesQuery,
+  useCreateRazorpayPosMachineMutation,
+  useUpdateRazorpayPosMachineMutation,
+  useGetRazorpayPosPaymentLogsQuery,
   useCreateBranchIPMutation,
   useUpdateBranchIPMutation,
   useGetGroupsQuery,
@@ -3660,6 +4149,7 @@ export const {
   useLazyGetAllDocumentsQuery,
   useAddDocumentMutation,
   useUpdateDocumentMutation,
+  useDeleteDocumentMutation,
   useGetHardwareOrFacilitiesQuery,
   useLazyGetHardwareOrFacilitiesQuery,
   useGetHardwareOrFacilitiesByIdQuery,
@@ -3690,6 +4180,8 @@ export const {
   useUpdateRefundConfigMutation,
   useGetContactUpdatesQuery,
   useApproveRejectContactUpdateMutation,
+  useGetHealthCardChangeRequestsQuery,
+  useProcessCardChangeRequestMutation,
   useGetDietCategoriesQuery,
   useCreateDietCategoryMutation,
   useUpdateDietCategoryMutation,
@@ -3699,9 +4191,6 @@ export const {
   useCreateDiagnosisDietMutation,
   useUpdateDiagnosisDietMutation,
   useDeleteDiagnosisDietMutation,
-  useGetArogyaCardsQuery,
-  useCreateArogyaCardMutation,
-  useUpdateArogyaCardMutation,
   useUpdatePasswordMutation,
   useGetBranchRoomListByBranchIdQuery,
   useGetAllPackagesQuery,
@@ -3715,6 +4204,14 @@ export const {
   useGetTherapistEntriesQuery,
   useCreateTherapistEntryMutation,
   useUpdateTherapistEntryMutation,
+  useGetTherapistRoleByBranchQuery,
   useCreateTherapistMutation,
+  useUpdateTherapistMutation,
+  useLazyGeneratePdfForTherapistQuery,
+  useLazyGenerateCsvForTherapistQuery,
+  useGetAllFloorMastersQuery,
+  useCreateFloorMasterMutation,
+  useUpdateFloorMasterMutation,
+  useDeleteFloorMasterMutation,
 } = settingsApi;
 

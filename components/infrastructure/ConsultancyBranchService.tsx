@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Button, Dialog, FormSelectField, ConfigurationSummaryPanel, MessageDialog } from "@/components/ui";
+import { Button, Dialog, FormSelectField, ConfigurationSummaryPanel, MessageDialog, Tooltip } from "@/components/ui";
 import type { SelectOption } from "@/components/ui/FormSelectField";
 import type { FacilityConfigurationSummarySnapshot } from "@/lib/types/facilityConfigurationSummary";
 import { useFacilityConfigurationSummaryFromHierarchy } from "@/hooks/useFacilityConfigurationSummaryFromHierarchy";
@@ -15,6 +15,7 @@ import {
 } from "@/store/api/branchSetupApi";
 import { useGetAllMasterServicesQuery } from "@/store/api/settingsApi";
 import { RupeeCircleIcon } from "@/components/icons/RupeeCircleIcon";
+import { formatIndianAmount, formatIndianCurrency, parseIndianAmount } from "@/store/utils/formatIndianAmount";
 
 export type ConsultancyBranchServiceProps = {
   facilityName: string;
@@ -115,7 +116,7 @@ export function ConsultancyBranchService({
       consultancyMasters
         .filter((m) => !existingMasterIds.has(m.id))
         .map((m) => ({
-          label: `₹ ${m.price.toLocaleString("en-IN")}`,
+          label: formatIndianCurrency(m.price),
           value: String(m.id),
         })),
     [consultancyMasters, existingMasterIds],
@@ -216,10 +217,10 @@ export function ConsultancyBranchService({
       const addedLabels = toCreate.map((b) => {
         if (b.price != null && b.price !== "") {
           const n = Number(b.price);
-          if (Number.isFinite(n)) return `₹ ${n.toLocaleString("en-IN")}`;
+          if (Number.isFinite(n)) return formatIndianCurrency(n);
         }
         const masterPrice = consultancyMasters.find((m) => m.id === b.masterServiceId)?.price;
-        if (masterPrice != null && Number.isFinite(masterPrice)) return `₹ ${masterPrice.toLocaleString("en-IN")}`;
+        if (masterPrice != null && Number.isFinite(masterPrice)) return formatIndianCurrency(masterPrice);
         return `service #${b.masterServiceId}`;
       });
       const labelText = addedLabels.join(", ");
@@ -258,7 +259,7 @@ export function ConsultancyBranchService({
         kind: "success",
         message:
           amt != null
-            ? `Consultancy fee of ₹ ${amt.toLocaleString("en-IN")} was removed from this branch.`
+            ? `Consultancy fee of ${formatIndianCurrency(amt)} was removed from this branch.`
             : "Consultancy fee was removed from this branch.",
       });
     } catch (e) {
@@ -270,14 +271,15 @@ export function ConsultancyBranchService({
 
   const openEdit = (id: number, amount: number) => {
     if (!canEdit) return;
-    setEditDialog({ id, amountInput: String(amount), oldAmount: amount });
+    setEditDialog({ id, amountInput: formatIndianAmount(amount), oldAmount: amount });
   };
 
   const closeEdit = () => setEditDialog(null);
 
   const confirmEdit = async () => {
     if (!canEdit || !editDialog) return;
-    const n = parseInt(sanitizeAmountInput(editDialog.amountInput), 10);
+    const raw = parseIndianAmount(editDialog.amountInput);
+    const n = parseInt(raw, 10);
     if (!Number.isFinite(n) || n < 0) {
       setFeedback({ kind: "error", message: "Enter a valid consultancy amount." });
       return;
@@ -291,7 +293,7 @@ export function ConsultancyBranchService({
       closeEdit();
       setFeedback({
         kind: "success",
-        message: `Consultancy fee updated to ₹ ${n.toLocaleString("en-IN")}.`,
+        message: `Consultancy fee updated to ${formatIndianCurrency(n)}.`,
       });
     } catch (e) {
       setFeedback({ kind: "error", message: rtkErrorMessage(e) });
@@ -320,7 +322,7 @@ export function ConsultancyBranchService({
 
   const masterPriceHint = useMemo(() => {
     if (consultancyMasters.length === 0) return "";
-    const parts = consultancyMasters.map((m) => `₹${m.price.toLocaleString("en-IN")}`);
+    const parts = consultancyMasters.map((m) => formatIndianCurrency(m.price));
     return parts.join(", ");
   }, [consultancyMasters]);
 
@@ -329,15 +331,18 @@ export function ConsultancyBranchService({
       <div className={`flex flex-col transition-all duration-300 ${isPanelOpen ? "w-[80%]" : "w-full"}`}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
-            >
-              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <Tooltip content="Back to Previous Page">
+              <button
+                type="button"
+                onClick={onBack}
+                className="cursor-pointer flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+                aria-label="Back to Previous Page"
+              >
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </Tooltip>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Branch Consultancy Service</h1>
               <p className="text-sm text-gray-500">{facilityName}</p>
@@ -345,31 +350,36 @@ export function ConsultancyBranchService({
           </div>
           <div className="flex items-center gap-3">
             {canAdd ? (
-              <Button
-                variant="primary"
-                size="small"
-                onClick={handleAddOpen}
-                disabled={noBranch || mastersLoading}
-                leftIcon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                }
-              >
-                Add Consultancy Fee
-              </Button>
+              <Tooltip content="Add Consultancy Fee">
+                <Button
+                  variant="primary"
+                  size="small"
+                  className="cursor-pointer"
+                  onClick={handleAddOpen}
+                  disabled={noBranch || mastersLoading}
+                  leftIcon={
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  }
+                >
+                  Add Consultancy Fee
+                </Button>
+              </Tooltip>
             ) : null}
             {!isPanelOpen && (
-              <button
-                type="button"
-                onClick={() => setIsPanelOpen(true)}
-                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
-                aria-label="Open Configuration Summary"
-              >
-                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+              <Tooltip content="Open Configuration Summary">
+                <button
+                  type="button"
+                  onClick={() => setIsPanelOpen(true)}
+                  className="cursor-pointer flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                  aria-label="Open Configuration Summary"
+                >
+                  <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -422,7 +432,7 @@ export function ConsultancyBranchService({
                           </div>
                           <div>
                             <h3 className="text-base font-semibold text-gray-900">
-                              ₹ {displayAmount.toLocaleString("en-IN")}
+                              {formatIndianCurrency(displayAmount)}
                             </h3>
                             <p className="text-xs text-gray-500 mt-0.5">Branch consultancy fee</p>
                           </div>
@@ -431,34 +441,39 @@ export function ConsultancyBranchService({
 
                       <div className="mt-4 flex items-center gap-2">
                         {canEdit ? (
-                          <Button
-                            variant="outline"
-                            size="small"
-                            onClick={() => openEdit(row.id, displayAmount)}
-                          >
-                            Edit
-                          </Button>
+                          <Tooltip content="Edit Consultancy Fee">
+                            <Button
+                              variant="outline"
+                              size="small"
+                              className="cursor-pointer"
+                              onClick={() => openEdit(row.id, displayAmount)}
+                            >
+                              Edit
+                            </Button>
+                          </Tooltip>
                         ) : null}
                         {canDelete ? (
-                          <Button
-                            variant="outline"
-                            size="small"
-                            onClick={() => openDelete(row.id, displayAmount)}
-                            disabled={deleteConfirmId != null}
-                            className="text-red-600 border-red-200 hover:bg-red-50"
-                            leftIcon={
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                />
-                              </svg>
-                            }
-                          >
-                            Delete
-                          </Button>
+                          <Tooltip content="Delete Consultancy Fee">
+                            <Button
+                              variant="outline"
+                              size="small"
+                              onClick={() => openDelete(row.id, displayAmount)}
+                              disabled={deleteConfirmId != null}
+                              className="cursor-pointer text-red-600 border-red-200 hover:bg-red-50"
+                              leftIcon={
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              }
+                            >
+                              Delete
+                            </Button>
+                          </Tooltip>
                         ) : null}
                       </div>
                     </div>
@@ -481,9 +496,9 @@ export function ConsultancyBranchService({
           )}
         </div>
 
-        <Dialog open={showAddDialog} onClose={handleCloseAdd} title="Add Consultancy Fee" width={500}>
+        <Dialog open={showAddDialog} onClose={handleCloseAdd} title="Add Consultancy Fee" width={500} closeOnOutsideClick={false}>
           <div className="space-y-5">
-          
+
             <FormSelectField
               label="Amount (₹)"
               mode="multiple"
@@ -514,7 +529,7 @@ export function ConsultancyBranchService({
           </div>
         </Dialog>
 
-        <Dialog open={editDialog != null} onClose={closeEdit} title="Edit Consultancy Fee" width={420}>
+        <Dialog open={editDialog != null} onClose={closeEdit} title="Edit Consultancy Fee" width={420} closeOnOutsideClick={false}>
           <div className="space-y-4">
             <label className="block text-sm font-medium text-gray-700">Amount (₹)</label>
             <input
@@ -558,11 +573,11 @@ export function ConsultancyBranchService({
       <MessageDialog
         open={deleteConfirmId != null}
         onClose={closeDelete}
-        icon="/icons/CrossIcon.svg"
+        icon="/icons/transhExtraDarkIcon.svg"
         iconBgColor="#FFF8E1"
         message={
           deleteConfirmAmount != null
-            ? `Remove consultancy fee of ₹ ${deleteConfirmAmount.toLocaleString("en-IN")} from this branch?`
+            ? `Remove consultancy fee of ${formatIndianCurrency(deleteConfirmAmount)} from this branch?`
             : ""
         }
         showCancel
@@ -570,6 +585,7 @@ export function ConsultancyBranchService({
         confirmText="Confirm"
         onCancel={closeDelete}
         onConfirm={() => void confirmDelete()}
+        closeOnOutsideClick={false}
       />
 
       <MessageDialog

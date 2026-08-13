@@ -64,7 +64,7 @@ function rtkErrorMessage(e: unknown): string {
 
 export default function NurseListPage() {
     const router = useRouter();
-    const nursePerm = usePermission("Nurse", { subModule: "Nurse" });
+    const nursePerm = usePermission("Settings", { subModule: "Nurse" });
     // debugger;
     const selectedBranch = useAppSelector(selectSelectedBranch);
     const loginType = useAppSelector(selectLoginType);
@@ -422,31 +422,56 @@ export default function NurseListPage() {
                                                 <TableData variant="primary">
                                                     {(filters.currentPage - 1) * filters.itemsPerPage + index + 1}
                                                 </TableData>
-                                                <TableData className="whitespace-nowrap">
-                                                    {row.branch?.name ?? branchDisplayName(String(row.branchId))}
-                                                </TableData>
-                                                <TableData>
-                                                    <div className="flex min-w-[180px] items-center gap-3">
-                                                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#E3EEE1] bg-[#F3F4F6]">
-                                                            <NurseAvatarImage
-                                                                imgUrl={row.imgUrl}
-                                                                size={40}
-                                                                className="h-full w-full object-cover"
-                                                            />
-                                                        </div>
-                                                        <span className="font-medium text-[#262D3B]">
-                                                            {row.name || "—"}
-                                                        </span>
-                                                    </div>
-                                                </TableData>
-                                                <TableData className="max-w-[200px] truncate text-sm">
-                                                    {row.email}
-                                                </TableData>
-                                                <TableData className="max-w-[180px] truncate">
-                                                    {row.address || "—"}
-                                                </TableData>
+                                                <TableData className="w-[180px]">
+                                                     {(() => {
+                                                         const branchName = row.branch?.name ?? branchDisplayName(String(row.branchId));
+                                                         return (
+                                                             <Tooltip content={branchName} position="top">
+                                                                 <span className="inline-block max-w-[170px] truncate align-middle">
+                                                                     {branchName}
+                                                                 </span>
+                                                             </Tooltip>
+                                                         );
+                                                     })()}
+                                                 </TableData>
+                                                 <TableData className="max-w-[280px]">
+                                                     <div className="flex min-w-0 items-center gap-3">
+                                                         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#E3EEE1] bg-[#F3F4F6]">
+                                                             <NurseAvatarImage
+                                                                 imgUrl={row.imgUrl}
+                                                                 size={40}
+                                                                 className="h-full w-full object-cover"
+                                                             />
+                                                         </div>
+                                                         <Tooltip content={row.name || "—"} position="top">
+                                                             <span className="inline-block max-w-[220px] truncate font-medium text-[#262D3B] align-middle">
+                                                                 {row.name || "—"}
+                                                             </span>
+                                                         </Tooltip>
+                                                     </div>
+                                                 </TableData>
+                                                 <TableData className="max-w-[200px] text-sm">
+                                                     <Tooltip content={row.email || "—"} position="top">
+                                                         <span className="inline-block max-w-[180px] truncate align-middle">
+                                                             {row.email || "—"}
+                                                         </span>
+                                                     </Tooltip>
+                                                 </TableData>
+                                                 <TableData className="max-w-[180px]">
+                                                     <Tooltip content={row.address || "—"} position="top">
+                                                         <span className="inline-block max-w-[160px] truncate align-middle">
+                                                             {row.address || "—"}
+                                                         </span>
+                                                     </Tooltip>
+                                                 </TableData>
                                                 <TableData>{row.phone}</TableData>
-                                                <TableData>{row.empId}</TableData>
+                                                <TableData className="max-w-[120px]">
+                                                     <Tooltip content={row.empId || "—"} position="top">
+                                                         <span className="inline-block max-w-[100px] truncate align-middle">
+                                                             {row.empId || "—"}
+                                                         </span>
+                                                     </Tooltip>
+                                                 </TableData>
                                                 <TableData className="text-start">
                                                     <button
                                                         type="button"

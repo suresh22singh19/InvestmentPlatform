@@ -1,6 +1,7 @@
 import * as Yup from "yup";
 import { isValidEmailAddress } from "@/lib/utils/emailValidation";
 import type { AddressFormData } from "@/components/forms/AddressDetails";
+import { parseIndianAmount } from "@/store/utils/formatIndianAmount";
 import {
   BRANCH_TEXT_INPUT_MAX_LENGTH,
   hasMoreThanTwoConsecutiveSameChars,
@@ -318,12 +319,15 @@ export const branchFacilityFormSchema = Yup.object().shape({
     .test(
       "adv-digits",
       "Advanced referral amount must be up to 9 digits only",
-      (v) => !v || /^\d{1,9}$/.test(v)
+      (v) => !v || /^\d{1,9}$/.test(parseIndianAmount(v))
     )
     .test(
       "adv-finite",
       "Enter a valid amount",
-      (v) => !v || (Number.isFinite(Number(v)) && Number(v) >= 0)
+      (v) => {
+        const raw = parseIndianAmount(v);
+        return !raw || (Number.isFinite(Number(raw)) && Number(raw) >= 0);
+      }
     ),
   referralAmountInPercent: Yup.string()
     .trim()
@@ -340,12 +344,26 @@ export const branchFacilityFormSchema = Yup.object().shape({
       then: (schema) =>
         schema
           .required("Credit limit is required when Is Franchise is Yes")
-          .matches(/^\d{1,15}$/, "Credit limit must be up to 15 digits only")
-          .test("finite", "Enter a valid number", (v) => v != null && v !== "" && Number.isFinite(Number(v))),
+          .test(
+            "credit-digits-req",
+            "Credit limit must be up to 15 digits only",
+            (v) => Boolean(v) && /^\d{1,15}$/.test(parseIndianAmount(v))
+          )
+          .test("finite", "Enter a valid number", (v) => {
+            const raw = parseIndianAmount(v);
+            return raw != null && raw !== "" && Number.isFinite(Number(raw));
+          }),
       otherwise: (schema) =>
         schema
-          .test("credit-digits", "Credit limit must be up to 15 digits only", (v) => !v || /^\d{1,15}$/.test(v))
-          .test("credit-finite", "Enter a valid number", (v) => !v || Number.isFinite(Number(v))),
+          .test(
+            "credit-digits",
+            "Credit limit must be up to 15 digits only",
+            (v) => !v || /^\d{1,15}$/.test(parseIndianAmount(v))
+          )
+          .test("credit-finite", "Enter a valid number", (v) => {
+            const raw = parseIndianAmount(v);
+            return !raw || Number.isFinite(Number(raw));
+          }),
     }),
   branchStatus: Yup.string().oneOf(["active", "inactive"]).required(),
   wifiStatus: Yup.string()

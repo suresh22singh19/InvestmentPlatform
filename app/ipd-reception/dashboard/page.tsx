@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -8,6 +8,7 @@ import { WardCapacityOverview } from "./WardCapacityOverview";
 import {
   Badge,
   Button,
+  FormSelectField,
   Pagination,
   SpinnerLoader,
   StatCard,
@@ -18,11 +19,57 @@ import {
   TableHeader,
   TableRow,
   TableSearchInput,
+  Tooltip,
 } from "@/components/ui";
+
+function TruncatedPatientNameCell({ text }: { text: string | null | undefined }) {
+  const value = text?.trim() ? text.trim() : "—";
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+
+    const checkTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+    };
+
+    checkTruncation();
+
+    const observer = new ResizeObserver(checkTruncation);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [value]);
+
+  if (value === "—") {
+    return <span>—</span>;
+  }
+
+  return (
+    <Tooltip
+      position="top"
+      maxWidth={360}
+      disabled={!isTruncated}
+      className="!overflow-visible !py-2.5"
+      content={
+        <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+          {value}
+        </p>
+      }
+    >
+      <span ref={textRef} className="block max-w-[200px] xl:max-w-[240px] truncate whitespace-nowrap">
+        {value}
+      </span>
+    </Tooltip>
+  );
+}
+import type { SelectOption } from "@/components/ui/FormSelectField";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useAppSelector } from "@/store/hooks";
-import { selectSelectedBranch, selectUserBranchId } from "@/store/slices/authSlice";
+import { selectSelectedBranch, selectUserBranchId, selectRoleCategoryType } from "@/store/slices/authSlice";
 import { resolveReceptionBranchId } from "@/lib/ipd-reception/resolveReceptionBranchId";
+import { useGetBranchesQuery } from "@/store/api/settingsApi";
 import {
   useGetIpdAwaitingPatientsQuery,
   useGetIpdReceptionDashboardStatsQuery,
@@ -74,10 +121,10 @@ function renderPatientActions(patient: IpdAwaitingPatientTableRow) {
   const patientHref = `/ipd-reception/patient/${patient.patientId}`;
   const nonCompliantHref = `${patientHref}/file?mode=non-compliant`;
 
-  console.log("Patient Compliance Status:", patient?.patientComplianceStatus);
+  console.log("Patient Compliance Status:", patient);
 
   // if (isPatientCompliant(patient.patientComplianceStatus)) {
-  if (patient.isPatientAdmitted?.toLowerCase() === "yes" ) {
+  if (patient.admissionStatus?.toLowerCase() === "admitted" ) {
     return (
       <div className="flex flex-wrap items-center gap-2">
        
@@ -124,14 +171,60 @@ export default function ReceptionDashboardPage() {
 
   const selectedBranch = useAppSelector(selectSelectedBranch);
   const userBranchId = useAppSelector(selectUserBranchId);
-  const branchId = useMemo(
-    () =>
-      resolveReceptionBranchId({
-        selectedBranchId: selectedBranch?.id,
-        userBranchId,
-      }),
-    [selectedBranch?.id, userBranchId]
-  );
+  const roleCategoryType = useAppSelector(selectRoleCategoryType);
+  const isSuperAdmin = roleCategoryType?.toLowerCase() === "superadmin";
+
+  const { data: branchesRes, isLoading: isLoadingBranches } = useGetBranchesQuery(undefined);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
+  const [isBranchInitialized, setIsBranchInitialized] = useState(false);
+
+  const branchOptions: SelectOption[] = useMemo(() => {
+    if (isSuperAdmin) {
+      const rows = branchesRes?.data;
+      if (!rows?.length) return [];
+      return rows.map((b) => {
+        const t = (b as { type?: string }).type?.trim() ?? "";
+        const typeSuffix =
+          t.length > 0 ? ` (${t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()})` : "";
+        return { value: String(b.id), label: `${b.name}${typeSuffix}` };
+      });
+    } else {
+      const branchName = selectedBranch?.name || "My Branch";
+      const branchIdValue = String(selectedBranch?.id ?? userBranchId ?? "");
+      if (!branchIdValue) return [];
+      return [{ value: branchIdValue, label: branchName }];
+    }
+  }, [isSuperAdmin, branchesRes, selectedBranch, userBranchId]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      if (isLoadingBranches) return;
+      const rows = branchesRes?.data;
+      if (rows && rows.length > 0) {
+        setSelectedBranchId(String(rows[0].id));
+        setIsBranchInitialized(true);
+      } else if (branchesRes) {
+        setSelectedBranchId(String(selectedBranch?.id ?? userBranchId ?? ""));
+        setIsBranchInitialized(true);
+      }
+    } else {
+      const fallbackId = selectedBranch?.id ?? userBranchId;
+      if (fallbackId) {
+        setSelectedBranchId(String(fallbackId));
+        setIsBranchInitialized(true);
+      }
+    }
+  }, [isSuperAdmin, isLoadingBranches, branchesRes, selectedBranch, userBranchId]);
+
+  const branchId = useMemo(() => {
+    const parsed = parseInt(selectedBranchId, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return resolveReceptionBranchId({
+      selectedBranchId: selectedBranch?.id,
+      userBranchId,
+    });
+  }, [selectedBranchId, selectedBranch?.id, userBranchId]);
 
   const debouncedSearch = useDebounce(filters.searchTerm, 500);
 
@@ -139,8 +232,13 @@ export default function ReceptionDashboardPage() {
     setFilters((prev) => ({ ...prev, currentPage: 1 }));
   }, [debouncedSearch, branchId, filters.itemsPerPage, filters.sortField, filters.sortOrder]);
 
+  const queryOptions = useMemo(() => ({
+    ...RECEPTION_DASHBOARD_QUERY_OPTIONS,
+    skip: !isBranchInitialized || !branchId,
+  }), [isBranchInitialized, branchId]);
+
   const { data: statsResponse, isLoading: isStatsLoading } =
-    useGetIpdReceptionDashboardStatsQuery({ branchId }, RECEPTION_DASHBOARD_QUERY_OPTIONS);
+    useGetIpdReceptionDashboardStatsQuery({ branchId }, queryOptions);
 
   const stats = useMemo(
     () => mapIpdDashboardStatsToView(statsResponse?.data),
@@ -152,14 +250,14 @@ export default function ReceptionDashboardPage() {
     isLoading: isWardCapacityLoading,
     isError: isWardCapacityError,
     error: wardCapacityError,
-  } = useGetIpdRoomCapacityOverviewQuery({ branchId }, RECEPTION_DASHBOARD_QUERY_OPTIONS);
+  } = useGetIpdRoomCapacityOverviewQuery({ branchId }, queryOptions);
 
   const {
     data: roomTypeResponse,
     isLoading: isRoomTypesLoading,
     isError: isRoomTypesError,
     error: roomTypesError,
-  } = useGetIpdRoomTypeCapacityOverviewQuery({ branchId }, RECEPTION_DASHBOARD_QUERY_OPTIONS);
+  } = useGetIpdRoomTypeCapacityOverviewQuery({ branchId }, queryOptions);
 
   const wardCapacity = useMemo(
     () => mapCapacityCategories(extractCapacityOverviewPayload(wardCapacityResponse)),
@@ -196,7 +294,7 @@ export default function ReceptionDashboardPage() {
     isLoading: isAwaitingLoading,
     isError: isAwaitingError,
     error: awaitingError,
-  } = useGetIpdAwaitingPatientsQuery(awaitingQueryArgs, RECEPTION_DASHBOARD_QUERY_OPTIONS);
+  } = useGetIpdAwaitingPatientsQuery(awaitingQueryArgs, queryOptions);
 
   const awaitingPatients = useMemo(
     () => mapAwaitingPatientsToTableRows(awaitingResponse?.data ?? []),
@@ -253,7 +351,7 @@ export default function ReceptionDashboardPage() {
                 subtext={subtext.text}
                 subtextTone={subtext.tone}
                 subtextIcon={card.subtextIcon}
-                isLoading={isStatsLoading}
+                isLoading={!isBranchInitialized || isStatsLoading}
               />
             );
           })}
@@ -266,19 +364,39 @@ export default function ReceptionDashboardPage() {
                 Admissions
               </h2>
 
-              <div className="w-full sm:w-[300px] sm:flex-shrink-0">
-                <TableSearchInput
-                  value={filters.searchTerm}
-                  onChange={(value) => {
-                    const trimmedValue = value.trimStart();
-                    setFilters((prev) => ({
-                      ...prev,
-                      searchTerm: trimmedValue,
-                      currentPage: 1,
-                    }));
-                  }}
-                  placeholder="Search Here..."
-                />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="w-[300px] max-w-[min(300px,100vw)] shrink-0">
+                  <FormSelectField
+                    label=""
+                    hideLabel
+                    options={branchOptions}
+                    value={selectedBranchId}
+                    onChange={(val) => {
+                      const nextStr = Array.isArray(val) ? val[0] : val ?? "";
+                      setSelectedBranchId(nextStr);
+                    }}
+                    placeholder={isLoadingBranches ? "Loading branches…" : "Select Branch"}
+                    mode="single"
+                    background="normal"
+                    width={300}
+                    disabled={!isSuperAdmin || isLoadingBranches}
+                  />
+                </div>
+
+                <div className="w-full sm:w-[300px] sm:flex-shrink-0">
+                  <TableSearchInput
+                    value={filters.searchTerm}
+                    onChange={(value) => {
+                      const trimmedValue = value.trimStart();
+                      setFilters((prev) => ({
+                        ...prev,
+                        searchTerm: trimmedValue,
+                        currentPage: 1,
+                      }));
+                    }}
+                    placeholder="Search Here..."
+                  />
+                </div>
               </div>
             </div>
 
@@ -301,7 +419,7 @@ export default function ReceptionDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isAwaitingLoading ? (
+                {!isBranchInitialized || isAwaitingLoading ? (
                   <TableRow>
                     <TableData
                       colSpan={AWAITING_TABLE_COLUMN_COUNT}
@@ -342,7 +460,9 @@ export default function ReceptionDashboardPage() {
                         className="bg-white transition-colors hover:bg-[#F7FAF7]"
                       >
                         <TableData variant="primary">{srNo}</TableData>
-                        <TableData>{patient.patientName}</TableData>
+                        <TableData>
+                          <TruncatedPatientNameCell text={patient.patientName} />
+                        </TableData>
                         <TableData>{patient.patientUhid}</TableData>
                         <TableData>
                           <Badge
@@ -377,8 +497,8 @@ export default function ReceptionDashboardPage() {
         <WardCapacityOverview
           wardCapacity={wardCapacity}
           roomTypes={roomTypes}
-          isWardCapacityLoading={isWardCapacityLoading}
-          isRoomTypesLoading={isRoomTypesLoading}
+          isWardCapacityLoading={!isBranchInitialized || isWardCapacityLoading}
+          isRoomTypesLoading={!isBranchInitialized || isRoomTypesLoading}
           isWardCapacityError={isWardCapacityError}
           wardCapacityErrorMessage={
             isWardCapacityError

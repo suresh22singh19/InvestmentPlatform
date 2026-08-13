@@ -1,20 +1,88 @@
 "use client";
 
-import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import Image from "next/image";
 import { FormInputField } from "./FormInputField";
 import { FormSelectField } from "./FormSelectField";
 import { FormTextareaField } from "./FormTextareaField";
 import { PatientTypeButtonGroup } from "./PatientTypeButtonGroup";
+import { Tooltip } from "./Tooltip";
+import { Tabs } from "./Tabs";
 import { Button } from "./Button";
 import { DatePicker } from "./DatePicker";
 import { Slider } from "./Slider";
 import { useArrowKeyNavigation } from "@/hooks/useArrowKeyNavigation";
 import { MessageDialog } from "./MessageDialog";
 import { Dialog } from "./Dialog";
-import { useCreateOpdAssessmentMutation } from "@/store/api/doctorApi";
+import { useCreateOpdAssessmentMutation, useGetPatientAssessmentHistoryQuery } from "@/store/api/doctorApi";
 import { useAppSelector } from "@/store/hooks";
 import { selectUserId } from "@/store/slices/authSlice";
+import { selectMedicines, selectDosageList, selectFrequencyList, selectDurationList, selectTimingList } from "@/store/slices/medicineSlice";
+import { FormInputSelectGroup } from "./FormInputSelectGroup";
+import {
+    DOSAGE_UNIT_OPTIONS,
+    DURATION_UNIT_OPTIONS,
+    FREQUENCY_OPTIONS,
+    TIME_OPTIONS,
+    DOSAGE_OPTIONS,
+    DURATION_OPTIONS,
+    TIMING_OPTIONS,
+    parseDosageComponents,
+    parseDurationComponents,
+    getTimingLabel,
+    getTimingKey,
+    normalizeFrequencyValue,
+    normalizeTimingValue,
+} from "@/lib/medicineUtils";
+
+export function numberToOrdinalWord(n: number): string {
+    const ordinals: Record<number, string> = {
+        1: "first",
+        2: "second",
+        3: "third",
+        4: "fourth",
+        5: "fifth",
+        6: "sixth",
+        7: "seventh",
+        8: "eighth",
+        9: "ninth",
+        10: "tenth",
+        11: "eleventh",
+        12: "twelfth",
+        13: "thirteenth",
+        14: "fourteenth",
+        15: "fifteenth",
+        16: "sixteenth",
+        17: "seventeenth",
+        18: "eighteenth",
+        19: "nineteenth",
+        20: "twentieth",
+        30: "thirtieth",
+        40: "fortieth",
+        50: "fiftieth",
+        60: "sixtieth",
+        70: "seventieth",
+        80: "eightieth",
+        90: "ninetieth",
+        100: "hundredth"
+    };
+
+    if (ordinals[n]) return ordinals[n];
+
+    if (n > 20 && n < 100) {
+        const tens = Math.floor(n / 10) * 10;
+        const ones = n % 10;
+        const tensWords: Record<number, string> = {
+            20: "twenty", 30: "thirty", 40: "forty", 50: "fifty",
+            60: "sixty", 70: "seventy", 80: "eighty", 90: "ninety"
+        };
+        if (ones > 0 && ordinals[ones]) {
+            return `${tensWords[tens]}-${ordinals[ones]}`;
+        }
+    }
+
+    return `${n}th`;
+}
 
 export interface ClinicalAssessmentRecordProps {
     className?: string;
@@ -38,23 +106,32 @@ export interface ClinicalAssessmentRecordProps {
     setBloodPressure: (val: "high" | "low" | "no" | "") => void;
     thyroid: "hypo" | "hyper" | "no" | "";
     setThyroid: (val: "hypo" | "hyper" | "no" | "") => void;
-    allergy: "food" | "drug" | "skin" | "no" | "";
-    setAllergy: (val: "food" | "drug" | "skin" | "no" | "") => void;
+    allergy: "food" | "drug" | "skin" | "other" | "no" | "";
+    setAllergy: (val: "food" | "drug" | "skin" | "other" | "no" | "") => void;
     sitting: "normal" | "abnormal" | "";
     setSitting: (val: "normal" | "abnormal" | "") => void;
     standing: "normal" | "abnormal" | "";
     setStanding: (val: "normal" | "abnormal" | "") => void;
     walking: "normal" | "abnormal" | "";
     setWalking: (val: "normal" | "abnormal" | "") => void;
-    medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string; remarks?: string }>;
-    setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string; remarks?: string }>>>;
+    medicines: Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string; remarks?: string; unmatchedName?: string }>;
+    setMedicines: React.Dispatch<React.SetStateAction<Array<{ name: string; dosage: string; frequency: string; timing: string; duration: string; remarks?: string; unmatchedName?: string }>>>;
 
     // Extra fields
     followUpDate?: string;
     followUpRemarks?: string;
     aiResponse?: any;
-    therapies?: Array<{ therapyId: number; therapyName: string }>;
+    therapies?: Array<{
+        therapyId: number;
+        therapyName: string;
+        therapyCategory?: string;
+        therapySessions?: number;
+        therapyDays?: number;
+        jatayuTherapyCode?: string;
+    }>;
     doctorNotes?: string;
+    communicableDiseases?: string[] | string;
+    setCommunicableDiseases?: (val: string[]) => void;
 }
 
 interface BodyMarker {
@@ -63,6 +140,237 @@ interface BodyMarker {
     y: number; // percentage from top
     view: "front" | "back";
     type: "pain" | "swelling" | "numbness";
+    /**
+     * Dots expanded from the SAME logical pain-mapping item (e.g. bilateral
+     * "both shoulders" → 2 dots) share a groupId. They count as ONE mark and
+     * are saved back as ONE painMapping entry with bilateralSymmetry: true.
+     */
+    groupId?: string;
+    bilateral?: boolean;
+    notes?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BODY MAPPING — 14-row anatomical grid (matches the 28-zone bodyCode dataset)
+//
+//   ROW  1 HEAD (11/12)        ROW  8 ABDOMEN (81/82)
+//   ROW  2 NECK (21/22)        ROW  9 LOWER BACK (91/92)
+//   ROW  3 SHOULDERS (31/32)   ROW 10 HIPS (101/102)
+//   ROW  4 UPPER ARMS (41/42)  ROW 11 THIGHS (111/112)
+//   ROW  5 FOREARMS (51/52)    ROW 12 KNEES (121/122)
+//   ROW  6 HANDS (61/62)       ROW 13 CALVES (131/132)
+//   ROW  7 CHEST (71/72)       ROW 14 FEET (141/142)
+//
+// Each of the 4 silhouette images (male/female × front/back) has DIFFERENT
+// proportions, so each has its own chart. Coordinates below were measured
+// directly from the silhouette pixels of the actual SVG artwork:
+//   - male SVGs embed a 250×416 image filling the whole 125×208 canvas
+//   - femaleBodyFrontView embeds a 227×618 image (x offset 19.44%, width 61.12%)
+//   - femaleBodyBackView embeds a 242×640 image (x offset 18.54%, width 62.92%)
+// All values are % of the rendered diagram (which the markers also use).
+//
+// `screenLeftX` / `screenRightX` are SCREEN sides of the image. Patient side
+// is converted per view: on FRONT view the patient's LEFT arm appears on the
+// SCREEN-RIGHT; on BACK view the patient's LEFT arm appears on SCREEN-LEFT.
+// ═══════════════════════════════════════════════════════════════════════════
+
+type BodyView = "front" | "back";
+type BodySide = "left" | "right" | "center";
+
+interface BodyRowCoord {
+    y: number;
+    screenLeftX: number;
+    screenRightX: number;
+    centerX: number;
+}
+
+type BodyChart = Record<number, BodyRowCoord>;
+
+const BODY_REGION_NAMES: Record<number, string> = {
+    1: "head", 2: "neck", 3: "shoulders", 4: "upper-arms", 5: "forearms",
+    6: "hands", 7: "chest", 8: "abdomen", 9: "lower-back", 10: "hips",
+    11: "thighs", 12: "knees", 13: "calves", 14: "feet",
+};
+
+// Rows that are PAIRED LIMBS — a "center" mark here would float in the empty
+// gap between the limbs, so unspecified/bilateral marks go on BOTH limbs.
+const PAIRED_LIMB_ROWS = new Set([3, 4, 5, 6, 11, 12, 13, 14]);
+
+const MALE_FRONT_CHART: BodyChart = {
+    1: { y: 7.5, screenLeftX: 46.0, screenRightX: 53.5, centerX: 49.6 },
+    2: { y: 15.0, screenLeftX: 46.5, screenRightX: 53.0, centerX: 49.6 },
+    3: { y: 19.8, screenLeftX: 37.0, screenRightX: 62.5, centerX: 49.6 },
+    4: { y: 27.5, screenLeftX: 32.4, screenRightX: 66.8, centerX: 49.6 },
+    5: { y: 40.0, screenLeftX: 30.0, screenRightX: 69.2, centerX: 49.6 },
+    6: { y: 52.0, screenLeftX: 30.5, screenRightX: 68.8, centerX: 49.6 },
+    7: { y: 27.0, screenLeftX: 44.0, screenRightX: 55.2, centerX: 49.6 },
+    8: { y: 39.5, screenLeftX: 44.5, screenRightX: 54.8, centerX: 49.6 },
+    9: { y: 44.0, screenLeftX: 43.5, screenRightX: 55.8, centerX: 49.6 },
+    10: { y: 49.0, screenLeftX: 40.8, screenRightX: 58.4, centerX: 49.6 },
+    11: { y: 59.5, screenLeftX: 41.6, screenRightX: 57.6, centerX: 49.6 },
+    12: { y: 69.0, screenLeftX: 42.4, screenRightX: 56.8, centerX: 49.6 },
+    13: { y: 79.0, screenLeftX: 41.4, screenRightX: 57.8, centerX: 49.6 },
+    14: { y: 95.0, screenLeftX: 42.2, screenRightX: 57.0, centerX: 49.6 },
+};
+
+const MALE_BACK_CHART: BodyChart = {
+    1: { y: 7.5, screenLeftX: 46.5, screenRightX: 54.0, centerX: 50.2 },
+    2: { y: 15.0, screenLeftX: 47.0, screenRightX: 53.5, centerX: 50.2 },
+    3: { y: 19.8, screenLeftX: 36.4, screenRightX: 63.6, centerX: 50.2 },
+    4: { y: 27.5, screenLeftX: 32.6, screenRightX: 67.6, centerX: 50.2 },
+    5: { y: 40.0, screenLeftX: 30.6, screenRightX: 69.8, centerX: 50.2 },
+    6: { y: 52.0, screenLeftX: 31.0, screenRightX: 69.4, centerX: 50.2 },
+    7: { y: 27.0, screenLeftX: 43.2, screenRightX: 56.8, centerX: 50.2 }, // shoulder-blade level
+    8: { y: 38.0, screenLeftX: 44.5, screenRightX: 56.0, centerX: 50.2 }, // mid back
+    9: { y: 42.5, screenLeftX: 45.0, screenRightX: 55.5, centerX: 50.2 }, // lumbar — clearly ABOVE buttocks
+    10: { y: 51.0, screenLeftX: 42.8, screenRightX: 57.2, centerX: 50.2 }, // buttocks
+    11: { y: 60.0, screenLeftX: 42.0, screenRightX: 58.0, centerX: 50.2 },
+    12: { y: 69.0, screenLeftX: 42.6, screenRightX: 57.6, centerX: 50.2 },
+    13: { y: 78.0, screenLeftX: 41.8, screenRightX: 58.6, centerX: 50.2 },
+    14: { y: 94.0, screenLeftX: 43.2, screenRightX: 57.2, centerX: 50.2 },
+};
+
+const FEMALE_FRONT_CHART: BodyChart = {
+    1: { y: 7.5, screenLeftX: 45.5, screenRightX: 53.0, centerX: 49.3 },
+    2: { y: 15.0, screenLeftX: 46.5, screenRightX: 52.0, centerX: 49.3 },
+    3: { y: 19.5, screenLeftX: 33.5, screenRightX: 65.5, centerX: 49.3 },
+    4: { y: 27.0, screenLeftX: 31.8, screenRightX: 67.1, centerX: 49.3 },
+    5: { y: 40.0, screenLeftX: 27.3, screenRightX: 71.4, centerX: 49.3 },
+    6: { y: 52.0, screenLeftX: 24.3, screenRightX: 75.2, centerX: 49.3 },
+    7: { y: 28.0, screenLeftX: 43.4, screenRightX: 55.3, centerX: 49.3 },
+    8: { y: 40.0, screenLeftX: 44.5, screenRightX: 54.0, centerX: 49.3 },
+    9: { y: 44.5, screenLeftX: 43.5, screenRightX: 55.0, centerX: 49.3 },
+    10: { y: 49.0, screenLeftX: 40.3, screenRightX: 58.4, centerX: 49.3 },
+    11: { y: 60.0, screenLeftX: 42.1, screenRightX: 56.6, centerX: 49.3 },
+    12: { y: 68.0, screenLeftX: 42.6, screenRightX: 56.1, centerX: 49.3 },
+    13: { y: 78.0, screenLeftX: 42.2, screenRightX: 56.2, centerX: 49.3 },
+    14: { y: 95.5, screenLeftX: 43.1, screenRightX: 55.4, centerX: 49.3 },
+};
+
+const FEMALE_BACK_CHART: BodyChart = {
+    1: { y: 7.5, screenLeftX: 45.5, screenRightX: 52.5, centerX: 49.1 },
+    2: { y: 15.5, screenLeftX: 46.5, screenRightX: 52.0, centerX: 49.1 },
+    3: { y: 19.5, screenLeftX: 36.0, screenRightX: 62.6, centerX: 49.1 },
+    4: { y: 27.0, screenLeftX: 31.5, screenRightX: 67.0, centerX: 49.1 },
+    5: { y: 40.0, screenLeftX: 27.0, screenRightX: 71.8, centerX: 49.1 },
+    6: { y: 52.0, screenLeftX: 23.9, screenRightX: 74.8, centerX: 49.1 },
+    7: { y: 27.0, screenLeftX: 41.9, screenRightX: 56.2, centerX: 49.1 }, // shoulder-blade level
+    8: { y: 37.0, screenLeftX: 44.0, screenRightX: 55.0, centerX: 49.1 }, // mid back
+    9: { y: 42.5, screenLeftX: 44.5, screenRightX: 54.5, centerX: 49.1 }, // lumbar — clearly ABOVE buttocks
+    10: { y: 51.0, screenLeftX: 40.8, screenRightX: 57.8, centerX: 49.1 }, // buttocks
+    11: { y: 60.0, screenLeftX: 41.0, screenRightX: 56.8, centerX: 49.1 },
+    12: { y: 68.0, screenLeftX: 41.8, screenRightX: 56.1, centerX: 49.1 },
+    13: { y: 78.0, screenLeftX: 41.4, screenRightX: 56.4, centerX: 49.1 },
+    14: { y: 94.0, screenLeftX: 43.6, screenRightX: 53.9, centerX: 49.1 },
+};
+
+function getBodyChart(gender: string | undefined | null, view: BodyView): BodyChart {
+    const isFemale = String(gender || "").toLowerCase() === "female";
+    if (isFemale) return view === "back" ? FEMALE_BACK_CHART : FEMALE_FRONT_CHART;
+    return view === "back" ? MALE_BACK_CHART : MALE_FRONT_CHART;
+}
+
+/** Coordinates for a body row + PATIENT side, converted to screen coordinates. */
+function getBodyZonePoint(
+    gender: string | undefined | null,
+    view: BodyView,
+    row: number,
+    side: BodySide,
+): { x: number; y: number } {
+    const chart = getBodyChart(gender, view);
+    const zone = chart[row] || chart[8];
+    let x: number;
+    if (side === "left") {
+        // Patient's left: screen-right on front view, screen-left on back view
+        x = view === "front" ? zone.screenRightX : zone.screenLeftX;
+    } else if (side === "right") {
+        x = view === "front" ? zone.screenLeftX : zone.screenRightX;
+    } else {
+        x = zone.centerX;
+    }
+    return { x, y: zone.y };
+}
+
+// Genital / private-part complaints — belong at the groin on the FRONT view,
+// slightly below the row-10 hip line.
+const GENITAL_TERMS = /private.?parts?|genital|\bpenis\b|scrotum|scrotal|testic(le|ular|les)?|vagina|vulva|pubic|urethra/i;
+
+/** Detect the 14-grid row from free text (specific terms take priority). */
+function detectBodyRow(text: string): number | null {
+    if (/shoulder.?blade|scapula/i.test(text)) return 3;
+    if (/knee|kneecap|patella|popliteal/i.test(text)) return 12;
+    if (/lower.?back|lumbar|sacr(um|al|o)|lumbosacral|tail.?bone|coccyx/i.test(text)) return 9;
+    if (/shoulder|deltoid|armpit|axilla|collar.?bone|clavicle/i.test(text)) return 3;
+    if (/upper.?arm|bicep|tricep/i.test(text)) return 4;
+    if (/forearm|elbow/i.test(text)) return 5;
+    if (/\bhands?\b|wrist|palm|finger|thumb/i.test(text)) return 6;
+    if (/chest|sternum|\bribs?\b|pectoral|breast/i.test(text)) return 7;
+    if (/abdomen|abdominal|stomach|belly|navel|umbilic/i.test(text)) return 8;
+    // Perianal / anal / rectal complaints (hemorrhoids etc.) → buttocks region
+    if (/peri.?anal|\banal\b|\banus\b|rect(al|um)|h(a?)emorrhoid|\bpiles\b|perine(um|al)|natal.?cleft/i.test(text)) return 10;
+    // Genital / private-part complaints → groin (row 10, front view)
+    if (GENITAL_TERMS.test(text)) return 10;
+    if (/\bhips?\b|buttock|gluteal|glutes?\b|groin|pelvis|pelvic/i.test(text)) return 10;
+    if (/thigh|upper.?leg|quadricep|femur|hamstring/i.test(text)) return 11;
+    if (/\bcalf\b|calves|\bshins?\b|lower.?leg|tibia|fibula/i.test(text)) return 13;
+    if (/\bfoot\b|\bfeet\b|ankle|\bsole\b|\btoes?\b|heel|plantar/i.test(text)) return 14;
+    if (/neck|throat|cervical|nape/i.test(text)) return 2;
+    if (/\bhead\b|face|skull|temple|jaw|forehead|\beyes?\b|\bears?\b/i.test(text)) return 1;
+    if (/upper.?back|thoracic/i.test(text)) return 3;
+    // "central/middle back" → MID back (row 8 sits at mid-back height on the
+    // back view), NOT lower back — otherwise the mark lands at the hip line.
+    if (/central.?(of.?)?(the.?)?back|centre.?(of.?)?(the.?)?back|center.?(of.?)?(the.?)?back|middle.?(of.?)?(the.?)?back|mid.?back|mid.?spine/i.test(text)) return 8;
+    if (/\bback\b|spine|spinal|dorsal/i.test(text)) return 9; // generic "back" → lower back
+    return null;
+}
+
+/**
+ * Certain anatomy is only visible on one view; if text clearly indicates it,
+ * override the AI-provided view (e.g. "lower back" can never be on the front).
+ */
+function detectForcedView(text: string): BodyView | null {
+    const backTerms = /lower.?back|lumbar|sacr(um|al|o)|spine|spinal|scapula|shoulder.?blade|buttock|gluteal|hamstring|popliteal|posterior|upper.?back|mid.?back|middle.?back|central.?back|dorsal|back.?of|back.?pain|peri.?anal|\banal\b|\banus\b|rect(al|um)|h(a?)emorrhoid|\bpiles\b|perine(um|al)|natal.?cleft|coccyx|tail.?bone/i.test(text);
+    const frontTerms = /chest|sternum|pectoral|breast|abdomen|abdominal|stomach|belly|navel|umbilic|kneecap|patella|\bshins?\b|forehead|face|jaw|throat|anterior|front.?of|private.?parts?|genital|\bpenis\b|scrotum|scrotal|testic(le|ular|les)?|vagina|vulva|pubic|urethra/i.test(text);
+    if (backTerms && !frontTerms) return "back";
+    if (frontTerms && !backTerms) return "front";
+    return null;
+}
+
+/**
+ * Reverse lookup used when SAVING manually placed markers: find the nearest
+ * anatomical row + patient side for a screen coordinate.
+ */
+function nearestBodyZone(
+    gender: string | undefined | null,
+    view: BodyView,
+    x: number,
+    y: number,
+): { row: number; side: "left" | "right"; code: number; region: string } {
+    const chart = getBodyChart(gender, view);
+    let best: { row: number; screenSide: "screenLeft" | "screenRight"; dist: number } | null = null;
+    for (const rowKey of Object.keys(chart)) {
+        const row = Number(rowKey);
+        const zone = chart[row];
+        const candidates: Array<{ screenSide: "screenLeft" | "screenRight"; cx: number }> = [
+            { screenSide: "screenLeft", cx: zone.screenLeftX },
+            { screenSide: "screenRight", cx: zone.screenRightX },
+        ];
+        for (const c of candidates) {
+            const dx = x - c.cx;
+            const dy = (y - zone.y) * 1.8; // rows are stacked vertically → weight y higher
+            const dist = dx * dx + dy * dy;
+            if (!best || dist < best.dist) {
+                best = { row, screenSide: c.screenSide, dist };
+            }
+        }
+    }
+    const row = best?.row ?? 8;
+    const screenSide = best?.screenSide ?? "screenLeft";
+    // Convert screen side → patient side (front view is mirrored)
+    const side: "left" | "right" = view === "front"
+        ? (screenSide === "screenRight" ? "left" : "right")
+        : (screenSide === "screenLeft" ? "left" : "right");
+    return { row, side, code: row * 10 + (side === "left" ? 1 : 2), region: BODY_REGION_NAMES[row] || "" };
 }
 
 const SELECT_OPTIONS = [
@@ -105,32 +413,34 @@ const MEDICINE_OPTIONS = [
     { label: "Chandraprabha Vati", value: "Chandraprabha Vati" },
 ];
 
-const DOSAGE_OPTIONS = [
-    { label: "1 tablet", value: "1 tablet" },
-    { label: "2 tablets", value: "2 tablets" },
-    { label: "5 ml", value: "5 ml" },
-    { label: "10 ml", value: "10 ml" },
-    { label: "1 tsp", value: "1 tsp" },
-];
 
-const FREQUENCY_OPTIONS = [
-    { label: "Once daily", value: "Once daily" },
-    { label: "Twice daily", value: "Twice daily" },
-    { label: "Thrice daily", value: "Thrice daily" },
-];
+interface SymptomRecoverySliderProps {
+    label: string;
+    value: number;
+    onChange: (value: number) => void;
+}
 
-const TIMING_OPTIONS = [
-    { label: "Before meal", value: "Before meal" },
-    { label: "After meal", value: "After meal" },
-    { label: "Empty stomach", value: "Empty stomach" },
-];
-
-const DURATION_OPTIONS = [
-    { label: "5 Days", value: "5 Days" },
-    { label: "10 Days", value: "10 Days" },
-    { label: "15 Days", value: "15 Days" },
-    { label: "30 Days", value: "30 Days" },
-];
+function SymptomRecoverySlider({ label, value, onChange }: SymptomRecoverySliderProps) {
+    return (
+        <div className="space-y-1">
+            <span className="block text-[13px] font-semibold text-[#444242]">{label}</span>
+            <div className="flex items-center gap-3">
+                <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#0B8C00] [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-[#0B8C00] [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-white"
+                    style={{
+                        background: `linear-gradient(to right, #0B8C00 0%, #0B8C00 ${value}%, #EBECED ${value}%, #EBECED 100%)`,
+                    }}
+                />
+                <span className="text-xs font-bold text-[#434956] min-w-[28px] text-right">{value}%</span>
+            </div>
+        </div>
+    );
+}
 
 export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, ClinicalAssessmentRecordProps>(
     function ClinicalAssessmentRecord({
@@ -168,26 +478,105 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         aiResponse: incomingAiResponse,
         therapies,
         doctorNotes = "",
+        communicableDiseases,
+        setCommunicableDiseases,
     }, ref) {
         const authDoctorId = useAppSelector(selectUserId);
         const aiResponse = incomingAiResponse || {};
 
-        // Check if patient is old (appointmentCreatedAt - registrationCreatedAt > 1 hour)
-        const isPatientOld = (appData: any): boolean => {
-            if (!appData) return false;
-            const appTimeStr = appData.appointmentCreatedAt || appData.createdAt;
-            const regTimeStr = appData.registrationCreatedAt;
-            if (!appTimeStr || !regTimeStr) return false;
+        const medicinesList = useAppSelector(selectMedicines);
+        const dosageList = useAppSelector(selectDosageList);
+        const frequencyList = useAppSelector(selectFrequencyList);
+        const durationList = useAppSelector(selectDurationList);
+        const timingList = useAppSelector(selectTimingList);
 
-            const appTime = new Date(appTimeStr).getTime();
-            const regTime = new Date(regTimeStr).getTime();
-            if (isNaN(appTime) || isNaN(regTime)) return false;
+        const getUniqueOptions = (
+            list: { value: string }[],
+            fallback: { label: string, value: string }[],
+            currentValues?: string[]
+        ) => {
+            const baseList = (list && list.length > 0)
+                ? list.map(item => ({ label: item.value, value: item.value }))
+                : fallback;
 
-            const oneHourInMs = 60 * 60 * 1000;
-            return (appTime - regTime) > oneHourInMs;
+            const unique: { label: string, value: string }[] = [];
+            const seen = new Set<string>();
+
+            for (const item of baseList) {
+                if (item.value && !seen.has(item.value)) {
+                    seen.add(item.value);
+                    unique.push(item);
+                }
+            }
+
+            if (currentValues && Array.isArray(currentValues)) {
+                for (const val of currentValues) {
+                    if (val && !seen.has(val)) {
+                        seen.add(val);
+                        unique.push({ label: val, value: val });
+                    }
+                }
+            }
+            return unique;
         };
 
-        const showProgressMonitoring = isPatientOld(appData);
+        const medicineOptions = useMemo(() => {
+            const baseList = (medicinesList && medicinesList.length > 0)
+                ? medicinesList.map(m => ({ label: m.name, value: m.name }))
+                : MEDICINE_OPTIONS;
+
+            const unique: { label: string, value: string }[] = [];
+            const seen = new Set<string>();
+
+            for (const opt of baseList) {
+                if (opt.value && !seen.has(opt.value)) {
+                    seen.add(opt.value);
+                    unique.push(opt);
+                }
+            }
+
+            if (medicines && Array.isArray(medicines)) {
+                for (const med of medicines) {
+                    if (med.name && !seen.has(med.name)) {
+                        seen.add(med.name);
+                        unique.push({ label: med.name, value: med.name });
+                    }
+                }
+            }
+            return unique;
+        }, [medicinesList, medicines]);
+
+        const dosageOptions = useMemo(() => {
+            const currentValues = medicines ? medicines.map(m => m.dosage) : [];
+            return getUniqueOptions(dosageList, DOSAGE_OPTIONS, currentValues);
+        }, [dosageList, medicines]);
+
+        const frequencyOptions = useMemo(() => {
+            const currentValues = medicines ? medicines.map(m => m.frequency) : [];
+            return getUniqueOptions(frequencyList, FREQUENCY_OPTIONS, currentValues);
+        }, [frequencyList, medicines]);
+
+        const durationOptions = useMemo(() => {
+            const currentValues = medicines ? medicines.map(m => m.duration) : [];
+            return getUniqueOptions(durationList, DURATION_OPTIONS, currentValues);
+        }, [durationList, medicines]);
+
+        const timingOptions = useMemo(() => {
+            const currentValues = medicines ? medicines.map(m => m.timing) : [];
+            return getUniqueOptions(timingList, TIMING_OPTIONS, currentValues);
+        }, [timingList, medicines]);
+
+        // Fetch patient's assessment history to determine visit count and visit type
+        const patientUhid = (appData?.uhid || appData?.patientID || "").trim();
+        const { data: assessmentHistoryData } = useGetPatientAssessmentHistoryQuery(
+            { uhid: patientUhid, filter: "all" },
+            { skip: !patientUhid }
+        );
+
+        const pastAssessmentCount = Array.isArray(assessmentHistoryData?.data) ? assessmentHistoryData.data.length : 0;
+        const currentVisitNumber = pastAssessmentCount + 1;
+        const calculatedVisitType = numberToOrdinalWord(currentVisitNumber);
+        const showProgressMonitoring = currentVisitNumber > 1;
 
         // Dialog & Submission States
         const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
@@ -210,15 +599,16 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     if (!dateStr) return "";
                     const parsed = Date.parse(dateStr);
                     if (isNaN(parsed)) return "";
-                    return new Date(dateStr).toISOString();
+                    const iso = new Date(dateStr).toISOString();
+                    if (iso === "1976-01-03T00:00:00.000Z" || iso.startsWith("1976-01-03")) {
+                        return "";
+                    }
+                    return iso;
                 };
 
                 const buildResponse = (baseObject: any, isUpdated: boolean) => {
                     const getVisitType = () => {
-                        const vt = (appData?.visitType || baseObject?.metadata?.visitType || aiResponse?.metadata?.visitType || "first").trim().toLowerCase();
-                        if (vt === "first") return "first";
-                        if (vt === "follow-up" || vt === "followup") return "follow-up";
-                        return "other";
+                        return calculatedVisitType;
                     };
 
                     const metadata = {
@@ -320,7 +710,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     const mapAllergy = (a: string) => {
                         if (a === "food") return "Food";
                         if (a === "drug") return "Drug";
-                        if (a === "skin") return "Skin";
+                        if (a === "skin" || a === "other") return "Other";
                         return "Nil";
                     };
 
@@ -370,13 +760,17 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         ? null
                         : (isUpdated
                             ? {
-                                cycle: (cycle || baseObject?.specializedHistory?.gynaecHistory?.cycle || "Regular") as any,
-                                flow: (flow || baseObject?.specializedHistory?.gynaecHistory?.flow || "Normal") as any,
+                                cycle: cycle
+                                    ? (cycle.charAt(0).toUpperCase() + cycle.slice(1))
+                                    : (baseObject?.specializedHistory?.gynaecHistory?.cycle || ""),
+                                flow: flow
+                                    ? (flow.charAt(0).toUpperCase() + flow.slice(1))
+                                    : (baseObject?.specializedHistory?.gynaecHistory?.flow || ""),
                                 pain: gynaecPain || baseObject?.specializedHistory?.gynaecHistory?.pain || "",
                                 discharge: discharge || baseObject?.specializedHistory?.gynaecHistory?.discharge || "",
                                 pregnancy: pregnancy || baseObject?.specializedHistory?.gynaecHistory?.pregnancy || "",
                                 miscarriage: miscarriage || baseObject?.specializedHistory?.gynaecHistory?.miscarriage || "",
-                                remarks: baseObject?.specializedHistory?.gynaecHistory?.remarks || ""
+                                remarks: gynaecRemarks || baseObject?.specializedHistory?.gynaecHistory?.remarks || aiResponse?.specializedHistory?.gynaecHistory?.remarks || ""
                             }
                             : (baseObject?.specializedHistory?.gynaecHistory || aiResponse?.specializedHistory?.gynaecHistory || null));
 
@@ -387,9 +781,15 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                 symptoms: (anxiety || depression || sleepQuality)
                                     ? ([anxiety, depression, sleepQuality].filter(Boolean) as any[])
                                     : (baseObject?.specializedHistory?.mentalHealth?.symptoms || aiResponse?.specializedHistory?.mentalHealth?.symptoms || []),
-                                anxietyDetails: baseObject?.specializedHistory?.mentalHealth?.anxietyDetails || aiResponse?.specializedHistory?.mentalHealth?.anxietyDetails || "",
-                                depressionDetails: baseObject?.specializedHistory?.mentalHealth?.depressionDetails || aiResponse?.specializedHistory?.mentalHealth?.depressionDetails || "",
-                                sleepDetails: baseObject?.specializedHistory?.mentalHealth?.sleepDetails || aiResponse?.specializedHistory?.mentalHealth?.sleepDetails || "",
+                                anxietyDetails: anxiety
+                                    ? (anxiety.charAt(0).toUpperCase() + anxiety.slice(1))
+                                    : (baseObject?.specializedHistory?.mentalHealth?.anxietyDetails || aiResponse?.specializedHistory?.mentalHealth?.anxietyDetails || ""),
+                                depressionDetails: depression
+                                    ? (depression.charAt(0).toUpperCase() + depression.slice(1))
+                                    : (baseObject?.specializedHistory?.mentalHealth?.depressionDetails || aiResponse?.specializedHistory?.mentalHealth?.depressionDetails || ""),
+                                sleepDetails: sleepQuality
+                                    ? (sleepQuality.charAt(0).toUpperCase() + sleepQuality.slice(1))
+                                    : (baseObject?.specializedHistory?.mentalHealth?.sleepDetails || aiResponse?.specializedHistory?.mentalHealth?.sleepDetails || ""),
                                 stressLevel: stressLevel
                                     ? ((stressLevel ? (stressLevel.charAt(0).toUpperCase() + stressLevel.slice(1)) : "None") as any)
                                     : (baseObject?.specializedHistory?.mentalHealth?.stressLevel || aiResponse?.specializedHistory?.mentalHealth?.stressLevel || "None"),
@@ -406,23 +806,23 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         systemicNotes: isUpdated
                             ? {
                                 gastro: {
-                                    symptoms: gastricValue ? [gastricValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.gastro?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.gastro?.symptoms || ["Nil"]),
+                                    symptoms: gastricValue ? gastricValue.split(",").map(v => v.trim()).filter(Boolean) as any[] : (baseObject?.specializedHistory?.systemicNotes?.gastro?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.gastro?.symptoms || ["Nil"]),
                                     remarks: gastricRemarks || baseObject?.specializedHistory?.systemicNotes?.gastro?.remarks || aiResponse?.specializedHistory?.systemicNotes?.gastro?.remarks || ""
                                 },
                                 respiratory: {
-                                    symptoms: respiratoryValue ? [respiratoryValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.respiratory?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.symptoms || ["Nil"]),
+                                    symptoms: respiratoryValue ? respiratoryValue.split(",").map(v => v.trim()).filter(Boolean) as any[] : (baseObject?.specializedHistory?.systemicNotes?.respiratory?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.symptoms || ["Nil"]),
                                     remarks: respiratoryRemarks || baseObject?.specializedHistory?.systemicNotes?.respiratory?.remarks || aiResponse?.specializedHistory?.systemicNotes?.respiratory?.remarks || ""
                                 },
                                 cardiac: {
-                                    symptoms: cardiacValue ? [cardiacValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.cardiac?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.symptoms || ["Nil"]),
+                                    symptoms: cardiacValue ? cardiacValue.split(",").map(v => v.trim()).filter(Boolean) as any[] : (baseObject?.specializedHistory?.systemicNotes?.cardiac?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.symptoms || ["Nil"]),
                                     remarks: cardiacRemarks || baseObject?.specializedHistory?.systemicNotes?.cardiac?.remarks || aiResponse?.specializedHistory?.systemicNotes?.cardiac?.remarks || ""
                                 },
                                 nervous: {
-                                    symptoms: nervousValue ? [nervousValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.nervous?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.nervous?.symptoms || ["Nil"]),
+                                    symptoms: nervousValue ? nervousValue.split(",").map(v => v.trim()).filter(Boolean) as any[] : (baseObject?.specializedHistory?.systemicNotes?.nervous?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.nervous?.symptoms || ["Nil"]),
                                     remarks: nervousRemarks || baseObject?.specializedHistory?.systemicNotes?.nervous?.remarks || aiResponse?.specializedHistory?.systemicNotes?.nervous?.remarks || ""
                                 },
                                 urinary: {
-                                    symptoms: urinaryValue ? [urinaryValue] as any[] : (baseObject?.specializedHistory?.systemicNotes?.urinary?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.urinary?.symptoms || ["Nil"]),
+                                    symptoms: urinaryValue ? urinaryValue.split(",").map(v => v.trim()).filter(Boolean) as any[] : (baseObject?.specializedHistory?.systemicNotes?.urinary?.symptoms || aiResponse?.specializedHistory?.systemicNotes?.urinary?.symptoms || ["Nil"]),
                                     remarks: urinaryRemarks || baseObject?.specializedHistory?.systemicNotes?.urinary?.remarks || aiResponse?.specializedHistory?.systemicNotes?.urinary?.remarks || ""
                                 }
                             }
@@ -481,25 +881,40 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             },
                         painMapping: isUpdated
                             ? (markers.length > 0
-                                ? markers.map((m: any) => {
-                                    const bodyHalf = m.x < 33 ? "left" : (m.x > 66 ? "right" : "center");
-                                    const bodyVertical = m.y < 33 ? "upper" : (m.y > 66 ? "lower" : "middle");
-                                    const bodyZone = bodyHalf === "center"
-                                        ? (bodyVertical === "lower" ? "center-lower" : "center-upper")
-                                        : `${bodyHalf}-${bodyVertical}`;
-                                    return {
-                                        id: m.id?.toString() || "",
-                                        view: (m.view || "front") as any,
-                                        markerType: (m.type || "pain") as any,
-                                        bodyZone: bodyZone as any,
-                                        bodyHalf: bodyHalf as any,
-                                        bodyVertical: bodyVertical as any,
-                                        xPercent: Number(m.x) || 0,
-                                        yPercent: Number(m.y) || 0,
-                                        bilateralSymmetry: !!m.bilateralSymmetry,
-                                        notes: m.notes || ""
-                                    };
-                                })
+                                // Bilateral dot-pairs share a groupId → serialize each
+                                // logical mark ONCE (with bilateralSymmetry: true),
+                                // so 2 shoulder dots come back as 1 painMapping entry.
+                                ? markers
+                                    .filter((m: any, idx: number, arr: any[]) => {
+                                        const g = m.groupId ?? String(m.id);
+                                        return arr.findIndex((o: any) => (o.groupId ?? String(o.id)) === g) === idx;
+                                    })
+                                    .map((m: any) => {
+                                        const view = (m.view === "back" ? "back" : "front") as BodyView;
+                                        const mx = Number(m.x) || 0;
+                                        const my = Number(m.y) || 0;
+                                        // Resolve the nearest anatomical zone (14 rows × left/right)
+                                        // with PATIENT-side left/right (front view is mirrored).
+                                        const zoneInfo = nearestBodyZone(gender, view, mx, my);
+                                        const isBilateral = !!m.bilateral || !!m.bilateralSymmetry;
+                                        const bodyHalf = isBilateral ? "center" : zoneInfo.side;
+                                        const bodyVertical = my < 33 ? "upper" : (my > 66 ? "lower" : "middle");
+                                        const bodyZone = `${bodyHalf}-${bodyVertical}`;
+                                        return {
+                                            id: m.groupId || m.id?.toString() || "",
+                                            view: view as any,
+                                            markerType: (m.type || "pain") as any,
+                                            bodyZone: bodyZone as any,
+                                            bodyHalf: bodyHalf as any,
+                                            bodyVertical: bodyVertical as any,
+                                            bodyCode: zoneInfo.code,
+                                            bodyRegion: zoneInfo.region,
+                                            xPercent: mx,
+                                            yPercent: my,
+                                            bilateralSymmetry: isBilateral,
+                                            notes: m.notes || ""
+                                        };
+                                    })
                                 : (baseObject?.physicalExamination?.painMapping || aiResponse?.physicalExamination?.painMapping || []))
                             : (baseObject?.physicalExamination?.painMapping || aiResponse?.physicalExamination?.painMapping || []),
                         asthaVidhaPariksha: isUpdated
@@ -530,7 +945,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     const investigations = {
                         radiology: isUpdated
                             ? {
-                                findings: radiologySelected ? [radiologySelected] as any[] : (baseObject?.investigations?.radiology?.findings || aiResponse?.investigations?.radiology?.findings || ["Nil"]),
+                                findings: radiologySelected ? radiologySelected.split(",").map(s => s.trim()).filter(Boolean) as any[] : (baseObject?.investigations?.radiology?.findings || aiResponse?.investigations?.radiology?.findings || ["Nil"]),
                                 remarks: radiologyRemarks || baseObject?.investigations?.radiology?.remarks || aiResponse?.investigations?.radiology?.remarks || ""
                             }
                             : {
@@ -539,7 +954,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             },
                         laboratory: isUpdated
                             ? {
-                                tests: pathologySelected ? [pathologySelected] as any[] : (baseObject?.investigations?.laboratory?.tests || aiResponse?.investigations?.laboratory?.tests || ["Nil"]),
+                                tests: pathologySelected ? pathologySelected.split(",").map(s => s.trim()).filter(Boolean) as any[] : (baseObject?.investigations?.laboratory?.tests || aiResponse?.investigations?.laboratory?.tests || ["Nil"]),
                                 testsPrescribed: prescribedLabTests || baseObject?.investigations?.laboratory?.testsPrescribed || aiResponse?.investigations?.laboratory?.testsPrescribed || "",
                                 remarks: baseObject?.investigations?.laboratory?.remarks || baseObject?.investigations?.laboratory?.remarks || ""
                             }
@@ -573,16 +988,32 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                             : (baseObject?.treatmentPlan?.patientEducation || aiResponse?.treatmentPlan?.patientEducation || ""),
                         prescribedMedicines: isUpdated
                             ? (medicines.some(m => m.name)
-                                ? medicines.map((m: any) => ({
-                                    medicineName: m.name || "",
-                                    medicineDosage: m.dosage || "",
-                                    medicineFrequency: m.frequency || "",
-                                    medicineTiming: m.timing || "",
-                                    medicineDuration: m.duration || "",
-                                    medicineRemarks: m.remarks || "",
-                                    confidence: 1.0,
-                                    stamp: { Std_Code: "", Std_Name: "" }
-                                }))
+                                ? medicines.map((m: any) => {
+                                    const dbMed = Array.isArray(medicinesList)
+                                        ? medicinesList.find(db => (db.name || "").trim().toLowerCase() === (m.name || "").trim().toLowerCase())
+                                        : null;
+                                    const { amount: dVal, unit: dUnit } = parseDosageComponents(m.dosage);
+                                    const { amount: durVal, unit: durUnit } = parseDurationComponents(m.duration);
+                                    return {
+                                        medicineName: m.name || "",
+                                        medicineDosage: m.dosage || "",
+                                        medicineFrequency: m.frequency || "",
+                                        medicineTiming: getTimingLabel(m.timing) || m.timing || "",
+                                        medicineDuration: m.duration || "",
+                                        medicineRemarks: m.remarks || "",
+                                        dosageValue: dVal ? Number(dVal) : 1,
+                                        dosageUnit: dUnit || "TAB",
+                                        durationValue: durVal ? Number(durVal) : 1,
+                                        durationUnit: (durUnit || "Days").toUpperCase(),
+                                        frequencyKey: normalizeFrequencyValue(m.frequency) || m.frequency || "",
+                                        timingKey: getTimingKey(m.timing) || (m.timingKey && m.timingKey.toUpperCase()) || "",
+                                        confidence: 1.0,
+                                        stamp: {
+                                            Std_Code: dbMed?.jatayuCd || "",
+                                            Std_Name: dbMed?.name || m.name || ""
+                                        }
+                                    };
+                                })
                                 : (baseObject?.treatmentPlan?.prescribedMedicines || aiResponse?.treatmentPlan?.prescribedMedicines || []))
                             : (baseObject?.treatmentPlan?.prescribedMedicines || aiResponse?.treatmentPlan?.prescribedMedicines || []),
                         diet: isUpdated
@@ -621,6 +1052,22 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         comparisonWithPreviousVisit: isUpdated
                             ? (progressStatus || baseObject?.progressMonitoring?.comparisonWithPreviousVisit || aiResponse?.progressMonitoring?.comparisonWithPreviousVisit || "")
                             : (baseObject?.progressMonitoring?.comparisonWithPreviousVisit || aiResponse?.progressMonitoring?.comparisonWithPreviousVisit || ""),
+                        medicineAdherence: isUpdated
+                            ? (medicineAdherence || baseObject?.progressMonitoring?.medicineAdherence || aiResponse?.progressMonitoring?.medicineAdherence || "")
+                            : (baseObject?.progressMonitoring?.medicineAdherence || aiResponse?.progressMonitoring?.medicineAdherence || ""),
+                        symptomRecovery: isUpdated
+                            ? {
+                                pain: Number(painRecovery) || 0,
+                                digestion: Number(digestionRecovery) || 0,
+                                energy: Number(energyRecovery) || 0,
+                                sleep: Number(sleepRecovery) || 0
+                            }
+                            : (baseObject?.progressMonitoring?.symptomRecovery || aiResponse?.progressMonitoring?.symptomRecovery || {
+                                pain: 0,
+                                digestion: 0,
+                                energy: 0,
+                                sleep: 0
+                            }),
                         overallImprovement: isUpdated
                             ? (getImprovement() as any)
                             : (baseObject?.progressMonitoring?.overallImprovement || aiResponse?.progressMonitoring?.overallImprovement || "First Visit")
@@ -686,29 +1133,204 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         physicalExamination,
                         investigations,
                         treatmentPlan,
-                        progressMonitoring,
+                        ...(showProgressMonitoring ? { progressMonitoring } : {}),
                         progressTracking
                     };
                 };
 
                 const updatedResponse = buildResponse(aiResponse, true);
 
+                const parseDosage = (dosageStr: string) => {
+                    if (!dosageStr) return { amount: null, unit: null };
+                    const match = dosageStr.trim().match(/^([0-9\/\.\u00BC-\u00BE\u2150-\u2189]+)\s*(.*)$/);
+                    if (match) {
+                        let amount = match[1];
+                        let unitRaw = match[2].trim().toUpperCase();
+                        let unit = null;
+                        if (unitRaw.includes("TABLET") || unitRaw.includes("TAB")) unit = "TABLET";
+                        else if (unitRaw.includes("CAPSULE") || unitRaw.includes("CAP")) unit = "CAPSULE";
+                        else if (unitRaw.includes("ML")) unit = "ML";
+                        else if (unitRaw.includes("DROP")) unit = "DROP";
+                        else if (unitRaw.includes("SPOON") || unitRaw.includes("TSP")) unit = "SPOON";
+                        else if (unitRaw.includes("GM") || unitRaw.includes("GRAM")) unit = "GM";
+
+                        return { amount, unit };
+                    }
+                    return { amount: dosageStr, unit: null };
+                };
+
+                const mapFrequency = (freqStr: string): string | null => {
+                    if (!freqStr) return null;
+                    const clean = freqStr.trim().toUpperCase();
+                    if (clean.includes("ONCE DAILY") || clean === "OD" || clean.includes("ONCE A DAY")) return "OD";
+                    if (clean.includes("TWICE DAILY") || clean === "BD" || clean.includes("TWICE A DAY")) return "BD";
+                    if (clean.includes("THRICE DAILY") || clean === "TDS") return "TDS";
+                    if (clean.includes("FOUR TIMES DAILY") || clean === "QID") return "QID";
+                    if (clean.includes("EVERY MORNING")) return "EVERY_MORNING";
+                    if (clean.includes("EVERY EVENING")) return "EVERY_EVENING";
+                    if (clean.includes("EVERY NIGHT") || clean === "EVERY_NIGHT") return "EVERY_NIGHT";
+                    if (clean.includes("EVERY 4 HOURS")) return "EVERY_4_HOURS";
+                    if (clean.includes("EVERY 6 HOURS")) return "EVERY_6_HOURS";
+                    if (clean.includes("EVERY 8 HOURS")) return "EVERY_8_HOURS";
+                    if (clean.includes("EVERY 12 HOURS")) return "EVERY_12_HOURS";
+                    if (clean.includes("EVERY 24 HOURS")) return "EVERY_24_HOURS";
+                    if (clean.includes("ONCE WEEKLY")) return "ONCE_WEEKLY";
+                    if (clean.includes("TWICE WEEKLY")) return "TWICE_WEEKLY";
+                    if (clean.includes("ALTERNATE DAYS")) return "ALTERNATE_DAYS";
+                    if (clean.includes("ONCE MONTHLY")) return "ONCE_MONTHLY";
+
+                    const enums = [
+                        'OD', 'BD', 'TDS', 'QID',
+                        'EVERY_MORNING', 'EVERY_EVENING', 'EVERY_NIGHT',
+                        'EVERY_4_HOURS', 'EVERY_6_HOURS', 'EVERY_8_HOURS', 'EVERY_12_HOURS', 'EVERY_24_HOURS',
+                        'ONCE_WEEKLY', 'TWICE_WEEKLY', 'ALTERNATE_DAYS', 'ONCE_MONTHLY',
+                    ];
+                    if (enums.includes(clean)) return clean;
+                    return null;
+                };
+
+                const mapTiming = (timingStr: string): string | null => {
+                    if (!timingStr) return null;
+                    const clean = timingStr.trim().toUpperCase();
+
+                    if (clean.includes("BEFORE BREAKFAST") || clean === "BEFORE_BREAKFAST") return "BEFORE_BREAKFAST";
+                    if (clean.includes("AFTER BREAKFAST") || clean === "AFTER_BREAKFAST") return "AFTER_BREAKFAST";
+                    if (clean.includes("BEFORE LUNCH") || clean === "BEFORE_LUNCH") return "BEFORE_LUNCH";
+                    if (clean.includes("AFTER LUNCH") || clean === "AFTER_LUNCH") return "AFTER_LUNCH";
+                    if (clean.includes("BEFORE DINNER") || clean === "BEFORE_DINNER") return "BEFORE_DINNER";
+                    if (clean.includes("AFTER DINNER") || clean === "AFTER_DINNER") return "AFTER_DINNER";
+                    if (clean.includes("EMPTY STOMACH") || clean === "EMPTY_STOMACH") return "EMPTY_STOMACH";
+                    if (clean.includes("EARLY MORNING EMPTY STOMACH") || clean === "EARLY_MORNING_EMPTY_STOMACH") return "EARLY_MORNING_EMPTY_STOMACH";
+                    if (clean.includes("AT BEDTIME") || clean === "AT_BEDTIME") return "AT_BEDTIME";
+                    if (clean.includes("BEFORE SLEEP") || clean === "BEFORE_SLEEP") return "BEFORE_SLEEP";
+                    if (clean.includes("BEFORE FOOD") || clean === "BEFORE_FOOD") return "BEFORE_FOOD";
+                    if (clean.includes("AFTER FOOD") || clean === "AFTER_FOOD") return "AFTER_FOOD";
+                    if (clean.includes("WITH FOOD") || clean === "WITH_FOOD") return "WITH_FOOD";
+                    if (clean.includes("WITH MILK") || clean === "WITH_MILK") return "WITH_MILK";
+                    if (clean.includes("WITH WATER") || clean === "WITH_WATER") return "WITH_WATER";
+                    if (clean.includes("MORNING") && !clean.includes("EARLY MORNING")) return "MORNING";
+                    if (clean.includes("AFTERNOON")) return "AFTERNOON";
+                    if (clean.includes("EVENING")) return "EVENING";
+                    if (clean.includes("NIGHT")) return "NIGHT";
+
+                    const enums = [
+                        'BEFORE_BREAKFAST', 'AFTER_BREAKFAST', 'BEFORE_LUNCH', 'AFTER_LUNCH',
+                        'BEFORE_DINNER', 'AFTER_DINNER', 'EMPTY_STOMACH', 'EARLY_MORNING_EMPTY_STOMACH',
+                        'AT_BEDTIME', 'BEFORE_SLEEP', 'BEFORE_FOOD', 'AFTER_FOOD', 'WITH_FOOD',
+                        'WITH_MILK', 'WITH_WATER', 'MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'
+                    ];
+                    if (enums.includes(clean)) {
+                        return clean;
+                    }
+
+                    return null;
+                };
+
+                const parseDuration = (durationStr: string) => {
+                    if (!durationStr) return { amount: null, unit: null };
+                    const match = durationStr.trim().match(/^([0-9\/\.\u00BC-\u00BE\u2150-\u2189]+)\s*(.*)$/);
+                    if (match) {
+                        let amount = match[1];
+                        let unitRaw = match[2].trim().toUpperCase();
+                        let unit = null;
+                        if (unitRaw.includes("DAY")) unit = "DAY";
+                        else if (unitRaw.includes("WEEK")) unit = "WEEK";
+                        else if (unitRaw.includes("MONTH")) unit = "MONTH";
+                        else if (unitRaw.includes("YEAR")) unit = "YEAR";
+
+                        return { amount, unit };
+                    }
+                    return { amount: durationStr, unit: null };
+                };
+
+                const updatedPrescribedMedicines = medicines
+                    .filter(m => m.name && m.name.trim() !== "")
+                    .map((m: any) => {
+                        const dbMed = Array.isArray(medicinesList)
+                            ? medicinesList.find(db => (db.name || "").trim().toLowerCase() === (m.name || "").trim().toLowerCase())
+                            : null;
+
+                        const parsedDosage = parseDosage(m.dosage);
+                        const parsedDuration = parseDuration(m.duration);
+
+                        return {
+                            medicineId: dbMed ? Number(dbMed.id) : null,
+                            medicineName: m.name || "",
+                            dosageAmount: parsedDosage.amount,
+                            dosageUnit: parsedDosage.unit,
+                            medicineFrequency: mapFrequency(m.frequency),
+                            medicineTiming: mapTiming(m.timing),
+                            durationAmount: parsedDuration.amount,
+                            durationUnit: parsedDuration.unit,
+                            remark: m.remarks || ""
+                        };
+                    });
+
+                const dynamicPatientType = (() => {
+                    const raw = (
+                        appData?.patientType ||
+                        appData?.patient_type ||
+                        appData?.type ||
+                        appData?.registration?.patientType ||
+                        (appData?.registration as any)?.patient_type ||
+                        ""
+                    ).toString().trim().toLowerCase();
+
+                    if (raw === "ipd") return "ipd";
+                    if (raw === "daycare" || raw === "day_care") return "daycare";
+                    if (raw === "opd") return "opd";
+                    return "opd";
+                })();
+
+                const resolvedPatientId = (() => {
+                    const pId = appData?.patientId ?? (appData as any)?.patient_id;
+                    if (pId != null && pId !== "") {
+                        const num = Number(pId);
+                        return isNaN(num) ? undefined : num;
+                    }
+                    return undefined;
+                })();
+
                 const payload: any = {
                     appointmentId: Number(appData?.appointmentId) || 101,
                     branchId: Number(branchId) || Number(appData?.branchId) || 2,
                     doctorId: Number(appData?.doctorId) || Number(authDoctorId) || 3,
-                    visitType: appData?.visitType || "first",
+                    visitType: calculatedVisitType,
+                    patientType: dynamicPatientType,
+                    ...((dynamicPatientType === "ipd" || dynamicPatientType === "daycare") && resolvedPatientId != null
+                        ? { patientId: resolvedPatientId }
+                        : {}
+                    ),
                     isEdited: true,
+                    recommendedCareType: patientReferredTo === "IPD Admission"
+                        ? "ipd"
+                        : patientReferredTo === "Day Care Admission"
+                            ? "day_care"
+                            : "followup",
                     aiResponse: aiResponse,
                     updatedResponse: updatedResponse,
+                    updatedPrescribedMedicines: updatedPrescribedMedicines,
                     therapies: (therapies || []).map(t => ({
                         uhid: appData?.uhid || appData?.patientID || "DRBS012026",
                         appointmentId: Number(appData?.appointmentId) || 2,
                         therapyId: Number(t.therapyId),
-                        patientType: "opd"
+                        therapySessions: t.therapySessions !== undefined ? Number(t.therapySessions) : undefined,
+                        therapyDays: t.therapyDays !== undefined ? Number(t.therapyDays) : undefined,
+                        patientType: dynamicPatientType
                     })),
                     uhid: appData?.uhid || appData?.patientID || "DRBS012026",
-                    doctorNotes: doctorNotes || ""
+                    doctorNotes: doctorNotes || "",
+                    ...(() => {
+                        const arr = Array.isArray(communicableDiseases)
+                            ? communicableDiseases
+                            : typeof communicableDiseases === "string" && communicableDiseases.trim()
+                                ? communicableDiseases.replace(/[{}]/g, "").split(",").map(s => s.trim()).filter(Boolean)
+                                : infectiousAlert && infectiousAlert !== "none" && infectiousAlert !== "normal"
+                                    ? [infectiousAlert]
+                                    : [];
+                        return arr.length > 0 ? { communicableDiseases: arr } : {};
+                    })(),
+                    // communicableDiseasesRemark: infectiousDetails
                 };
 
                 const validISO = getValidISO(followUpDate);
@@ -721,12 +1343,19 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     }
                 }
 
+                // console.log("Assessment payload before request:", JSON.stringify(payload, null, 2));
                 const result = await createOpdAssessment(payload).unwrap();
-                console.log("CreateOpdAssessment success:", result);
+                // console.log("CreateOpdAssessment success:", result);
+                if (typeof window !== "undefined") {
+                    const docId = appData?.doctorId || payload?.doctorId || 0;
+                    const appId = appData?.appointmentId || payload?.appointmentId || 0;
+                    localStorage.removeItem(`draft_consultation_${docId}_${appId}`);
+                }
                 setIsConfirmDialogOpen(false);
                 setShowSuccessDialog(true);
             } catch (error) {
                 console.error("CreateOpdAssessment error:", error);
+                // console.log("Full error details:", JSON.stringify(error, null, 2));
                 setIsConfirmDialogOpen(false);
                 setShowErrorDialog(true);
             } finally {
@@ -763,6 +1392,8 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const [bpRemarks, setBpRemarks] = useState("");
         const [thyroidRemarks, setThyroidRemarks] = useState("");
         const [allergyDetails, setAllergyDetails] = useState("");
+        const [infectiousAlert, setInfectiousAlert] = useState<"hiv" | "hepatitis" | "tb" | "none" | "normal" | "">("");
+        const [infectiousDetails, setInfectiousDetails] = useState("");
 
         // ------------------ Visit Details State ------------------
         const [visitDate, setVisitDate] = useState("2025-05-01");
@@ -773,17 +1404,17 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const [visitCount, setVisitCount] = useState(initialVisitCount || 1);
         const [progressStatus, setProgressStatus] = useState("");
         const [medicineAdherence, setMedicineAdherence] = useState("");
-        const [painRecovery, setPainRecovery] = useState(50);
-        const [digestionRecovery, setDigestionRecovery] = useState(50);
-        const [energyRecovery, setEnergyRecovery] = useState(50);
-        const [sleepRecovery, setSleepRecovery] = useState(50);
+        const [painRecovery, setPainRecovery] = useState(0);
+        const [digestionRecovery, setDigestionRecovery] = useState(0);
+        const [energyRecovery, setEnergyRecovery] = useState(0);
+        const [sleepRecovery, setSleepRecovery] = useState(0);
         const [clinicalRemarks, setClinicalRemarks] = useState("");
 
         useEffect(() => {
-            if (initialVisitCount !== undefined) {
-                setVisitCount(initialVisitCount);
+            if (currentVisitNumber) {
+                setVisitCount(currentVisitNumber);
             }
-        }, [initialVisitCount]);
+        }, [currentVisitNumber]);
 
         // ------------------ 4. Specialized History State ------------------
         const [cycle, setCycle] = useState("");
@@ -792,6 +1423,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const [discharge, setDischarge] = useState("");
         const [pregnancy, setPregnancy] = useState("");
         const [miscarriage, setMiscarriage] = useState("");
+        const [gynaecRemarks, setGynaecRemarks] = useState("");
 
         const [anxiety, setAnxiety] = useState("");
         const [depression, setDepression] = useState("");
@@ -850,6 +1482,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const [dietAdvice, setDietAdvice] = useState("");
         const [lifestyleChanges, setLifestyleChanges] = useState("");
         const [physicalExercises, setPhysicalExercises] = useState("");
+        const [patientReferredTo, setPatientReferredTo] = useState("");
 
         // Validation State
         const [errors, setErrors] = useState<Record<string, string>>({});
@@ -865,6 +1498,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const bloodPressureRef = useRef<HTMLDivElement>(null);
         const thyroidRef = useRef<HTMLDivElement>(null);
         const allergyHistoryRef = useRef<HTMLDivElement>(null);
+        const infectiousAlertRef = useRef<HTMLDivElement>(null);
 
         const gastricValueRef = useRef<HTMLDivElement>(null);
         const stressLevelRef = useRef<HTMLDivElement>(null);
@@ -873,15 +1507,16 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const standingRef = useRef<HTMLDivElement>(null);
         const walkingRef = useRef<HTMLDivElement>(null);
 
-        const prakritiRef = useRef<HTMLInputElement>(null);
-        const finalDiagnosisRef = useRef<HTMLInputElement>(null);
+        const prakritiRef = useRef<HTMLTextAreaElement>(null);
+        const finalDiagnosisRef = useRef<HTMLTextAreaElement>(null);
 
         const medicineRowRefs = useRef<(HTMLDivElement | null)[]>([]);
         const dietAdviceRef = useRef<HTMLInputElement>(null);
+        const patientReferredToRef = useRef<HTMLDivElement>(null);
 
         const progressStatusRef = useRef<HTMLDivElement>(null);
         const medicineAdherenceRef = useRef<HTMLDivElement>(null);
-        const clinicalRemarksRef = useRef<HTMLInputElement>(null);
+        const clinicalRemarksRef = useRef<HTMLTextAreaElement>(null);
 
         const containerRef = useRef<HTMLDivElement>(null);
         useArrowKeyNavigation(containerRef, true);
@@ -896,16 +1531,323 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
         const section7Ref = useRef<HTMLDivElement>(null);
         const section8Ref = useRef<HTMLDivElement>(null);
 
-        // Auto scroll to patient presentation section on mount (Step 3)
+        // Auto scroll to top of this card on mount (Step 3)
         useEffect(() => {
-            section1Ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            containerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, []);
+
+        const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+
+        // Load draft in ClinicalAssessmentRecord
+        useEffect(() => {
+            if (typeof window === "undefined") {
+                setIsDraftLoaded(true);
+                return;
+            }
+            const docId = appData?.doctorId || 0;
+            const appId = appData?.appointmentId || 0;
+            if (!docId || !appId) {
+                setIsDraftLoaded(true);
+                return;
+            }
+
+            const savedDraft = localStorage.getItem(`draft_consultation_${docId}_${appId}`);
+            if (savedDraft) {
+                try {
+                    const draft = JSON.parse(savedDraft);
+                    if (draft.diabeticYears !== undefined) setDiabeticYears(draft.diabeticYears);
+                    if (draft.diabetesNotes !== undefined) setDiabetesNotes(draft.diabetesNotes);
+                    if (draft.bpRemarks !== undefined) setBpRemarks(draft.bpRemarks);
+                    if (draft.thyroidRemarks !== undefined) setThyroidRemarks(draft.thyroidRemarks);
+                    if (draft.allergyDetails !== undefined) setAllergyDetails(draft.allergyDetails);
+                    if (draft.infectiousAlert !== undefined) setInfectiousAlert(draft.infectiousAlert);
+                    if (draft.infectiousDetails !== undefined) setInfectiousDetails(draft.infectiousDetails);
+                    if (draft.gastricValue !== undefined) setGastricValue(draft.gastricValue);
+                    if (draft.gastricRemarks !== undefined) setGastricRemarks(draft.gastricRemarks);
+                    if (draft.so2 !== undefined) setSo2(draft.so2);
+                    if (draft.respiratoryValue !== undefined) setRespiratoryValue(draft.respiratoryValue);
+                    if (draft.respiratoryRemarks !== undefined) setRespiratoryRemarks(draft.respiratoryRemarks);
+                    if (draft.cardiacValue !== undefined) setCardiacValue(draft.cardiacValue);
+                    if (draft.cardiacRemarks !== undefined) setCardiacRemarks(draft.cardiacRemarks);
+                    if (draft.nervousValue !== undefined) setNervousValue(draft.nervousValue);
+                    if (draft.nervousRemarks !== undefined) setNervousRemarks(draft.nervousRemarks);
+                    if (draft.urinaryValue !== undefined) setUrinaryValue(draft.urinaryValue);
+                    if (draft.urinaryRemarks !== undefined) setUrinaryRemarks(draft.urinaryRemarks);
+                    if (draft.cycle !== undefined) setCycle(draft.cycle);
+                    if (draft.flow !== undefined) setFlow(draft.flow);
+                    if (draft.gynaecPain !== undefined) setGynaecPain(draft.gynaecPain);
+                    if (draft.discharge !== undefined) setDischarge(draft.discharge);
+                    if (draft.pregnancy !== undefined) setPregnancy(draft.pregnancy);
+                    if (draft.miscarriage !== undefined) setMiscarriage(draft.miscarriage);
+                    if (draft.gynaecRemarks !== undefined) setGynaecRemarks(draft.gynaecRemarks);
+                    if (draft.anxiety !== undefined) setAnxiety(draft.anxiety);
+                    if (draft.depression !== undefined) setDepression(draft.depression);
+                    if (draft.sleepQuality !== undefined) setSleepQuality(draft.sleepQuality);
+                    if (draft.stressLevel !== undefined) setStressLevel(draft.stressLevel);
+                    if (draft.mentalRemarks !== undefined) setMentalRemarks(draft.mentalRemarks);
+                    if (draft.mobilityRemarks !== undefined) setMobilityRemarks(draft.mobilityRemarks);
+                    if (draft.painSite !== undefined) setPainSite(draft.painSite);
+                    if (draft.painScale !== undefined) setPainScale(draft.painScale);
+                    if (draft.painNotes !== undefined) setPainNotes(draft.painNotes);
+                    if (draft.markers !== undefined) setMarkers(draft.markers);
+                    if (draft.nadi !== undefined) setNadi(draft.nadi);
+                    if (draft.mala !== undefined) setMala(draft.mala);
+                    if (draft.mutra !== undefined) setMutra(draft.mutra);
+                    if (draft.jihva !== undefined) setJihva(draft.jihva);
+                    if (draft.shabda !== undefined) setShabda(draft.shabda);
+                    if (draft.sparsha !== undefined) setSparsha(draft.sparsha);
+                    if (draft.druk !== undefined) setDruk(draft.druk);
+                    if (draft.akruti !== undefined) setAkruti(draft.akruti);
+                    if (draft.nakha !== undefined) setNakha(draft.nakha);
+                    if (draft.vata !== undefined) setVata(draft.vata);
+                    if (draft.pitta !== undefined) setPitta(draft.pitta);
+                    if (draft.kapha !== undefined) setKapha(draft.kapha);
+                    if (draft.prakriti !== undefined) setPrakriti(draft.prakriti);
+                    if (draft.radiologySelected !== undefined) setRadiologySelected(draft.radiologySelected);
+                    if (draft.pathologySelected !== undefined) setPathologySelected(draft.pathologySelected);
+                    if (draft.radiologyRemarks !== undefined) setRadiologyRemarks(draft.radiologyRemarks);
+                    if (draft.prescribedLabTests !== undefined) setPrescribedLabTests(draft.prescribedLabTests);
+                    if (draft.provisionalDiagnosis !== undefined) setProvisionalDiagnosis(draft.provisionalDiagnosis);
+                    if (draft.patientInstruction !== undefined) setPatientInstruction(draft.patientInstruction);
+                    if (draft.dietAdvice !== undefined) setDietAdvice(draft.dietAdvice);
+                    if (draft.lifestyleChanges !== undefined) setLifestyleChanges(draft.lifestyleChanges);
+                    if (draft.physicalExercises !== undefined) setPhysicalExercises(draft.physicalExercises);
+                    if (draft.patientReferredTo !== undefined) setPatientReferredTo(draft.patientReferredTo);
+                    if (draft.progressStatus !== undefined) setProgressStatus(draft.progressStatus);
+                    if (draft.medicineAdherence !== undefined) setMedicineAdherence(draft.medicineAdherence);
+                    if (draft.painRecovery !== undefined) setPainRecovery(draft.painRecovery);
+                    if (draft.digestionRecovery !== undefined) setDigestionRecovery(draft.digestionRecovery);
+                    if (draft.energyRecovery !== undefined) setEnergyRecovery(draft.energyRecovery);
+                    if (draft.sleepRecovery !== undefined) setSleepRecovery(draft.sleepRecovery);
+                    if (draft.clinicalRemarks !== undefined) setClinicalRemarks(draft.clinicalRemarks);
+                    if (draft.hpi !== undefined) setHpi(draft.hpi);
+                    if (draft.socialHistory !== undefined) setSocialHistory(draft.socialHistory);
+                    if (draft.pastMedicalHistory !== undefined) setPastMedicalHistory(draft.pastMedicalHistory);
+                    if (draft.familyHistory !== undefined) setFamilyHistory(draft.familyHistory);
+                    if (draft.currentMedications !== undefined) setCurrentMedications(draft.currentMedications);
+                    if (draft.medRemarks !== undefined) setMedRemarks(draft.medRemarks);
+                    if (draft.surgeryHistory !== undefined) setSurgeryHistory(draft.surgeryHistory);
+                } catch (e) {
+                    console.error("Error loading draft in ClinicalAssessmentRecord:", e);
+                }
+            }
+            setIsDraftLoaded(true);
+        }, [appData?.doctorId, appData?.appointmentId]);
+
+        // Save draft in ClinicalAssessmentRecord
+        useEffect(() => {
+            if (!isDraftLoaded || typeof window === "undefined") return;
+            const docId = appData?.doctorId || 0;
+            const appId = appData?.appointmentId || 0;
+            if (!docId || !appId) return;
+
+            const draftKey = `draft_consultation_${docId}_${appId}`;
+            const existingRaw = localStorage.getItem(draftKey);
+            const existing = existingRaw ? JSON.parse(existingRaw) : {};
+
+            try {
+                const updated = {
+                    ...existing,
+                    isClinicalRecordSaved: true,
+                    hpi,
+                    socialHistory,
+                    pastMedicalHistory,
+                    familyHistory,
+                    currentMedications,
+                    medRemarks,
+                    surgeryHistory,
+                    diabeticYears,
+                    diabetesNotes,
+                    bpRemarks,
+                    thyroidRemarks,
+                    allergyDetails,
+                    infectiousAlert,
+                    infectiousDetails,
+                    gastricValue,
+                    gastricRemarks,
+                    so2,
+                    respiratoryValue,
+                    respiratoryRemarks,
+                    cardiacValue,
+                    cardiacRemarks,
+                    nervousValue,
+                    nervousRemarks,
+                    urinaryValue,
+                    urinaryRemarks,
+                    cycle,
+                    flow,
+                    gynaecPain,
+                    discharge,
+                    pregnancy,
+                    miscarriage,
+                    gynaecRemarks,
+                    anxiety,
+                    depression,
+                    sleepQuality,
+                    stressLevel,
+                    mentalRemarks,
+                    mobilityRemarks,
+                    painSite,
+                    painScale,
+                    painNotes,
+                    markers,
+                    nadi,
+                    mala,
+                    mutra,
+                    jihva,
+                    shabda,
+                    sparsha,
+                    druk,
+                    akruti,
+                    nakha,
+                    vata,
+                    pitta,
+                    kapha,
+                    prakriti,
+                    radiologySelected,
+                    pathologySelected,
+                    radiologyRemarks,
+                    prescribedLabTests,
+                    provisionalDiagnosis,
+                    patientInstruction,
+                    dietAdvice,
+                    lifestyleChanges,
+                    physicalExercises,
+                    patientReferredTo,
+                    progressStatus,
+                    medicineAdherence,
+                    painRecovery,
+                    digestionRecovery,
+                    energyRecovery,
+                    sleepRecovery,
+                    clinicalRemarks
+                };
+                localStorage.setItem(draftKey, JSON.stringify(updated));
+            } catch (e) {
+                console.error("Error updating draft in ClinicalAssessmentRecord:", e);
+            }
+        }, [
+            diabeticYears,
+            diabetesNotes,
+            bpRemarks,
+            thyroidRemarks,
+            allergyDetails,
+            infectiousAlert,
+            infectiousDetails,
+            gastricValue,
+            gastricRemarks,
+            so2,
+            respiratoryValue,
+            respiratoryRemarks,
+            cardiacValue,
+            cardiacRemarks,
+            nervousValue,
+            nervousRemarks,
+            urinaryValue,
+            urinaryRemarks,
+            cycle,
+            flow,
+            gynaecPain,
+            discharge,
+            pregnancy,
+            miscarriage,
+            gynaecRemarks,
+            anxiety,
+            depression,
+            sleepQuality,
+            stressLevel,
+            mentalRemarks,
+            mobilityRemarks,
+            painSite,
+            painScale,
+            painNotes,
+            markers,
+            nadi,
+            mala,
+            mutra,
+            jihva,
+            shabda,
+            sparsha,
+            druk,
+            akruti,
+            nakha,
+            vata,
+            pitta,
+            kapha,
+            prakriti,
+            radiologySelected,
+            pathologySelected,
+            radiologyRemarks,
+            prescribedLabTests,
+            provisionalDiagnosis,
+            patientInstruction,
+            dietAdvice,
+            lifestyleChanges,
+            physicalExercises,
+            patientReferredTo,
+            progressStatus,
+            medicineAdherence,
+            painRecovery,
+            digestionRecovery,
+            energyRecovery,
+            sleepRecovery,
+            clinicalRemarks,
+            hpi,
+            socialHistory,
+            pastMedicalHistory,
+            familyHistory,
+            currentMedications,
+            medRemarks,
+            surgeryHistory,
+            appData?.doctorId,
+            appData?.appointmentId
+        ]);
+
+        // Sync and initialize medicine errors for unmatched medicines
+        useEffect(() => {
+            if (Array.isArray(medicines)) {
+                setMedicineErrors(prev => {
+                    const nextErrors = medicines.map((med, idx) => {
+                        const currentErr = prev[idx] || {};
+                        if (med.unmatchedName && !med.name) {
+                            return {
+                                ...currentErr,
+                                name: `Prescribed Medicine  "${med.unmatchedName}" unable to find`
+                            };
+                        }
+                        return currentErr;
+                    });
+                    return nextErrors;
+                });
+            }
+        }, [medicines]);
 
         const [activeTimelineStep, setActiveTimelineStep] = useState(1);
 
         // Auto-populate local states when aiResponse becomes available
         useEffect(() => {
             if (!incomingAiResponse) return;
+
+            if (appData?.resumeDraft) {
+                if (typeof window !== "undefined") {
+                    const docId = appData?.doctorId || 0;
+                    const appId = appData?.appointmentId || 0;
+                    if (docId && appId) {
+                        const savedDraft = localStorage.getItem(`draft_consultation_${docId}_${appId}`);
+                        if (savedDraft) {
+                            try {
+                                const draft = JSON.parse(savedDraft);
+                                if (draft.isClinicalRecordSaved) {
+                                    return;
+                                }
+                            } catch (e) {
+                                console.error("Error reading draft key in AI mapping:", e);
+                            }
+                        }
+                    }
+                }
+            }
+
             const summaryObj = typeof incomingAiResponse === "string" ? {} : incomingAiResponse;
 
             // 1. Patient Presentation
@@ -939,101 +1881,391 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     if (low === "yes" || low === "true") setCurrentMedications("yes");
                     else if (low === "no" || low === "false") setCurrentMedications("no");
                 }
-                if (summaryObj.medications.doctorNotes) setMedRemarks(summaryObj.medications.doctorNotes);
+
+                const isCurrentMedYes = rawCurrentMed && (String(rawCurrentMed).toLowerCase() === "yes" || String(rawCurrentMed).toLowerCase() === "true");
+                const currentMedStatus = isCurrentMedYes ? "yes" : "no";
+
+                let docNotes = "";
+                const rawRemarks = summaryObj.medications.remarks || summaryObj.medications.doctorNotes;
+                if (Array.isArray(rawRemarks)) {
+                    docNotes = rawRemarks.map((r: any) => String(r).trim()).filter(Boolean).join(", ");
+                } else if (typeof rawRemarks === "string") {
+                    docNotes = rawRemarks.trim();
+                }
+
+                const currentMedsList = summaryObj.medications.currentMedicines || [];
+                const medsParagraph = Array.isArray(currentMedsList)
+                    ? currentMedsList.map((m: any) => {
+                        const parts = [
+                            m.medicineName || m.name,
+                            m.medicineDosage || m.dosage,
+                            m.medicineFrequency || m.frequency,
+                            m.medicineTiming || m.timing
+                        ].filter(Boolean);
+                        const duration = m.medicineDuration || m.duration;
+                        const durationStr = duration ? `for ${duration}` : "";
+                        const rem = m.remarks || m.medicineRemarks || "";
+                        const remStr = rem ? `(${rem})` : "";
+
+                        return `${parts.join(", ")} ${durationStr} ${remStr}`.replace(/\s+/g, " ").trim();
+                    }).filter(Boolean).join("; ")
+                    : "";
+
+                const currentMedParts: string[] = [currentMedStatus];
+                if (docNotes) {
+                    currentMedParts.push(docNotes);
+                }
+                if (medsParagraph) {
+                    currentMedParts.push(medsParagraph);
+                }
+                const formattedMedicationString = currentMedParts.join(", ");
+                setMedRemarks(formattedMedicationString);
+
                 if (summaryObj.medications.surgeryHistory) setSurgeryHistory(summaryObj.medications.surgeryHistory);
             }
 
             // 3. Systemic Review & Co-morbidities
             if (summaryObj.systemicReview) {
                 if (summaryObj.systemicReview.diabetes) {
+                    const status = summaryObj.systemicReview.diabetes.status;
+                    if (status) {
+                        const low = String(status).toLowerCase();
+                        if (low === "yes" || low === "true") setDiabetes("yes");
+                        else if (low === "no" || low === "false") setDiabetes("no");
+                    }
                     const years = summaryObj.systemicReview.diabetes.yearsIfDiabetic;
                     if (years !== undefined && years !== null) setDiabeticYears(String(years));
                     if (summaryObj.systemicReview.diabetes.notes) setDiabetesNotes(summaryObj.systemicReview.diabetes.notes);
                 }
-                if (summaryObj.systemicReview.bloodPressure?.remarks) setBpRemarks(summaryObj.systemicReview.bloodPressure.remarks);
-                if (summaryObj.systemicReview.thyroid?.remarks) setThyroidRemarks(summaryObj.systemicReview.thyroid.remarks);
-                if (summaryObj.systemicReview.allergy?.details) setAllergyDetails(summaryObj.systemicReview.allergy.details);
+                if (summaryObj.systemicReview.bloodPressure) {
+                    const status = summaryObj.systemicReview.bloodPressure.status;
+                    if (status) {
+                        const low = String(status).toLowerCase();
+                        if (low.includes("high")) setBloodPressure("high");
+                        else if (low.includes("low")) setBloodPressure("low");
+                        else if (low.includes("no") || low === "normal") setBloodPressure("no");
+                    }
+                    if (summaryObj.systemicReview.bloodPressure.remarks) setBpRemarks(summaryObj.systemicReview.bloodPressure.remarks);
+                }
+                if (summaryObj.systemicReview.thyroid) {
+                    const status = summaryObj.systemicReview.thyroid.status;
+                    if (status) {
+                        const low = String(status).toLowerCase();
+                        if (low.includes("hypo")) setThyroid("hypo");
+                        else if (low.includes("hyper")) setThyroid("hyper");
+                        else if (low.includes("no")) setThyroid("no");
+                    }
+                    if (summaryObj.systemicReview.thyroid.remarks) setThyroidRemarks(summaryObj.systemicReview.thyroid.remarks);
+                }
+                if (summaryObj.systemicReview.allergy) {
+                    const rawAllergyTypes = summaryObj.systemicReview.allergy.types;
+                    let allergyStr = "";
+                    if (Array.isArray(rawAllergyTypes)) {
+                        allergyStr = rawAllergyTypes.map((t: any) => t.type || t).join(", ").toLowerCase();
+                    } else if (typeof rawAllergyTypes === "string") {
+                        allergyStr = rawAllergyTypes.toLowerCase();
+                    }
+                    if (allergyStr) {
+                        if (allergyStr.includes("food")) setAllergy("food");
+                        else if (allergyStr.includes("drug")) setAllergy("drug");
+                        else if (allergyStr.includes("skin") || allergyStr.includes("other")) setAllergy("other");
+                        else if (allergyStr.includes("nil") || allergyStr.includes("no")) setAllergy("no");
+                    }
+                    if (summaryObj.systemicReview.allergy.details) setAllergyDetails(summaryObj.systemicReview.allergy.details);
+                }
             }
 
             // 4. Specialized History
-            if (summaryObj.specializedHistory?.gynaecHistory) {
-                const gh = summaryObj.specializedHistory.gynaecHistory;
-                if (gh.cycle) setCycle(gh.cycle);
-                if (gh.flow) setFlow(gh.flow);
+            const gh = summaryObj.specializedHistory?.gynaecHistory || summaryObj.gynaecHistory;
+            if (gh) {
+                if (gh.cycle) setCycle(String(gh.cycle).toLowerCase());
+                if (gh.flow) setFlow(String(gh.flow).toLowerCase());
                 if (gh.pain) setGynaecPain(gh.pain);
                 if (gh.discharge) setDischarge(gh.discharge);
                 if (gh.pregnancy) setPregnancy(gh.pregnancy);
                 if (gh.miscarriage) setMiscarriage(gh.miscarriage);
+                if (gh.remarks) setGynaecRemarks(gh.remarks);
             }
 
             if (summaryObj.specializedHistory?.mentalHealth) {
                 const mh = summaryObj.specializedHistory.mentalHealth;
-                const symptomsArr = mh.symptoms || [];
-                if (Array.isArray(symptomsArr)) {
-                    if (symptomsArr.includes("Anxiety")) setAnxiety("Anxiety");
-                    if (symptomsArr.includes("Depression")) setDepression("Depression");
-                    if (symptomsArr.includes("Sleep Issues")) setSleepQuality("Sleep Issues");
+                if (mh.anxietyDetails) {
+                    const low = String(mh.anxietyDetails).toLowerCase();
+                    if (low.includes("mild")) setAnxiety("mild");
+                    else if (low.includes("moderate")) setAnxiety("moderate");
+                    else if (low.includes("severe") || low.includes("serve")) setAnxiety("severe");
+                    else if (low.includes("none")) setAnxiety("none");
                 }
-                if (mh.stressLevel) setStressLevel(mh.stressLevel.toLowerCase() as any);
+                if (mh.depressionDetails) {
+                    const low = String(mh.depressionDetails).toLowerCase();
+                    if (low.includes("mild")) setDepression("mild");
+                    else if (low.includes("moderate")) setDepression("moderate");
+                    else if (low.includes("severe") || low.includes("serve")) setDepression("severe");
+                    else if (low.includes("none")) setDepression("none");
+                }
+                if (mh.sleepDetails) {
+                    const low = String(mh.sleepDetails).toLowerCase();
+                    if (low.includes("good")) setSleepQuality("good");
+                    else if (low.includes("fair")) setSleepQuality("fair");
+                    else if (low.includes("poor")) setSleepQuality("poor");
+                    else if (low.includes("insomnia")) setSleepQuality("insomnia");
+                }
+                if (mh.stressLevel) {
+                    const low = String(mh.stressLevel).toLowerCase();
+                    if (low.includes("mild")) setStressLevel("mild");
+                    else if (low.includes("moderate")) setStressLevel("moderate");
+                    else if (low.includes("severe") || low.includes("serve")) setStressLevel("severe");
+                    else if (low.includes("none")) setStressLevel("none");
+                }
                 if (mh.doctorNotes) setMentalRemarks(mh.doctorNotes);
             }
 
-            if (summaryObj.specializedHistory?.systemicNotes) {
-                const sn = summaryObj.specializedHistory.systemicNotes;
+            const sn = summaryObj.specializedHistory?.systemicNotes || summaryObj.systemicNotes;
+            if (sn) {
+                const normalizeSymptom = (symptoms: string[] | undefined, validValues: string[], hasOthers = false) => {
+                    if (!symptoms || !Array.isArray(symptoms) || symptoms.length === 0) return "";
+                    const normalized = symptoms
+                        .map(s => {
+                            const trimmed = s?.toLowerCase().trim();
+                            if (!trimmed) return "";
+                            if (trimmed === "nil" || trimmed === "none") return "none";
+                            const match = validValues.find(v => v.toLowerCase() === trimmed);
+                            if (match) return match;
+                            return hasOthers ? (validValues.includes("others") ? "others" : "other") : "";
+                        })
+                        .filter(Boolean);
+                    const unique = Array.from(new Set(normalized));
+                    return unique.join(",");
+                };
+
                 if (sn.gastro) {
-                    if (Array.isArray(sn.gastro.symptoms) && sn.gastro.symptoms[0]) setGastricValue(sn.gastro.symptoms[0]);
+                    setGastricValue(normalizeSymptom(sn.gastro.symptoms, ["acidity", "gerd", "gas", "abd pain", "constipation", "loose stool", "nausea", "other", "none"], true));
                     if (sn.gastro.remarks) setGastricRemarks(sn.gastro.remarks);
                 }
                 if (sn.respiratory) {
-                    if (Array.isArray(sn.respiratory.symptoms) && sn.respiratory.symptoms[0]) setRespiratoryValue(sn.respiratory.symptoms[0]);
+                    setRespiratoryValue(normalizeSymptom(sn.respiratory.symptoms, ["sob", "cough", "fever", "asthma", "wheeze", "other", "none"], true));
                     if (sn.respiratory.remarks) setRespiratoryRemarks(sn.respiratory.remarks);
                 }
                 if (sn.cardiac) {
-                    if (Array.isArray(sn.cardiac.symptoms) && sn.cardiac.symptoms[0]) setCardiacValue(sn.cardiac.symptoms[0]);
+                    setCardiacValue(normalizeSymptom(sn.cardiac.symptoms, ["chest pain", "palpitation", "sweating", "dizziness", "others", "none"], true));
                     if (sn.cardiac.remarks) setCardiacRemarks(sn.cardiac.remarks);
                 }
                 if (sn.nervous) {
-                    if (Array.isArray(sn.nervous.symptoms) && sn.nervous.symptoms[0]) setNervousValue(sn.nervous.symptoms[0]);
+                    setNervousValue(normalizeSymptom(sn.nervous.symptoms, ["headache", "sensory loss", "weakness", "others", "none"], true));
                     if (sn.nervous.remarks) setNervousRemarks(sn.nervous.remarks);
                 }
                 if (sn.urinary) {
-                    if (Array.isArray(sn.urinary.symptoms) && sn.urinary.symptoms[0]) setUrinaryValue(sn.urinary.symptoms[0]);
+                    setUrinaryValue(normalizeSymptom(sn.urinary.symptoms, ["burning", "frequency", "blood", "low output", "stones", "others", "none"], true));
                     if (sn.urinary.remarks) setUrinaryRemarks(sn.urinary.remarks);
                 }
             }
 
             // 5. Physical Examination & Disorders
-            if (summaryObj.physicalExamination) {
-                if (summaryObj.physicalExamination.balanceMobility?.remarks) setMobilityRemarks(summaryObj.physicalExamination.balanceMobility.remarks);
-                if (summaryObj.physicalExamination.pain) {
-                    const p = summaryObj.physicalExamination.pain;
-                    if (p.site) setPainSite(p.site);
-                    if (p.scale !== undefined && p.scale !== null) setPainScale(p.scale);
-                    if (p.locationNotes) setPainNotes(p.locationNotes);
+            const physExam = summaryObj.physicalExamination || {};
+            const rawPainObj = physExam.pain || summaryObj.pain;
+            const rawPainMapping = physExam.painMapping || summaryObj.painMapping;
+
+            if (physExam.balanceMobility?.remarks) {
+                setMobilityRemarks(physExam.balanceMobility.remarks);
+            }
+
+            if (rawPainObj) {
+                const p = rawPainObj;
+                if (p.site) setPainSite(p.site);
+                if (p.scale !== undefined && p.scale !== null) {
+                    const parsedScale = parseInt(String(p.scale), 10);
+                    setPainScale(isNaN(parsedScale) ? null : parsedScale);
                 }
-                if (summaryObj.physicalExamination.asthaVidhaPariksha) {
-                    const avp = summaryObj.physicalExamination.asthaVidhaPariksha;
-                    if (avp.pulse) setNadi(avp.pulse);
-                    if (avp.tongue) setJihva(avp.tongue);
-                    if (avp.eyes) setDruk(avp.eyes);
-                    if (avp.nails) setNakha(avp.nails);
-                    if (avp.vataNotes) setVata(avp.vataNotes);
-                    if (avp.pittaNotes) setPitta(avp.pittaNotes);
-                    if (avp.kaphaNotes) setKapha(avp.kaphaNotes);
-                    if (avp.overallPrakriti) setPrakriti(avp.overallPrakriti);
+                if (p.locationNotes) setPainNotes(p.locationNotes);
+
+                // Maps one AI painMapping item → one or MORE screen markers.
+                // Uses the per-gender/per-view calibrated body charts, so marks
+                // always land ON the silhouette (never in empty margins).
+                // Dots expanded from the same item share a groupId, so a bilateral
+                // item still counts (and saves) as ONE mark.
+                const mapPainItemToMarkers = (item: any, itemIdx: number): Array<{ x: number; y: number; view: BodyView; type: "pain" | "swelling" | "numbness"; groupId: string; bilateral: boolean; notes: string }> => {
+                    const zone = String(item.bodyZone || item.site || "").toLowerCase();
+                    const half = String(item.bodyHalf || "").toLowerCase();
+                    const notes = String(item.notes || "").toLowerCase();
+                    const itemId = String(item.id || "").toLowerCase();
+                    const allText = `${zone} | ${notes} | ${itemId}`;
+
+                    const type: "pain" | "swelling" | "numbness" = (item.markerType === "swelling" ? "swelling" : (item.markerType === "numbness" ? "numbness" : "pain"));
+                    const groupId = String(item.id || `pain_item_${itemIdx}`);
+                    const itemNotes = String(item.notes || "");
+
+                    // ── Patient side: bodyHalf field first, then id/notes hints ──
+                    let side: BodySide = "center";
+                    if (half === "left") side = "left";
+                    else if (half === "right") side = "right";
+                    else if (half !== "center") {
+                        if (/\bleft\b/.test(itemId) || /\bleft\b/.test(notes)) side = "left";
+                        else if (/\bright\b/.test(itemId) || /\bright\b/.test(notes)) side = "right";
+                    }
+
+                    // ── Row: explicit bodyCode (11..142) wins, else text detection ──
+                    let row: number | null = null;
+                    if (item.bodyCode !== undefined && item.bodyCode !== null) {
+                        const code = Number(item.bodyCode);
+                        if (code >= 11 && code <= 142) {
+                            row = Math.floor(code / 10);
+                            const codeSide = code % 10;
+                            if (side === "center") {
+                                if (codeSide === 1) side = "left";
+                                else if (codeSide === 2) side = "right";
+                            }
+                        }
+                    }
+                    if (row === null) row = detectBodyRow(allText);
+
+                    // Generic "back pain" that resolved to lower back (row 9) but the
+                    // item explicitly says the MIDDLE of the body → mid back (row 8),
+                    // so the mark stays at back center instead of the hip line.
+                    if (row === 9 && !/lower.?back|lumbar|sacr|tail.?bone|coccyx/i.test(allText)) {
+                        const vertical = String(item.bodyVertical || "").toLowerCase();
+                        if (vertical === "middle" || vertical === "mid") row = 8;
+                    }
+
+                    // ── View: anatomy-forced view wins over the AI's view field ──
+                    // (e.g. "lower back" can never be on the front view)
+                    const view: BodyView = detectForcedView(allText) ?? (item.view === "back" ? "back" : "front");
+
+                    if (row !== null) {
+                        // Bilateral / unspecified-side pain on paired limbs → mark BOTH
+                        // limbs instead of floating a dot in the gap between them.
+                        const isBilateral =
+                            item.bilateralSymmetry === true ||
+                            /bilateral|both\s+(knees|legs|shoulders|arms|hands|feet|ankles|hips|thighs|calves|elbows|wrists)/i.test(allText) ||
+                            (side === "center" && PAIRED_LIMB_ROWS.has(row));
+
+                        if (isBilateral && PAIRED_LIMB_ROWS.has(row)) {
+                            const l = getBodyZonePoint(gender, view, row, "left");
+                            const r = getBodyZonePoint(gender, view, row, "right");
+                            return [
+                                { x: l.x, y: l.y, view, type, groupId, bilateral: true, notes: itemNotes },
+                                { x: r.x, y: r.y, view, type, groupId, bilateral: true, notes: itemNotes },
+                            ];
+                        }
+                        const pt = getBodyZonePoint(gender, view, row, side);
+                        // Genital / private-part pain sits at the crotch — slightly
+                        // below the row-10 hip line on the front view.
+                        const genitalShift = (row === 10 && view === "front" && GENITAL_TERMS.test(allText)) ? 2.5 : 0;
+                        return [{ x: pt.x, y: pt.y + genitalShift, view, type, groupId, bilateral: false, notes: itemNotes }];
+                    }
+
+                    // ── No zone detected: fall back to AI coordinates + safety clamp ──
+                    let x = item.xPercent !== undefined && item.xPercent !== null ? Number(item.xPercent) : 50;
+                    let y = item.yPercent !== undefined && item.yPercent !== null ? Number(item.yPercent) : 50;
+                    if (y <= 10) { x = Math.max(42, Math.min(58, x)); }
+                    else if (y <= 22) { x = Math.max(28, Math.min(72, x)); }
+                    else if (y <= 52) { x = Math.max(18, Math.min(82, x)); }
+                    else if (y <= 60) { x = Math.max(33, Math.min(67, x)); }
+                    else if (y <= 78) { x = Math.max(36, Math.min(64, x)); }
+                    else if (y <= 92) { x = Math.max(38, Math.min(62, x)); }
+                    else { x = Math.max(40, Math.min(60, x)); }
+                    return [{ x, y, view, type, groupId, bilateral: false, notes: itemNotes }];
+                };
+
+                if (Array.isArray(rawPainMapping) && rawPainMapping.length > 0) {
+                    const baseId = Date.now();
+                    const newMarkers: BodyMarker[] = rawPainMapping
+                        .flatMap((item: any, itemIdx: number) => mapPainItemToMarkers(item, itemIdx))
+                        // De-duplicate points that resolve to the same spot on the same view
+                        .filter((pt, idx, arr) => arr.findIndex(o => o.view === pt.view && Math.abs(o.x - pt.x) < 1 && Math.abs(o.y - pt.y) < 1) === idx)
+                        .map((pt, idx) => ({
+                            id: baseId + idx,
+                            x: Math.round(pt.x * 10) / 10,
+                            y: Math.round(pt.y * 10) / 10,
+                            view: pt.view,
+                            type: pt.type,
+                            groupId: pt.groupId,
+                            bilateral: pt.bilateral,
+                            notes: pt.notes,
+                        }));
+                    setMarkers(newMarkers);
+                } else {
+                    const siteText = (p.site || "").toLowerCase();
+                    const notesText = (p.locationNotes || "").toLowerCase();
+                    const remarksText = (p.remarks || "").toLowerCase();
+                    const complaints = Array.isArray(summaryObj.patientPresentation?.chiefComplaint)
+                        ? summaryObj.patientPresentation.chiefComplaint.map((c: string) => c.toLowerCase())
+                        : [];
+                    const hpi = Array.isArray(summaryObj.patientPresentation?.hpi)
+                        ? summaryObj.patientPresentation.hpi.map((h: string) => h.toLowerCase())
+                        : [];
+
+                    const allText = [siteText, notesText, remarksText, ...complaints, ...hpi].join(" ");
+                    const newMarkers: BodyMarker[] = [];
+                    let nextId = Date.now();
+
+                    const hasPain = allText.includes("pain") || allText.includes("दर्द") || complaints.includes("pain");
+                    const hasSwelling = allText.includes("swelling") || allText.includes("सूजन") || allText.includes("स्वेलिंग") || complaints.includes("swelling");
+                    const hasNumbness = allText.includes("numb") || allText.includes("नंबनेस") || complaints.includes("numbness");
+
+                    const typesToPlace: ("pain" | "swelling" | "numbness")[] = [];
+                    if (hasPain) typesToPlace.push("pain");
+                    if (hasSwelling) typesToPlace.push("swelling");
+                    if (hasNumbness) typesToPlace.push("numbness");
+                    if (typesToPlace.length === 0) typesToPlace.push("pain");
+
+                    // Place markers via the calibrated per-gender charts so they
+                    // always land on the silhouette of the active body image.
+                    // Both dots of a left/right pair share a groupId → ONE mark.
+                    const addZoneMarker = (row: number, sides: BodySide[], view: BodyView, type: "pain" | "swelling" | "numbness", offset: number) => {
+                        const groupId = `auto_${row}_${view}_${type}`;
+                        const bilateral = sides.length > 1;
+                        sides.forEach((s) => {
+                            const pt = getBodyZonePoint(gender, view, row, s);
+                            newMarkers.push({ id: nextId++, x: pt.x, y: pt.y + offset, view, type, groupId, bilateral });
+                        });
+                    };
+
+                    const hasKnee = allText.includes("knee") || allText.includes("घुटने") || allText.includes("घुटनों");
+                    const hasBack = allText.includes("back") || allText.includes("कमर") || allText.includes("पीठ");
+                    const hasNeck = allText.includes("neck") || allText.includes("गर्दन");
+                    const hasShoulder = allText.includes("shoulder") || allText.includes("कंधे");
+                    const hasHead = allText.includes("head") || allText.includes("सिर");
+                    const hasFoot = allText.includes("foot") || allText.includes("feet") || allText.includes("ankle") || allText.includes("पैर");
+                    const hasHand = allText.includes("hand") || allText.includes("arm") || allText.includes("elbow") || allText.includes("हाथ");
+
+                    typesToPlace.forEach((type, idx) => {
+                        const offset = idx * 2; // small vertical shift so multiple mark types don't overlap
+                        if (hasKnee) addZoneMarker(12, ["left", "right"], "front", type, offset);
+                        if (hasBack) addZoneMarker(9, ["center"], "back", type, offset);
+                        if (hasNeck) addZoneMarker(2, ["center"], "back", type, offset);
+                        if (hasShoulder) addZoneMarker(3, ["left", "right"], "front", type, offset);
+                        if (hasHead) addZoneMarker(1, ["center"], "front", type, offset);
+                        if (hasFoot) addZoneMarker(14, ["left", "right"], "front", type, offset);
+                        if (hasHand) addZoneMarker(6, ["left", "right"], "front", type, offset);
+                    });
+
+                    if (newMarkers.length > 0) {
+                        setMarkers(newMarkers);
+                    }
                 }
+            }
+            if (physExam.asthaVidhaPariksha) {
+                const avp = physExam.asthaVidhaPariksha;
+                if (avp.pulse) setNadi(avp.pulse);
+                if (avp.tongue) setJihva(avp.tongue);
+                if (avp.eyes) setDruk(avp.eyes);
+                if (avp.nails) setNakha(avp.nails);
+                if (avp.vataNotes) setVata(avp.vataNotes);
+                if (avp.pittaNotes) setPitta(avp.pittaNotes);
+                if (avp.kaphaNotes) setKapha(avp.kaphaNotes);
+                if (avp.overallPrakriti) setPrakriti(avp.overallPrakriti);
             }
 
             // 6. Investigations
             if (summaryObj.investigations) {
                 if (summaryObj.investigations.radiology) {
                     const r = summaryObj.investigations.radiology;
-                    if (Array.isArray(r.findings) && r.findings[0]) setRadiologySelected(r.findings[0]);
+                    if (Array.isArray(r.findings)) setRadiologySelected(r.findings.join(","));
                     if (r.remarks) setRadiologyRemarks(r.remarks);
                 }
                 if (summaryObj.investigations.laboratory) {
                     const l = summaryObj.investigations.laboratory;
-                    if (Array.isArray(l.tests) && l.tests[0]) setPathologySelected(l.tests[0]);
+                    if (Array.isArray(l.tests)) setPathologySelected(l.tests.join(","));
                     if (l.testsPrescribed) setPrescribedLabTests(l.testsPrescribed);
                 }
                 if (summaryObj.investigations.diagnosis?.provisional) {
@@ -1049,6 +2281,34 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 if (tp.lifestyle) setLifestyleChanges(tp.lifestyle);
                 if (tp.yogaPranayama) setPhysicalExercises(tp.yogaPranayama);
                 if (tp.treatmentNotes) setClinicalRemarks(tp.treatmentNotes);
+            }
+
+            // 8. Progress Monitoring (Revisit)
+            if (summaryObj.progressMonitoring !== undefined && summaryObj.progressMonitoring !== null) {
+                const pm = summaryObj.progressMonitoring;
+                const progNotes = pm.progressNotes !== undefined ? pm.progressNotes : (pm.notes !== undefined ? pm.notes : (pm.remarks !== undefined ? pm.remarks : pm.clinicalRemarks));
+                if (progNotes !== undefined && progNotes !== null && typeof progNotes === "string" && progNotes.trim().toLowerCase() !== "nil" && progNotes.trim().toLowerCase() !== "n/a") {
+                    setClinicalRemarks(progNotes.trim());
+                }
+                if (pm.comparisonWithPreviousVisit !== undefined || pm.progressStatus !== undefined) {
+                    const statusStr = String(pm.progressStatus !== undefined ? pm.progressStatus : pm.comparisonWithPreviousVisit).toLowerCase();
+                    if (statusStr.includes("better") || statusStr.includes("improv")) setProgressStatus("Better");
+                    else if (statusStr.includes("same") || statusStr.includes("stabl")) setProgressStatus("Same");
+                    else if (statusStr.includes("worse")) setProgressStatus("Worse");
+                    else if (statusStr.includes("new")) setProgressStatus("New Symptoms");
+                }
+                if (pm.medicineAdherence !== undefined && pm.medicineAdherence !== null) {
+                    const adhStr = String(pm.medicineAdherence).toLowerCase();
+                    if (adhStr.includes("regular")) setMedicineAdherence("Regular");
+                    else if (adhStr.includes("irregular")) setMedicineAdherence("Irregular");
+                    else if (adhStr.includes("side")) setMedicineAdherence("Side Effects");
+                }
+                if (pm.symptomRecovery !== undefined && pm.symptomRecovery !== null) {
+                    if (pm.symptomRecovery.pain !== undefined && pm.symptomRecovery.pain !== null) setPainRecovery(Number(pm.symptomRecovery.pain) || 0);
+                    if (pm.symptomRecovery.digestion !== undefined && pm.symptomRecovery.digestion !== null) setDigestionRecovery(Number(pm.symptomRecovery.digestion) || 0);
+                    if (pm.symptomRecovery.energy !== undefined && pm.symptomRecovery.energy !== null) setEnergyRecovery(Number(pm.symptomRecovery.energy) || 0);
+                    if (pm.symptomRecovery.sleep !== undefined && pm.symptomRecovery.sleep !== null) setSleepRecovery(Number(pm.symptomRecovery.sleep) || 0);
+                }
             }
         }, [incomingAiResponse]);
 
@@ -1081,7 +2341,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 thyroid,
                 thyroidRemarks,
                 allergyHistory,
-                allergyDetails
+                allergyDetails,
+                // infectiousAlert,
+                // infectiousDetails
             ];
             const filled = fields.filter(f => typeof f === "string" ? f.trim() !== "" : !!f).length;
             return Math.round((filled / fields.length) * 100);
@@ -1205,22 +2467,32 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
         const SectionProgress = ({ percent }: { percent: number }) => {
             const { color, text } = getProgressColorAndLabel(percent);
+            const badgeClasses = percent === 0
+                ? "bg-[#FEE2E2] text-[#EF4444]"
+                : percent < 100
+                    ? "bg-[#FEF9C3] text-[#CA8A04]"
+                    : "bg-[#DCFCE7] text-[#16A34A]";
             return (
-                <div className="flex items-center gap-2">
-                    <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
-                        <div
-                            className="h-full transition-all duration-300"
-                            style={{
-                                width: `${percent}%`,
-                                backgroundColor: color
-                            }}
-                        />
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-[#EBECED] rounded-full overflow-hidden">
+                            <div
+                                className="h-full transition-all duration-300"
+                                style={{
+                                    width: `${percent}%`,
+                                    backgroundColor: color
+                                }}
+                            />
+                        </div>
+                        <span
+                            className="text-xs font-semibold transition-colors duration-300"
+                            style={{ color }}
+                        >
+                            {percent}%
+                        </span>
                     </div>
-                    <span
-                        className="text-xs font-semibold transition-colors duration-300"
-                        style={{ color }}
-                    >
-                        {percent}% {text}
+                    <span className={`px-3 py-1 rounded-[6px] text-xs font-bold transition-all duration-300 ${badgeClasses}`}>
+                        {text}
                     </span>
                 </div>
             );
@@ -1255,7 +2527,11 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
         const handleRowChange = (index: number, field: string, value: string) => {
             const updated = [...medicines];
-            updated[index] = { ...updated[index], [field]: value };
+            const updatedRow = { ...updated[index], [field]: value };
+            if (field === "name") {
+                delete updatedRow.unmatchedName;
+            }
+            updated[index] = updatedRow;
             setMedicines(updated);
 
             // Clear medicine error for this field
@@ -1302,6 +2578,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 newErrors.allergyHistory = "Allergy History status is required";
                 isValid = false;
             }
+            // Infectious Disease is optional
             if (!gastricValue) {
                 newErrors.gastricValue = "Gastric Complaints status is required";
                 isValid = false;
@@ -1338,6 +2615,10 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 newErrors.dietAdvice = "Diet Advice is required";
                 isValid = false;
             }
+            if (!patientReferredTo) {
+                newErrors.patientReferredTo = "Patient Referred To is required";
+                isValid = false;
+            }
             if (showProgressMonitoring) {
                 if (!progressStatus) {
                     newErrors.progressStatus = "Progress Status is required";
@@ -1359,12 +2640,40 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
             medicines.forEach((med, idx) => {
                 newMedErrors[idx] = {};
+                const isEmpty = !med.name && !med.dosage && !med.frequency && !med.duration && !med.timing && !med.unmatchedName;
+
+                if (!isEmpty) {
+                    if (!med.name) {
+                        if (med.unmatchedName) {
+                            newMedErrors[idx].name = `Prescribed Medicine "${med.unmatchedName}" unable to find`;
+                        } else {
+                            newMedErrors[idx].name = "Required";
+                        }
+                        isMedValid = false;
+                    }
+                    if (!med.dosage) {
+                        newMedErrors[idx].dosage = "Required";
+                        isMedValid = false;
+                    }
+                    if (!med.frequency) {
+                        newMedErrors[idx].frequency = "Required";
+                        isMedValid = false;
+                    }
+                    if (!med.duration) {
+                        newMedErrors[idx].duration = "Required";
+                        isMedValid = false;
+                    }
+                    if (!med.timing) {
+                        newMedErrors[idx].timing = "Required";
+                        isMedValid = false;
+                    }
+                }
             });
 
             setErrors(newErrors);
             setMedicineErrors(newMedErrors);
 
-            if (!isValid) {
+            if (!isValid || !isMedValid) {
                 // Find first error and scroll & focus
                 if (newErrors.chiefComplaint) {
                     chiefComplaintRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1387,6 +2696,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 } else if (newErrors.allergyHistory) {
                     allergyHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => allergyHistoryRef.current?.querySelector("button")?.focus(), 100);
+                } else if (newErrors.infectiousAlert) {
+                    infectiousAlertRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    setTimeout(() => infectiousAlertRef.current?.querySelector("button")?.focus(), 100);
                 } else if (newErrors.gastricValue) {
                     gastricValueRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => gastricValueRef.current?.querySelector("button")?.focus(), 100);
@@ -1412,7 +2724,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         rowEl?.scrollIntoView({ behavior: "smooth", block: "center" });
 
                         const err = newMedErrors[firstErrIdx];
-                        const fieldsOrder = ["name", "dosage", "frequency", "duration", "remarks"];
+                        const fieldsOrder = ["name", "dosage", "frequency", "duration", "timing", "remarks"];
                         const missingFieldIdx = fieldsOrder.findIndex(f => err[f]);
                         if (missingFieldIdx >= 0) {
                             setTimeout(() => {
@@ -1432,6 +2744,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                 } else if (newErrors.dietAdvice) {
                     dietAdviceRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => dietAdviceRef.current?.focus(), 100);
+                } else if (newErrors.patientReferredTo) {
+                    patientReferredToRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    setTimeout(() => patientReferredToRef.current?.querySelector("button")?.focus(), 100);
                 } else if (newErrors.progressStatus) {
                     progressStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                     setTimeout(() => progressStatusRef.current?.querySelector("button")?.focus(), 100);
@@ -1492,9 +2807,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
             if (y >= 22 && y < 45) {
                 return x >= 23 && x <= 77;
             }
-            // Hips & hands
+            // Hips & hands (female arms hang wider than male — allow up to 22/78)
             if (y >= 45 && y < 55) {
-                return x >= 25 && x <= 75;
+                return x >= 22 && x <= 78;
             }
             // Thighs
             if (y >= 55 && y < 78) {
@@ -1535,23 +2850,27 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
             const updatedMarkers = [...markers, newMarker];
             setMarkers(updatedMarkers);
-
-            const typeLabel = activeMarkType.charAt(0).toUpperCase() + activeMarkType.slice(1);
-            const markerDesc = `${typeLabel} marked on ${view} body diagram at location x:${newMarker.x}%, y:${newMarker.y}%`;
-            setPainNotes(prev => prev ? `${prev}\n- ${markerDesc}` : `- ${markerDesc}`);
         };
 
         const handleRemoveMarker = (id: number) => {
-            setMarkers(markers.filter(m => m.id !== id));
+            const removed = markers.find(m => m.id === id);
+            setMarkers(markers
+                .filter(m => m.id !== id)
+                .map(m => {
+                    // Partner dot of a removed bilateral pair → standalone single mark
+                    if (removed?.groupId && m.groupId === removed.groupId) {
+                        return { ...m, bilateral: false, groupId: undefined };
+                    }
+                    return m;
+                }));
         };
 
         const handleClearAllMarkers = () => {
             setMarkers([]);
-            setPainNotes("");
         };
 
         return (
-            <div ref={containerRef} className={`flex flex-col gap-6 w-full ${className}`}>
+            <div ref={containerRef} className={`flex flex-col gap-3 w-full ${className}`}>
 
                 {/* FORM COMPLETION STATUS PROGRESS BOARD */}
                 <div className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-4">
@@ -1659,27 +2978,47 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     </div>
                 </div>
 
-                {/* 1. PATIENT PRESENTATION */}
-                <div ref={section1Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
-                    <div className="flex items-center justify-between">
+                {/* Clinical Assessment Record Title Banner */}
+                <div className="flex items-center justify-between ">
+                    <div>
                         <h2 className="font-semibold text-lg text-[#262D3B]">Clinical Assessment Record</h2>
-                        {doctorNotes && (
-                            <button
-                                type="button"
-                                onClick={() => setIsNotesOpen(true)}
-                                className="px-4 py-1.5 cursor-pointer rounded-[32px] border border-[#0B8C00] text-[#0B8C00] text-xs font-medium hover:bg-[#F2F8F2] transition-colors whitespace-nowrap flex items-center gap-2"
-                            >
-                                <Image
-                                    src="/icons/Eye.svg"
-                                    alt="View Notes"
-                                    width={14}
-                                    height={14}
-                                />
-                                Doctor Note
-                            </button>
-                        )}
+                        {/* <p className="text-xs text-[#7B8089] mt-0.5">Complete each section. Details appear only when needed.</p> */}
                     </div>
-                    <div className="flex items-center justify-between ">
+                    {doctorNotes && (
+                        <button
+                            type="button"
+                            onClick={() => setIsNotesOpen(true)}
+                            className="px-4 py-2 cursor-pointer rounded-full bg-[#0B8C00] hover:bg-[#0A7F00] text-white text-xs font-semibold transition-colors whitespace-nowrap flex items-center gap-2 shadow-sm"
+                        >
+                            <svg
+                                className="w-4 h-4 shrink-0"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                />
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                            </svg>
+                            Doctor Notes
+                        </button>
+                    )}
+                </div>
+
+                {/* 1. PATIENT PRESENTATION */}
+                <div
+                    ref={section1Ref}
+                    className="rounded-[20px] border border-[#E3EEE1] bg-white shadow-[0px_6px_30px_rgba(34,56,43,0.04)] overflow-hidden scroll-mt-6"
+                >
+                    <div className="px-6 py-4 border-b border-[#E3EEE1] flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">1</div>
                             <h3 className="font-inter font-semibold text-base text-[#262D3B]">Patient Presentation</h3>
@@ -1687,83 +3026,116 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <SectionProgress percent={getSection1Percent()} />
                     </div>
 
-                    <div className="flex flex-col gap-4">
-                        <FormTextareaField
-                            ref={chiefComplaintRef}
-                            label="Chief Complaint *"
-                            placeholder="Describe the main complaint..."
-                            value={chiefComplaint}
-                            onChange={(e) => {
-                                setChiefComplaint(e.target.value);
-                                if (errors.chiefComplaint) {
-                                    setErrors(prev => {
-                                        const next = { ...prev };
-                                        delete next.chiefComplaint;
-                                        return next;
-                                    });
-                                }
-                            }}
-                            width="100%"
-                            error={errors.chiefComplaint}
-                            height={60}
-                        />
-                        <FormTextareaField
-                            ref={symptomsRef}
-                            label="Symptoms *"
-                            placeholder="Symptoms"
-                            value={symptoms}
-                            onChange={(e) => {
-                                setSymptoms(e.target.value);
-                                if (errors.symptoms) {
-                                    setErrors(prev => {
-                                        const next = { ...prev };
-                                        delete next.symptoms;
-                                        return next;
-                                    });
-                                }
-                            }}
-                            width="100%"
-                            error={errors.symptoms}
-                            height={60}
-                        />
-                        <FormTextareaField
-                            label="History of Present Illness (HPI)"
-                            placeholder="Onset, duration, progression..."
-                            value={hpi}
-                            onChange={(e) => setHpi(e.target.value)}
-                            width="100%"
-                            height={60}
-                        />
-                        <FormTextareaField
-                            label="Social History"
-                            placeholder="Occupation, lifestyle..."
-                            value={socialHistory}
-                            onChange={(e) => setSocialHistory(e.target.value)}
-                            width="100%"
-                            height={60}
-                        />
-                        <FormTextareaField
-                            label="Past Medical History"
-                            placeholder="Previous conditions..."
-                            value={pastMedicalHistory}
-                            onChange={(e) => setPastMedicalHistory(e.target.value)}
-                            width="100%"
-                            height={60}
-                        />
-                        <FormTextareaField
-                            label="Family History"
-                            placeholder="Hereditary conditions..."
-                            value={familyHistory}
-                            onChange={(e) => setFamilyHistory(e.target.value)}
-                            width="100%"
-                            height={60}
-                        />
+                    <div className="p-6 flex flex-col gap-6">
+                        {/* Subheader: Patient narrative */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/patientinfo.svg"
+                                    alt="Patient Info"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Patient narrative
+                            </span>
+                        </div>
+
+                        {/* Textarea fields grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <FormTextareaField
+                                ref={chiefComplaintRef}
+                                label="Chief Complaint *"
+                                placeholder="Describe the main complaint..."
+                                value={chiefComplaint}
+                                onChange={(e) => {
+                                    setChiefComplaint(e.target.value);
+                                    if (errors.chiefComplaint) {
+                                        setErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.chiefComplaint;
+                                            return next;
+                                        });
+                                    }
+                                }}
+                                width="100%"
+                                error={errors.chiefComplaint}
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                            <FormTextareaField
+                                ref={symptomsRef}
+                                label="Symptoms *"
+                                placeholder="Symptoms"
+                                value={symptoms}
+                                onChange={(e) => {
+                                    setSymptoms(e.target.value);
+                                    if (errors.symptoms) {
+                                        setErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.symptoms;
+                                            return next;
+                                        });
+                                    }
+                                }}
+                                width="100%"
+                                error={errors.symptoms}
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                            <FormTextareaField
+                                label="History of Present Illness (HPI)"
+                                placeholder="Onset, duration, progression..."
+                                value={hpi}
+                                onChange={(e) => setHpi(e.target.value)}
+                                width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                            <FormTextareaField
+                                label="Social History"
+                                placeholder="Occupation, lifestyle..."
+                                value={socialHistory}
+                                onChange={(e) => setSocialHistory(e.target.value)}
+                                width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                            <FormTextareaField
+                                label="Past Medical History"
+                                placeholder="Previous conditions..."
+                                value={pastMedicalHistory}
+                                onChange={(e) => setPastMedicalHistory(e.target.value)}
+                                width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                            <FormTextareaField
+                                label="Family History"
+                                placeholder="Hereditary conditions..."
+                                value={familyHistory}
+                                onChange={(e) => setFamilyHistory(e.target.value)}
+                                width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                        </div>
                     </div>
                 </div>
 
                 {/* 2. MEDICATIONS & SUPPLEMENTS */}
-                <div ref={section2Ref} className="rounded-[20px] border border-[#E3EEE1] bg-white p-6 shadow-[0px_20px_40px_rgba(34,56,43,0.08)] flex flex-col gap-6 scroll-mt-6">
-                    <div className="flex items-center justify-between ">
+                <div
+                    ref={section2Ref}
+                    className="rounded-[20px] border border-[#E3EEE1] bg-white shadow-[0px_6px_30px_rgba(34,56,43,0.04)] overflow-hidden scroll-mt-6"
+                >
+                    <div className="px-6 py-4 border-b border-[#E3EEE1] flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">2</div>
                             <h3 className="font-inter font-semibold text-base text-[#262D3B]">Medications & Supplements</h3>
@@ -1771,42 +3143,75 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <SectionProgress percent={getSection2Percent()} />
                     </div>
 
-                    <div className="w-full md:w-[350px]">
-                        <PatientTypeButtonGroup
-                            fieldRef={currentMedicationsRef}
-                            options={["Yes", "No"]}
-                            value={currentMedications}
-                            onChange={(val) => {
-                                setCurrentMedications(val as any);
-                                if (errors.currentMedications) {
-                                    setErrors(prev => {
-                                        const next = { ...prev };
-                                        delete next.currentMedications;
-                                        return next;
-                                    });
-                                }
-                            }}
-                            label="Current Medications"
-                            required={true}
-                            error={errors.currentMedications}
-                        />
-                    </div>
+                    <div className="p-6 flex flex-col gap-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                            {/* Left Column: Current Medications (Yes/No) */}
+                            <div className="lg:col-span-1 flex flex-col gap-2">
+                                <div className="flex items-center gap-[10px] min-h-[32px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/DoctorBagIcon.svg"
+                                            alt="Medications"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Current Medications <span className="text-[#F6776E]">*</span>
+                                    </span>
+                                </div>
+                                <div className="w-full" ref={currentMedicationsRef}>
+                                    <Tabs
+                                        options={[
+                                            { value: "yes", label: "Yes" },
+                                            { value: "no", label: "No" }
+                                        ]}
+                                        value={currentMedications}
+                                        onChange={(val) => {
+                                            setCurrentMedications(val as "yes" | "no" | "");
+                                            if (errors.currentMedications) {
+                                                setErrors(prev => {
+                                                    const next = { ...prev };
+                                                    delete next.currentMedications;
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                {errors.currentMedications && (
+                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.currentMedications}</p>
+                                )}
+                            </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormInputField
-                            label="Remarks / Doctor Notes"
-                            placeholder="Doctor notes on current medications..."
-                            value={medRemarks}
-                            onChange={(e) => setMedRemarks(e.target.value)}
-                            width="100%"
-                        />
-                        <FormInputField
-                            label="Surgery History"
-                            placeholder="Surgery History"
-                            value={surgeryHistory}
-                            onChange={(e) => setSurgeryHistory(e.target.value)}
-                            width="100%"
-                        />
+                            {/* Right Column: Remarks / Doctor Notes */}
+                            <div className="lg:col-span-2">
+                                <FormTextareaField
+                                    label="Current Medications Remarks"
+                                    placeholder="Doctor notes on current medications..."
+                                    value={medRemarks}
+                                    onChange={(e) => setMedRemarks(e.target.value)}
+                                    width="100%"
+                                    height={80}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Full Width Row: Surgery History */}
+                        <div className="w-full">
+                            <FormTextareaField
+                                label="Surgery History"
+                                placeholder="Surgery History"
+                                value={surgeryHistory}
+                                onChange={(e) => setSurgeryHistory(e.target.value)}
+                                width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -1820,132 +3225,345 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <SectionProgress percent={getSection3Percent()} />
                     </div>
 
-                    <div className="space-y-4">
-                        {/* Diabetes */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <PatientTypeButtonGroup
-                                options={["Yes", "No"]}
-                                value={diabetes}
-                                onChange={(val) => {
-                                    setDiabetes(val as any);
-                                    if (errors.diabetes) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.diabetes;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Diabetes Mellitus *"
-                                required={true}
-                                fieldRef={diabetesRef}
-                                error={errors.diabetes}
-                            />
-                            <FormInputField
-                                label="Years (if Diabetic)"
-                                placeholder="e.g. 5"
-                                value={diabeticYears}
-                                onChange={(e) => setDiabeticYears(e.target.value)}
-                                width="100%"
-                            />
+                    <div className="flex flex-col gap-6">
+                        {/* Diabetes Mellitus Card */}
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/DiabetesMellitusIcon.svg"
+                                        alt="Diabetes Mellitus"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Diabetes Mellitus <span className="text-[#F6776E]">*</span>
+                                </span>
+                            </div>
+
+                            {/* Content Grid */}
+                            <div className="flex flex-col gap-6">
+                                <div className="grid grid-cols-1 lg:grid-cols-11 gap-6 items-start">
+                                    {/* Left Column: Tabs */}
+                                    <div className="lg:col-span-5 flex flex-col gap-2">
+                                        <div className="w-[280px]" ref={diabetesRef}>
+                                            <Tabs
+                                                className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                                options={[
+                                                    { value: "yes", label: "Yes" },
+                                                    { value: "no", label: "No" }
+                                                ]}
+                                                value={diabetes}
+                                                onChange={(val) => {
+                                                    setDiabetes(val as "yes" | "no" | "");
+                                                    if (errors.diabetes) {
+                                                        setErrors(prev => {
+                                                            const next = { ...prev };
+                                                            delete next.diabetes;
+                                                            return next;
+                                                        });
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                        {errors.diabetes && (
+                                            <p className="text-xs text-[#F6776E]">{errors.diabetes}</p>
+                                        )}
+                                    </div>
+
+                                    {/* Right Column: Diabetes Notes */}
+                                    <div className="lg:col-span-6">
+                                        <FormTextareaField
+                                            label="Diabetes Notes"
+                                            placeholder="e.g. Type 2, on Metformin, HbA1c 7.2..."
+                                            value={diabetesNotes}
+                                            onChange={(e) => setDiabetesNotes(e.target.value)}
+                                            width="100%"
+                                            height={80}
+                                            className="!rounded-xl"
+                                            highlightBlack={true}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Years (if Diabetic) - Render below, full width */}
+                                <div className="w-full">
+                                    <FormInputField
+                                        label="Years (if Diabetic)"
+                                        placeholder="e.g. 5"
+                                        value={diabeticYears}
+                                        onChange={(e) => setDiabeticYears(e.target.value)}
+                                        width="100%"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
-                        <FormInputField
-                            label="Diabetes Notes"
-                            placeholder="e.g. Type 2, on Metformin, HbA1c 7.2..."
-                            value={diabetesNotes}
-                            onChange={(e) => setDiabetesNotes(e.target.value)}
-                            width="100%"
-                        />
+                        {/* Blood Pressure Card */}
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/BloodPressureIcon.svg"
+                                        alt="Blood Pressure"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Blood Pressure <span className="text-[#F6776E]">*</span>
+                                </span>
+                            </div>
 
-                        {/* Blood Pressure */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <PatientTypeButtonGroup
-                                options={["High BP", "Low BP", "No"]}
-                                value={bloodPressure}
-                                onChange={(val) => {
-                                    setBloodPressure(val as any);
-                                    if (errors.bloodPressure) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.bloodPressure;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Blood Pressure *"
-                                required={true}
-                                fieldRef={bloodPressureRef}
-                                error={errors.bloodPressure}
-                            />
-                            <FormInputField
-                                label="Remarks"
-                                placeholder="Remarks"
-                                value={bpRemarks}
-                                onChange={(e) => setBpRemarks(e.target.value)}
-                                width="100%"
-                            />
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-11 gap-6 items-start">
+                                {/* Left Column: Tabs */}
+                                <div className="lg:col-span-5 flex flex-col gap-2">
+                                    <div className="w-full" ref={bloodPressureRef}>
+                                        <Tabs
+                                            className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                            options={[
+                                                { value: "high", label: "High BP" },
+                                                { value: "low", label: "Low BP" },
+                                                { value: "no", label: "No" }
+                                            ]}
+                                            value={bloodPressure}
+                                            onChange={(val) => {
+                                                setBloodPressure(val as "high" | "low" | "no" | "");
+                                                if (errors.bloodPressure) {
+                                                    setErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.bloodPressure;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+
+
+                                        />
+                                    </div>
+                                    {errors.bloodPressure && (
+                                        <p className="text-xs text-[#F6776E]">{errors.bloodPressure}</p>
+                                    )}
+                                </div>
+
+                                {/* Right Column: Remarks */}
+                                <div className="lg:col-span-6">
+                                    <FormTextareaField
+                                        label="Remarks"
+                                        placeholder="Remarks"
+                                        value={bpRemarks}
+                                        onChange={(e) => setBpRemarks(e.target.value)}
+                                        width="100%"
+                                        height={80}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Thyroid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <PatientTypeButtonGroup
-                                options={["Hypothyroid", "Hyperthyroid", "No"]}
-                                value={thyroid}
-                                onChange={(val) => {
-                                    setThyroid(val as any);
-                                    if (errors.thyroid) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.thyroid;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Thyroid Disorder *"
-                                required={true}
-                                fieldRef={thyroidRef}
-                                error={errors.thyroid}
-                            />
-                            <FormInputField
-                                label="Remarks"
-                                placeholder="Remarks"
-                                value={thyroidRemarks}
-                                onChange={(e) => setThyroidRemarks(e.target.value)}
-                                width="100%"
-                            />
+                        {/* Thyroid Disorder Card */}
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/ThyroidDisorderIcon.svg"
+                                        alt="Thyroid Disorder"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Thyroid Disorder <span className="text-[#F6776E]">*</span>
+                                </span>
+                            </div>
+
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-11 gap-6 items-start">
+                                {/* Left Column: Tabs */}
+                                <div className="lg:col-span-5 flex flex-col gap-2">
+                                    <div className="w-full" ref={thyroidRef}>
+                                        <Tabs
+                                            className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                            options={[
+                                                { value: "hypo", label: "Hypothyroid" },
+                                                { value: "hyper", label: "Hyperthyroid" },
+                                                { value: "no", label: "No" }
+                                            ]}
+                                            value={thyroid}
+                                            onChange={(val) => {
+                                                setThyroid(val as "hypo" | "hyper" | "no" | "");
+                                                if (errors.thyroid) {
+                                                    setErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.thyroid;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    {errors.thyroid && (
+                                        <p className="text-xs text-[#F6776E]">{errors.thyroid}</p>
+                                    )}
+                                </div>
+
+                                {/* Right Column: Remarks */}
+                                <div className="lg:col-span-6">
+                                    <FormTextareaField
+                                        label="Remarks"
+                                        placeholder="Remarks"
+                                        value={thyroidRemarks}
+                                        onChange={(e) => setThyroidRemarks(e.target.value)}
+                                        width="100%"
+                                        height={80}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Allergy History */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <PatientTypeButtonGroup
-                                options={["Food", "Drug", "Skin", "No"]}
-                                value={allergyHistory}
-                                onChange={(val) => {
-                                    setAllergyHistory(val as any);
-                                    if (errors.allergyHistory) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.allergyHistory;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Allergy History *"
-                                required={true}
-                                fieldRef={allergyHistoryRef}
-                                error={errors.allergyHistory}
-                            />
-                            <FormInputField
-                                label="Allergy Details"
-                                placeholder="Describe allergy reactions..."
-                                value={allergyDetails}
-                                onChange={(e) => setAllergyDetails(e.target.value)}
-                                width="100%"
-                            />
+                        {/* Allergy History Card */}
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/AllergyHistoryIcon.svg"
+                                        alt="Allergy History"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Allergy History <span className="text-[#F6776E]">*</span>
+                                </span>
+                            </div>
 
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-11 gap-6 items-start">
+                                {/* Left Column: Tabs */}
+                                <div className="lg:col-span-5 flex flex-col gap-2">
+                                    <div className="w-full" ref={allergyHistoryRef}>
+                                        <Tabs
+                                            className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
 
+                                            options={[
+                                                { value: "food", label: "Food" },
+                                                { value: "drug", label: "Drug" },
+                                                { value: "other", label: "Other" },
+                                                { value: "no", label: "No" }
+                                            ]}
+                                            value={allergyHistory}
+                                            onChange={(val) => {
+                                                setAllergyHistory(val as "food" | "drug" | "skin" | "other" | "no" | "");
+                                                if (errors.allergyHistory) {
+                                                    setErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.allergyHistory;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    {errors.allergyHistory && (
+                                        <p className="text-xs text-[#F6776E]">{errors.allergyHistory}</p>
+                                    )}
+                                </div>
+
+                                {/* Right Column: Allergy Details */}
+                                <div className="lg:col-span-6">
+                                    <FormTextareaField
+                                        label="Allergy Details"
+                                        placeholder="Describe allergy reactions..."
+                                        value={allergyDetails}
+                                        onChange={(e) => setAllergyDetails(e.target.value)}
+                                        width="100%"
+                                        height={80}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
                         </div>
+                        {/* Infectious Disease Card */}
+                        {/* <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/DoctorBagIcon.svg"
+                                        alt="Infectious Disease"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Infectious Disease
+                                </span>
+                            </div>
+
+                           
+                            <div className="grid grid-cols-1 lg:grid-cols-11 gap-6 items-start">
+                          
+                                <div className="lg:col-span-5 flex flex-col gap-2">
+                                    <div className="w-full" ref={infectiousAlertRef}>
+                                        <Tabs
+                                            className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                            options={[
+                                                { value: "hiv", label: "HIV" },
+                                                { value: "hepatitis", label: "Hepatitis" },
+                                                { value: "tb", label: "TB" },
+                                                { value: "normal", label: "Normal" }
+                                            ]}
+                                            value={communicableDiseases && (Array.isArray(communicableDiseases) ? communicableDiseases.length > 0 : communicableDiseases) ? communicableDiseases : infectiousAlert}
+                                            multiSelect={true}
+                                            onChange={(val) => {
+                                                const arr = val ? val.split(",").map(s => s.trim()).filter(Boolean) : [];
+                                                if (setCommunicableDiseases) {
+                                                    setCommunicableDiseases(arr);
+                                                }
+                                                setInfectiousAlert(val as any);
+                                                if (errors.infectiousAlert) {
+                                                    setErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.infectiousAlert;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    {errors.infectiousAlert && (
+                                        <p className="text-xs text-[#F6776E]">{errors.infectiousAlert}</p>
+                                    )}
+                                </div>
+
+                          
+                                <div className="lg:col-span-6">
+                                    <FormTextareaField
+                                        label="Infectious Disease Details"
+                                        placeholder="Describe Infectious Disease..."
+                                        value={infectiousDetails}
+                                        onChange={(e) => setInfectiousDetails(e.target.value)}
+                                        width="100%"
+                                        height={80}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
+                        </div> */}
                     </div>
                 </div>
 
@@ -1961,216 +3579,561 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
 
                     {/* Gynaec / Obs History (Only shown for female patients) */}
                     {gender?.toLowerCase() === "female" && (
-                        <div className="space-y-4 pb-4 border-b border-[#EBECED]">
-                            <h4 className="font-inter font-semibold text-sm text-[#434956]">Gynaec / Obs History</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <PatientTypeButtonGroup
-                                    options={["Regular", "Irregular"]}
-                                    value={cycle}
-                                    onChange={(val) => setCycle(val)}
-                                    label="Cycle"
-                                />
-                                <PatientTypeButtonGroup
-                                    options={["Normal", "Heavy", "Scanty"]}
-                                    value={flow}
-                                    onChange={(val) => setFlow(val)}
-                                    label="Flow"
-                                />
-                                <FormInputField
-                                    label="Pain"
-                                    placeholder="Details"
-                                    value={gynaecPain}
-                                    onChange={(e) => setGynaecPain(e.target.value)}
-                                    width="100%"
-                                />
-                                <FormInputField
-                                    label="Discharge"
-                                    placeholder="Details"
-                                    value={discharge}
-                                    onChange={(e) => setDischarge(e.target.value)}
-                                    width="100%"
-                                />
-                                <FormInputField
-                                    label="Pregnancy"
-                                    placeholder="G_ P_ A_ L_..."
-                                    value={pregnancy}
-                                    onChange={(e) => setPregnancy(e.target.value)}
-                                    width="100%"
-                                />
-                                <FormInputField
-                                    label="Miscarriage"
-                                    placeholder="Details"
-                                    value={miscarriage}
-                                    onChange={(e) => setMiscarriage(e.target.value)}
-                                    width="100%"
-                                />
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/ObsHistoryIcon.svg"
+                                        alt="Gynaec / Obs History"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Gynaec / Obs History
+                                </span>
                             </div>
-                        </div>
-                    )}
 
-                    {/* Mental Health */}
-                    <div className="space-y-4">
-                        <h4 className="font-inter font-semibold text-sm text-[#434956] ">Mental & Psychological Health</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FormSelectField
-                                label="Anxiety"
-                                placeholder="Select"
-                                options={SELECT_OPTIONS}
-                                value={anxiety}
-                                onChange={(val) => setAnxiety(val as string)}
-                                background="white"
-                                width="100%"
-                            />
-                            <FormSelectField
-                                label="Depression"
-                                placeholder="Select"
-                                options={SELECT_OPTIONS}
-                                value={depression}
-                                onChange={(val) => setDepression(val as string)}
-                                background="white"
-                                width="100%"
-                            />
-                            <FormSelectField
-                                label="Sleep Quality"
-                                placeholder="Select"
-                                options={SLEEP_OPTIONS}
-                                value={sleepQuality}
-                                onChange={(val) => setSleepQuality(val as string)}
-                                background="white"
-                                width="100%"
-                            />
-                            <PatientTypeButtonGroup
-                                options={["Mild", "Moderate", "Severe", "None"]}
-                                value={stressLevel}
-                                onChange={(val) => {
-                                    setStressLevel(val as any);
-                                    if (errors.stressLevel) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.stressLevel;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Stress Level *"
-                                required={true}
-                                fieldRef={stressLevelRef}
-                                error={errors.stressLevel}
-                            />
-                        </div>
-                        <FormInputField
-                            label="Remarks / Doctor Notes"
-                            placeholder="Doctor notes on mental and psychological health..."
-                            value={mentalRemarks}
-                            onChange={(e) => setMentalRemarks(e.target.value)}
-                            width="100%"
-                        />
-                    </div>
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left Column */}
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex flex-col gap-2 w-full">
+                                        <span className="text-xs font-semibold text-[#7B8089]">
+                                            Cycle
+                                        </span>
+                                        <div className="w-full">
+                                            <Tabs
+                                                className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
 
-                    {/* Systemic Notes */}
-                    <div className="space-y-6 pt-2 ">
-                        <h4 className="font-inter font-semibold text-sm text-[#434956]  mb-2">Systemic Notes</h4>
+                                                options={[
+                                                    { value: "regular", label: "Regular" },
+                                                    { value: "irregular", label: "Irregular" }
+                                                ]}
+                                                value={cycle}
+                                                onChange={(val) => setCycle(val)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <FormInputField
+                                        label="Pain"
+                                        placeholder="Pain"
+                                        value={gynaecPain}
+                                        onChange={(e) => setGynaecPain(e.target.value)}
+                                        width="100%"
+                                        highlightBlack={true}
+                                    />
+                                    <FormInputField
+                                        label="Pregnancy"
+                                        placeholder="Pregnancy"
+                                        value={pregnancy}
+                                        onChange={(e) => setPregnancy(e.target.value)}
+                                        width="100%"
+                                        highlightBlack={true}
+                                    />
+                                </div>
 
-                        {/* Gastric */}
-                        <div className="space-y-3">
-                            <PatientTypeButtonGroup
-                                options={["Acidity", "GERD", "Gas", "Abd Pain", "Constipation", "Loose Stool", "Nausea", "None"]}
-                                value={gastricValue}
-                                onChange={(val) => {
-                                    setGastricValue(val);
-                                    if (errors.gastricValue) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.gastricValue;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Gastric Complaints *"
-                                required={true}
-                                fieldRef={gastricValueRef}
-                                error={errors.gastricValue}
-                            />
-                            <FormInputField
-                                label="Remarks / Doctor Notes"
-                                placeholder="Doctor notes on gastric symptoms..."
-                                value={gastricRemarks}
-                                onChange={(e) => setGastricRemarks(e.target.value)}
-                                width="100%"
-                            />
-                        </div>
+                                {/* Right Column */}
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex flex-col gap-2 w-full">
+                                        <span className="text-xs font-semibold text-[#7B8089]">
+                                            Flow
+                                        </span>
+                                        <div className="w-full">
+                                            <Tabs
+                                                className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
 
-                        {/* Respiratory */}
-                        <div className="space-y-3 ">
-                            <div className="">
-
-                                <div className="md:col-span-3">
-                                    <PatientTypeButtonGroup
-                                        options={["SOB", "Cough", "Fever", "Asthma", "Wheeze", "TB", "Others", "None"]}
-                                        value={respiratoryValue}
-                                        onChange={(val) => setRespiratoryValue(val)}
-                                        label="Respiratory Issues"
+                                                options={[
+                                                    { value: "normal", label: "Normal" },
+                                                    { value: "heavy", label: "Heavy" },
+                                                    { value: "scanty", label: "Scanty" }
+                                                ]}
+                                                value={flow}
+                                                onChange={(val) => setFlow(val)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <FormInputField
+                                        label="Discharge"
+                                        placeholder="Discharge"
+                                        value={discharge}
+                                        onChange={(e) => setDischarge(e.target.value)}
+                                        width="100%"
+                                        highlightBlack={true}
+                                    />
+                                    <FormInputField
+                                        label="Miscarriage"
+                                        placeholder="Miscarriage"
+                                        value={miscarriage}
+                                        onChange={(e) => setMiscarriage(e.target.value)}
+                                        width="100%"
+                                        highlightBlack={true}
                                     />
                                 </div>
                             </div>
-                            <FormInputField
-                                label="Remarks / Doctor Notes"
-                                placeholder="Remarks / Doctor Notes..."
-                                value={respiratoryRemarks}
-                                onChange={(e) => setRespiratoryRemarks(e.target.value)}
+                            <FormTextareaField
+                                label="Remarks"
+                                placeholder="Remarks..."
+                                value={gynaecRemarks}
+                                onChange={(e) => setGynaecRemarks(e.target.value)}
                                 width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
                             />
                         </div>
+                    )}
 
-                        {/* Cardiac */}
-                        <div className="space-y-3 ">
-                            <PatientTypeButtonGroup
-                                options={["Chest Pain", "Palpitation", "Breathing", "Dizziness", "Nil", "Others"]}
-                                value={cardiacValue}
-                                onChange={(val) => setCardiacValue(val)}
-                                label="Cardiac"
-                            />
-                            <FormInputField
-                                label="Remarks / Doctor Notes"
-                                placeholder="Remarks / Doctor Notes..."
-                                value={cardiacRemarks}
-                                onChange={(e) => setCardiacRemarks(e.target.value)}
-                                width="100%"
-                            />
+                    {/* Mental & Psychological Health Card */}
+                    <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                        {/* Header */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/MentalHealthIcon.svg"
+                                    alt="Mental health"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Mental health
+                            </span>
                         </div>
 
-                        {/* Nervous System */}
-                        <div className="space-y-3 ">
-                            <PatientTypeButtonGroup
-                                options={["Headache", "Sensory Loss", "Weakness", "Nil", "Others"]}
-                                value={nervousValue}
-                                onChange={(val) => setNervousValue(val)}
-                                label="Nervous System"
-                            />
-                            <FormInputField
-                                label="Remarks / Doctor Notes"
-                                placeholder="Remarks / Doctor Notes..."
-                                value={nervousRemarks}
-                                onChange={(e) => setNervousRemarks(e.target.value)}
-                                width="100%"
-                            />
+                        {/* Content Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="flex flex-col gap-2 w-full">
+                                <span className="text-sm font-semibold text-[#444242]">
+                                    Anxiety
+                                </span>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "mild", label: "Mild" },
+                                            { value: "moderate", label: "Moderate" },
+                                            { value: "severe", label: "Severe" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={anxiety}
+                                        onChange={(val) => setAnxiety(val)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 w-full">
+                                <span className="text-sm font-semibold text-[#444242]">
+                                    Depression
+                                </span>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "mild", label: "Mild" },
+                                            { value: "moderate", label: "Moderate" },
+                                            { value: "severe", label: "Severe" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={depression}
+                                        onChange={(val) => setDepression(val)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 w-full">
+                                <span className="text-sm font-semibold text-[#444242]">
+                                    Sleep Quality
+                                </span>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "good", label: "Good" },
+                                            { value: "fair", label: "Fair" },
+                                            { value: "poor", label: "Poor" },
+                                            { value: "insomnia", label: "Insomnia" }
+                                        ]}
+                                        value={sleepQuality}
+                                        onChange={(val) => setSleepQuality(val)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 w-full" ref={stressLevelRef}>
+                                <span className="text-sm font-semibold text-[#444242]">
+                                    Stress Level <span className="text-[#F6776E]">*</span>
+                                </span>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "mild", label: "Mild" },
+                                            { value: "moderate", label: "Moderate" },
+                                            { value: "severe", label: "Severe" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={stressLevel}
+                                        onChange={(val) => {
+                                            setStressLevel(val as any);
+                                            if (errors.stressLevel) {
+                                                setErrors(prev => {
+                                                    const next = { ...prev };
+                                                    delete next.stressLevel;
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                {errors.stressLevel && (
+                                    <p className="text-xs text-[#F6776E]">{errors.stressLevel}</p>
+                                )}
+                            </div>
                         </div>
 
-                        {/* Urinary System */}
-                        <div className="space-y-3 ">
-                            <PatientTypeButtonGroup
-                                options={["Burning", "Frequency", "Blood", "Low Output", "Stones", "Others"]}
-                                value={urinaryValue}
-                                onChange={(val) => setUrinaryValue(val)}
-                                label="Urinary System"
-                            />
-                            <FormInputField
-                                label="Remarks / Doctor Notes"
-                                placeholder="Remarks / Doctor Notes..."
-                                value={urinaryRemarks}
-                                onChange={(e) => setUrinaryRemarks(e.target.value)}
-                                width="100%"
-                            />
+                        <FormTextareaField
+                            label="Remarks / Doctor Notes"
+                            placeholder="Doctor notes on stress and psychological health..."
+                            value={mentalRemarks}
+                            onChange={(e) => setMentalRemarks(e.target.value)}
+                            width="100%"
+                            height={80}
+                            className="!rounded-xl"
+                            highlightBlack={true}
+                        />
+                    </div>
+
+                    {/* Systemic Notes Header */}
+                    <div className="pt-2">
+                        <h4 className="font-inter font-semibold text-sm text-[#434956]">Systemic Notes</h4>
+                    </div>
+
+                    {/* Gastro Symptoms Health Card */}
+                    <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                        {/* Header */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/DiabetesMellitusIcon.svg"
+                                    alt="Gastro Symptoms health"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Gastro Symptoms health <span className="text-[#F6776E]">*</span>
+                            </span>
+                        </div>
+
+                        {/* Content Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                            {/* Left: Tabs */}
+                            <div className="lg:col-span-2 flex flex-col gap-2" ref={gastricValueRef}>
+                                {/* <span className="text-xs font-semibold text-[#7B8089]">
+                                    Gastric Complaints <span className="text-[#F6776E]">*</span>
+                                </span> */}
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "acidity", label: "Acidity" },
+                                            { value: "gerd", label: "Gerd" },
+                                            { value: "gas", label: "Gas" },
+                                            { value: "abd pain", label: "Abd Pain" },
+                                            { value: "constipation", label: "Constipation" },
+                                            { value: "loose stool", label: "Loose Stool" },
+                                            { value: "nausea", label: "Nausea" },
+                                            { value: "other", label: "Other" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={gastricValue}
+                                        onChange={(val) => {
+                                            let finalVal = val;
+                                            const items = val.split(",").map(x => x.trim()).filter(Boolean);
+                                            if (items.includes("constipation") && items.includes("loose stool")) {
+                                                const prevItems = gastricValue.split(",").map(x => x.trim()).filter(Boolean);
+                                                if (prevItems.includes("constipation")) {
+                                                    finalVal = items.filter(x => x !== "constipation").join(",");
+                                                } else if (prevItems.includes("loose stool")) {
+                                                    finalVal = items.filter(x => x !== "loose stool").join(",");
+                                                } else {
+                                                    finalVal = items.filter(x => x !== "constipation").join(",");
+                                                }
+                                            }
+                                            setGastricValue(finalVal);
+                                            if (errors.gastricValue) {
+                                                setErrors(prev => {
+                                                    const next = { ...prev };
+                                                    delete next.gastricValue;
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                        wrap={true}
+                                        multiSelect={true}
+                                    />
+                                </div>
+                                {errors.gastricValue && (
+                                    <p className="text-xs text-[#F6776E]">{errors.gastricValue}</p>
+                                )}
+                            </div>
+                            {/* Right: Remarks */}
+                            <div className="lg:col-span-3">
+                                <FormTextareaField
+                                    label="Remarks / Doctor Notes"
+                                    placeholder="Doctor notes on gastro symptoms..."
+                                    value={gastricRemarks}
+                                    onChange={(e) => setGastricRemarks(e.target.value)}
+                                    width="100%"
+                                    height={94}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Respiratory Card */}
+                    <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                        {/* Header */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/ThyroidDisorderIcon.svg"
+                                    alt="Respiratory"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Respiratory
+                            </span>
+                        </div>
+
+                        {/* Content Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                            {/* Left: Tabs */}
+                            <div className="lg:col-span-2 flex flex-col gap-2">
+                                {/* <span className="text-xs font-semibold text-[#7B8089]">
+                                    Respiratory Issues
+                                </span> */}
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "sob", label: "SOB" },
+                                            { value: "cough", label: "Cough" },
+                                            { value: "fever", label: "Fever" },
+                                            { value: "asthma", label: "Asthma" },
+                                            { value: "wheeze", label: "Wheeze" },
+                                            { value: "other", label: "Other" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={respiratoryValue}
+                                        onChange={(val) => setRespiratoryValue(val)}
+                                        wrap={true}
+                                        multiSelect={true}
+                                    />
+                                </div>
+                            </div>
+                            {/* Right: Remarks */}
+                            <div className="lg:col-span-3">
+                                <FormTextareaField
+                                    label="Remarks / Doctor Notes"
+                                    placeholder="Doctor notes on respiratory..."
+                                    value={respiratoryRemarks}
+                                    onChange={(e) => setRespiratoryRemarks(e.target.value)}
+                                    width="100%"
+                                    height={94}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Cardiac Card */}
+                    <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                        {/* Header */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/BloodPressureIcon.svg"
+                                    alt="Cardiac"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Cardiac
+                            </span>
+                        </div>
+
+                        {/* Content Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                            {/* Left: Tabs */}
+                            <div className="lg:col-span-2 flex flex-col gap-2">
+                                {/* <span className="text-xs font-semibold text-[#7B8089]">
+                                    Cardiac
+                                </span> */}
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "chest pain", label: "Chest Pain" },
+                                            { value: "palpitation", label: "Palpitation" },
+                                            { value: "sweating", label: "Sweating" },
+                                            { value: "dizziness", label: "Dizziness" },
+                                            { value: "others", label: "Other" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={cardiacValue}
+                                        onChange={(val) => setCardiacValue(val)}
+                                        wrap={true}
+                                        multiSelect={true}
+                                    />
+                                </div>
+                            </div>
+                            {/* Right: Remarks */}
+                            <div className="lg:col-span-3">
+                                <FormTextareaField
+                                    label="Remarks / Doctor Notes"
+                                    placeholder="Doctor notes on cardiac..."
+                                    value={cardiacRemarks}
+                                    onChange={(e) => setCardiacRemarks(e.target.value)}
+                                    width="100%"
+                                    height={94}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Nervous System Card */}
+                    <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                        {/* Header */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/MentalHealthIcon.svg"
+                                    alt="Nervous System"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Nervous System
+                            </span>
+                        </div>
+
+                        {/* Content Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                            {/* Left: Tabs */}
+                            <div className="lg:col-span-2 flex flex-col gap-2">
+                                {/* <span className="text-xs font-semibold text-[#7B8089]">
+                                    Nervous System
+                                </span> */}
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "headache", label: "Headache" },
+                                            { value: "sensory loss", label: "Sensory Loss" },
+                                            { value: "weakness", label: "Weakness" },
+                                            { value: "others", label: "Other" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={nervousValue}
+                                        onChange={(val) => setNervousValue(val)}
+                                        wrap={true}
+                                        multiSelect={true}
+                                    />
+                                </div>
+                            </div>
+                            {/* Right: Remarks */}
+                            <div className="lg:col-span-3">
+                                <FormTextareaField
+                                    label="Remarks / Doctor Notes"
+                                    placeholder="Doctor notes on nervous system..."
+                                    value={nervousRemarks}
+                                    onChange={(e) => setNervousRemarks(e.target.value)}
+                                    width="100%"
+                                    height={94}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Urinary System Card */}
+                    <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                        {/* Header */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/DiabetesMellitusIcon.svg"
+                                    alt="Urinary System"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Urinary System
+                            </span>
+                        </div>
+
+                        {/* Content Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                            {/* Left: Tabs */}
+                            <div className="lg:col-span-2 flex flex-col gap-2">
+                                {/* <span className="text-xs font-semibold text-[#7B8089]">
+                                    Urinary System
+                                </span> */}
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "burning", label: "Burning" },
+                                            { value: "frequency", label: "Frequency" },
+                                            { value: "blood", label: "Blood" },
+                                            { value: "low output", label: "Low Output" },
+                                            { value: "stones", label: "Stones" },
+                                            { value: "others", label: "Other" },
+                                            { value: "none", label: "None" }
+                                        ]}
+                                        value={urinaryValue}
+                                        onChange={(val) => setUrinaryValue(val)}
+                                        wrap={true}
+                                        multiSelect={true}
+                                    />
+                                </div>
+                            </div>
+                            {/* Right: Remarks */}
+                            <div className="lg:col-span-3">
+                                <FormTextareaField
+                                    label="Remarks / Doctor Notes"
+                                    placeholder="Doctor notes on urinary..."
+                                    value={urinaryRemarks}
+                                    onChange={(e) => setUrinaryRemarks(e.target.value)}
+                                    width="100%"
+                                    height={94}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2188,68 +4151,140 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     {/* Balance & Mobility */}
                     <div className="space-y-4">
                         <h4 className="font-inter font-semibold text-sm text-[#434956] ">Balance and Mobility</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <PatientTypeButtonGroup
-                                options={["Normal", "Abnormal"]}
-                                value={sitting}
-                                onChange={(val) => {
-                                    setSitting(val as any);
-                                    if (errors.sitting) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.sitting;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Sitting *"
-                                required={true}
-                                fieldRef={sittingRef}
-                                error={errors.sitting}
-                            />
-                            <PatientTypeButtonGroup
-                                options={["Normal", "Abnormal"]}
-                                value={standing}
-                                onChange={(val) => {
-                                    setStanding(val as any);
-                                    if (errors.standing) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.standing;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Standing *"
-                                required={true}
-                                fieldRef={standingRef}
-                                error={errors.standing}
-                            />
-                            <PatientTypeButtonGroup
-                                options={["Normal", "Abnormal"]}
-                                value={walking}
-                                onChange={(val) => {
-                                    setWalking(val as any);
-                                    if (errors.walking) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.walking;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Walking *"
-                                required={true}
-                                fieldRef={walkingRef}
-                                error={errors.walking}
-                            />
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-y-4 gap-x-6">
+                            {/* Sitting */}
+                            <div ref={sittingRef} className="flex flex-col gap-6 p-4 border border-[#DFE0E2] rounded-[8px] w-full">
+                                <div className="flex items-center gap-[10px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/sittingIcon.svg"
+                                            alt="Sitting"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Sitting <span className="text-[#F6776E]">*</span>
+                                    </span>
+                                </div>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "normal", label: "Normal" },
+                                            { value: "abnormal", label: "Abnormal" }
+                                        ]}
+                                        value={sitting}
+                                        onChange={(val) => {
+                                            setSitting(val as "normal" | "abnormal" | "");
+                                            if (errors.sitting) {
+                                                setErrors(prev => {
+                                                    const next = { ...prev };
+                                                    delete next.sitting;
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                {errors.sitting && (
+                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.sitting}</p>
+                                )}
+                            </div>
+
+                            {/* Standing */}
+                            <div ref={standingRef} className="flex flex-col gap-6 p-4 border border-[#DFE0E2] rounded-[8px] w-full">
+                                <div className="flex items-center gap-[10px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/standingIcon.svg"
+                                            alt="Standing"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Standing <span className="text-[#F6776E]">*</span>
+                                    </span>
+                                </div>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "normal", label: "Normal" },
+                                            { value: "abnormal", label: "Abnormal" }
+                                        ]}
+                                        value={standing}
+                                        onChange={(val) => {
+                                            setStanding(val as "normal" | "abnormal" | "");
+                                            if (errors.standing) {
+                                                setErrors(prev => {
+                                                    const next = { ...prev };
+                                                    delete next.standing;
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                {errors.standing && (
+                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.standing}</p>
+                                )}
+                            </div>
+
+                            {/* Walking */}
+                            <div ref={walkingRef} className="flex flex-col gap-6 p-4 border border-[#DFE0E2] rounded-[8px] w-full">
+                                <div className="flex items-center gap-[10px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/walkingIcon.svg"
+                                            alt="Walking"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Walking <span className="text-[#F6776E]">*</span>
+                                    </span>
+                                </div>
+                                <div className="w-full">
+                                    <Tabs
+                                        className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                        options={[
+                                            { value: "normal", label: "Normal" },
+                                            { value: "abnormal", label: "Abnormal" }
+                                        ]}
+                                        value={walking}
+                                        onChange={(val) => {
+                                            setWalking(val as "normal" | "abnormal" | "");
+                                            if (errors.walking) {
+                                                setErrors(prev => {
+                                                    const next = { ...prev };
+                                                    delete next.walking;
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                {errors.walking && (
+                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.walking}</p>
+                                )}
+                            </div>
                         </div>
-                        <FormInputField
+                        <FormTextareaField
                             label="Remarks"
                             placeholder="Remarks"
                             value={mobilityRemarks}
                             onChange={(e) => setMobilityRemarks(e.target.value)}
                             width="100%"
+                            height={80}
+                            className="!rounded-xl"
+                            highlightBlack={true}
+
                         />
                     </div>
 
@@ -2264,10 +4299,11 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     value={painSite}
                                     onChange={(e) => setPainSite(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
                             </div>
                             <div ref={painScaleRef} className="lg:col-span-7 space-y-2 pb-1">
-                                <span className="block text-xs font-medium text-[#7B8089]">Pain Scale (0-10) <span className="text-[#F6776E]">*</span></span>
+                                <span className="block text-[13px] font-semibold text-[#444242]">Pain Scale (0-10) <span className="text-[#F6776E]">*</span></span>
                                 <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                                     {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                                         <button
@@ -2308,7 +4344,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                         <span className="text-[10px] font-bold text-[#7B8089] mb-1.5">Front</span>
                                         <div
                                             onClick={(e) => handleBodyClick(e, "front")}
-                                            className="relative w-[150px] h-[250px] rounded-lg bg-white flex items-center justify-center cursor-crosshair overflow-hidden"
+                                            className="relative w-[168px] h-[280px] rounded-lg bg-white flex items-center justify-center cursor-crosshair overflow-hidden"
                                         >
                                             <Image src={gender?.toLowerCase() === "female" ? "/icons/femaleBodyFrontView.svg" : "/icons/maleBodyFrontView.svg"} alt="Front View" fill className="object-contain p-0" />
                                             {markers.filter(m => m.view === "front").map((marker) => (
@@ -2329,7 +4365,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                         <span className="text-[10px] font-bold text-[#7B8089] mb-1.5">Back</span>
                                         <div
                                             onClick={(e) => handleBodyClick(e, "back")}
-                                            className="relative w-[150px] h-[250px] rounded-lg bg-white flex items-center justify-center cursor-crosshair overflow-hidden"
+                                            className="relative w-[168px] h-[280px] rounded-lg bg-white flex items-center justify-center cursor-crosshair overflow-hidden"
                                         >
                                             <Image src={gender?.toLowerCase() === "female" ? "/icons/femaleBodyBackView.svg" : "/icons/maleBodyBackView.svg"} alt="Back View" fill className="object-contain p-0" />
                                             {markers.filter(m => m.view === "back").map((marker) => (
@@ -2416,7 +4452,8 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                                 X Clear All
                                             </button>
                                             <span className="text-[11px] font-semibold text-[#7B8089] ml-1">
-                                                {markers.length} marks
+                                                {/* Bilateral dot-pairs share a groupId and count as ONE mark */}
+                                                {new Set(markers.map(m => m.groupId ?? String(m.id))).size} marks
                                             </span>
                                         </div>
                                     </div>
@@ -2431,6 +4468,8 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                         onChange={(e) => setPainNotes(e.target.value)}
                                         width="100%"
                                         height={280}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
                                     />
                                 </div>
                             </div>
@@ -2451,6 +4490,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     value={jihva}
                                     onChange={(e) => setJihva(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
                                 <FormInputField
                                     label="Pulse (Nadi)"
@@ -2458,6 +4498,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     value={nadi}
                                     onChange={(e) => setNadi(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
                                 <FormInputField
                                     label="Eyes (Drink)"
@@ -2465,6 +4506,7 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     value={druk}
                                     onChange={(e) => setDruk(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
                             </div>
 
@@ -2476,33 +4518,40 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                     value={nakha}
                                     onChange={(e) => setNakha(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
-                                <FormInputField
-                                    label="Dosha-Vata"
-                                    placeholder="Assessment..."
-                                    value={vata}
-                                    onChange={(e) => setVata(e.target.value)}
-                                    width="100%"
-                                />
+
                                 <FormInputField
                                     label="Pitta"
                                     placeholder="Assessment..."
                                     value={pitta}
                                     onChange={(e) => setPitta(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
-                            </div>
-
-                            {/* Row 3 */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInputField
                                     label="Kapha"
                                     placeholder="Assessment..."
                                     value={kapha}
                                     onChange={(e) => setKapha(e.target.value)}
                                     width="100%"
+                                    highlightBlack={true}
                                 />
-                                <FormInputField
+                            </div>
+
+                            {/* Row 3 */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormTextareaField
+                                    label="Dosha-Vata"
+                                    placeholder="Assessment..."
+                                    value={vata}
+                                    onChange={(e) => setVata(e.target.value)}
+                                    width="100%"
+                                    height={80}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                />
+                                <FormTextareaField
                                     ref={prakritiRef}
                                     label="Overall Prakriti *"
                                     placeholder="Constitution"
@@ -2518,7 +4567,10 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                         }
                                     }}
                                     width="100%"
+                                    height={80}
+                                    highlightBlack={true}
                                     error={errors.prakriti}
+                                    className="!rounded-xl"
                                 />
                             </div>
                         </div>
@@ -2535,67 +4587,146 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <SectionProgress percent={getSection6Percent()} />
                     </div>
 
-                    <div className="space-y-4">
-                        {/* Row 1: Button Groups */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <PatientTypeButtonGroup
-                                options={["X-Ray", "MRI", "Ultrasound", "Nil"]}
-                                value={radiologySelected}
-                                onChange={(val) => setRadiologySelected(val)}
-                                label="Radiology Findings"
-                            />
-                            <PatientTypeButtonGroup
-                                options={["Blood", "Urine", "Culture", "Nil"]}
-                                value={pathologySelected}
-                                onChange={(val) => setPathologySelected(val)}
-                                label="Pathology Findings"
-                            />
+                    <div className="flex flex-col gap-4">
+                        {/* Radiology Findings Card */}
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/LabIcon.svg"
+                                        alt="Radiology Findings"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Radiology Findings
+                                </span>
+                            </div>
+
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                                {/* Left: Tabs */}
+                                <div className="lg:col-span-5 flex flex-col gap-2">
+                                    <div className="w-full">
+                                        <Tabs
+                                            className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                            multiSelect={true}
+                                            options={[
+                                                { value: "X-Ray", label: "X-Ray" },
+                                                { value: "MRI", label: "MRI" },
+                                                { value: "Ultrasound", label: "Ultrasound" },
+                                                { value: "None", label: "None" }
+                                            ]}
+                                            value={radiologySelected}
+                                            onChange={(val) => setRadiologySelected(val)}
+                                        />
+                                    </div>
+                                </div>
+                                {/* Right: Remarks */}
+                                <div className="lg:col-span-7">
+                                    <FormTextareaField
+                                        label="Radiology Remarks"
+                                        placeholder="Remarks on radiology findings..."
+                                        value={radiologyRemarks}
+                                        onChange={(e) => setRadiologyRemarks(e.target.value)}
+                                        width="100%"
+                                        height={80}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Row 2: Remarks, Lab Tests, and Provisional Diagnosis */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <FormInputField
-                                label="Radiology Remarks"
-                                placeholder="Remarks on radiology findings..."
-                                value={radiologyRemarks}
-                                onChange={(e) => setRadiologyRemarks(e.target.value)}
-                                width="100%"
-                            />
-                            <FormInputField
-                                label="Lab Tests Prescribed By Doctor"
-                                placeholder="e.g. CBC, LFT, RFT, HbA1c..."
-                                value={prescribedLabTests}
-                                onChange={(e) => setPrescribedLabTests(e.target.value)}
-                                width="100%"
-                            />
-                            <FormInputField
+                        {/* Lab Tests Card */}
+                        <div className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4">
+                            {/* Header */}
+                            <div className="flex items-center gap-[10px]">
+                                <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                    <Image
+                                        src="/icons/LabIcon.svg"
+                                        alt="Lab Tests"
+                                        width={16}
+                                        height={16}
+                                    />
+                                </div>
+                                <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                    Lab Tests
+                                </span>
+                            </div>
+
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                                {/* Left: Tabs */}
+                                <div className="lg:col-span-5 flex flex-col gap-2">
+                                    <div className="w-full">
+                                        <Tabs
+                                            className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+
+                                            options={[
+                                                { value: "Blood", label: "Blood" },
+                                                { value: "Urine", label: "Urine" },
+                                                { value: "Culture", label: "Culture" },
+                                                { value: "None", label: "None" }
+                                            ]}
+                                            multiSelect={true}
+                                            value={pathologySelected}
+                                            onChange={(val) => setPathologySelected(val)}
+                                        />
+                                    </div>
+                                </div>
+                                {/* Right: Remarks */}
+                                <div className="lg:col-span-7">
+                                    <FormTextareaField
+                                        label="Lab Tests Prescribed By Doctor"
+                                        placeholder="e.g. CBC, LFT, RFT, HbA1c..."
+                                        value={prescribedLabTests}
+                                        onChange={(e) => setPrescribedLabTests(e.target.value)}
+                                        width="100%"
+                                        height={80}
+                                        className="!rounded-xl"
+                                        highlightBlack={true}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bottom Row: Provisional & Final Diagnosis */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+                            <FormTextareaField
                                 label="Provisional Diagnosis"
                                 placeholder="Working diagnosis..."
                                 value={provisionalDiagnosis}
                                 onChange={(e) => setProvisionalDiagnosis(e.target.value)}
                                 width="100%"
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
+                            />
+                            <FormTextareaField
+                                ref={finalDiagnosisRef}
+                                label="Final Diagnosis *"
+                                placeholder="Confirmed diagnosis after investigations..."
+                                value={finalDiagnosis}
+                                onChange={(e) => {
+                                    setFinalDiagnosis(e.target.value);
+                                    if (errors.finalDiagnosis) {
+                                        setErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.finalDiagnosis;
+                                            return next;
+                                        });
+                                    }
+                                }}
+                                width="100%"
+                                error={errors.finalDiagnosis}
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
                             />
                         </div>
-
-                        {/* Row 3: Final Diagnosis */}
-                        <FormInputField
-                            ref={finalDiagnosisRef}
-                            label="Final Diagnosis *"
-                            placeholder="Confirmed diagnosis after investigations..."
-                            value={finalDiagnosis}
-                            onChange={(e) => {
-                                setFinalDiagnosis(e.target.value);
-                                if (errors.finalDiagnosis) {
-                                    setErrors(prev => {
-                                        const next = { ...prev };
-                                        delete next.finalDiagnosis;
-                                        return next;
-                                    });
-                                }
-                            }}
-                            width="100%"
-                            error={errors.finalDiagnosis}
-                        />
                     </div>
                 </div>
 
@@ -2610,158 +4741,342 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                     </div>
 
                     <div className="flex flex-col gap-6">
-                        <FormInputField
+                        <FormTextareaField
                             label="Patient Education"
                             placeholder="What was explained to the patient..."
                             value={patientInstruction}
                             onChange={(e) => setPatientInstruction(e.target.value)}
                             width="100%"
+                            height={80}
+                            className="!rounded-xl"
+                            highlightBlack={true}
                         />
 
-                        <div className="rounded-[12px] border border-[#EBECED] bg-white p-4 md:p-5">
-                            <p className="mb-4 text-sm font-medium text-[#434956]">
-                                Medicine Prescribed <span className="text-[#EF4444]">*</span>
-                            </p>
-
-                            <div className="hidden md:grid md:grid-cols-4 md:gap-3 md:px-1 md:pb-3 text-xs font-semibold text-[#7B8089]">
-                                <span>Name</span>
-                                <span>Dosage</span>
-                                <span>Frequency</span>
-                                <span>Duration</span>
+                        {/* Medicine Prescribed Card */}
+                        <div className="rounded-[20px] border border-[#E3EEE1] bg-white shadow-[0px_6px_30px_rgba(34,56,43,0.04)] overflow-hidden flex flex-col">
+                            {/* Header */}
+                            <div className="px-6 py-4 border-b border-[#E3EEE1] flex items-center justify-between w-full">
+                                <div className="flex items-center gap-[10px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/DoctorBagIcon.svg"
+                                            alt="Medicine Prescribed"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Medicine Prescribed
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddRow}
+                                    className="flex items-center justify-center transition-colors focus:outline-none cursor-pointer"
+                                    title="Add Row"
+                                >
+                                    <Image
+                                        src="/icons/AddIcon.svg"
+                                        alt="Add"
+                                        width={40}
+                                        height={40}
+                                    />
+                                </button>
                             </div>
 
-                            <div className="flex flex-col gap-4">
-                                {medicines.map((med, idx) => (
-                                    <div
-                                        key={idx}
-                                        ref={(el) => {
-                                            medicineRowRefs.current[idx] = el;
-                                        }}
-                                        className="flex flex-col gap-3 border-b border-[#EBECED] pb-4 last:border-b-0 last:pb-0"
-                                    >
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                            <div>
-                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Name</span>
-                                                <FormSelectField
-                                                    label="Name"
-                                                    placeholder="Select"
-                                                    options={MEDICINE_OPTIONS}
-                                                    value={med.name}
-                                                    onChange={(val) => handleRowChange(idx, "name", val as string)}
-                                                    background="white"
-                                                    hideLabel={true}
-                                                    width="100%"
-                                                    error={medicineErrors[idx]?.name}
-                                                />
-                                            </div>
-                                            <div>
-                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Dosage</span>
-                                                <FormSelectField
-                                                    label="Dosage"
-                                                    placeholder="Select"
-                                                    options={DOSAGE_OPTIONS}
-                                                    value={med.dosage}
-                                                    onChange={(val) => handleRowChange(idx, "dosage", val as string)}
-                                                    background="white"
-                                                    hideLabel={true}
-                                                    width="100%"
-                                                    error={medicineErrors[idx]?.dosage}
-                                                />
-                                            </div>
-                                            <div>
-                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Frequency</span>
-                                                <FormSelectField
-                                                    label="Frequency"
-                                                    placeholder="Select"
-                                                    options={FREQUENCY_OPTIONS}
-                                                    value={med.frequency}
-                                                    onChange={(val) => handleRowChange(idx, "frequency", val as string)}
-                                                    background="white"
-                                                    hideLabel={true}
-                                                    width="100%"
-                                                    error={medicineErrors[idx]?.frequency}
-                                                />
-                                            </div>
-                                            <div>
-                                                <span className="mb-1 block text-xs font-semibold text-[#7B8089] md:hidden">Duration</span>
-                                                <FormSelectField
-                                                    label="Duration"
-                                                    placeholder="Select"
-                                                    options={DURATION_OPTIONS}
-                                                    value={med.duration}
-                                                    onChange={(val) => handleRowChange(idx, "duration", val as string)}
-                                                    background="white"
-                                                    hideLabel={true}
-                                                    width="100%"
-                                                    error={medicineErrors[idx]?.duration}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-start gap-3">
-                                            <div className="min-w-0 flex-1">
-                                                <FormInputField
-                                                    label="Remarks"
-                                                    placeholder="Remarks"
-                                                    value={med.remarks || ""}
-                                                    onChange={(e) => handleRowChange(idx, "remarks", e.target.value)}
-                                                    width="100%"
-                                                    error={medicineErrors[idx]?.remarks}
-                                                />
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleDeleteRow(idx)}
-                                                className="mt-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EF4444] text-sm font-bold text-white transition-colors hover:bg-red-600 focus:outline-none"
-                                                aria-label="Remove medicine row"
-                                            >
-                                                ✕
-                                            </button>
+                            <div className="p-6 space-y-4">
+                                {/* Responsive Row Grid Layout */}
+                                <div className="border border-[#DFE0E2] rounded-[8px] bg-white w-full overflow-hidden divide-y divide-[#DFE0E2]">
+                                    {/* Header Row */}
+                                    <div className="hidden md:flex gap-4 px-4 py-4 text-[13px] font-semibold text-[#444242] items-center">
+                                        <div className="grid grid-cols-12 gap-1 flex-1">
+                                            <div className="col-span-4">Medicine</div>
+                                            <div className="col-span-2">Dosage</div>
+                                            <div className="col-span-2">Frequency</div>
+                                            <div className="col-span-2">Duration</div>
+                                            <div className="col-span-2">Time</div>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
 
-                            <div className="mt-4">
-                                <Button variant="primary" size="small" onClick={handleAddRow}>
-                                    Add Row
-                                </Button>
+                                    {/* Rows */}
+                                    {medicines.map((med, idx) => (
+                                        <div
+                                            key={idx}
+                                            ref={(el) => {
+                                                medicineRowRefs.current[idx] = el;
+                                            }}
+                                            className="flex flex-col gap-4 p-4 w-full"
+                                        >
+                                            {/* Dropdowns row */}
+                                            <div className="flex gap-4 items-center w-full">
+                                                <div className="grid grid-cols-1 md:grid-cols-12 gap-1 flex-1">
+                                                    {/* Name */}
+                                                    <div className="md:col-span-4">
+                                                        <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Name</span>
+                                                        <Tooltip content={med.name} disabled={!med.name}>
+                                                            <div className="w-full">
+                                                                <FormSelectField
+                                                                    label="Name"
+                                                                    placeholder="First Select Medicine"
+                                                                    options={medicineOptions.filter(opt => opt.value === med.name || !medicines.some((m, i) => i !== idx && m.name === opt.value))}
+                                                                    value={med.name}
+                                                                    onChange={(val) => handleRowChange(idx, "name", val as string)}
+                                                                    background="white"
+                                                                    hideLabel={true}
+                                                                    dropdownWidth="500px"
+                                                                    width="100%"
+                                                                    error={medicineErrors[idx]?.name}
+                                                                />
+                                                            </div>
+                                                        </Tooltip>
+                                                    </div>
+
+                                                    {/* Dosage */}
+                                                    <div className="md:col-span-2">
+                                                        <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Dosage</span>
+                                                        <Tooltip content={med.dosage} disabled={!med.dosage}>
+                                                            <div className="w-full">
+                                                                {(() => {
+                                                                    const { amount, unit } = parseDosageComponents(med.dosage);
+                                                                    return (
+                                                                        <FormInputSelectGroup
+                                                                            hideLabel={true}
+                                                                            inputValue={amount}
+                                                                            inputPlaceholder="e.g. 500"
+                                                                            onInputChange={(newAmount) => {
+                                                                                const combined = newAmount ? `${newAmount} ${unit}` : "";
+                                                                                handleRowChange(idx, "dosage", combined);
+                                                                            }}
+                                                                            selectValue={unit}
+                                                                            selectOptions={DOSAGE_UNIT_OPTIONS}
+                                                                            selectPlaceholder="Unit"
+                                                                            onSelectChange={(newUnit) => {
+                                                                                const combined = amount ? `${amount} ${newUnit}` : newUnit;
+                                                                                handleRowChange(idx, "dosage", combined);
+                                                                            }}
+                                                                            disabled={!med.name}
+                                                                            error={medicineErrors[idx]?.dosage}
+                                                                        />
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        </Tooltip>
+                                                    </div>
+
+                                                    {/* Frequency */}
+                                                    <div className="md:col-span-2">
+                                                        <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Frequency</span>
+                                                        <Tooltip content={med.frequency} disabled={!med.frequency}>
+                                                            <div className="w-full">
+                                                                <FormSelectField
+                                                                    label="Frequency"
+                                                                    placeholder="Select Frequency"
+                                                                    options={FREQUENCY_OPTIONS}
+                                                                    value={med.frequency}
+                                                                    onChange={(val) => handleRowChange(idx, "frequency", val as string)}
+                                                                    background="white"
+                                                                    hideLabel={true}
+                                                                    width="100%"
+                                                                    error={medicineErrors[idx]?.frequency}
+                                                                    disabled={!med.name}
+                                                                />
+                                                            </div>
+                                                        </Tooltip>
+                                                    </div>
+
+                                                    {/* Duration */}
+                                                    <div className="md:col-span-2">
+                                                        <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Duration</span>
+                                                        <Tooltip content={med.duration} disabled={!med.duration}>
+                                                            <div className="w-full">
+                                                                {(() => {
+                                                                    const { amount, unit } = parseDurationComponents(med.duration);
+                                                                    return (
+                                                                        <FormInputSelectGroup
+                                                                            hideLabel={true}
+                                                                            inputValue={amount}
+                                                                            inputPlaceholder="e.g. 5"
+                                                                            onInputChange={(newAmount) => {
+                                                                                const combined = newAmount ? `${newAmount} ${unit}` : "";
+                                                                                handleRowChange(idx, "duration", combined);
+                                                                            }}
+                                                                            selectValue={unit}
+                                                                            selectOptions={DURATION_UNIT_OPTIONS}
+                                                                            selectPlaceholder="Unit"
+                                                                            onSelectChange={(newUnit) => {
+                                                                                const combined = amount ? `${amount} ${newUnit}` : newUnit;
+                                                                                handleRowChange(idx, "duration", combined);
+                                                                            }}
+                                                                            disabled={!med.name}
+                                                                            error={medicineErrors[idx]?.duration}
+                                                                        />
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        </Tooltip>
+                                                    </div>
+
+                                                    {/* Timing (Time) */}
+                                                    <div className="md:col-span-2">
+                                                        <span className="md:hidden block text-xs font-semibold text-[#7B8089] mb-1">Time</span>
+                                                        <Tooltip content={med.timing} disabled={!med.timing}>
+                                                            <div className="w-full">
+                                                                <FormSelectField
+                                                                    label="Timing"
+                                                                    placeholder="Select Timing"
+                                                                    options={TIME_OPTIONS}
+                                                                    value={med.timing}
+                                                                    onChange={(val) => handleRowChange(idx, "timing", val as string)}
+                                                                    background="white"
+                                                                    hideLabel={true}
+                                                                    width="100%"
+                                                                    dropdownWidth="350px"
+                                                                    error={medicineErrors[idx]?.timing}
+                                                                    disabled={!med.name}
+                                                                />
+                                                            </div>
+                                                        </Tooltip>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Remarks & Action row */}
+                                            <div className="flex gap-4 items-center w-full">
+                                                <div className="flex-1">
+                                                    <FormTextareaField
+                                                        label="Remarks"
+                                                        placeholder="Remarks"
+                                                        value={med.remarks || ""}
+                                                        onChange={(e) => handleRowChange(idx, "remarks", e.target.value)}
+                                                        height={60}
+                                                        className="!rounded-xl"
+                                                        highlightBlack={true}
+                                                        error={medicineErrors[idx]?.remarks}
+                                                    />
+                                                </div>
+                                                <div className="flex-shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteRow(idx)}
+                                                        className="flex items-center justify-center w-7 h-7 bg-[#F64C4C] hover:bg-red-600 rounded-full text-white cursor-pointer transition-colors focus:outline-none"
+                                                    >
+                                                        <svg
+                                                            className="w-3.5 h-3.5"
+                                                            fill="none"
+                                                            viewBox="0 0 24 24"
+                                                            stroke="currentColor"
+                                                            strokeWidth={3}
+                                                        >
+                                                            <path
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                                d="M6 18L18 6M6 6l12 12"
+                                                            />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                            <FormInputField
-                                ref={dietAdviceRef}
-                                label="Diet Advice *"
-                                placeholder="Pathya-Apathya..."
-                                value={dietAdvice}
-                                onChange={(e) => {
-                                    setDietAdvice(e.target.value);
-                                    if (errors.dietAdvice) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.dietAdvice;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                width="100%"
-                                error={errors.dietAdvice}
-                            />
-                            <FormInputField
-                                label="Lifestyle Changes"
-                                placeholder="Sleep, exercise..."
-                                value={lifestyleChanges}
-                                onChange={(e) => setLifestyleChanges(e.target.value)}
-                                width="100%"
-                            />
-                            <FormInputField
-                                label="Yoga / Pranayama"
-                                placeholder="Specific asanas..."
-                                value={physicalExercises}
-                                onChange={(e) => setPhysicalExercises(e.target.value)}
-                                width="100%"
-                            />
+                        {/*Dietary Advice */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/DoctorBagIcon.svg"
+                                    alt="Medicine Prescribed"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Dietary Advice                            </span>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="w-full">
+                                <FormTextareaField
+                                    ref={dietAdviceRef as any}
+                                    label="Diet Advice *"
+                                    placeholder="Pathya-Apathya..."
+                                    value={dietAdvice}
+                                    onChange={(e) => {
+                                        setDietAdvice(e.target.value);
+                                        if (errors.dietAdvice) {
+                                            setErrors(prev => {
+                                                const next = { ...prev };
+                                                delete next.dietAdvice;
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                    width="100%"
+                                    height={80}
+                                    className="!rounded-xl"
+                                    highlightBlack={true}
+                                    error={errors.dietAdvice}
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <FormInputField
+                                    label="Lifestyle Changes"
+                                    placeholder="Sleep, exercise..."
+                                    value={lifestyleChanges}
+                                    onChange={(e) => setLifestyleChanges(e.target.value)}
+                                    width="100%"
+                                    highlightBlack={true}
+                                />
+                                <FormInputField
+                                    label="Yoga / Pranayama"
+                                    placeholder="Specific asanas..."
+                                    value={physicalExercises}
+                                    onChange={(e) => setPhysicalExercises(e.target.value)}
+                                    width="100%"
+                                    highlightBlack={true}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Patient Referred To */}
+                        <div className="flex items-center gap-[10px]">
+                            <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                <Image
+                                    src="/icons/DoctorBagIcon.svg"
+                                    alt="Medicine Prescribed"
+                                    width={16}
+                                    height={16}
+                                />
+                            </div>
+                            <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                Patient Referred To     <span className="text-[#F6776E]">*</span>                      </span>
+                        </div>
+                        <div ref={patientReferredToRef} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                            <div className="w-[480px]">
+                                <Tabs
+                                    className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                    options={[
+                                        { value: "Follow Ups", label: "Follow Ups" },
+                                        { value: "IPD Admission", label: "IPD Admission" },
+                                        { value: "Day Care Admission", label: "Day Care Admission" },
+                                    ]}
+                                    value={patientReferredTo}
+                                    onChange={(val) => {
+                                        setPatientReferredTo(val);
+                                        if (errors.patientReferredTo) {
+                                            setErrors(prev => {
+                                                const next = { ...prev };
+                                                delete next.patientReferredTo;
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                />
+                                {errors.patientReferredTo && (
+                                    <p className="mt-1 text-xs text-[#F6776E]">{errors.patientReferredTo}</p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2772,63 +5087,107 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                         <div className="flex items-center justify-between ">
                             <div className="flex items-center gap-3">
                                 <div className="w-[30px] h-[30px] rounded-full bg-[#0B8C00] text-white flex items-center justify-center font-inter font-bold text-sm">8</div>
-                                <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Visit {visitCount})</h3>
+                                {/* <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Visit {visitCount})</h3> */}
+                                <h3 className="font-inter font-semibold text-base text-[#262D3B]">Progress Monitoring (Revisit)</h3>
+
                             </div>
                             <SectionProgress percent={getSection8Percent()} />
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <PatientTypeButtonGroup
-                                options={["Better", "Same", "Worse", "New Symptoms"]}
-                                value={progressStatus}
-                                onChange={(val) => {
-                                    setProgressStatus(val);
-                                    if (errors.progressStatus) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.progressStatus;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Progress Status *"
-                                required
-                                fieldRef={progressStatusRef}
-                                error={errors.progressStatus}
-                            />
-                            <PatientTypeButtonGroup
-                                options={["Regular", "Irregular", "Side Effects"]}
-                                value={medicineAdherence}
-                                onChange={(val) => {
-                                    setMedicineAdherence(val);
-                                    if (errors.medicineAdherence) {
-                                        setErrors(prev => {
-                                            const next = { ...prev };
-                                            delete next.medicineAdherence;
-                                            return next;
-                                        });
-                                    }
-                                }}
-                                label="Medicine Adherence *"
-                                required
-                                fieldRef={medicineAdherenceRef}
-                                error={errors.medicineAdherence}
-                            />
+                            {/* Progress Status Card */}
+                            <div ref={progressStatusRef} className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4 bg-white">
+                                <div className="flex items-center gap-[10px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/DoctorBagIcon.svg"
+                                            alt="Progress Status"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Progress Status <span className="text-[#F6776E]">*</span>
+                                    </span>
+                                </div>
+                                <Tabs
+                                    className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                    options={[
+                                        { value: "better", label: "Better" },
+                                        { value: "same", label: "Same" },
+                                        { value: "worse", label: "Worse" },
+                                        { value: "new symptoms", label: "New Symptoms" }
+                                    ]}
+                                    value={progressStatus}
+                                    onChange={(val) => {
+                                        setProgressStatus(val);
+                                        if (errors.progressStatus) {
+                                            setErrors(prev => {
+                                                const next = { ...prev };
+                                                delete next.progressStatus;
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                />
+                                {errors.progressStatus && (
+                                    <p className="text-xs text-[#F6776E] mt-1">{errors.progressStatus}</p>
+                                )}
+                            </div>
+
+                            {/* Medicine Adherence Card */}
+                            <div ref={medicineAdherenceRef} className="border border-[#EBECED] rounded-[16px] p-6 flex flex-col gap-4 bg-white">
+                                <div className="flex items-center gap-[10px]">
+                                    <div className="w-8 h-8 rounded-full bg-[#EAF7E8] flex items-center justify-center shrink-0">
+                                        <Image
+                                            src="/icons/DoctorBagIcon.svg"
+                                            alt="Medicine Adherence"
+                                            width={16}
+                                            height={16}
+                                        />
+                                    </div>
+                                    <span className="font-inter font-semibold text-[#262D3B] text-sm">
+                                        Medicine Adherence <span className="text-[#F6776E]">*</span>
+                                    </span>
+                                </div>
+                                <Tabs
+                                    className="scrollbar-hide [&_button]:text-xs [&_button]:px-2.5"
+                                    options={[
+                                        { value: "regular", label: "Regular" },
+                                        { value: "irregular", label: "Irregular" },
+                                        { value: "side effects", label: "Side Effects" }
+                                    ]}
+                                    value={medicineAdherence}
+                                    onChange={(val) => {
+                                        setMedicineAdherence(val);
+                                        if (errors.medicineAdherence) {
+                                            setErrors(prev => {
+                                                const next = { ...prev };
+                                                delete next.medicineAdherence;
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                />
+                                {errors.medicineAdherence && (
+                                    <p className="text-xs text-[#F6776E] mt-1">{errors.medicineAdherence}</p>
+                                )}
+                            </div>
                         </div>
 
                         {/* Symptom Recovery % */}
                         <div className="space-y-4 pt-2">
                             <h4 className="font-inter font-semibold text-sm text-[#434956]">Symptom Recovery %</h4>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-                                <Slider label="Pain" value={painRecovery} onChange={setPainRecovery} />
-                                <Slider label="Digestion" value={digestionRecovery} onChange={setDigestionRecovery} />
-                                <Slider label="Energy" value={energyRecovery} onChange={setEnergyRecovery} />
-                                <Slider label="Sleep" value={sleepRecovery} onChange={setSleepRecovery} />
+                                <SymptomRecoverySlider label="Pain" value={painRecovery} onChange={setPainRecovery} />
+                                <SymptomRecoverySlider label="Digestion" value={digestionRecovery} onChange={setDigestionRecovery} />
+                                <SymptomRecoverySlider label="Energy" value={energyRecovery} onChange={setEnergyRecovery} />
+                                <SymptomRecoverySlider label="Sleep" value={sleepRecovery} onChange={setSleepRecovery} />
                             </div>
                         </div>
 
                         <div className="space-y-2">
-                            <FormInputField
+                            <FormTextareaField
                                 ref={clinicalRemarksRef}
                                 label="Clinical Remarks *"
                                 placeholder="Detailed clinical observations..."
@@ -2845,6 +5204,9 @@ export const ClinicalAssessmentRecord = forwardRef<{ submit: () => void }, Clini
                                 }}
                                 width="100%"
                                 error={errors.clinicalRemarks}
+                                height={80}
+                                className="!rounded-xl"
+                                highlightBlack={true}
                             />
                         </div>
                     </div>

@@ -67,6 +67,8 @@ type TableHeadProps = {
   sortDirection?: "asc" | "desc" | null;
   onSort?: () => void;
   position?: "first" | "last" | "middle";
+  colSpan?: number;
+  rowSpan?: number;
 };
 
 export const TableHead = ({
@@ -76,6 +78,8 @@ export const TableHead = ({
   sortDirection = null,
   onSort,
   position = "middle",
+  colSpan,
+  rowSpan,
 }: TableHeadProps) => {
   const baseClasses = "h-[46px] border-t border-b border-[#EDF3EA] px-5 pt-0 text-xs font-medium text-[#262D3B]";
   
@@ -89,6 +93,8 @@ export const TableHead = ({
     <th
       className={`text-left ${baseClasses} ${positionClasses[position]} ${sortable ? "cursor-pointer select-none" : ""} ${className}`}
       onClick={sortable && onSort ? onSort : undefined}
+      colSpan={colSpan}
+      rowSpan={rowSpan}
     >
       <div className="flex items-center gap-2">
         <span>{children}</span>

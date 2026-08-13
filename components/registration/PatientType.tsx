@@ -239,23 +239,23 @@ export default function PatientType({
                                 // Allow navigation and editing keys
                                 const allowedKeys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Backspace", "Delete", "Tab", "Enter", "Escape"];
                                 const isModifierKey = e.ctrlKey || e.metaKey || e.altKey;
-                                
+
                                 // Allow modifier key combinations (Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X)
                                 if (isModifierKey && ["a", "c", "v", "x"].includes(e.key.toLowerCase())) {
                                     return;
                                 }
-                                
+
                                 // Allow navigation and editing keys
                                 if (allowedKeys.includes(e.key)) {
                                     return;
                                 }
-                                
+
                                 // If at max length, prevent typing new characters
                                 if (formData.benificiaryId.length >= 15 && e.key.match(/^\d$/)) {
                                     e.preventDefault();
                                     return;
                                 }
-                                
+
                                 // Block non-digits (only allow 0-9)
                                 if (!e.key.match(/^\d$/)) {
                                     e.preventDefault();
@@ -287,8 +287,10 @@ export default function PatientType({
                             label="Insurance Company"
                             value={formData.insuranceCompany}
                             onChange={(e) => {
-                                // Allow only alphabet characters and spaces, max 100 characters
+                                // Only allow letters and spaces, prevent leading spaces, max 100 characters
                                 let value = e.target.value.replace(/[^a-zA-Z\s]/g, "");
+                                value = value.replace(/^\s+/, "");
+                                value = value.replace(/(.)\1{2,}/g, "$1$1");
                                 // Ensure first character is uppercase
                                 if (value.length > 0) {
                                     value = value.charAt(0).toUpperCase() + value.slice(1);

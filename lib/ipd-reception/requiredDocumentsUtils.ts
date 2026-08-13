@@ -1,10 +1,22 @@
 import type { AwaitingPatient, RequiredDocumentItem } from "./types";
 
+export type DocumentSelection = "required" | "not_required";
+
 export function sortRequiredDocuments(
   documents: RequiredDocumentItem[] | undefined
 ): RequiredDocumentItem[] {
   if (!documents?.length) return [];
   return [...documents].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+export function buildDocumentSelectionsMap(
+  documents: RequiredDocumentItem[]
+): Record<number, DocumentSelection | undefined> {
+  const selections: Record<number, DocumentSelection | undefined> = {};
+  documents.forEach((doc) => {
+    selections[doc.documentMasterId] = doc.isSubmitted ? "required" : "not_required";
+  });
+  return selections;
 }
 
 export function buildSelectedDocumentsMap(
@@ -30,6 +42,24 @@ export function findAwaitingPatientRequiredDocuments(
   patientId: number
 ): RequiredDocumentItem[] {
   return findAwaitingPatientById(patients, patientId)?.requiredDocuments ?? [];
+}
+
+export function allDocumentsSelected(
+  requiredDocuments: RequiredDocumentItem[],
+  documentSelections: Record<number, DocumentSelection | undefined>
+): boolean {
+  if (requiredDocuments.length === 0) return true;
+  return requiredDocuments.every((doc) => documentSelections[doc.documentMasterId] != null);
+}
+
+export function hasAtLeastOneRequiredDocument(
+  requiredDocuments: RequiredDocumentItem[],
+  documentSelections: Record<number, DocumentSelection | undefined>
+): boolean {
+  if (requiredDocuments.length === 0) return true;
+  return requiredDocuments.some(
+    (doc) => documentSelections[doc.documentMasterId] === "required"
+  );
 }
 
 export function hasAtLeastOneSelectedDocument(

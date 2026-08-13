@@ -117,9 +117,24 @@ export function useArrowKeyNavigation(
       if (target.tagName === "INPUT") {
         const input = target as HTMLInputElement;
         const inputType = input.type;
-        if (inputType === "text" || inputType === "email" || inputType === "tel" || inputType === "number") {
-          const cursorPosition = input.selectionStart || 0;
-          const selectionEnd = input.selectionEnd || 0;
+        if (inputType === "text" || inputType === "email" || inputType === "tel" || inputType === "number" || inputType === "password" || inputType === "search" || inputType === "url") {
+          let cursorPosition: number | null = null;
+          let selectionEnd: number | null = null;
+
+          try {
+            cursorPosition = input.selectionStart;
+            selectionEnd = input.selectionEnd;
+          } catch {
+            // Browsers that throw for email/number selection API: allow normal cursor movement
+            return;
+          }
+
+          // HTML5 spec: selectionStart/selectionEnd is null for email and number input types in Chrome/Edge/Firefox.
+          // For these types, allow normal native arrow key movement inside the input text.
+          if (cursorPosition === null || selectionEnd === null) {
+            return;
+          }
+
           const textLength = input.value.length;
           const hasSelection = cursorPosition !== selectionEnd;
 

@@ -21,6 +21,7 @@ import {
   useGetAllDocumentsQuery,
   useAddDocumentMutation,
   useUpdateDocumentMutation,
+  useDeleteDocumentMutation,
 } from "@/store/api/settingsApi";
 import { useBranchFilter } from "@/hooks/useBranchFilter";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -106,9 +107,10 @@ function branchSelectLabel(name: string, typeRaw: string | null | undefined): st
 
 export default function DocumentPage() {
   const documentPermission = usePermission("settings", { subModule: "document-master" });
-  const canView = documentPermission.canView 
-  const canAdd = documentPermission.canAdd 
-  const canEdit = documentPermission.canEdit 
+  const canView = documentPermission.canView
+  const canAdd = documentPermission.canAdd
+  const canEdit = documentPermission.canEdit
+  const canDelete = documentPermission.canDelete
 
   const { filterBranchId, branchFilterPersistReady } = useBranchFilter({
     persistSuperAdminSelectionKey: "hiims-settings-document-branch",
@@ -135,10 +137,12 @@ export default function DocumentPage() {
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false);
   const [apiErrorMessage, setApiErrorMessage] = useState("");
 
+  const [itemToDelete, setItemToDelete] = useState<Document | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Debounce search to avoid too many API calls
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
-  
+
   // Trim the debounced search term to remove leading and trailing spaces
   // Only pass to API if trimmed value is not empty (don't hit API for spaces only)
   const trimmedSearchTerm = debouncedSearchTerm.trim();
@@ -174,9 +178,48 @@ export default function DocumentPage() {
 
   // Create document mutation
   const [createDocument, { isLoading: isCreating }] = useAddDocumentMutation();
-  
+
   // Update document mutation
   const [updateDocument, { isLoading: isUpdating }] = useUpdateDocumentMutation();
+
+  // Delete document mutation
+  const [deleteDocument, { isLoading: isDeleting }] = useDeleteDocumentMutation();
+
+  const handleDelete = (doc: Document) => {
+    if (!canDelete) return;
+    if (doc.isDefaultDocument) return;
+    setItemToDelete(doc);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    try {
+      const result = await deleteDocument({ id: itemToDelete.id }).unwrap();
+      setSuccessMessage(result?.message || "Document deleted successfully");
+      setShowSuccessDialog(true);
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
+      await refetchDocuments();
+    } catch (error: any) {
+      console.error("Failed to delete document:", error);
+      let errorMsg = "Failed to delete document. Please try again.";
+      if (error?.data?.message != null) {
+        const m = error.data.message;
+        errorMsg = Array.isArray(m) ? m.map(String).join(" ") : String(m);
+      } else if (error?.data?.error) {
+        errorMsg = error.data.error;
+      } else if (error?.error) {
+        errorMsg = error.error;
+      } else if (error?.message) {
+        errorMsg = error.message;
+      }
+      setApiErrorMessage(errorMsg);
+      setShowApiErrorDialog(true);
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
+    }
+  };
 
   // Map API data to Document format
   const documents: Document[] = documentsData?.data?.map((document: any) => {
@@ -274,7 +317,7 @@ export default function DocumentPage() {
 
     try {
       let result;
-      
+
       if (dialogMode === "add") {
         const payload = {
           documentName: formValues.name.trim(),
@@ -322,10 +365,10 @@ export default function DocumentPage() {
       setSelectedDocument(null);
     } catch (error: any) {
       console.error(`Failed to ${dialogMode === "add" ? "create" : "update"} document:`, error);
-      
+
       // Handle error - show error message
       let errorMsg = `Failed to ${dialogMode === "add" ? "create" : "update"} document. Please try again.`;
-      
+
       if (error?.data?.message != null) {
         const m = error.data.message;
         errorMsg = Array.isArray(m) ? m.map(String).join(" ") : String(m);
@@ -336,7 +379,7 @@ export default function DocumentPage() {
       } else if (error?.message) {
         errorMsg = error.message;
       }
-      
+
       setApiErrorMessage(errorMsg);
       setShowApiErrorDialog(true);
     }
@@ -367,65 +410,67 @@ export default function DocumentPage() {
               You don&apos;t have permission to view document.
             </div>
           ) : (
-          <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-            <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
+            <div className="w-full overflow-hidden rounded-[20px] border border-[#E3EEE1] bg-white px-6 pb-6 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+              <div className="mb-6 flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-x-auto">
 
-              <div className="w-[280px] shrink-0 min-w-[200px]">
-                <TableSearchInput
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  placeholder="Search Here..."
-                />
-              </div>
-              {canAdd ? (
-                <button
-                  type="button"
-                  className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
-                  onClick={handleAddNew}
-                >
-                  <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
-                  <span className="text-hide">Add Document</span>
-                </button>
-              ) : null}
-            </div>
-
-            {isLoadingDocuments ? (
-              <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {paginatedDocuments.map((document) => (
-                    <DocumentCard
-                      key={document.id}
-                      id={document.id}
-                      name={document.name}
-                      status={document.status}
-                      isDefaultPanel={document.isDefaultDocument || false}
-                      onView={() => handleView(document)}
-                      onEdit={() => handleEdit(document)}
-                      showViewButton={canView}
-                      showEditButton={canEdit}
-                    />
-                  ))}
+                <div className="w-[280px] shrink-0 min-w-[200px]">
+                  <TableSearchInput
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    placeholder="Search Here..."
+                  />
                 </div>
+                {canAdd ? (
+                  <button
+                    type="button"
+                    className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium leading-[120%] text-[#0B8C00] transition-colors hover:bg-[#F2F8F2] whitespace-nowrap"
+                    onClick={handleAddNew}
+                  >
+                    <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} className="shrink-0" />
+                    <span className="text-hide">Add Document</span>
+                  </button>
+                ) : null}
+              </div>
 
-                {filteredDocuments.length === 0 && (
-                  <div className="py-12 text-center text-sm text-[#9CA3AF]">No documents found</div>
-                )}
-              </>
-            )}
+              {isLoadingDocuments ? (
+                <div className="py-12 text-center text-sm text-[#9CA3AF]">Loading...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    {paginatedDocuments.map((document) => (
+                      <DocumentCard
+                        key={document.id}
+                        id={document.id}
+                        name={document.name}
+                        status={document.status}
+                        isDefaultPanel={document.isDefaultDocument || false}
+                        variant="view-edit-delete"
+                        onView={() => handleView(document)}
+                        onEdit={() => handleEdit(document)}
+                        onDelete={canDelete ? () => handleDelete(document) : undefined}
+                        showViewButton={canView}
+                        showEditButton={canEdit}
+                      />
+                    ))}
+                  </div>
 
-            {!isLoadingDocuments && (documentsData?.total || filteredDocuments.length) > 0 && (
-              <Pagination
-                currentPage={currentPage}
-                totalItems={documentsData?.total || filteredDocuments.length}
-                itemsPerPage={itemsPerPage}
-                onPageChange={handlePageChange}
-                onItemsPerPageChange={handleItemsPerPageChange}
-                itemsPerPageOptions={[10, 20, 50,100]}
-              />
-            )}
-          </div>
+                  {filteredDocuments.length === 0 && (
+                    <div className="py-12 text-center text-sm text-[#9CA3AF]">No documents found</div>
+                  )}
+                </>
+              )}
+
+              {!isLoadingDocuments && (documentsData?.total || filteredDocuments.length) > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={documentsData?.total || filteredDocuments.length}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={handlePageChange}
+                  onItemsPerPageChange={handleItemsPerPageChange}
+                  itemsPerPageOptions={[10, 20, 50, 100]}
+                />
+              )}
+            </div>
           )}
         </ListBorder>
       </div>
@@ -444,6 +489,7 @@ export default function DocumentPage() {
         }}
         title={dialogMode === "add" ? "Add Document" : dialogMode === "edit" ? "Edit Document" : "View Document"}
         width={686}
+        closeOnOutsideClick={false}
       >
         <form onSubmit={dialogMode !== "view" ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
           <div className="space-y-5 md:space-y-6">
@@ -454,6 +500,11 @@ export default function DocumentPage() {
                 onChange={(event) => {
                   if (dialogMode === "view" || selectedDocument?.isDefaultDocument) return;
                   let value = event.target.value.replace(/[^a-zA-Z\s]/g, "");
+                  value = value.replace(/^\s+/, "");
+                  value = value.replace(/(.)\1{2,}/g, "$1$1");
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
                   value = value.slice(0, 100);
                   setFormValues((prev) => ({ ...prev, name: value }));
                   setFormErrors((prev) => ({ ...prev, name: "" }));
@@ -488,7 +539,7 @@ export default function DocumentPage() {
               />
             </div>
 
-       
+
 
             <div>
               <FormSelectField
@@ -515,7 +566,13 @@ export default function DocumentPage() {
                 value={formValues.description}
                 onChange={(event) => {
                   if (dialogMode === "view" || selectedDocument?.isDefaultDocument) return;
-                  const value = event.target.value.slice(0, 500);
+                  let value = event.target.value.replace(/[^a-zA-Z0-9\s]/g, "");
+                  value = value.replace(/^\s+/, "");
+                  value = value.replace(/(.)\1{2,}/g, "$1$1");
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
+                  value = value.slice(0, 255);
                   setFormValues((prev) => ({ ...prev, description: value }));
                   setFormErrors((prev) => ({ ...prev, description: "" }));
                 }}
@@ -526,7 +583,7 @@ export default function DocumentPage() {
                 error={formErrors.description}
               />
             </div>
-                 <div className="flex items-center gap-3 pt-0 pb-2 mb-5 ms-5">
+            <div className="flex items-center gap-3 pt-0 pb-2 mb-5 ms-5">
               <p className="text-xs font-medium text-[#7B8089]">Mandatory</p>
               <button
                 type="button"
@@ -537,14 +594,12 @@ export default function DocumentPage() {
                   setFormValues((prev) => ({ ...prev, mandatory: !prev.mandatory }));
                 }}
                 disabled={dialogMode === "view" || selectedDocument?.isDefaultDocument}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  formValues.mandatory ? "bg-[#0B8C00]" : "bg-[#E5E7EB]"
-                } ${dialogMode === "view" || selectedDocument?.isDefaultDocument ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formValues.mandatory ? "bg-[#0B8C00]" : "bg-[#E5E7EB]"
+                  } ${dialogMode === "view" || selectedDocument?.isDefaultDocument ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formValues.mandatory ? "translate-x-6" : "translate-x-1"
-                  }`}
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formValues.mandatory ? "translate-x-6" : "translate-x-1"
+                    }`}
                 />
               </button>
               <span className="text-sm font-medium text-[#262D3B]">{formValues.mandatory ? "Yes" : "No"}</span>
@@ -556,18 +611,18 @@ export default function DocumentPage() {
               <Button
                 type="button"
                 variant="outline"
-                  onClick={() => {
-                    setDialogMode(null);
-                    setFormErrors({});
-                    setSelectedDocument(null);
-                  }}
-                >
+                onClick={() => {
+                  setDialogMode(null);
+                  setFormErrors({});
+                  setSelectedDocument(null);
+                }}
+              >
                 Close
               </Button>
             ) : (
               <>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   variant="primary"
                   isLoading={isCreating || isUpdating}
                   disabled={isCreating || isUpdating || selectedDocument?.isDefaultDocument}
@@ -621,6 +676,36 @@ export default function DocumentPage() {
         showCancel={false}
         onConfirm={() => {
           setShowApiErrorDialog(false);
+        }}
+      />
+
+      <MessageDialog
+        open={showDeleteConfirm}
+        onClose={() => {
+          if (isDeleting) return;
+          setShowDeleteConfirm(false);
+          setItemToDelete(null);
+        }}
+        closeOnOutsideClick={false}
+        icon="/icons/transhExtraDarkIcon.svg"
+        iconBgColor="#FFEBEE"
+        message={
+          itemToDelete ? (
+            <span>
+              Are you sure you want to delete this document?
+            </span>
+          ) : (
+            ""
+          )
+        }
+        confirmText="Confirm"
+        cancelText="Cancel"
+        showCancel={true}
+        isActionLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setItemToDelete(null);
         }}
       />
     </AppShell>

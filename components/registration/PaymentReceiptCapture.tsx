@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import Image from "next/image";
+import { formatIndianAmount } from "@/store/utils/formatIndianAmount";
 
 /** Props for the bordered receipt block (same layout as payment success PDF). */
 export interface PaymentReceiptCaptureProps {
@@ -52,6 +54,20 @@ export interface PaymentReceiptCaptureProps {
         status: string;
     }>;
     lineItemLabel?: string;
+    branch?: {
+        id?: number;
+        name?: string;
+        type?: string;
+        address?: string;
+        state?: string;
+        district?: string;
+        tehsil?: string;
+        area?: string;
+        pinCode?: string;
+        phoneNumber?: string;
+        emailAddress?: string;
+    } | null;
+    branchAddress?: string;
 }
 
 export function PaymentReceiptCapture({
@@ -97,6 +113,8 @@ export function PaymentReceiptCapture({
     paymentStatus,
     paymentRecords,
     lineItemLabel = "Consultation Fee",
+    branch,
+    branchAddress,
 }: PaymentReceiptCaptureProps) {
     const invoiceDisplay =
         invoiceNumber != null && String(invoiceNumber).trim() !== ""
@@ -108,44 +126,83 @@ export function PaymentReceiptCapture({
             ? String(invoiceId).trim()
             : null;
 
-    const formatCurrency = (amount: number) => {
-        return `₹${amount.toLocaleString("en-IN")}`;
+    const formatCurrency = (amount: number | string) => {
+        return `₹${formatIndianAmount(amount)}`;
     };
+
+    const formattedBranchHeader = useMemo(() => {
+        if (branchAddress && branchAddress.trim()) {
+            return branchAddress.trim();
+        }
+        if (branch) {
+            const parts: string[] = [];
+            if (branch.name) parts.push(branch.name.trim());
+            if (branch.address) parts.push(branch.address.trim());
+            const subArea = (branch.area || branch.tehsil || "").trim();
+            if (subArea && !parts.some((p) => p.toLowerCase().includes(subArea.toLowerCase()))) {
+                parts.push(subArea);
+            }
+            const district = (branch.district || "").trim();
+            if (district && !parts.some((p) => p.toLowerCase().includes(district.toLowerCase()))) {
+                parts.push(`Distt ${district}`);
+            }
+            const state = (branch.state || "").trim();
+            const pin = (branch.pinCode || "").trim();
+            const statePin = [state, pin].filter(Boolean).join(" ");
+            if (statePin && !parts.some((p) => p.toLowerCase().includes(statePin.toLowerCase()))) {
+                parts.push(statePin);
+            }
+            if (branch.phoneNumber) {
+                parts.push(`Ph: ${branch.phoneNumber}`);
+            }
+            if (parts.length > 0) {
+                return parts.join(", ");
+            }
+        }
+        return null;
+    }, [branch, branchAddress]);
 
     return (
         <div
             id={captureId}
             className="box-border flex w-full min-w-0 flex-col overflow-visible rounded-[1px] border border-solid border-[#C0C3C8] bg-white"
         >
-            <div className="flex items-center py-[11px] pl-[26px] pr-[24px]">
-                <div className="relative flex shrink-0 overflow-visible pr-3">
+            <div className="flex items-center justify-between py-[11px] px-[24px]">
+                <div className="relative flex w-[140px] shrink-0 items-center justify-start overflow-visible">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                         src="/images/logo.png"
                         alt="Jeena Sikho Lifecare Limited Logo"
-                        width={120}
-                        height={80}
+                        width={100}
+                        height={45}
                         decoding="sync"
                         loading="eager"
-                        className="block h-[80px] w-auto max-w-[180px] object-contain object-left"
+                        className="block h-[45px] w-auto max-w-[120px] object-contain object-left"
                         draggable={false}
                     />
                 </div>
-                <div className="flex flex-col items-center flex-1">
+                <div className="flex flex-col items-center justify-center flex-1 min-w-0 px-2 text-center">
                     <h1 className="font-inter not-italic font-semibold text-[20px] leading-[130%] text-center text-[#434956] mb-1">
                         Jeena Sikho Lifecare Limited
                     </h1>
-                    <p className="font-inter not-italic font-normal text-[12px] leading-[140%] text-center text-[#434956]">
-                        Pind Devinagar, Hadbast No. 18, Chandigarh Delhi Highway,Tehsil Derabassi,
-                        <br />
-                        Distt Mohali Punjab, DERABASSI, PUNJAB 140507, Devinagar BO, derabassi,
-                        <br />
-                        Mohali (Ajitgarh), PUNJAB(140507)
-                    </p>
+                    {formattedBranchHeader ? (
+                        <p className="font-inter not-italic font-normal text-[12px] leading-[140%] text-center text-[#434956] max-w-[500px]">
+                            {formattedBranchHeader}
+                        </p>
+                    ) : (
+                        <p className="font-inter not-italic font-normal text-[12px] leading-[140%] text-center text-[#434956]">
+                            Pind Devinagar, Hadbast No. 18, Chandigarh Delhi Highway,Tehsil Derabassi,
+                            <br />
+                            Distt Mohali Punjab, DERABASSI, PUNJAB 140507, Devinagar BO, derabassi,
+                            <br />
+                            Mohali (Ajitgarh), PUNJAB(140507)
+                        </p>
+                    )}
                     <h2 className="font-inter not-italic font-semibold text-[20px] leading-[130%] text-center text-[#434956] mt-3">
                         Payment Receipt
                     </h2>
                 </div>
+                <div className="w-[140px] shrink-0 pointer-events-none" />
             </div>
 
             <div className="flex flex-col w-full">
@@ -390,7 +447,7 @@ export function PaymentReceiptCapture({
                                         {record.status}
                                     </td>
                                     <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
-                                        ₹ {Number(record.amount || 0).toLocaleString("en-IN")}
+                                        ₹ {formatIndianAmount(record.amount || 0)}
                                     </td>
                                 </tr>
                             ))}
@@ -428,7 +485,7 @@ export function PaymentReceiptCapture({
                                         -
                                     </td>
                                     <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
-                                        ₹ {Number(splitCashAmount).toLocaleString("en-IN")}
+                                        ₹ {formatIndianAmount(splitCashAmount)}
                                     </td>
                                 </tr>
                             )}
@@ -441,7 +498,7 @@ export function PaymentReceiptCapture({
                                         UPI/312345678901
                                     </td>
                                     <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
-                                        ₹ {Number(splitUpiAmount).toLocaleString("en-IN")}
+                                        ₹ {formatIndianAmount(splitUpiAmount)}
                                     </td>
                                 </tr>
                             )}
@@ -454,7 +511,7 @@ export function PaymentReceiptCapture({
                                         HDFC/1234 **** **** 5678
                                     </td>
                                     <td className="border border-[#C0C3C8] border-r-0 py-[10px] px-[24px] text-end font-inter text-[13px] font-bold text-[#434956]">
-                                        ₹ {Number(splitCardAmount).toLocaleString("en-IN")}
+                                        ₹ {formatIndianAmount(splitCardAmount)}
                                     </td>
                                 </tr>
                             )}

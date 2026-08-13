@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
@@ -13,21 +13,104 @@ import {
     ViewAppointment,
     BackToPreviousPageButton,
     SpinnerLoader,
+    Tooltip,
+    FormSelectField,
 } from "@/components/ui";
 import {
     useGetTentativeOrArchivedListQuery,
     useRevertToOpdMutation,
     useLazyCheckFirstDayPaymentQuery,
-    useLazyGetPatientDetailQuery,
+    useLazyGetPatientDetailByAppointmentQuery,
+    type CounsellorTentativeOrArchivedItem,
 } from "@/store/api/counsellorApi";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useCounsellorResolvedBranchId } from "@/hooks/useBranchFilter";
+import {
+    buildCounsellorViewAppointmentData,
+    resolveCounsellorAppointmentId,
+} from "@/lib/counsellor/patientView";
+import { useGetPatientFilesQuery, useGetPatientHealthCardByUhidQuery, useLazyGetPresignedUrlQuery } from "@/store/api/commonApi";
 import RoomAllocation from "../start-counselling/roomAllowcation";
 import DateFilterDropdown from "@/components/registration/DateFilterDropdown";
 
+const TRUNCATED_TABLE_CELL_WIDTH = 150;
 
+function TruncatedTableCell({ text }: { text: string }) {
+  const value = text?.trim() ? text.trim() : "N/A";
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+
+    const checkTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth + 1);
+    };
+
+    checkTruncation();
+
+    const observer = new ResizeObserver(checkTruncation);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return (
+    <Tooltip
+      position="top"
+      maxWidth={360}
+      disabled={!isTruncated}
+      className="!overflow-visible !py-2.5"
+      content={
+        <p className="m-0 max-w-[340px] whitespace-normal break-words text-left text-xs leading-[1.6] text-[#262D3B]">
+          {value}
+        </p>
+      }
+    >
+      <div
+        className="flex min-w-0 items-center"
+        style={{ width: TRUNCATED_TABLE_CELL_WIDTH, maxWidth: TRUNCATED_TABLE_CELL_WIDTH }}
+      >
+        <span
+          ref={textRef}
+          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+        >
+          {value}
+        </span>
+        {isTruncated ? <span className="shrink-0 pl-1.5 text-[#434956]">...</span> : null}
+      </div>
+    </Tooltip>
+  );
+}
+
+// Helper function to extract S3 key from image URL or key string
+const extractS3Key = (imageStr: string | null | undefined): string | null => {
+    if (!imageStr || !imageStr.trim()) return null;
+    let raw = imageStr.trim().split('?')[0];
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+        try {
+            const urlObj = new URL(raw);
+            return urlObj.pathname.replace(/^\//, "");
+        } catch {
+            const match = raw.match(/amazonaws\.com\/(.+)/);
+            if (match && match[1]) return match[1];
+        }
+    }
+    return raw;
+};
 
 export default function CounsellorArchivedPage() {
     const router = useRouter();
+
+    const {
+        selectedBranchFilter: selectedBranch,
+        setSelectedBranchFilter: setSelectedBranch,
+        branchFilterOptions: hookBranchFilterOptions,
+        isLoadingBranches: isLoadingBranchFilter,
+        isBranchFilterDisabled,
+        resolvedFilterBranchId,
+    } = useCounsellorResolvedBranchId();
+
     const [searchTerm, setSearchTerm] = useState("");
     const [viewAppointmentMode, setViewAppointmentMode] = useState(false);
     const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
@@ -85,17 +168,136 @@ export default function CounsellorArchivedPage() {
     const [apiErrorMessage, setApiErrorMessage] = useState("");
 
     // Dynamic detailed patient data loading states
-    const [getPatientDetail] = useLazyGetPatientDetailQuery();
+    const [getPatientDetailByAppointment] = useLazyGetPatientDetailByAppointmentQuery();
     const [loadingPatientId, setLoadingPatientId] = useState<number | string | null>(null);
     const [fetchedPatientData, setFetchedPatientData] = useState<any>(null);
+    const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | null>(null);
+    const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+    const [isFetchingPresignedImage, setIsFetchingPresignedImage] = useState<boolean>(false);
+
+    const [getPresignedUrl] = useLazyGetPresignedUrlQuery();
+    const { data: patientFilesResponse } = useGetPatientFilesQuery(
+        { uhid: fetchedPatientData?.appointmentDetail?.uhid || "" },
+        { skip: !fetchedPatientData?.appointmentDetail?.uhid, refetchOnMountOrArgChange: true }
+    );
+
+
+        // Fetch health card details by UHID
+          const { data: healthCardResponse, isLoading: isFetchingHealthCard } = useGetPatientHealthCardByUhidQuery(
+              { uhid: fetchedPatientData?.appointmentDetail?.uhid },
+              { skip: !fetchedPatientData?.appointmentDetail?.uhid }
+          );
+          const healthCardData = healthCardResponse?.data;
+    
+            useEffect(() => {
+                  const rawImage = healthCardData?.image;
+                  if (!rawImage) {
+                      setCardImageUrl(null);
+                      return;
+                  }
+          
+                  const key = extractS3Key(rawImage);
+                  if (!key) {
+                      setCardImageUrl(null);
+                      return;
+                  }
+          
+                  let isMounted = true;
+                  setIsFetchingPresignedImage(true);
+          
+                  getPresignedUrl({ key })
+                      .unwrap()
+                      .then((res) => {
+                          if (isMounted) {
+                              if (res?.data?.signedUrl) {
+                                  setCardImageUrl(res.data.signedUrl);
+                              } else {
+                                  setCardImageUrl(null);
+                              }
+                          }
+                      })
+                      .catch((err) => {
+                          console.error("Failed to fetch presigned URL for health card image:", err);
+                          if (isMounted) setCardImageUrl(null);
+                      })
+                      .finally(() => {
+                          if (isMounted) setIsFetchingPresignedImage(false);
+                      });
+          
+                  return () => {
+                      isMounted = false;
+                  };
+              }, [healthCardData?.image, getPresignedUrl]);
+    
+           const isHealthCardLoading = isFetchingHealthCard || isFetchingPresignedImage;
+
+    const handleViewFile = async (filePath: string) => {
+        try {
+            const result = await getPresignedUrl({ key: filePath }).unwrap();
+            const signedUrl = result?.data?.signedUrl;
+            if (signedUrl) {
+                window.open(signedUrl, "_blank", "noopener,noreferrer");
+            }
+        } catch (err) {
+            console.error("Failed to get presigned URL:", err);
+            alert("Failed to open file. Please try again.");
+        }
+    };
+
+    const patientFilesItems = useMemo(() => {
+        const files = patientFilesResponse?.data;
+        if (!Array.isArray(files)) return [];
+        return files.map((file) => {
+            const formattedDate = file.createdAt
+                ? new Date(file.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                : "";
+            return {
+                name: file.fileName || "File",
+                size: `${file.fileType || "Document"} • ${formattedDate}`,
+                onClick: () => handleViewFile(file.path),
+                actionIconSrc: "/icons/ViewEyeIcon.svg",
+                actionIconAlt: "View File",
+            };
+        });
+    }, [patientFilesResponse]);
+
+    const handleViewPatient = async (item: CounsellorTentativeOrArchivedItem) => {
+        const appointmentLookupId = resolveCounsellorAppointmentId(item);
+        if (!appointmentLookupId) {
+            setApiErrorMessage("Appointment ID not found for this patient.");
+            setShowApiErrorDialog(true);
+            return;
+        }
+
+        setLoadingPatientId(item.id);
+        try {
+            const res = await getPatientDetailByAppointment(appointmentLookupId).unwrap();
+            if (res?.success) {
+                setFetchedPatientData(res.data);
+                setSelectedPatient(item);
+                setSelectedAppointmentId(appointmentLookupId);
+                setViewAppointmentMode(true);
+            } else {
+                setApiErrorMessage(res?.message || "Failed to load patient details.");
+                setShowApiErrorDialog(true);
+            }
+        } catch (err: unknown) {
+            const apiErr = err as { data?: { message?: string }; message?: string };
+            setApiErrorMessage(
+                apiErr?.data?.message || apiErr?.message || "An error occurred while fetching patient details."
+            );
+            setShowApiErrorDialog(true);
+        } finally {
+            setLoadingPatientId(null);
+        }
+    };
 
     const [revertToOpd] = useRevertToOpdMutation();
     const [checkFirstDayPayment] = useLazyCheckFirstDayPaymentQuery();
 
-    // Reset page on search changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [debouncedSearch]);
+    }, [debouncedSearch, selectedBranch]);
 
     // Integrate backend query hook
     const {
@@ -112,7 +314,13 @@ export default function CounsellorArchivedPage() {
         type: "archived",
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
-    });
+        ...(resolvedFilterBranchId != null ? { branchId: resolvedFilterBranchId } : {}),
+    },
+   {
+    skip: resolvedFilterBranchId == null,
+    refetchOnMountOrArgChange: true,
+  }
+);
 
     const currentList = listRes?.data || [];
     const totalItems = listRes?.total || 0;
@@ -211,6 +419,7 @@ export default function CounsellorArchivedPage() {
         { label: "Sr no.", position: "first" as const },
         {
             label: "Patient Name",
+            className: "w-[150px] max-w-[150px]",
             sortable: true,
             sortDirection: sortBy === "patientName" ? (sortOrder.toLowerCase() as "asc" | "desc") : null,
             onSort: () => {
@@ -222,7 +431,7 @@ export default function CounsellorArchivedPage() {
         { label: "Patient UHID" },
         { label: "Patient Contact Number" },
         { label: "Referring Doctor" },
-        { label: "Chief Complaint" },
+        { label: "Chief Complaint", className: "w-[150px] max-w-[150px]"},
         { label: "Action", position: "last" as const, className: "cursor-pointer" },
     ];
 
@@ -231,50 +440,37 @@ export default function CounsellorArchivedPage() {
         const sr = (currentPage - 1) * itemsPerPage + index + 1;
 
         // Clickable green UHID
+        const isUhidLoading = loadingPatientId === item.id;
         const uhid = (
-            <span className="text-[#0B8C00] font-medium cursor-pointer hover:underline">
+            <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-[#0B8C00] font-medium hover:underline cursor-pointer disabled:opacity-60"
+                onClick={() => void handleViewPatient(item)}
+                disabled={isUhidLoading}
+            >
+                {isUhidLoading ? <SpinnerLoader size={14} /> : null}
                 {item.patientUhid || "N/A"}
-            </span>
+            </button>
         );
 
         const isButtonLoading = loadingPatientId === item.id;
         // Action buttons
         const actions = (
             <div className="flex items-center gap-2">
-                <Button
+                {/* <Button
                     variant="outline"
                     size="xsmall"
                     className="whitespace-nowrap"
                     onClick={() => setPendingAction({ type: "refer", item })}
                 >
                     Refer to OPD
-                </Button>
+                </Button> */}
+
                 <Button
                     variant="outline"
                     size="xsmall"
                     className="whitespace-nowrap flex items-center justify-center min-w-[50px]"
-                    onClick={async () => {
-                        if (!item.id) return;
-                        setLoadingPatientId(item.id);
-                        try {
-                            const res = await getPatientDetail(item.id).unwrap();
-                            if (res && res.success) {
-                                setFetchedPatientData(res.data);
-                                setSelectedPatient(item);
-                                setViewAppointmentMode(true);
-                            } else {
-                                setApiErrorMessage(res?.message || "Failed to load patient details.");
-                                setShowApiErrorDialog(true);
-                            }
-                        } catch (err: any) {
-                            console.error("Error fetching patient details:", err);
-                            const msg = err?.data?.message || err?.message || "An error occurred while fetching patient details.";
-                            setApiErrorMessage(msg);
-                            setShowApiErrorDialog(true);
-                        } finally {
-                            setLoadingPatientId(null);
-                        }
-                    }}
+                    onClick={() => void handleViewPatient(item)}
                     disabled={isButtonLoading}
                 >
                     {isButtonLoading ? (
@@ -283,24 +479,27 @@ export default function CounsellorArchivedPage() {
                         "View"
                     )}
                 </Button>
-                <Button
+
+                {/* <Button
                     variant="primary"
                     size="xsmall"
                     className="whitespace-nowrap"
                     onClick={() => setPendingAction({ type: "startAdmission", item })}
                 >
                     Start Admission
-                </Button>
+                </Button> */}
             </div>
         );
 
         return [
             sr,
-            item.patientName || "N/A",
+            // item.patientName || "N/A",
+            <TruncatedTableCell key={`archived-${item.id ?? index}`} text={`${item.patientTitle} ${item.patientName || "N/A"}`}  />,
             uhid,
             item.contactNumber || "N/A",
             item.doctorName || "N/A",
-            item.diagnosis || "N/A", // API "diagnosis" field maps to Chief Complaint
+            // item.diagnosis || "N/A", // API "diagnosis" field maps to Chief Complaint
+            <TruncatedTableCell key={`archived-${item.id ?? index}`} text={item.diagnosis || "N/A"} />,
             actions,
         ];
     });
@@ -316,137 +515,34 @@ export default function CounsellorArchivedPage() {
                             onClick={() => {
                                 setViewAppointmentMode(false);
                                 setSelectedPatient(null);
+                                setFetchedPatientData(null);
+                                setSelectedAppointmentId(null);
                             }}
                         />
                     </div>
                     {(() => {
-                        const appDetail = fetchedPatientData?.appointmentDetail || {};
-                        const patDetails = fetchedPatientData?.patientDetails || {};
-                        const refDetail = fetchedPatientData?.referralDetail || {};
-                        const medInfo = fetchedPatientData?.medicalInfo || {};
-                        const otherInfo = fetchedPatientData?.otherInformation || {};
-
-                        const appointmentItems = [
-                            { label: "UHID", value: appDetail.uhid || "N/A" },
-                            { label: "OPD ID", value: appDetail.opid?.toString() || "N/A" },
-                            { label: "Branch", value: appDetail.branch || "N/A" },
-                            { label: "Doctor", value: appDetail.doctor || "N/A" },
-                            { label: "Doctor OPD Fee", value: appDetail.doctorCpdFee !== undefined ? `Rs. ${appDetail.doctorCpdFee}` : "N/A" },
-                            // { label: "Entry Fee", value: appDetail.entryFee !== undefined ? `Rs. ${appDetail.entryFee}` : "N/A" },
-                            { label: "Appointment Date", value: appDetail.appointmentDate || "N/A" },
-                            { label: "Time Slot", value: appDetail.timeSlot || "N/A" },
-                            { label: "Created Date", value: appDetail.createdDate ? new Date(appDetail.createdDate).toLocaleString() : "N/A" },
-                            { label: "Remark", value: appDetail.remark || "N/A", multiline: true },
-                        ];
-
-                        const referralItems = [
-                            { label: "Source", value: refDetail.source || "N/A" },
-                            { label: "Sub Source", value: refDetail.subSource || "N/A" },
-                            { label: "Referral Doctor", value: refDetail.referralDoctor || "N/A" },
-                            { label: "Referral Name", value: refDetail.referralName || "N/A" },
-                            { label: "Mobile", value: refDetail.mobile || "N/A" },
-                        ];
-
-                        const patientName = patDetails.name || "N/A";
-                        const patientSubtitle = `Contact Number: ${patDetails.contactNumber || "N/A"} • Age : ${patDetails.age || "N/A"} Years • Gender : ${patDetails.gender || "N/A"}`;
-
-                        const patientBadges = [
-                            ...(medInfo.bloodGroup && medInfo.bloodGroup !== "N/A" ? [{
-                                label: medInfo.bloodGroup,
-                                className: "inline-flex h-[30px] min-w-[76px] me-2 items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#F6776E]/24 bg-[#F6776E0D] text-[#F6776E]"
-                            }] : []),
-                            ...(otherInfo.patientType ? [{
-                                label: otherInfo.patientType,
-                                className: "inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border px-4 text-xs font-semibold border-[#0B8C00]/20 bg-white text-[#0B8C00]"
-                            }] : [])
-                        ];
-
-                        const patientInfoItems = [
-                            {
-                                iconSrc: "/icons/UserGear.svg",
-                                iconAlt: "Father/Husband",
-                                label: "Father’s/Husband’s Name",
-                                value: patDetails.fatherHusbandName || patDetails.guardianName || "N/A",
-                            },
-                            {
-                                iconSrc: "/icons/gendericon.svg",
-                                iconAlt: "Marital Status",
-                                label: "Marital Status",
-                                value: patDetails.maritalStatus || "N/A",
-                            },
-                            {
-                                iconSrc: "/icons/mapicon.svg",
-                                iconAlt: "Address",
-                                label: "Address",
-                                value: patDetails.address || "N/A",
-                            },
-                            {
-                                iconSrc: "/icons/adharcardicon.svg",
-                                iconAlt: "Aadhar Card Number",
-                                label: "Aadhar Card Number",
-                                value: patDetails.aadharCardNumber || "N/A",
-                            },
-                        ];
-
-                        const vitalsItems = [
-                            { label: "Blood Pressure", value: patDetails.bloodPressure || "N/A", unit: "bp" },
-                            { label: "Sugar Level", value: patDetails.sugarLevel || "N/A", unit: "mg/dL" },
-                            { label: "Temperature", value: patDetails.temperature || "N/A", unit: "" },
-                            { label: "Heart Rate", value: patDetails.heartRate || "N/A", unit: "bpm" },
-                        ];
-
-                        const medicalItems = [
-                            { label: "Diagnosis", value: medInfo.diagnosis || "N/A" },
-                            { label: "Disease", value: medInfo.disease || "N/A" },
-                            { label: "Blood Group", value: medInfo.bloodGroup || "N/A" },
-                            { label: "Allergies", value: medInfo.allergies || "N/A" },
-                            { label: "Surgeries", value: medInfo.surgeries || "N/A" },
-                            { label: "Addiction", value: medInfo.addiction || "N/A" },
-                            { label: "Height", value: patDetails.height || medInfo.height || "N/A" },
-                            { label: "Weight", value: patDetails.weight || medInfo.weight || "N/A" },
-                            { label: "Diet Type", value: medInfo.dietType || "N/A" },
-                            { label: "Remark", value: medInfo.remark || "N/A", multiline: true },
-                        ];
-
-                        const otherInfoItems = [
-                            { label: "Patient Type", value: otherInfo.patientType || "N/A" },
-                            { label: "Patient Sub Type", value: otherInfo.patientSubType || "N/A" },
-                            { label: "Beneficiary ID", value: "N/A" },
-                            { label: "Insurance Company", value: "N/A" },
-                            { label: "Ayush Covered", value: "N/A" },
-                        ];
-
-                        const timelineItems = fetchedPatientData?.patientHistory?.map((h: any) => ({
-                            dateLabel: h.date || h.createdDate || "N/A",
-                            detail: {
-                                primaryComplaintTitle: "Chief Complaint",
-                                primaryComplaintText: h.chiefComplaint || h.remark || "N/A",
-                                detailsTitle: "Symptoms",
-                                detailsItems: Array.isArray(h.symptoms) ? h.symptoms : (h.symptoms ? [h.symptoms] : ["N/A"]),
-                                actionsTitle: "Medicines Prescribed",
-                                actionItems: Array.isArray(h.medicines) ? h.medicines : (h.medicines ? [h.medicines] : ["N/A"]),
-                            }
-                        })) || [];
-
-                        const healthCardNo = patDetails.jsHealthCardNo || "N/A";
+                        const viewData = buildCounsellorViewAppointmentData(fetchedPatientData);
 
                         return (
                             <ViewAppointment
-                                appointmentItems={appointmentItems}
-                                walletRemainingAmount="Rs. 0"
-                                walletDetails={undefined}
-                                referralItems={referralItems}
-                                patientName={patientName}
-                                patientSubtitle={patientSubtitle}
-                                patientBadges={patientBadges}
-                                patientInfoItems={patientInfoItems}
+                                appointmentId={selectedAppointmentId ?? undefined}
+                                appointmentItems={viewData.appointmentItems}
+                                walletRemainingAmount={viewData.remainingAmount}
+                                walletDetails={viewData.walletDetails}
+                                referralItems={viewData.referralItems}
+                                patientName={viewData.patientName}
+                                patientSubtitle={viewData.patientSubtitle}
+                                patientBadges={viewData.patientBadges}
+                                patientInfoItems={viewData.patientInfoItems}
                                 showVitals={true}
-                                vitalsItems={vitalsItems}
-                                timelineItems={timelineItems.length > 0 ? timelineItems : undefined}
-                                healthCardNo={healthCardNo}
-                                medicalItems={medicalItems}
-                                fileItems={[]}
-                                otherInfoItems={otherInfoItems}
+                                vitalsItems={viewData.vitalsItems}
+                                timelineItems={viewData.timelineItems.length > 0 ? viewData.timelineItems : undefined}
+                                healthCardNo={viewData.healthCardNo}
+                                healthCardImageUrl={cardImageUrl || undefined}
+                                isHealthCardLoading={isHealthCardLoading}
+                                medicalItems={viewData.medicalItems}
+                                fileItems={patientFilesItems}
+                                otherInfoItems={viewData.otherInfoItems}
                             />
                         );
                     })()}
@@ -506,7 +602,22 @@ export default function CounsellorArchivedPage() {
                                     id: "archived-patients-list",
                                     title: "Archived",
                                     titleRightContent: (
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <FormSelectField
+                                                label=""
+                                                hideLabel
+                                                options={hookBranchFilterOptions}
+                                                value={selectedBranch}
+                                                onChange={(value) => {
+                                                    setSelectedBranch(Array.isArray(value) ? value[0] : value || "");
+                                                    setCurrentPage(1);
+                                                }}
+                                                placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                                mode="single"
+                                                background="normal"
+                                                width={280}
+                                                disabled={isBranchFilterDisabled || isLoadingBranchFilter}
+                                            />
                                             <div className="relative" ref={filterRef}>
                                                 <button
                                                     onClick={handleFilterClick}

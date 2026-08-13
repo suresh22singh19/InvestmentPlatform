@@ -52,7 +52,7 @@ const toPermissionAction = (
   canDelete: Boolean(source?.canDelete ?? fallback?.canDelete ?? false),
 });
 
-const slugify = (value: string) =>
+export const slugify = (value: string) =>
   value
     .trim()
     .toLowerCase()

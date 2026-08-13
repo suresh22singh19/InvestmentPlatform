@@ -86,10 +86,10 @@ export default function DiscountApprovalPage() {
     const levelUserPlaceholderBase = !formValues.branchName
         ? "Select a branch first"
         : isLoadingUsers
-          ? "Loading users..."
-          : "Select user";
+            ? "Loading users..."
+            : "Select user";
 
-    
+
     // Debounce search to avoid too many API calls
     const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
@@ -116,10 +116,10 @@ export default function DiscountApprovalPage() {
             },
             { skip: !canView }
         );
-    
+
     // Create discount config mutation
     const [createDiscountConfig, { isLoading: isCreating }] = useCreateDiscountConfigMutation();
-    
+
     // Update discount config mutation
     const [updateDiscountConfig, { isLoading: isUpdating }] = useUpdateDiscountConfigMutation();
 
@@ -180,14 +180,14 @@ export default function DiscountApprovalPage() {
         }
         return discountConfigsData.data.map((config) => {
             // Use user data directly from API response
-            const level1Display = config.levelOneUser 
+            const level1Display = config.levelOneUser
                 ? `${config.levelOneUser.userName} (${config.levelOneUser.email})`
                 : `User ${config.levelOneUserId}`;
-            
+
             const level2Display = config.levelTwoUser
                 ? `${config.levelTwoUser.userName} (${config.levelTwoUser.email})`
                 : `User ${config.levelTwoUserId}`;
-            
+
             return {
                 id: config.id,
                 branchName: config.branch?.name || `Branch ${config.branchId}`,
@@ -229,7 +229,7 @@ export default function DiscountApprovalPage() {
         setEditingId(null);
         const defaultBranch =
             userBranchId != null &&
-            branchOptions.some((o) => o.value === String(userBranchId))
+                branchOptions.some((o) => o.value === String(userBranchId))
                 ? String(userBranchId)
                 : "";
         setFormValues({
@@ -247,7 +247,7 @@ export default function DiscountApprovalPage() {
         if (!canEdit) return;
         setIsEditMode(true);
         setEditingId(approval.id);
-        
+
         setFormValues({
             branchName: approval.branchId.toString(),
             level1: approval.levelOneUserId.toString(),
@@ -306,7 +306,7 @@ export default function DiscountApprovalPage() {
 
         try {
             let result;
-            
+
             if (isEditMode && editingId) {
                 // Update existing discount config
                 const payload = {
@@ -367,7 +367,7 @@ export default function DiscountApprovalPage() {
             } else if (err?.message) {
                 errorMsg = err.message;
             }
-            
+
             setApiErrorMessage(errorMsg);
             setShowApiErrorDialog(true);
         }
@@ -395,157 +395,157 @@ export default function DiscountApprovalPage() {
                             You don&apos;t have permission to view discount approval configuration.
                         </div>
                     ) : (
-                    <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
-                        <div className="mb-6 flex items-center justify-between">
-                            <h2 className="text-lg font-semibold text-[#434956]"></h2>
+                        <div className="w-full overflow-hidden rounded-[16px] border border-[#E3EEE1] bg-white px-5 pb-5 pt-5 shadow-[0px_20px_40px_rgba(34,56,43,0.08)]">
+                            <div className="mb-6 flex items-center justify-between">
+                                <h2 className="text-lg font-semibold text-[#434956]"></h2>
 
-                            <div className="flex items-center gap-3">
-                                <FormSelectField
-                                    label=""
-                                    hideLabel
-                                    options={branchFilterOptions}
-                                    value={selectedBranchFilter}
-                                    onChange={(value) => {
-                                        setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
-                                        setCurrentPage(1);
-                                    }}
-                                    placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
-                                    mode="single"
-                                    background="normal"
-                                    width={300}
-                                    disabled={isBranchFilterDisabled || isLoadingBranchFilter}
-                                />
-                                <div className="flex-shrink-0" style={{ width: "300px" }}>
-                                    <TableSearchInput
-                                        value={searchTerm}
+                                <div className="flex items-center gap-3">
+                                    <FormSelectField
+                                        label=""
+                                        hideLabel
+                                        options={branchFilterOptions}
+                                        value={selectedBranchFilter}
                                         onChange={(value) => {
-                                            setSearchTerm((prev) => {
-                                                if (prev !== value) setCurrentPage(1);
-                                                return value;
-                                            });
+                                            setSelectedBranchFilter(Array.isArray(value) ? value[0] : value || "");
+                                            setCurrentPage(1);
                                         }}
-                                        placeholder="Search Here..."
+                                        placeholder={isLoadingBranchFilter ? "Loading branches..." : "Select Branch"}
+                                        mode="single"
+                                        background="normal"
+                                        width={300}
+                                        disabled={isBranchFilterDisabled || isLoadingBranchFilter}
                                     />
+                                    <div className="flex-shrink-0" style={{ width: "300px" }}>
+                                        <TableSearchInput
+                                            value={searchTerm}
+                                            onChange={(value) => {
+                                                setSearchTerm((prev) => {
+                                                    if (prev !== value) setCurrentPage(1);
+                                                    return value;
+                                                });
+                                            }}
+                                            placeholder="Search Here..."
+                                        />
+                                    </div>
+                                    {canAdd ? (
+                                        <button
+                                            type="button"
+                                            className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
+                                            onClick={handleAddNew}
+                                        >
+                                            <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
+                                            <span className="text-hide">Add Discount Approval Configuration</span>
+                                        </button>
+                                    ) : null}
                                 </div>
-                                {canAdd ? (
-                                    <button
-                                        type="button"
-                                        className="flex h-11 items-center gap-2 rounded-[32px] border border-[#0B8C00] bg-white px-6 text-sm font-medium text-[#0B8C00] transition-colors hover:bg-[#F2F8F2]"
-                                        onClick={handleAddNew}
-                                    >
-                                        <Image src="/icons/AddIcon.svg" alt="Add" width={20} height={20} />
-                                        <span className="text-hide">Add Discount Approval Configuration</span>
-                                    </button>
-                                ) : null}
                             </div>
-                        </div>
 
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="bg-white">
-                                    <TableHead position="first">
-                                        Sr no.
-                                    </TableHead>
-                                    <TableHead 
-                                        sortable
-                                        sortDirection={getSortDirection("branch.name")}
-                                        onSort={() => handleSort("branch.name")}
-                                    >
-                                        Branch Name
-                                    </TableHead>
-                                    <TableHead 
-                                        sortable
-                                        sortDirection={getSortDirection("levelOneUser.email")}
-                                        onSort={() => handleSort("levelOneUser.email")}
-                                    >
-                                        Level 1
-                                    </TableHead>
-                                    <TableHead 
-                                        sortable
-                                        sortDirection={getSortDirection("levelTwoUser.email")}
-                                        onSort={() => handleSort("levelTwoUser.email")}
-                                    >
-                                        Level 2
-                                    </TableHead>
-                                    <TableHead position="last">
-                                        Action
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {isLoadingConfigs ? (
-                                    <TableRow>
-                                        <TableData
-                                            colSpan={5}
-                                            className="py-12 text-center text-sm text-[#9CA3AF]"
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-white">
+                                        <TableHead position="first">
+                                            Sr no.
+                                        </TableHead>
+                                        <TableHead
+                                            sortable
+                                            sortDirection={getSortDirection("branch.name")}
+                                            onSort={() => handleSort("branch.name")}
                                         >
-                                            Loading...
-                                        </TableData>
+                                            Branch Name
+                                        </TableHead>
+                                        <TableHead
+                                            sortable
+                                            sortDirection={getSortDirection("levelOneUser.email")}
+                                            onSort={() => handleSort("levelOneUser.email")}
+                                        >
+                                            Level 1
+                                        </TableHead>
+                                        <TableHead
+                                            sortable
+                                            sortDirection={getSortDirection("levelTwoUser.email")}
+                                            onSort={() => handleSort("levelTwoUser.email")}
+                                        >
+                                            Level 2
+                                        </TableHead>
+                                        <TableHead position="last">
+                                            Action
+                                        </TableHead>
                                     </TableRow>
-                                ) : paginatedData.length === 0 ? (
-                                    <TableRow>
-                                        <TableData
-                                            colSpan={5}
-                                            className="py-12 text-center text-sm text-[#9CA3AF]"
-                                        >
-                                            No discount approvals found
-                                        </TableData>
-                                    </TableRow>
-                                ) : (
-                                    paginatedData.map((approval, index) => (
-                                        <TableRow
-                                            key={approval.id}
-                                            className="bg-white transition-colors hover:bg-[#F7FAF7]"
-                                        >
-                                            <TableData variant="primary">
-                                                {(currentPage - 1) * itemsPerPage + index + 1}
-                                            </TableData>
-                                            <TableData>
-                                                {approval.branchName}
-                                            </TableData>
-                                            <TableData>
-                                                {approval.level1}
-                                            </TableData>
-                                            <TableData>
-                                                {approval.level2}
-                                            </TableData>
-                                            <TableData>
-                                                <div className="flex items-center gap-3">
-                                                    {canEdit ? (
-                                                        <Tooltip content="Edit" position="top" delay={0}>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleEdit(approval)}
-                                                                className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
-                                                                aria-label="Edit"
-                                                            >
-                                                                <Image
-                                                                    src="/icons/EditIconBlack.svg"
-                                                                    alt="Edit"
-                                                                    width={20}
-                                                                    height={20}
-                                                                />
-                                                            </button>
-                                                        </Tooltip>
-                                                    ) : null}
-                                                </div>
+                                </TableHeader>
+                                <TableBody>
+                                    {isLoadingConfigs ? (
+                                        <TableRow>
+                                            <TableData
+                                                colSpan={5}
+                                                className="py-12 text-center text-sm text-[#9CA3AF]"
+                                            >
+                                                Loading...
                                             </TableData>
                                         </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
+                                    ) : paginatedData.length === 0 ? (
+                                        <TableRow>
+                                            <TableData
+                                                colSpan={5}
+                                                className="py-12 text-center text-sm text-[#9CA3AF]"
+                                            >
+                                                No discount approvals found
+                                            </TableData>
+                                        </TableRow>
+                                    ) : (
+                                        paginatedData.map((approval, index) => (
+                                            <TableRow
+                                                key={approval.id}
+                                                className="bg-white transition-colors hover:bg-[#F7FAF7]"
+                                            >
+                                                <TableData variant="primary">
+                                                    {(currentPage - 1) * itemsPerPage + index + 1}
+                                                </TableData>
+                                                <TableData>
+                                                    {approval.branchName}
+                                                </TableData>
+                                                <TableData>
+                                                    {approval.level1}
+                                                </TableData>
+                                                <TableData>
+                                                    {approval.level2}
+                                                </TableData>
+                                                <TableData>
+                                                    <div className="flex items-center gap-3">
+                                                        {canEdit ? (
+                                                            <Tooltip content="Edit" position="top" delay={0}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleEdit(approval)}
+                                                                    className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[#F7FAF7]"
+                                                                    aria-label="Edit"
+                                                                >
+                                                                    <Image
+                                                                        src="/icons/EditIconBlack.svg"
+                                                                        alt="Edit"
+                                                                        width={20}
+                                                                        height={20}
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
+                                                        ) : null}
+                                                    </div>
+                                                </TableData>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
 
-                        {totalItems > 0 && (
-                            <Pagination
-                                currentPage={currentPage}
-                                totalItems={totalItems}
-                                itemsPerPage={itemsPerPage}
-                                onPageChange={handlePageChange}
-                                onItemsPerPageChange={handleItemsPerPageChange}
-                            />
-                        )}
-                    </div>
+                            {totalItems > 0 && (
+                                <Pagination
+                                    currentPage={currentPage}
+                                    totalItems={totalItems}
+                                    itemsPerPage={itemsPerPage}
+                                    onPageChange={handlePageChange}
+                                    onItemsPerPageChange={handleItemsPerPageChange}
+                                />
+                            )}
+                        </div>
                     )}
                 </ListBorder>
             </div>
@@ -562,6 +562,7 @@ export default function DiscountApprovalPage() {
                 }}
                 title={isEditMode ? "Edit Discount Approval Configuration" : "Add Discount Approval Configuration"}
                 width={686}
+                closeOnOutsideClick={false}
             >
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-4">
@@ -609,7 +610,7 @@ export default function DiscountApprovalPage() {
                                         // If selected user is the same as Level 2, clear Level 2
                                         const updatedLevel1 = selectedValue;
                                         const updatedLevel2 = prev.level2 === updatedLevel1 ? "" : prev.level2;
-                                        
+
                                         return {
                                             ...prev,
                                             level1: updatedLevel1,
@@ -631,8 +632,8 @@ export default function DiscountApprovalPage() {
                                     !formValues.branchName
                                         ? "Select a branch first"
                                         : isLoadingUsers
-                                          ? "Loading…"
-                                          : "No users returned for this branch"
+                                            ? "Loading…"
+                                            : "No users returned for this branch"
                                 }
                                 mode="single"
                                 background="white"
@@ -654,7 +655,7 @@ export default function DiscountApprovalPage() {
                                         // If selected user is the same as Level 1, clear Level 1
                                         const updatedLevel2 = selectedValue;
                                         const updatedLevel1 = prev.level1 === updatedLevel2 ? "" : prev.level1;
-                                        
+
                                         return {
                                             ...prev,
                                             level1: updatedLevel1,
@@ -676,8 +677,8 @@ export default function DiscountApprovalPage() {
                                     !formValues.branchName
                                         ? "Select a branch first"
                                         : isLoadingUsers
-                                          ? "Loading…"
-                                          : "No users returned for this branch"
+                                            ? "Loading…"
+                                            : "No users returned for this branch"
                                 }
                                 mode="single"
                                 background="white"
@@ -691,9 +692,9 @@ export default function DiscountApprovalPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                        <Button 
-                            type="submit" 
-                            variant="primary" 
+                        <Button
+                            type="submit"
+                            variant="primary"
                             isLoading={isCreating || isUpdating}
                             disabled={isCreating || isUpdating}
                         >

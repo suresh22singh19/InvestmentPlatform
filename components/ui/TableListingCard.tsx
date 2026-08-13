@@ -66,7 +66,17 @@ export function TableListingCard({ sections, className = "" }: TableListingCardP
                         const hasRight = !!section.titleRightContent;
                         if (!hasLeft && !hasRight) return null;
                         return (
-                            <div className={`flex items-center gap-2 pb-6 ${hasLeft && hasRight ? "justify-between" : hasRight ? "justify-end" : "justify-start"}`}>
+                            // <div className="flex min-w-0 items-center gap-3 pb-6">
+                            //     {hasLeft && (
+                            //         <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+                            //             {leftContent}
+                            //         </div>
+                            //     )}
+                            //     {hasRight && (
+                            //         <div className="min-w-0 flex-1 overflow-hidden">{section.titleRightContent}</div>
+                            //     )}
+
+                               <div className={`flex items-center gap-2 pb-6 ${hasLeft && hasRight ? "justify-between" : hasRight ? "justify-end" : "justify-start"}`}>
                                 {hasLeft && <div className="flex items-center gap-2">{leftContent}</div>}
                                 {hasRight && section.titleRightContent}
                             </div>

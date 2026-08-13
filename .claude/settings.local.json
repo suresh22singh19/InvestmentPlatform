@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npx tsc *)",
-      "Bash(Get-ChildItem -Path \"e:\\\\Work\\\\hiims\\\\app\\\\settings\" -Recurse -Depth 1 -Name)",
-      "Bash(Sort-Object)"
-    ]
-  }
-}

@@ -9,6 +9,7 @@ import {
   FormSelectField,
   ConfigurationSummaryPanel,
   MessageDialog,
+  Tooltip,
 } from "@/components/ui";
 import {
   useGetBranchHierarchyTreeQuery,
@@ -78,6 +79,29 @@ type StructureBuilderProps = {
   /** Optional snapshot from facility config page so the side panel matches the dashboard */
   configurationSummary?: FacilityConfigurationSummarySnapshot | null;
 };
+
+export function getRoomConfigStatusInfo(status: string | null | undefined) {
+  const s = String(status ?? "").toLowerCase();
+  if (s === "complete" || s === "completed" || s === "configured") {
+    return {
+      label: "Configured",
+      badgeClass: "bg-green-100 text-green-700 border border-green-200 font-medium whitespace-nowrap",
+      textColor: "text-green-600",
+    };
+  } else if (s === "incomplete") {
+    return {
+      label: "Incomplete",
+      badgeClass: "bg-red-100 text-red-800 border border-red-200 font-medium whitespace-nowrap",
+      textColor: "text-red-600",
+    };
+  } else {
+    return {
+      label: "Not Started",
+      badgeClass: "bg-yellow-100 text-yellow-800 border border-yellow-200 font-medium whitespace-nowrap",
+      textColor: "text-yellow-600",
+    };
+  }
+}
 
 /** Find path from root to node with given id (e.g. [building, floor, room]) */
 function findPathToNode(nodes: TreeNode[], targetId: string, path: TreeNode[] = []): TreeNode[] | null {
@@ -180,7 +204,7 @@ export const StructureBuilder = ({
   const [addDialogType, setAddDialogType] = useState<"building" | "floor" | null>(null);
   const [addDialogParent, setAddDialogParent] = useState<TreeNode | null>(null);
   const [newItemName, setNewItemName] = useState("");
-  const [selectedMasterFloorId, setSelectedMasterFloorId] = useState<string>("");
+  const [selectedMasterFloorIds, setSelectedMasterFloorIds] = useState<string[]>([]);
   const [addDialogError, setAddDialogError] = useState("");
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -206,7 +230,7 @@ export const StructureBuilder = ({
   const { data: allFloorsRes, isFetching: floorsListLoading } = useGetAllFloorsQuery(undefined, {
     skip: !loadFloorsList,
   });
-  
+
   // Add Rooms Dialog State
   const [showAddRoomsDialog, setShowAddRoomsDialog] = useState(false);
   const [addRoomsParent, setAddRoomsParent] = useState<TreeNode | null>(null);
@@ -275,6 +299,64 @@ export const StructureBuilder = ({
     }));
   }, [allFloorsRes]);
 
+  const addFloorOptions = useMemo(() => {
+    if (!addDialogParent || addDialogType !== "floor") {
+      return masterFloorOptions;
+    }
+    const addedFloorIds = new Set(
+      addDialogParent.children
+        ?.map((child) => child.masterFloorId)
+        .filter((id): id is number => id !== undefined)
+        .map(String) ?? []
+    );
+    const addedFloorNames = new Set(
+      addDialogParent.children
+        ?.map((child) => child.name?.trim().toLowerCase())
+        .filter((name): name is string => !!name) ?? []
+    );
+    return masterFloorOptions.filter((opt) => {
+      const optVal = opt.value;
+      const optLabelLower = opt.label?.trim().toLowerCase();
+      if (addedFloorIds.has(optVal)) return false;
+      if (addedFloorNames.has(optLabelLower)) return false;
+      return true;
+    });
+  }, [masterFloorOptions, addDialogParent, addDialogType]);
+
+  const parentBuildingOfEditedFloor = useMemo(() => {
+    if (!editStructure || editStructure.kind !== "floor") return null;
+    return treeData.find((b) =>
+      b.children?.some((c) => c.id === editStructure.node.id)
+    ) ?? null;
+  }, [editStructure, treeData]);
+
+  const editFloorOptions = useMemo(() => {
+    if (!editStructure || editStructure.kind !== "floor" || !parentBuildingOfEditedFloor) {
+      return masterFloorOptions;
+    }
+    const currentFloorMasterId = editStructure.node.masterFloorId != null ? String(editStructure.node.masterFloorId) : "";
+    const currentFloorNameLower = editStructure.node.name?.trim().toLowerCase() || "";
+    const addedFloorIds = new Set(
+      parentBuildingOfEditedFloor.children
+        ?.map((child) => child.masterFloorId)
+        .filter((id): id is number => id !== undefined)
+        .map(String)
+        .filter((idStr) => idStr !== currentFloorMasterId) ?? []
+    );
+    const addedFloorNames = new Set(
+      parentBuildingOfEditedFloor.children
+        ?.map((child) => child.name?.trim().toLowerCase())
+        .filter((name): name is string => !!name && name !== currentFloorNameLower) ?? []
+    );
+    return masterFloorOptions.filter((opt) => {
+      const optVal = opt.value;
+      const optLabelLower = opt.label?.trim().toLowerCase();
+      if (addedFloorIds.has(optVal)) return false;
+      if (addedFloorNames.has(optLabelLower)) return false;
+      return true;
+    });
+  }, [masterFloorOptions, editStructure, parentBuildingOfEditedFloor]);
+
   const branchRoomTypeRows =
     branchRoomTypesRes?.success && Array.isArray(branchRoomTypesRes.data) ? branchRoomTypesRes.data : [];
 
@@ -314,7 +396,7 @@ export const StructureBuilder = ({
     setAddDialogType(type);
     setAddDialogParent(null);
     setNewItemName("");
-    setSelectedMasterFloorId("");
+    setSelectedMasterFloorIds([]);
     setAddDialogError("");
     setShowAddDialog(true);
   };
@@ -322,7 +404,7 @@ export const StructureBuilder = ({
   const closeAddDialog = () => {
     setShowAddDialog(false);
     setNewItemName("");
-    setSelectedMasterFloorId("");
+    setSelectedMasterFloorIds([]);
     setAddDialogType(null);
     setAddDialogParent(null);
     setAddDialogError("");
@@ -510,8 +592,8 @@ export const StructureBuilder = ({
       addDialogParent?.type === "building" &&
       branchId != null
     ) {
-      if (!selectedMasterFloorId) {
-        setAddDialogError("Please select a floor.");
+      if (selectedMasterFloorIds.length === 0) {
+        setAddDialogError("Please select at least one floor.");
         return;
       }
       const buildingId = parseTreeNodeNumericId(addDialogParent.id, "building");
@@ -519,14 +601,16 @@ export const StructureBuilder = ({
         openApiError("Could not determine building id. Try refreshing the page.");
         return;
       }
-      const floorId = parseInt(selectedMasterFloorId, 10);
-      if (!Number.isFinite(floorId)) {
+      const floorIds = selectedMasterFloorIds
+        .map((s) => parseInt(s, 10))
+        .filter((n) => Number.isFinite(n));
+      if (floorIds.length === 0) {
         setAddDialogError("Invalid floor selection.");
         return;
       }
       setAddDialogError("");
       try {
-        const res = await createFloor({ branchId, buildingId, floorId }).unwrap();
+        const res = await createFloor({ branchId, buildingId, floorIds }).unwrap();
         if (res.success) {
           closeAddDialog();
           setSuccessMessage(res.message ?? "Floor added successfully.");
@@ -584,23 +668,23 @@ export const StructureBuilder = ({
     };
 
     if (addDialogParent) {
-    setTreeData((prev) => {
-      const updateNode = (nodes: TreeNode[]): TreeNode[] => {
-        return nodes.map((node) => {
+      setTreeData((prev) => {
+        const updateNode = (nodes: TreeNode[]): TreeNode[] => {
+          return nodes.map((node) => {
             if (node.id === addDialogParent.id) {
-            return {
-              ...node,
+              return {
+                ...node,
                 children: [...(node.children || []), newItem],
-            };
-          }
-          if (node.children) {
-            return { ...node, children: updateNode(node.children) };
-          }
-          return node;
-        });
-      };
-      return updateNode(prev);
-    });
+              };
+            }
+            if (node.children) {
+              return { ...node, children: updateNode(node.children) };
+            }
+            return node;
+          });
+        };
+        return updateNode(prev);
+      });
     } else {
       setTreeData((prev) => [...prev, newItem]);
     }
@@ -714,9 +798,8 @@ export const StructureBuilder = ({
     return (
       <div key={node.id} className="select-none">
         <div
-          className={`flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50 cursor-pointer ${
-            selectedNode?.id === node.id ? "bg-blue-50" : ""
-          }`}
+          className={`flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50 cursor-pointer ${selectedNode?.id === node.id ? "bg-blue-50" : ""
+            }`}
           style={{ paddingLeft: `${level * 20 + 8}px` }}
           onClick={() => handleNodeClick(node)}
         >
@@ -739,8 +822,19 @@ export const StructureBuilder = ({
             </button>
           )}
           {!canExpand && <div className="w-5 h-5" />}
-          {getIcon(node.type)}
-          <span className="text-sm font-medium text-gray-900 flex-1 min-w-0 truncate">{node.name}</span>
+          {node.type === "room" ? (
+            <Tooltip content={getRoomConfigStatusInfo(node.roomConfigStatus).label}>
+              <div className="flex items-center gap-2 min-w-0">
+                {getIcon(node.type, node.roomConfigStatus)}
+                <span className="text-sm font-medium text-gray-900 truncate">{node.name}</span>
+              </div>
+            </Tooltip>
+          ) : (
+            <>
+              {getIcon(node.type, node.roomConfigStatus)}
+              <span className="text-sm font-medium text-gray-900 flex-1 min-w-0 truncate">{node.name}</span>
+            </>
+          )}
           {node.type === "building" && (
             <span className="text-xs text-gray-500 flex-shrink-0 whitespace-nowrap">
               {(() => {
@@ -761,33 +855,37 @@ export const StructureBuilder = ({
               onKeyDown={(e) => e.stopPropagation()}
               role="presentation"
             >
-              {canEdit ? (
-                <button
-                  type="button"
-                  className="p-1.5 rounded-md hover:bg-green-50 text-green-700 disabled:opacity-40"
-                  aria-label={`Edit ${node.type}`}
-                  disabled={structureMutationsBusy}
-                  onClick={() => openEditStructure(node, node.type === "building" ? "building" : "floor")}
-                >
-                  <Image src="/icons/EditIconBlack.svg" alt="" width={18} height={18} className="pointer-events-none" />
-                </button>
+              {canEdit && node.type !== "floor" ? (
+                <Tooltip content={`Edit ${node.type}`}>
+                  <button
+                    type="button"
+                    className="cursor-pointer p-1.5 rounded-md hover:bg-green-50 text-green-700 disabled:opacity-40"
+                    aria-label={`Edit ${node.type}`}
+                    disabled={structureMutationsBusy}
+                    onClick={() => openEditStructure(node, node.type === "building" ? "building" : "floor")}
+                  >
+                    <Image src="/icons/EditIconBlack.svg" alt="" width={18} height={18} className="pointer-events-none" />
+                  </button>
+                </Tooltip>
               ) : null}
               {canDelete ? (
-                <button
-                  type="button"
-                  className="p-1.5 rounded-md hover:bg-red-50 text-red-600 disabled:opacity-40"
-                  aria-label={`Delete ${node.type}`}
-                  disabled={structureMutationsBusy}
-                  onClick={() => setDeleteStructure({ node, kind: node.type === "building" ? "building" : "floor" })}
-                >
-                  <Image
-                    src="/icons/TrashRedIcon.svg"
-                    alt=""
-                    width={20}
-                    height={20}
-                    className="pointer-events-none shrink-0"
-                  />
-                </button>
+                <Tooltip content={`Delete ${node.type}`}>
+                  <button
+                    type="button"
+                    className="cursor-pointer p-1.5 rounded-md hover:bg-red-50 text-red-600 disabled:opacity-40"
+                    aria-label={`Delete ${node.type}`}
+                    disabled={structureMutationsBusy}
+                    onClick={() => setDeleteStructure({ node, kind: node.type === "building" ? "building" : "floor" })}
+                  >
+                    <Image
+                      src="/icons/TrashRedIcon.svg"
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="pointer-events-none shrink-0"
+                    />
+                  </button>
+                </Tooltip>
               ) : null}
             </div>
           )}
@@ -801,7 +899,7 @@ export const StructureBuilder = ({
     );
   };
 
-  const getIcon = (type: string) => {
+  const getIcon = (type: string, status?: string | null) => {
     const iconClass = "h-5 w-5 text-green-700";
     switch (type) {
       case "building":
@@ -816,12 +914,14 @@ export const StructureBuilder = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         );
-      case "room":
+      case "room": {
+        const info = getRoomConfigStatusInfo(status);
         return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={`h-5 w-5 ${info.textColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
         );
+      }
       case "bed":
         return (
           <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -841,16 +941,44 @@ export const StructureBuilder = ({
         return (
           <>
             {canAdd ? (
+              <Tooltip content="Add Floor">
+                <Button
+                  variant="primary"
+                  size="small"
+                  onClick={() => {
+                    setAddDialogType("floor");
+                    setAddDialogParent(selectedNode);
+                    setNewItemName("");
+                    setSelectedMasterFloorIds([]);
+                    setAddDialogError("");
+                    setShowAddDialog(true);
+                  }}
+                  leftIcon={
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  }
+                >
+                  Add Floor
+                </Button>
+              </Tooltip>
+            ) : null}
+          </>
+        );
+      case "floor":
+        return (
+          canAdd ? (
+            <Tooltip content="Add Rooms">
               <Button
                 variant="primary"
                 size="small"
                 onClick={() => {
-                  setAddDialogType("floor");
-                  setAddDialogParent(selectedNode);
-                  setNewItemName("");
-                  setSelectedMasterFloorId("");
-                  setAddDialogError("");
-                  setShowAddDialog(true);
+                  setAddRoomsParent(selectedNode);
+                  setNumberOfRooms("");
+                  setRoomPrefix("");
+                  setStartingNumber("1");
+                  setSelectedRoomType(null);
+                  setShowAddRoomsDialog(true);
                 }}
                 leftIcon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -858,124 +986,102 @@ export const StructureBuilder = ({
                   </svg>
                 }
               >
-                Add Floor
+                Add Rooms
               </Button>
-            ) : null}
-          </>
-        );
-      case "floor":
-        return (
-          canAdd ? (
-            <Button
-              variant="primary"
-              size="small"
-              onClick={() => {
-                setAddRoomsParent(selectedNode);
-                setNumberOfRooms("");
-                setRoomPrefix("");
-                setStartingNumber("1");
-                setSelectedRoomType(null);
-                setShowAddRoomsDialog(true);
-              }}
-              leftIcon={
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              }
-            >
-              Add Rooms
-            </Button>
+            </Tooltip>
           ) : null
         );
       case "room": {
         const roomConfigured = isConfiguredStatus(selectedNode.roomConfigStatus);
         const roomConfigCtx = getFloorEditContextForRoomNode(treeData, selectedNode);
         return (
-          <Button
-            variant={roomConfigured ? "outline" : "primary"}
-            size="small"
-            disabled={roomConfigured ? !canEdit : !canAdd}
-            onClick={() => {
-              if (roomConfigured && !canEdit) return;
-              if (!roomConfigured && !canAdd) return;
-              if (onEditRoom && roomConfigCtx) {
-                onEditRoom(selectedNode, roomConfigCtx);
-                return;
-              }
-              if (onOpenBedManagement) {
-                const ctx = getRoomBedManagementContext(treeData, selectedNode);
-                if (ctx) {
-                  onOpenBedManagement(selectedNode, ctx);
-                } else {
-                  setApiErrorMessage(
-                    "Could not resolve building or floor for this room. Refresh the page or re-open Structure Builder.",
-                  );
-                  setShowApiErrorDialog(true);
+          <Tooltip content={roomConfigured ? "Edit Room" : "Configure Room"}>
+            <Button
+              variant={roomConfigured ? "outline" : "primary"}
+              size="small"
+              disabled={roomConfigured ? !canEdit : !canAdd}
+              onClick={() => {
+                if (roomConfigured && !canEdit) return;
+                if (!roomConfigured && !canAdd) return;
+                if (onEditRoom && roomConfigCtx) {
+                  onEditRoom(selectedNode, roomConfigCtx);
+                  return;
                 }
-                return;
-              }
-              setTreeData((prev) => {
-                // Find the current node in the tree to get the latest bed count
-                const findNode = (nodes: TreeNode[]): TreeNode | null => {
-                  for (const node of nodes) {
-                    if (node.id === selectedNode.id) {
-                      return node;
-                    }
-                    if (node.children) {
-                      const found = findNode(node.children);
-                      if (found) return found;
-                    }
+                if (onOpenBedManagement) {
+                  const ctx = getRoomBedManagementContext(treeData, selectedNode);
+                  if (ctx) {
+                    onOpenBedManagement(selectedNode, ctx);
+                  } else {
+                    setApiErrorMessage(
+                      "Could not resolve building or floor for this room. Refresh the page or re-open Structure Builder.",
+                    );
+                    setShowApiErrorDialog(true);
                   }
-                  return null;
-                };
-
-                const currentNode = findNode(prev);
-                const existingBeds = currentNode?.children?.filter((child) => child.type === "bed") || [];
-                const nextBedNumber = existingBeds.length + 1;
-                
-                const newBed: TreeNode = {
-                  id: `bed-${Date.now()}-${Math.random()}`,
-                  name: `Bed ${nextBedNumber}`,
-                  type: "bed",
-                  bedNumber: String(nextBedNumber),
-                };
-
-                const updateNode = (nodes: TreeNode[]): TreeNode[] => {
-                  return nodes.map((node) => {
-                    if (node.id === selectedNode.id) {
-                      return {
-                        ...node,
-                        children: [...(node.children || []), newBed],
-                      };
+                  return;
+                }
+                setTreeData((prev) => {
+                  // Find the current node in the tree to get the latest bed count
+                  const findNode = (nodes: TreeNode[]): TreeNode | null => {
+                    for (const node of nodes) {
+                      if (node.id === selectedNode.id) {
+                        return node;
+                      }
+                      if (node.children) {
+                        const found = findNode(node.children);
+                        if (found) return found;
+                      }
                     }
-                    if (node.children) {
-                      return { ...node, children: updateNode(node.children) };
-                    }
-                    return node;
-                  });
-                };
-                return updateNode(prev);
-              });
-            }}
-            leftIcon={
-              roomConfigured ? (
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                  />
-                </svg>
-              ) : (
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              )
-            }
-          >
-            {roomConfigured ? "Edit" : "Configure"}
-          </Button>
+                    return null;
+                  };
+
+                  const currentNode = findNode(prev);
+                  const existingBeds = currentNode?.children?.filter((child) => child.type === "bed") || [];
+                  const nextBedNumber = existingBeds.length + 1;
+
+                  const newBed: TreeNode = {
+                    id: `bed-${Date.now()}-${nextBedNumber}`,
+                    name: `Bed ${nextBedNumber}`,
+                    type: "bed",
+                    bedNumber: String(nextBedNumber),
+                  };
+
+                  const updateNode = (nodes: TreeNode[]): TreeNode[] => {
+                    return nodes.map((node) => {
+                      if (node.id === selectedNode.id) {
+                        return {
+                          ...node,
+                          children: [...(node.children || []), newBed],
+                        };
+                      }
+                      if (node.children) {
+                        return { ...node, children: updateNode(node.children) };
+                      }
+                      return node;
+                    });
+                  };
+                  return updateNode(prev);
+                });
+              }}
+              leftIcon={
+                roomConfigured ? (
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                )
+              }
+            >
+              {roomConfigured ? "Edit" : "Configure"}
+            </Button>
+          </Tooltip>
         );
       }
       default:
@@ -1081,7 +1187,7 @@ export const StructureBuilder = ({
   const addDialogSubmitDisabled = (() => {
     if (!addDialogType) return true;
     if (pickFloorFromMaster) {
-      return !selectedMasterFloorId || isCreatingFloor || floorsListLoading;
+      return selectedMasterFloorIds.length === 0 || isCreatingFloor || floorsListLoading;
     }
     if (addDialogType === "building" && !addDialogParent && branchId != null) {
       return !newItemName.trim() || isCreatingBuilding;
@@ -1103,14 +1209,17 @@ export const StructureBuilder = ({
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button
-              onClick={onBack}
-              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
-            >
-              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <Tooltip content="Back to Previous Page">
+              <button
+                onClick={onBack}
+                className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100 transition-colors"
+                aria-label="Back to Previous Page"
+              >
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </Tooltip>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Structure Builder</h1>
               <p className="text-sm text-gray-500">{facilityName}</p>
@@ -1118,627 +1227,627 @@ export const StructureBuilder = ({
           </div>
           {/* Toggle Panel Button - Always visible when panel is closed */}
           {!isPanelOpen && (
-            <button
-              onClick={() => setIsPanelOpen(true)}
-              className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
-              aria-label="Open Configuration Summary"
-            >
-              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            <Tooltip content="Open Configuration Summary">
+              <button
+                onClick={() => setIsPanelOpen(true)}
+                className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                aria-label="Open Configuration Summary"
+              >
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
         </div>
 
         {/* Main Content Area */}
         <div className="flex gap-6 flex-1">
-        {/* Main Content */}
-        <div className="flex gap-6 flex-1 w-full">
-          {/* Left Panel: Hierarchy Tree */}
-          <div className="flex-1 bg-white rounded-[12px] border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Hierarchy Tree</h2>
-              <Button
-                variant="primary"
-                size="small"
-                onClick={() => handleAddClick("building")}
-                leftIcon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                }
-              disabled={!canAdd}
-              >
-                Add Building
-              </Button>
-            </div>
+          {/* Main Content */}
+          <div className="flex gap-6 flex-1 w-full">
+            {/* Left Panel: Hierarchy Tree */}
+            <div className="flex-1 bg-white rounded-[12px] border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Hierarchy Tree</h2>
+                <Tooltip content="Add Building">
+                  <Button
+                    variant="primary"
+                    size="small"
+                    onClick={() => handleAddClick("building")}
+                    leftIcon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    }
+                    disabled={!canAdd}
+                  >
+                    Add Building
+                  </Button>
+                </Tooltip>
+              </div>
 
-            <div className="space-y-1">
-              {treeData.map((node) => renderTreeNode(node))}
-            </div>
+              <div className="space-y-1">
+                {treeData.map((node) => renderTreeNode(node))}
+              </div>
 
-            {/* Legend - same icons and green as Structure Overview panel */}
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                  <span>Building</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                  <span>Floor</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                  <span>Room</span>
+              {/* Legend - same icons and green as Structure Overview panel */}
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    <span>Building</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    <span>Floor</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    <span>Room (Configured)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    <span>Room (Incomplete)</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Right Panel: Details & Actions */}
-          <div className="w-[400px] flex-shrink-0 bg-white rounded-[12px] border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Details & Actions</h2>
+            {/* Right Panel: Details & Actions */}
+            <div className="w-[400px] flex-shrink-0 bg-white rounded-[12px] border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Details & Actions</h2>
 
-            {selectedNode ? (
-              <div className="space-y-6">
-                {/* Selected Item Info */}
-                <div>
-                  {selectedNode.type === "room" ? (
-                    <>
-                      {(() => {
-                        const roomConfigComplete = isConfiguredStatus(selectedNode.roomConfigStatus);
-                        const statusSettled = summaryStats.configuredKnown;
-                        return (
-                          <>
-                            <div className="flex items-center gap-3 mb-2">
-                              <svg
-                                className={`h-6 w-6 flex-shrink-0 ${
-                                  !statusSettled
-                                    ? "text-gray-400"
-                                    : roomConfigComplete
-                                      ? "text-green-600"
-                                      : "text-orange-600"
-                                }`}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                aria-hidden
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                                />
-                              </svg>
-                              <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                {getTypeLabel(selectedNode.type)}
-                              </span>
-                            </div>
-                            <div className="flex min-w-0 w-full items-center gap-2">
-                              <h3 className="min-w-0 flex-1 basis-0 truncate text-xl font-semibold text-gray-900">
-                                {selectedNode.name}
-                              </h3>
-                              {roomConfigComplete ? (
-                                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium whitespace-nowrap">
-                                  Configured
+              {selectedNode ? (
+                <div className="space-y-6">
+                  {/* Selected Item Info */}
+                  <div>
+                    {selectedNode.type === "room" ? (
+                      <>
+                        {(() => {
+                          const statusInfo = getRoomConfigStatusInfo(selectedNode.roomConfigStatus);
+                          return (
+                            <>
+                              <div className="flex items-center gap-3 mb-2">
+                                <svg
+                                  className={`h-6 w-6 flex-shrink-0 ${statusInfo.textColor}`}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  aria-hidden
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                                  />
+                                </svg>
+                                <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                  {getTypeLabel(selectedNode.type)}
                                 </span>
-                              ) : statusSettled ? (
-                                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 font-medium whitespace-nowrap">
-                                  Incomplete
+                              </div>
+                              <div className="flex min-w-0 w-full items-center gap-2">
+                                <h3 className="min-w-0 flex-1 basis-0 truncate text-xl font-semibold text-gray-900">
+                                  {selectedNode.name}
+                                </h3>
+                                <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${statusInfo.badgeClass}`}>
+                                  {statusInfo.label}
                                 </span>
-                              ) : (
-                                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap">
-                                  —
-                                </span>
-                              )}
-                            </div>
-                            {selectedNode.roomType ? (
-                              <p className="text-sm text-gray-500 mt-1.5 leading-snug">
-                                {branchRoomTypeRowsForLabels.length
-                                  ? displayLabelForApiRoomType(
+                              </div>
+                              {selectedNode.roomType ? (
+                                <p className="text-sm text-gray-500 mt-1.5 leading-snug">
+                                  {branchRoomTypeRowsForLabels.length
+                                    ? displayLabelForApiRoomType(
                                       selectedNode.roomType,
                                       branchRoomTypeRowsForLabels,
                                     )
-                                  : selectedNode.roomType}
-                              </p>
-                            ) : null}
-                          </>
-                        );
-                      })()}
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-3 mb-2">
-                        {getTypeIcon(selectedNode.type)}
-                        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {getTypeLabel(selectedNode.type)}
-                        </span>
-                      </div>
-                      <h3 className="text-xl font-semibold text-gray-900">{selectedNode.name}</h3>
-                    </>
-                  )}
-                </div>
+                                    : selectedNode.roomType}
+                                </p>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-3 mb-2">
+                          {getTypeIcon(selectedNode.type)}
+                          <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                            {getTypeLabel(selectedNode.type)}
+                          </span>
+                        </div>
+                        <h3 className="text-xl font-semibold text-gray-900">{selectedNode.name}</h3>
+                      </>
+                    )}
+                  </div>
 
-                {/* Available Actions */}
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Available Actions</h4>
-                  <div className="flex flex-wrap gap-3">{getAvailableActions()}</div>
-                </div>
+                  {/* Available Actions */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Available Actions</h4>
+                    <div className="flex flex-wrap gap-3">{getAvailableActions()}</div>
+                  </div>
 
-                {/* Statistics - Enhanced for Floor */}
-                {selectedNode.type === "floor" ? (
-                  <div className="space-y-6">
-                    {/* Statistics Row */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Statistics</h4>
-                      <div className="flex gap-6">
-                        <div>
-                          <span className="text-sm text-gray-600">Rooms</span>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {countRoomsUnder(selectedNode)}
-                          </p>
+                  {/* Statistics - Enhanced for Floor */}
+                  {selectedNode.type === "floor" ? (
+                    <div className="space-y-6">
+                      {/* Statistics Row */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900 mb-3">Statistics</h4>
+                        <div className="flex gap-6">
+                          <div>
+                            <span className="text-sm text-gray-600">Rooms</span>
+                            <p className="text-lg font-semibold text-gray-900">
+                              {countRoomsUnder(selectedNode)}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Room Type Breakdown */}
-                    {(() => {
-                      const rooms = getRoomsUnderNode(selectedNode);
-                      const roomTypeCounts = rooms.reduce((acc: Record<string, number>, room) => {
-                        const roomType = room.roomType || "Unknown";
-                        acc[roomType] = (acc[roomType] || 0) + 1;
-                        return acc;
-                      }, {});
+                      {/* Room Type Breakdown */}
+                      {(() => {
+                        const rooms = getRoomsUnderNode(selectedNode);
+                        const roomTypeCounts = rooms.reduce((acc: Record<string, number>, room) => {
+                          const roomType = room.roomType || "Unknown";
+                          acc[roomType] = (acc[roomType] || 0) + 1;
+                          return acc;
+                        }, {});
 
-                      if (Object.keys(roomTypeCounts).length > 0) {
-                        return (
-                          <div>
-                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Room Type Breakdown</h4>
-                            <div className="space-y-2">
-                              {Object.entries(roomTypeCounts).map(([roomTypeKey, count]) => (
-                                <div key={roomTypeKey} className="flex justify-between items-center">
-                                  <span className="text-sm text-gray-600">
-                                    {branchRoomTypeRowsForLabels.length
-                                      ? displayLabelForApiRoomType(roomTypeKey, branchRoomTypeRowsForLabels)
-                                      : roomTypeKey}
-                                  </span>
-                                  <span className="text-sm font-semibold text-gray-900">{count}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* Floor Rooms List - Edit opens Room Configuration (Room Inventory specific room edit) */}
-                    {(() => {
-                      const rooms = getRoomsUnderNode(selectedNode);
-                      const context = getFloorEditContext(treeData, selectedNode);
-                      if (rooms.length > 0) {
-                        return (
-                          <div>
-                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Floor Rooms</h4>
-                            <div className="space-y-2">
-                              {rooms.map((room) => {
-                                const roomConfigComplete = isConfiguredStatus(room.roomConfigStatus);
-                                const statusSettled = summaryStats.configuredKnown;
-                                return (
-                                  <div
-                                    key={room.id}
-                                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                                  >
-                                    <div className="flex items-center gap-3 flex-1">
-                                      <svg
-                                        className={`h-5 w-5 flex-shrink-0 ${
-                                          !statusSettled
-                                            ? "text-gray-400"
-                                            : roomConfigComplete
-                                              ? "text-green-600"
-                                              : "text-orange-600"
-                                        }`}
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                                        />
-                                      </svg>
-                                      <div className="flex-1 min-w-0">
-                                        {/* Fixed order: room name → status badge (same row, no wrap), then room type below */}
-                                        <div className="flex min-w-0 w-full items-center gap-2">
-                                          <span className="min-w-0 flex-1 basis-0 truncate text-sm font-medium text-gray-900">
-                                            {room.name}
-                                          </span>
-                                          {roomConfigComplete ? (
-                                            <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium whitespace-nowrap">
-                                              Configured
-                                            </span>
-                                          ) : statusSettled ? (
-                                            <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 font-medium whitespace-nowrap">
-                                              Incomplete
-                                            </span>
-                                          ) : (
-                                            <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap">
-                                              —
-                                            </span>
-                                          )}
-                                        </div>
-                                        {room.roomType ? (
-                                          <p className="text-xs text-gray-500 mt-1.5 leading-snug">
-                                            {branchRoomTypeRowsForLabels.length
-                                              ? displayLabelForApiRoomType(room.roomType, branchRoomTypeRowsForLabels)
-                                              : room.roomType}
-                                          </p>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                    <Button
-                                      variant={roomConfigComplete ? "outline" : "primary"}
-                                      size="small"
-                                      disabled={roomConfigComplete ? !canEdit : !canAdd}
-                                      onClick={() => {
-                                        if (roomConfigComplete && !canEdit) return;
-                                        if (!roomConfigComplete && !canAdd) return;
-                                        if (onEditRoom && context) onEditRoom(room, context);
-                                      }}
-                                    >
-                                      {roomConfigComplete ? "Edit" : "Configure"}
-                                    </Button>
+                        if (Object.keys(roomTypeCounts).length > 0) {
+                          return (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-900 mb-3">Room Type Breakdown</h4>
+                              <div className="space-y-2">
+                                {Object.entries(roomTypeCounts).map(([roomTypeKey, count]) => (
+                                  <div key={roomTypeKey} className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600">
+                                      {branchRoomTypeRowsForLabels.length
+                                        ? displayLabelForApiRoomType(roomTypeKey, branchRoomTypeRowsForLabels)
+                                        : roomTypeKey}
+                                    </span>
+                                    <span className="text-sm font-semibold text-gray-900">{count}</span>
                                   </div>
-                                );
-                              })}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                ) : selectedNode.type === "building" ? (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Statistics</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Rooms</span>
-                        <span className="text-sm font-semibold text-gray-900">
-                          {(() => {
-                                const countRooms = (nodes: TreeNode[]): number => {
-                                  let count = 0;
-                                  nodes.forEach((n) => {
-                                    if (n.type === "room") count++;
-                                    if (n.children) count += countRooms(n.children);
-                                  });
-                                  return count;
-                                };
-                                return selectedNode.children ? countRooms(selectedNode.children) : 0;
-                          })()}
-                        </span>
-                      </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Floor Rooms List - Edit opens Room Configuration (Room Inventory specific room edit) */}
+                      {(() => {
+                        const rooms = getRoomsUnderNode(selectedNode);
+                        const context = getFloorEditContext(treeData, selectedNode);
+                        if (rooms.length > 0) {
+                          return (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-900 mb-3">Floor Rooms</h4>
+                              <div className="space-y-2">
+                                {rooms.map((room) => {
+                                  const statusInfo = getRoomConfigStatusInfo(room.roomConfigStatus);
+                                  const roomConfigComplete = isConfiguredStatus(room.roomConfigStatus);
+                                  return (
+                                    <div
+                                      key={room.id}
+                                      className="flex items-start justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                                    >
+                                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                                        <svg
+                                          className={`h-5 w-5 flex-shrink-0 mt-0.5 ${statusInfo.textColor}`}
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                                          />
+                                        </svg>
+                                        <div className="flex-1 min-w-0">
+                                          {/* Fixed order: room name → status badge (same row, no wrap), then room type below */}
+                                          <div className="flex min-w-0 w-full items-center gap-2">
+                                            <span className="min-w-0 flex-1 basis-0 truncate text-sm font-medium text-gray-900">
+                                              {room.name}
+                                            </span>
+                                            <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${statusInfo.badgeClass}`}>
+                                              {statusInfo.label}
+                                            </span>
+                                          </div>
+                                          {room.roomType ? (
+                                            <p className="text-xs text-gray-500 mt-1.5 leading-snug">
+                                              {branchRoomTypeRowsForLabels.length
+                                                ? displayLabelForApiRoomType(room.roomType, branchRoomTypeRowsForLabels)
+                                                : room.roomType}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                      {roomConfigComplete ? (
+                                        <Tooltip content="Edit Room">
+                                          <button
+                                            type="button"
+                                            disabled={!canEdit}
+                                            onClick={() => {
+                                              if (!canEdit) return;
+                                              if (onEditRoom && context) onEditRoom(room, context);
+                                            }}
+                                            className="cursor-pointer shrink-0 rounded-lg p-1 -mt-0.5 transition-colors hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            aria-label="Edit room"
+                                          >
+                                            <Image src="/icons/EditPencil.svg" alt="Edit" width={20} height={20} />
+                                          </button>
+                                        </Tooltip>
+                                      ) : (
+                                        <Tooltip content="Configure Room">
+                                          <button
+                                            type="button"
+                                            disabled={!canAdd}
+                                            onClick={() => {
+                                              if (!canAdd) return;
+                                              if (onEditRoom && context) onEditRoom(room, context);
+                                            }}
+                                            className="cursor-pointer shrink-0 rounded-lg p-1 -mt-0.5 text-green-600 transition-colors hover:bg-green-50 hover:text-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            aria-label="Configure room"
+                                          >
+                                            <Image src="/icons/SettingsDarkIcon.svg" alt="Configure" width={20} height={20} />
+                                          </button>
+                                        </Tooltip>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  ) : selectedNode.type === "building" ? (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Statistics</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-600">Rooms</span>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {(() => {
+                              const countRooms = (nodes: TreeNode[]): number => {
+                                let count = 0;
+                                nodes.forEach((n) => {
+                                  if (n.type === "room") count++;
+                                  if (n.children) count += countRooms(n.children);
+                                });
+                                return count;
+                              };
+                              return selectedNode.children ? countRooms(selectedNode.children) : 0;
+                            })()}
+                          </span>
+                        </div>
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-600">Floors</span>
                           <span className="text-sm font-semibold text-gray-900">
                             {selectedNode.children?.filter((c) => c.type === "floor").length || 0}
                           </span>
                         </div>
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-[400px] text-center">
-                <svg className="h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                </svg>
-                <p className="text-sm text-gray-500">
-                  Select an item from the tree to view details and available actions
-                </p>
-              </div>
-            )}
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[400px] text-center">
+                  <svg className="h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <p className="text-sm text-gray-500">
+                    Select an item from the tree to view details and available actions
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Add Item Dialog */}
-      <Dialog
-        open={showAddDialog}
-        onClose={closeAddDialog}
-        title={`Add ${addDialogType ? addDialogType.charAt(0).toUpperCase() + addDialogType.slice(1) : ""}`}
-        width={500}
-      >
-        <div className="space-y-4">
-          {pickFloorFromMaster ? (
-            <FormSelectField
-              label="Floor"
-              options={masterFloorOptions}
-              value={selectedMasterFloorId}
-              onChange={(value) => {
-                const v = typeof value === "string" ? value : value[0] ?? "";
-                setSelectedMasterFloorId(v);
-                if (addDialogError) setAddDialogError("");
-              }}
-              placeholder={floorsListLoading ? "Loading floors…" : "Select floor"}
-              disabled={floorsListLoading || masterFloorOptions.length === 0}
-              emptyMessage={floorsListLoading ? "Loading…" : "No floors available"}
-            />
-          ) : (
-          <FormInputField
-            label={`${addDialogType ? addDialogType.charAt(0).toUpperCase() + addDialogType.slice(1) : ""} Name`}
-            placeholder={`Enter ${addDialogType || ""} name`}
-            value={newItemName}
-              maxLength={addDialogType === "building" ? 100 : undefined}
-              autoComplete="off"
-              onChange={(e) => {
-                const raw = e.target.value;
-                const next = addDialogType === "building" ? sanitizePatientNameInput(raw) : raw;
-                setNewItemName(next);
-                if (addDialogError) setAddDialogError("");
-              }}
-              onBlur={
-                addDialogType === "building"
-                  ? (e) => {
+        {/* Add Item Dialog */}
+        <Dialog
+          open={showAddDialog}
+          onClose={closeAddDialog}
+          title={`Add ${addDialogType ? addDialogType.charAt(0).toUpperCase() + addDialogType.slice(1) : ""}`}
+          width={500}
+          closeOnOutsideClick={false}
+        >
+          <div className="space-y-4">
+            {pickFloorFromMaster ? (
+              <FormSelectField
+                label="Floor"
+                options={addFloorOptions}
+                value={selectedMasterFloorIds}
+                onChange={(value) => {
+                  const arr = Array.isArray(value) ? value : value ? [value] : [];
+                  setSelectedMasterFloorIds(arr);
+                  if (addDialogError) setAddDialogError("");
+                }}
+                mode="multiple"
+                placeholder={floorsListLoading ? "Loading floors…" : "Select floor"}
+                disabled={floorsListLoading || addFloorOptions.length === 0}
+                emptyMessage={floorsListLoading ? "Loading…" : "No floors available"}
+              />
+            ) : (
+              <FormInputField
+                label={`${addDialogType ? addDialogType.charAt(0).toUpperCase() + addDialogType.slice(1) : ""} Name`}
+                placeholder={`Enter ${addDialogType || ""} name`}
+                value={newItemName}
+                maxLength={addDialogType === "building" ? 100 : undefined}
+                autoComplete="off"
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const next = addDialogType === "building" ? sanitizePatientNameInput(raw) : raw;
+                  setNewItemName(next);
+                  if (addDialogError) setAddDialogError("");
+                }}
+                onBlur={
+                  addDialogType === "building"
+                    ? (e) => {
                       const trimmed = e.target.value.trim();
                       if (trimmed !== e.target.value) setNewItemName(trimmed);
                     }
-                  : undefined
-              }
-            />
-          )}
-          {pickFloorLocalName ? (
-            <p className="text-xs text-gray-500">Add a branch from facility settings to pick floors from the master list.</p>
-          ) : null}
-          {addDialogError ? (
-            <p className="text-sm text-red-600" role="alert">
-              {addDialogError}
-            </p>
-          ) : null}
-          <div className="flex gap-3 justify-end pt-4">
-            <Button
-              variant="outline"
-              onClick={closeAddDialog}
-              disabled={isCreatingBuilding || isCreatingFloor}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => void handleAddItem()}
-              disabled={addDialogSubmitDisabled}
-            >
-              {addDialogPrimaryLabel}
-            </Button>
+                    : undefined
+                }
+              />
+            )}
+            {pickFloorLocalName ? (
+              <p className="text-xs text-gray-500">Add a branch from facility settings to pick floors from the master list.</p>
+            ) : null}
+            {addDialogError ? (
+              <p className="text-sm text-red-600" role="alert">
+                {addDialogError}
+              </p>
+            ) : null}
+            <div className="flex gap-3 justify-end pt-4">
+              <Button
+                variant="outline"
+                onClick={closeAddDialog}
+                disabled={isCreatingBuilding || isCreatingFloor}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void handleAddItem()}
+                disabled={addDialogSubmitDisabled}
+              >
+                {addDialogPrimaryLabel}
+              </Button>
+            </div>
           </div>
-        </div>
-      </Dialog>
+        </Dialog>
 
-      <Dialog
-        open={editStructure != null}
-        onClose={closeEditStructure}
-        title={editStructure?.kind === "building" ? "Edit building" : "Change floor"}
-        width={480}
-      >
-        <div className="space-y-4">
-          {editStructure?.kind === "building" ? (
+        <Dialog
+          open={editStructure != null}
+          onClose={closeEditStructure}
+          title={editStructure?.kind === "building" ? "Edit building" : "Change floor"}
+          width={480}
+          closeOnOutsideClick={false}
+        >
+          <div className="space-y-4">
+            {editStructure?.kind === "building" ? (
+              <FormInputField
+                label="Building name"
+                value={editStructureName}
+                placeholder="Name"
+                maxLength={100}
+                onChange={(e) => setEditStructureName(sanitizePatientNameInput(e.target.value))}
+                onBlur={(e) => {
+                  const trimmed = e.target.value.trim();
+                  if (trimmed !== e.target.value) setEditStructureName(trimmed);
+                }}
+              />
+            ) : (
+              <>
+                <p className="text-sm text-gray-600">
+                  Current: <span className="font-medium text-gray-900">{editStructureName}</span>
+                </p>
+                <FormSelectField
+                  label="Floor (master list)"
+                  options={editFloorOptions}
+                  value={editFloorMasterId}
+                  onChange={(value) => {
+                    const v = typeof value === "string" ? value : value[0] ?? "";
+                    setEditFloorMasterId(v);
+                  }}
+                  placeholder={floorsListLoading ? "Loading floors…" : "Select floor"}
+                  disabled={floorsListLoading || editFloorOptions.length === 0}
+                  emptyMessage={floorsListLoading ? "Loading…" : "No floors available"}
+                />
+              </>
+            )}
+            <div className="flex gap-3 justify-end pt-2">
+              <Button variant="outline" onClick={closeEditStructure} disabled={structureMutationsBusy}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void submitEditStructure()}
+                disabled={
+                  structureMutationsBusy ||
+                  (editStructure?.kind === "building" ? !editStructureName.trim() : !editFloorMasterId.trim())
+                }
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+
+        <MessageDialog
+          open={deleteStructure != null}
+          onClose={() => setDeleteStructure(null)}
+          icon="/icons/TrashRedIcon.svg"
+          iconBgColor="#FFEBEE"
+          message={
+            deleteStructure?.kind === "building"
+              ? `Delete "${deleteStructure.node.name}" and everything under it? This cannot be undone.`
+              : `Remove floor "${deleteStructure?.node.name}" from this building? Rooms and beds under it may be removed on the server.`
+          }
+          showCancel
+          cancelText="Cancel"
+          confirmText="Delete"
+          onCancel={() => setDeleteStructure(null)}
+          onConfirm={() => void confirmDeleteStructure()}
+          closeOnOutsideClick={false}
+        />
+
+        <MessageDialog
+          open={showSuccessDialog}
+          onClose={() => setShowSuccessDialog(false)}
+          icon="/icons/SuccessCheck.svg"
+          iconBgColor="#E8F5E9"
+          message={successMessage}
+          confirmText="Success"
+          showCancel={false}
+          onConfirm={() => setShowSuccessDialog(false)}
+        />
+
+        <MessageDialog
+          open={showApiErrorDialog}
+          onClose={() => setShowApiErrorDialog(false)}
+          icon="/icons/CrossIcon.svg"
+          iconBgColor="#FFEBEE"
+          message={apiErrorMessage}
+          confirmText="OK"
+          showCancel={false}
+          onConfirm={() => setShowApiErrorDialog(false)}
+        />
+
+        {/* Add Rooms Dialog */}
+        <Dialog
+          open={showAddRoomsDialog}
+          onClose={resetAddRoomsDialog}
+          title="Add Rooms"
+          width={600}
+          closeOnOutsideClick={false}
+        >
+          <div className="space-y-5">
+            <p className="text-sm text-gray-600">
+              Add multiple rooms to {addRoomsParent?.name || "Floor"}
+            </p>
+
             <FormInputField
-              label="Building name"
-              value={editStructureName}
-              placeholder="Name"
+              label="Number of Rooms*"
+              type="number"
+              placeholder="1-50"
+              value={numberOfRooms}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "" || (parseInt(val) >= 1 && parseInt(val) <= 50)) {
+                  setNumberOfRooms(val);
+                }
+              }}
+              min={1}
+              max={50}
+              helperText="Add 1-50 rooms at once (you can configure them individually later)"
+            />
+
+            <FormInputField
+              label="Room Number Prefix (Optional)"
+              placeholder="e.g., G, A, B1"
+              value={roomPrefix}
               maxLength={100}
-              onChange={(e) => setEditStructureName(sanitizePatientNameInput(e.target.value))}
+              autoComplete="off"
+              onChange={(e) => {
+                setRoomPrefix(sanitizeRoomNumberPrefixInput(e.target.value));
+              }}
               onBlur={(e) => {
                 const trimmed = e.target.value.trim();
-                if (trimmed !== e.target.value) setEditStructureName(trimmed);
+                if (trimmed !== e.target.value) setRoomPrefix(trimmed);
               }}
+              helperText="Letters and digits only, max 100 characters. Prefix is added before the number (e.g., G-101)"
             />
-          ) : (
-            <>
-              <p className="text-sm text-gray-600">
-                Current: <span className="font-medium text-gray-900">{editStructureName}</span>
-              </p>
-              <FormSelectField
-                label="Floor (master list)"
-                options={masterFloorOptions}
-                value={editFloorMasterId}
-                onChange={(value) => {
-                  const v = typeof value === "string" ? value : value[0] ?? "";
-                  setEditFloorMasterId(v);
-                }}
-                placeholder={floorsListLoading ? "Loading floors…" : "Select floor"}
-                disabled={floorsListLoading || masterFloorOptions.length === 0}
-                emptyMessage={floorsListLoading ? "Loading…" : "No floors available"}
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormInputField
+                label="Starting Number*"
+                type="number"
+                placeholder="1"
+                value={startingNumber}
+                onChange={(e) => setStartingNumber(e.target.value)}
+                min={1}
               />
-            </>
-          )}
-          <div className="flex gap-3 justify-end pt-2">
-            <Button variant="outline" onClick={closeEditStructure} disabled={structureMutationsBusy}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => void submitEditStructure()}
-              disabled={
-                structureMutationsBusy ||
-                (editStructure?.kind === "building" ? !editStructureName.trim() : !editFloorMasterId.trim())
-              }
-            >
-              Save
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-
-      <MessageDialog
-        open={deleteStructure != null}
-        onClose={() => setDeleteStructure(null)}
-        icon="/icons/TrashRedIcon.svg"
-        iconBgColor="#FFEBEE"
-        message={
-          deleteStructure?.kind === "building"
-            ? `Delete "${deleteStructure.node.name}" and everything under it? This cannot be undone.`
-            : `Remove floor "${deleteStructure?.node.name}" from this building? Rooms and beds under it may be removed on the server.`
-        }
-        showCancel
-        cancelText="Cancel"
-        confirmText="Delete"
-        onCancel={() => setDeleteStructure(null)}
-        onConfirm={() => void confirmDeleteStructure()}
-      />
-
-      <MessageDialog
-        open={showSuccessDialog}
-        onClose={() => setShowSuccessDialog(false)}
-        icon="/icons/SuccessCheck.svg"
-        iconBgColor="#E8F5E9"
-        message={successMessage}
-        confirmText="Success"
-        showCancel={false}
-        onConfirm={() => setShowSuccessDialog(false)}
-      />
-
-      <MessageDialog
-        open={showApiErrorDialog}
-        onClose={() => setShowApiErrorDialog(false)}
-        icon="/icons/CrossIcon.svg"
-        iconBgColor="#FFEBEE"
-        message={apiErrorMessage}
-        confirmText="OK"
-        showCancel={false}
-        onConfirm={() => setShowApiErrorDialog(false)}
-      />
-
-      {/* Add Rooms Dialog */}
-      <Dialog
-        open={showAddRoomsDialog}
-        onClose={resetAddRoomsDialog}
-        title="Add Rooms"
-        width={600}
-      >
-        <div className="space-y-5">
-          <p className="text-sm text-gray-600">
-            Add multiple rooms to {addRoomsParent?.name || "Floor"}
-          </p>
-
-          <FormInputField
-            label="Number of Rooms*"
-            type="number"
-            placeholder="1-50"
-            value={numberOfRooms}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val === "" || (parseInt(val) >= 1 && parseInt(val) <= 50)) {
-                setNumberOfRooms(val);
-              }
-            }}
-            min={1}
-            max={50}
-            helperText="Add 1-50 rooms at once (you can configure them individually later)"
-          />
-
-          <FormInputField
-            label="Room Number Prefix (Optional)"
-            placeholder="e.g., G, A, B1"
-            value={roomPrefix}
-            maxLength={100}
-            autoComplete="off"
-            onChange={(e) => {
-              setRoomPrefix(sanitizeRoomNumberPrefixInput(e.target.value));
-            }}
-            onBlur={(e) => {
-              const trimmed = e.target.value.trim();
-              if (trimmed !== e.target.value) setRoomPrefix(trimmed);
-            }}
-            helperText="Letters and digits only, max 100 characters. Prefix is added before the number (e.g., G-101)"
-          />
-
-          <div className="grid grid-cols-2 gap-4">
-            <FormInputField
-              label="Starting Number*"
-              type="number"
-              placeholder="1"
-              value={startingNumber}
-              onChange={(e) => setStartingNumber(e.target.value)}
-              min={1}
-            />
-            <FormSelectField
-              label="Room Type*"
-              options={branchRoomTypeOptions}
-              value={selectedRoomType || ""}
-              onChange={(value) => {
-                const selectedValue = typeof value === "string" ? value : value[0] || null;
-                setSelectedRoomType(selectedValue);
-              }}
-              placeholder={branchRoomTypesLoading ? "Loading room types…" : "Select room type"}
-              disabled={branchRoomTypesLoading}
-              emptyMessage={
-                branchRoomTypesLoading
-                  ? "Loading…"
-                  : branchRoomTypeOptions.length === 0
-                    ? "No room types for this branch. Add them in Room Type Master first."
-                    : "Select a room type"
-              }
-            />
-          </div>
-
-          {/* Preview */}
-          {roomNumberPreview.length > 0 && (
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Preview</h4>
-              <div className="flex flex-wrap gap-2 items-center">
-                {roomNumberPreview.map((roomNum, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-white border border-gray-200 rounded-md text-gray-700"
-                  >
-                    <svg className="h-4 w-4 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
-                    {roomNum}
-                  </span>
-                ))}
-              </div>
+              <FormSelectField
+                label="Room Type*"
+                options={branchRoomTypeOptions}
+                value={selectedRoomType || ""}
+                onChange={(value) => {
+                  const selectedValue = typeof value === "string" ? value : value[0] || null;
+                  setSelectedRoomType(selectedValue);
+                }}
+                placeholder={branchRoomTypesLoading ? "Loading room types…" : "Select room type"}
+                disabled={branchRoomTypesLoading}
+                emptyMessage={
+                  branchRoomTypesLoading
+                    ? "Loading…"
+                    : branchRoomTypeOptions.length === 0
+                      ? "No room types for this branch. Add them in Room Type Master first."
+                      : "Select a room type"
+                }
+              />
             </div>
-          )}
 
-          <div className="flex gap-3 justify-end pt-4">
-            <Button variant="outline" onClick={resetAddRoomsDialog} disabled={isCreatingRooms}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => void handleAddRooms()}
-              disabled={
-                !numberOfRooms ||
-                !startingNumber ||
-                !selectedRoomType ||
-                isCreatingRooms ||
-                branchRoomTypesLoading ||
-                branchRoomTypeOptions.length === 0
-              }
-            >
-              {isCreatingRooms
-                ? "Saving…"
-                : `Add ${
-                    numberOfRooms && parseInt(numberOfRooms, 10) > 0
-                      ? `${numberOfRooms} Room${parseInt(numberOfRooms, 10) > 1 ? "s" : ""}`
-                      : "Room"
+            {/* Preview */}
+            {roomNumberPreview.length > 0 && (
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">Preview</h4>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {roomNumberPreview.map((roomNum, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-white border border-gray-200 rounded-md text-gray-700"
+                    >
+                      <svg className="h-4 w-4 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                      </svg>
+                      {roomNum}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end pt-4">
+              <Button variant="outline" onClick={resetAddRoomsDialog} disabled={isCreatingRooms}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void handleAddRooms()}
+                disabled={
+                  !numberOfRooms ||
+                  !startingNumber ||
+                  !selectedRoomType ||
+                  isCreatingRooms ||
+                  branchRoomTypesLoading ||
+                  branchRoomTypeOptions.length === 0
+                }
+              >
+                {isCreatingRooms
+                  ? "Saving…"
+                  : `Add ${numberOfRooms && parseInt(numberOfRooms, 10) > 0
+                    ? `${numberOfRooms} Room${parseInt(numberOfRooms, 10) > 1 ? "s" : ""}`
+                    : "Room"
                   }`}
-            </Button>
+              </Button>
+            </div>
           </div>
-        </div>
-      </Dialog>
+        </Dialog>
       </div>
 
       {/* Configuration Summary Panel */}

@@ -10,6 +10,7 @@ import {
   ConfigurationSummaryPanel,
   MessageDialog,
   Pagination,
+  Tooltip,
 } from "@/components/ui";
 import type { RoomInventoryItem } from "./RoomInventory";
 import QRCode from "qrcode";
@@ -619,15 +620,18 @@ export const BedManagement = ({
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100"
-            >
-              <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <Tooltip content="Back to Previous Page">
+              <button
+                type="button"
+                onClick={onBack}
+                className="cursor-pointer flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-100"
+                aria-label="Back to Previous Page"
+              >
+                <svg className="h-5 w-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </Tooltip>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-semibold text-gray-900">Bed Management</h1>
@@ -639,16 +643,18 @@ export const BedManagement = ({
             </div>
           </div>
           {!isPanelOpen && (
-            <button
-              type="button"
-              onClick={() => setIsPanelOpen(true)}
-              className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
-              aria-label="Open Configuration Summary"
-            >
-              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            <Tooltip content="Open Configuration Summary">
+              <button
+                type="button"
+                onClick={() => setIsPanelOpen(true)}
+                className="cursor-pointer flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-green-600 shadow-lg transition-all hover:bg-green-700"
+                aria-label="Open Configuration Summary"
+              >
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
         </div>
 
@@ -696,41 +702,50 @@ export const BedManagement = ({
           <div className="flex gap-2 flex-wrap">
             {canAdd ? (
               <>
-                <Button
-                  variant="outline"
-                  size="small"
-                  onClick={() => void handleAutoGenerate()}
-                  disabled={busy || bedsTotalInRoom >= totalCapacity}
-                  leftIcon={<span>+</span>}
-                >
-                  Auto-Generate Beds ({Math.max(0, totalCapacity - bedsTotalInRoom)})
-                </Button>
-                <Button
-                  variant="outline"
-                  size="small"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setShowSeriesForm(true);
-                    const left = Math.max(0, totalCapacity - bedsTotalInRoom);
-                    setSeriesCount(left > 0 ? String(Math.min(5, left)) : "0");
-                  }}
-                  disabled={busy || bedsTotalInRoom >= totalCapacity}
-                  leftIcon={<span>+</span>}
-                >
-                  Add Series (e.g. Bed-1 to Bed-10)
-                </Button>
-                <Button
-                  variant="primary"
-                  size="small"
-                  onClick={() => {
-                    setShowAddForm(true);
-                    setShowSeriesForm(false);
-                  }}
-                  disabled={busy}
-                  leftIcon={<span>+</span>}
-                >
-                  Add Bed Manually
-                </Button>
+                <Tooltip content="Auto-Generate Beds">
+                  <Button
+                    variant="outline"
+                    size="small"
+                    className="cursor-pointer"
+                    onClick={() => void handleAutoGenerate()}
+                    disabled={busy || bedsTotalInRoom >= totalCapacity}
+                    leftIcon={<span>+</span>}
+                  >
+                    Auto-Generate Beds ({Math.max(0, totalCapacity - bedsTotalInRoom)})
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Add Series of Beds">
+                  <Button
+                    variant="outline"
+                    size="small"
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setShowSeriesForm(true);
+                      const left = Math.max(0, totalCapacity - bedsTotalInRoom);
+                      setSeriesCount(left > 0 ? String(Math.min(5, left)) : "0");
+                    }}
+                    disabled={busy || bedsTotalInRoom >= totalCapacity}
+                    leftIcon={<span>+</span>}
+                  >
+                    Add Series (e.g. Bed-1 to Bed-10)
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Add Bed Manually">
+                  <Button
+                    variant="primary"
+                    size="small"
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setShowAddForm(true);
+                      setShowSeriesForm(false);
+                    }}
+                    disabled={busy}
+                    leftIcon={<span>+</span>}
+                  >
+                    Add Bed Manually
+                  </Button>
+                </Tooltip>
               </>
             ) : null}
           </div>
@@ -895,40 +910,44 @@ export const BedManagement = ({
                     </div>
                     <div className="flex gap-1">
                       {canEdit ? (
-                        <button
-                          type="button"
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded"
-                          onClick={() => handleEditBed(bed)}
-                          aria-label="Edit"
-                          disabled={busy}
-                        >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                            />
-                          </svg>
-                        </button>
+                        <Tooltip content="Edit Bed">
+                          <button
+                            type="button"
+                            className="cursor-pointer p-2 text-gray-500 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => handleEditBed(bed)}
+                            aria-label="Edit Bed"
+                            disabled={busy}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </button>
+                        </Tooltip>
                       ) : null}
                       {canDelete ? (
-                        <button
-                          type="button"
-                          className="p-2 text-red-500 hover:bg-red-50 rounded"
-                          onClick={() => handleDeleteBed(bed.id)}
-                          aria-label="Delete"
-                          disabled={busy}
-                        >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                        <Tooltip content="Delete Bed">
+                          <button
+                            type="button"
+                            className="cursor-pointer p-2 text-red-500 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => handleDeleteBed(bed.id)}
+                            aria-label="Delete Bed"
+                            disabled={busy}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </Tooltip>
                       ) : null}
                     </div>
                   </div>

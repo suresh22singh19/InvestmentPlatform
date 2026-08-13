@@ -77,6 +77,7 @@ const SidebarItem = ({
     return (
       <Link
         href={item.href}
+        // prefetch={false}
         className={classNames(
           itemBaseClasses,
           isActive ? activeClasses : inactiveClasses,
@@ -169,6 +170,7 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
                       <Link
                         key={child.key}
                         href={child.href ?? "#"}
+                        // prefetch={false}
                         className={classNames(
                           "flex items-center rounded-full px-4 py-2 text-xs font-medium transition-colors duration-150",
                           childActive ? "text-[#0B8C00]" : "text-[#525763] hover:text-[#0B8C00]"

@@ -194,8 +194,16 @@ export default function TpaTherapyPage() {
     const errors: Record<string, string> = {};
     if (!formValues.therapyId.trim()) errors.therapyId = "Therapy is required";
     if (!formValues.price.trim()) errors.price = "Price is required";
-    if (!formValues.productCode.trim()) errors.productCode = "Product code is required";
-    if (!formValues.hsnCode.trim()) errors.hsnCode = "HSN code is required";
+    if (!formValues.productCode.trim()) {
+      errors.productCode = "Product code is required";
+    } else if (formValues.productCode.trim().length < 4 || formValues.productCode.trim().length > 13) {
+      errors.productCode = "Product code must be between 4 and 13 characters";
+    }
+    if (!formValues.hsnCode.trim()) {
+      errors.hsnCode = "HSN code is required";
+    } else if (formValues.hsnCode.trim().length < 4 || formValues.hsnCode.trim().length > 8) {
+      errors.hsnCode = "HSN code must be between 4 and 8 digits";
+    }
     if (!formValues.category) errors.category = "Category is required";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -540,11 +548,14 @@ export default function TpaTherapyPage() {
               value={formValues.productCode}
               onChange={(event) => {
                 if (dialogMode === "view") return;
-                setFormValues((prev) => ({ ...prev, productCode: event.target.value }));
+                let value = event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                value = value.slice(0, 13);
+                setFormValues((prev) => ({ ...prev, productCode: value }));
                 setFormErrors((prev) => ({ ...prev, productCode: "" }));
               }}
               height={44}
               placeholder="Product Code"
+              maxLength={13}
               required={dialogMode !== "view"}
               disabled={dialogMode === "view"}
             />
@@ -554,11 +565,14 @@ export default function TpaTherapyPage() {
               value={formValues.hsnCode}
               onChange={(event) => {
                 if (dialogMode === "view") return;
-                setFormValues((prev) => ({ ...prev, hsnCode: event.target.value }));
+                let value = event.target.value.replace(/\D/g, "");
+                value = value.slice(0, 8);
+                setFormValues((prev) => ({ ...prev, hsnCode: value }));
                 setFormErrors((prev) => ({ ...prev, hsnCode: "" }));
               }}
               height={44}
               placeholder="HSN Code"
+              maxLength={8}
               required={dialogMode !== "view"}
               disabled={dialogMode === "view"}
             />

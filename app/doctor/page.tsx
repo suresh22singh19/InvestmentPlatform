@@ -56,7 +56,7 @@ function rtkErrorMessage(e: unknown): string {
 
 export default function DoctorListPage() {
     const router = useRouter();
-    const doctorPerm = usePermission("Doctor", { subModule: "Doctor" });
+    const doctorPerm = usePermission("Settings", { subModule: "Doctor" });
     const selectedBranch = useAppSelector(selectSelectedBranch);
     const {
         selectedBranchFilter,
@@ -350,17 +350,16 @@ export default function DoctorListPage() {
                                         <TableHead>Phone</TableHead>
                                         <TableHead>Emp ID</TableHead>
                                         <TableHead
-                                            // sortable
-                                            // sortDirection={getSortDirection("department")}
-                                            // onSort={() => handleSort("department")}
+                                        // sortable
+                                        // sortDirection={getSortDirection("department")}
+                                        // onSort={() => handleSort("department")}
                                         >
                                             Department
                                         </TableHead>
-                                        <TableHead>NABH</TableHead>
                                         <TableHead
-                                            // sortable
-                                            // sortDirection={getSortDirection("status")}
-                                            // onSort={() => handleSort("status")}
+                                        // sortable
+                                        // sortDirection={getSortDirection("status")}
+                                        // onSort={() => handleSort("status")}
                                         >
                                             Status
                                         </TableHead>
@@ -371,7 +370,7 @@ export default function DoctorListPage() {
                                     {filterBranchId == null ? (
                                         <TableRow>
                                             <TableData
-                                                colSpan={10}
+                                                colSpan={9}
                                                 className="py-12 text-center text-sm text-[#9CA3AF]"
                                             >
                                                 Select a branch to view doctors.
@@ -380,7 +379,7 @@ export default function DoctorListPage() {
                                     ) : listLoading ? (
                                         <TableRow>
                                             <TableData
-                                                colSpan={10}
+                                                colSpan={9}
                                                 className="py-12 text-center text-sm text-[#9CA3AF]"
                                             >
                                                 Loading…
@@ -389,7 +388,7 @@ export default function DoctorListPage() {
                                     ) : rows.length === 0 ? (
                                         <TableRow>
                                             <TableData
-                                                colSpan={10}
+                                                colSpan={9}
                                                 className="py-12 text-center text-sm text-[#9CA3AF]"
                                             >
                                                 No doctors found
@@ -404,11 +403,20 @@ export default function DoctorListPage() {
                                                 <TableData variant="primary">
                                                     {(filters.currentPage - 1) * filters.itemsPerPage + index + 1}
                                                 </TableData>
-                                                <TableData className="whitespace-nowrap">
-                                                    {row.branch?.name ?? branchDisplayName(String(row.branchId))}
+                                                <TableData className="w-[220px]">
+                                                    {(() => {
+                                                        const branchName = row.branch?.name ?? branchDisplayName(String(row.branchId));
+                                                        return (
+                                                            <Tooltip content={branchName} position="top">
+                                                                <span className="inline-block max-w-[220px] truncate align-middle">
+                                                                    {branchName}
+                                                                </span>
+                                                            </Tooltip>
+                                                        );
+                                                    })()}
                                                 </TableData>
-                                                <TableData>
-                                                    <div className="flex min-w-[180px] items-center gap-3">
+                                                <TableData className="max-w-[280px]">
+                                                    <div className="flex min-w-0 items-center gap-3">
                                                         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#E3EEE1] bg-[#F3F4F6]">
                                                             <DoctorAvatarImage
                                                                 imgUrl={row.imgUrl}
@@ -416,30 +424,40 @@ export default function DoctorListPage() {
                                                                 className="h-full w-full object-cover"
                                                             />
                                                         </div>
-                                                        <span className="font-medium text-[#262D3B]">{row.name}</span>
+                                                        <Tooltip content={row.name} position="top">
+                                                            <span className="inline-block max-w-[220px] truncate font-medium text-[#262D3B] align-middle">
+                                                                {row.name}
+                                                            </span>
+                                                        </Tooltip>
                                                     </div>
                                                 </TableData>
-                                                <TableData className="max-w-[200px] truncate text-sm">
-                                                    {row.email}
-                                                </TableData>
+                                                 <TableData className="max-w-[200px] text-sm">
+                                                     <Tooltip content={row.email} position="top">
+                                                         <span className="inline-block max-w-[180px] truncate align-middle">
+                                                             {row.email}
+                                                         </span>
+                                                     </Tooltip>
+                                                 </TableData>
                                                 <TableData>{row.phone}</TableData>
-                                                <TableData>{row.empId}</TableData>
+                                                <TableData className="max-w-[120px]">
+                                                    <Tooltip content={row.empId || "—"} position="top">
+                                                        <span className="inline-block max-w-[100px] truncate align-middle">
+                                                            {row.empId || "—"}
+                                                        </span>
+                                                    </Tooltip>
+                                                </TableData>
                                                 <TableData>
                                                     {formatDepartmentTableCell(row)}
-                                                </TableData>
-                                                <TableData>
-                                                    {row.nabh?.toLowerCase() === "yes" ? "Yes" : "No"}
                                                 </TableData>
                                                 <TableData>
                                                     <button
                                                         type="button"
                                                         onClick={() => doctorPerm.canEdit ? setConfirmToggleRow(row) : undefined}
                                                         disabled={togglingStatusId === row.id}
-                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors ${
-                                                            row.status?.toLowerCase() === "inactive"
-                                                                ? "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
-                                                                : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:bg-[#E8F5E9]"
-                                                        } ${doctorPerm.canEdit ? "cursor-pointer" : "cursor-default"} ${togglingStatusId === row.id ? "opacity-50 pointer-events-none" : ""}`}
+                                                        className={`inline-flex h-[30px] min-w-[76px] items-center justify-center rounded-[30px] border py-2 px-5 text-xs leading-[120%] transition-colors ${row.status?.toLowerCase() === "inactive"
+                                                            ? "border-[#F6776E] bg-white text-[#F6776E] hover:bg-[#FFF0EF]"
+                                                            : "border-[#0B8C00]/20 bg-white text-[#0B8C00] hover:bg-[#E8F5E9]"
+                                                            } ${doctorPerm.canEdit ? "cursor-pointer" : "cursor-default"} ${togglingStatusId === row.id ? "opacity-50 pointer-events-none" : ""}`}
                                                     >
                                                         {togglingStatusId === row.id ? "..." : row.status?.toLowerCase() === "inactive" ? "Inactive" : "Active"}
                                                     </button>
@@ -481,7 +499,7 @@ export default function DoctorListPage() {
                                                             </Tooltip>
                                                         )}
                                                         {/* {doctorPerm.canEdit && ( */}
-                                                              { !checkLoginType &&
+                                                        {!checkLoginType &&
                                                             <Tooltip content="Credentials" position="top" delay={0}>
                                                                 <button
                                                                     type="button"
@@ -497,7 +515,7 @@ export default function DoctorListPage() {
                                                                     />
                                                                 </button>
                                                             </Tooltip>
-                                                          }
+                                                        }
 
                                                         {/* )} */}
                                                     </div>

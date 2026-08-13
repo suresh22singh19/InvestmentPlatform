@@ -18,13 +18,7 @@ interface VitalsProps {
 }
 
 export default function Vitals({
-    vitals = {
-        bloodPressure: "125/85",
-        sugarLevel: "115",
-        temperature: "98",
-        heartRate: "92",
-        spo2: "98",
-    },
+    vitals,
 }: VitalsProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
@@ -32,12 +26,14 @@ export default function Vitals({
         setIsExpanded(!isExpanded);
     };
 
-    const hasVitals = vitals && (
-        vitals.bloodPressure ||
-        vitals.sugarLevel ||
-        vitals.temperature ||
-        vitals.heartRate ||
-        vitals.spo2
+    const hasVitals = Boolean(
+        vitals && (
+            (vitals.bloodPressure && vitals.bloodPressure !== "N/A") ||
+            (vitals.sugarLevel && vitals.sugarLevel !== "N/A") ||
+            (vitals.temperature && vitals.temperature !== "N/A") ||
+            (vitals.heartRate && vitals.heartRate !== "N/A") ||
+            (vitals.spo2 && vitals.spo2 !== "N/A")
+        )
     );
 
     return (
@@ -79,7 +75,7 @@ export default function Vitals({
                                                 Blood Pressure
                                             </div>
                                             <div className="mt-1 font-inter text-[20px] leading-[130%] font-semibold text-[#434956]">
-                                                {vitals.bloodPressure || "N/A"} <span className="font-medium">bp</span>
+                                                {vitals?.bloodPressure || "N/A"} <span className="font-medium">bp</span>
                                             </div>
                                         </div>
 
@@ -90,7 +86,7 @@ export default function Vitals({
                                                 Sugar Level
                                             </div>
                                             <div className="mt-1 font-inter text-[20px] leading-[130%] font-semibold text-[#434956]">
-                                                {vitals.sugarLevel || "N/A"} <span className="font-medium">mg/dL</span>
+                                                {vitals?.sugarLevel || "N/A"} <span className="font-medium">mg/dL</span>
                                             </div>
                                         </div>
                                     </div>
@@ -104,7 +100,7 @@ export default function Vitals({
                                                 Temperature
                                             </div>
                                             <div className="mt-1 font-inter text-[20px] leading-[130%] font-semibold text-[#434956]">
-                                                {vitals.temperature || "N/A"}°C
+                                                {vitals?.temperature || "N/A"}°C
                                             </div>
                                         </div>
 
@@ -115,7 +111,7 @@ export default function Vitals({
                                                 Heart Rate
                                             </div>
                                             <div className="mt-1 font-inter text-[20px] leading-[130%] font-semibold text-[#434956]">
-                                                {vitals.heartRate || "N/A"} <span className="font-medium">bpm</span>
+                                                {vitals?.heartRate || "N/A"} <span className="font-medium">bpm</span>
                                             </div>
                                         </div>
                                     </div>
@@ -127,7 +123,7 @@ export default function Vitals({
                                             SPO2
                                         </div>
                                         <div className="mt-1 font-inter text-[20px] leading-[130%] font-semibold text-[#434956]">
-                                            {vitals.spo2 || "N/A"} %
+                                            {vitals?.spo2 || "N/A"} %
                                         </div>
                                     </div>
                                 </div>
